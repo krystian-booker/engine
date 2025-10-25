@@ -72,6 +72,7 @@ set(ENGINE_SOURCES
         src/core/memory.cpp
         src/core/job_system.cpp
         src/ecs/entity_manager.cpp
+        src/ecs/hierarchy_manager.cpp
 )
 
 # Platform-specific source files
@@ -256,3 +257,21 @@ target_link_libraries(test_ecs_coordinator PRIVATE
 
 # Register ECS coordinator test with CTest
 add_test(NAME ECSCoordinatorTests COMMAND test_ecs_coordinator)
+
+# Test executable for hierarchy manager
+add_executable(test_hierarchy_manager
+        tests/test_hierarchy_manager.cpp
+        src/ecs/hierarchy_manager.cpp
+        src/ecs/entity_manager.cpp
+)
+
+target_include_directories(test_hierarchy_manager PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_hierarchy_manager PRIVATE
+        glm::glm
+)
+
+# Register hierarchy manager test with CTest
+add_test(NAME HierarchyManagerTests COMMAND test_hierarchy_manager)
