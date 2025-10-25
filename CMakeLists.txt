@@ -71,6 +71,11 @@ set(ENGINE_SOURCES
         src/main.cpp
 )
 
+# Platform-specific source files
+if(WIN32)
+    list(APPEND ENGINE_SOURCES src/platform/win32_platform.cpp)
+endif()
+
 # Main executable
 add_executable(engine ${ENGINE_SOURCES})
 
@@ -86,8 +91,8 @@ target_link_libraries(engine PRIVATE
 
 # Platform-specific linking
 if(WIN32)
-    # Windows libraries (we'll add these as needed)
-    # target_link_libraries(engine PRIVATE User32 Gdi32)
+    # Windows libraries for platform layer
+    target_link_libraries(engine PRIVATE User32 Gdi32)
 endif()
 
 # Enable testing
