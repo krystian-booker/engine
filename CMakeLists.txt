@@ -223,3 +223,19 @@ target_link_libraries(test_component_registry PRIVATE
 
 # Register component registry test with CTest
 add_test(NAME ComponentRegistryTests COMMAND test_component_registry)
+# Test executable for transform system
+add_executable(test_transform
+        tests/test_transform.cpp
+        src/ecs/entity_manager.cpp
+)
+
+target_include_directories(test_transform PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_transform PRIVATE
+        glm::glm
+)
+
+# Register transform test with CTest
+add_test(NAME TransformSystemTests COMMAND test_transform)
