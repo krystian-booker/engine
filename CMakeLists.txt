@@ -206,3 +206,20 @@ target_link_libraries(test_component_example PRIVATE
 
 # Register component example test with CTest
 add_test(NAME ComponentExampleTest COMMAND test_component_example)
+
+# Test executable for component registry
+add_executable(test_component_registry
+        tests/test_component_registry.cpp
+        src/ecs/entity_manager.cpp
+)
+
+target_include_directories(test_component_registry PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_component_registry PRIVATE
+        glm::glm
+)
+
+# Register component registry test with CTest
+add_test(NAME ComponentRegistryTests COMMAND test_component_registry)

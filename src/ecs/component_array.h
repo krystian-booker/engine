@@ -4,11 +4,18 @@
 #include <vector>
 #include <cassert>
 
+// Base interface for component arrays (for polymorphic entity removal)
+class IComponentArray {
+public:
+    virtual ~IComponentArray() = default;
+    virtual void EntityRemoved(Entity entity) = 0;
+};
+
 // Sparse set for component storage
 // Sparse array: entity.index -> dense index
 // Dense array: actual component data (packed)
 template<typename T>
-class ComponentArray {
+class ComponentArray : public IComponentArray {
 public:
     ComponentArray(u32 maxEntities = 1024) {
         m_Sparse.resize(maxEntities, INVALID_INDEX);
@@ -83,6 +90,13 @@ public:
     auto end() { return m_Dense.end(); }
     auto begin() const { return m_Dense.begin(); }
     auto end() const { return m_Dense.end(); }
+
+    // IComponentArray interface implementation
+    void EntityRemoved(Entity entity) override {
+        if (Has(entity)) {
+            Remove(entity);
+        }
+    }
 
 private:
     static constexpr u32 INVALID_INDEX = 0xFFFFFFFF;
