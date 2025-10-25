@@ -172,3 +172,37 @@ target_link_libraries(test_entity PRIVATE
 
 # Register entity test with CTest
 add_test(NAME EntitySystemTests COMMAND test_entity)
+
+# Test executable for component array
+add_executable(test_component_array
+        tests/test_component_array.cpp
+        src/ecs/entity_manager.cpp
+)
+
+target_include_directories(test_component_array PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_component_array PRIVATE
+        glm::glm
+)
+
+# Register component array test with CTest
+add_test(NAME ComponentArrayTests COMMAND test_component_array)
+
+# Test executable for component array example
+add_executable(test_component_example
+        tests/test_component_example.cpp
+        src/ecs/entity_manager.cpp
+)
+
+target_include_directories(test_component_example PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_component_example PRIVATE
+        glm::glm
+)
+
+# Register component example test with CTest
+add_test(NAME ComponentExampleTest COMMAND test_component_example)
