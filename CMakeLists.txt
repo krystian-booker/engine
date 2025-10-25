@@ -239,3 +239,20 @@ target_link_libraries(test_transform PRIVATE
 
 # Register transform test with CTest
 add_test(NAME TransformSystemTests COMMAND test_transform)
+
+# Test executable for ECS coordinator
+add_executable(test_ecs_coordinator
+        tests/test_ecs_coordinator.cpp
+        src/ecs/entity_manager.cpp
+)
+
+target_include_directories(test_ecs_coordinator PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_ecs_coordinator PRIVATE
+        glm::glm
+)
+
+# Register ECS coordinator test with CTest
+add_test(NAME ECSCoordinatorTests COMMAND test_ecs_coordinator)
