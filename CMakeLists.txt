@@ -73,6 +73,7 @@ set(ENGINE_SOURCES
         src/core/job_system.cpp
         src/ecs/entity_manager.cpp
         src/ecs/hierarchy_manager.cpp
+        src/ecs/systems/transform_system.cpp
 )
 
 # Platform-specific source files
@@ -228,6 +229,8 @@ add_test(NAME ComponentRegistryTests COMMAND test_component_registry)
 add_executable(test_transform
         tests/test_transform.cpp
         src/ecs/entity_manager.cpp
+        src/ecs/hierarchy_manager.cpp
+        src/ecs/systems/transform_system.cpp
 )
 
 target_include_directories(test_transform PRIVATE
@@ -245,6 +248,8 @@ add_test(NAME TransformSystemTests COMMAND test_transform)
 add_executable(test_ecs_coordinator
         tests/test_ecs_coordinator.cpp
         src/ecs/entity_manager.cpp
+        src/ecs/hierarchy_manager.cpp
+        src/ecs/systems/transform_system.cpp
 )
 
 target_include_directories(test_ecs_coordinator PRIVATE

@@ -475,7 +475,7 @@ TEST(ECSCoordinator_TransformSystem_MultipleEntities) {
     coordinator.Shutdown();
 }
 
-TEST(ECSCoordinator_TransformSystem_DirtyFlagOptimization) {
+TEST(ECSCoordinator_TransformSystem_HierarchyAlwaysUpdates) {
     ECSCoordinator coordinator;
     coordinator.Init();
 
@@ -493,16 +493,15 @@ TEST(ECSCoordinator_TransformSystem_DirtyFlagOptimization) {
     Transform& updated = coordinator.GetComponent<Transform>(e1);
     ASSERT(updated.isDirty == false);
 
-    Mat4 originalWorld = updated.worldMatrix;
-
-    // Modify without marking dirty
+    // Modify position
     updated.localPosition = Vec3(100.0f, 100.0f, 100.0f);
 
-    // Second update - should NOT recompute
+    // Second update - hierarchy system always updates transforms
     coordinator.Update(0.016f);
 
-    // World matrix should be unchanged
-    ASSERT(Mat4Equal(updated.worldMatrix, originalWorld));
+    // World matrix should be updated with new position
+    Mat4 expected = Translate(Mat4(1.0f), Vec3(100.0f, 100.0f, 100.0f));
+    ASSERT(Mat4Equal(updated.worldMatrix, expected));
 
     coordinator.Shutdown();
 }
@@ -712,7 +711,7 @@ int main() {
     ECSCoordinator_TransformComponent_runner();
     ECSCoordinator_TransformSystem_Update_runner();
     ECSCoordinator_TransformSystem_MultipleEntities_runner();
-    ECSCoordinator_TransformSystem_DirtyFlagOptimization_runner();
+    ECSCoordinator_TransformSystem_HierarchyAlwaysUpdates_runner();
     ECSCoordinator_TransformSystem_DirtyFlagUpdate_runner();
 
     std::cout << std::endl;

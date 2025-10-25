@@ -2,6 +2,7 @@
 #include "ecs/systems/transform_system.h"
 #include "ecs/component_registry.h"
 #include "ecs/entity_manager.h"
+#include "ecs/hierarchy_manager.h"
 #include <iostream>
 #include <cmath>
 
@@ -160,8 +161,9 @@ TEST(Transform_ParentReference) {
 TEST(TransformSystem_BasicSetup) {
     ComponentRegistry registry;
     registry.RegisterComponent<Transform>();
+    HierarchyManager hierarchy;
 
-    TransformSystem system(&registry);
+    TransformSystem system(&registry, &hierarchy);
 
     // Should not crash with empty component array
     system.Update(0.016f);
@@ -170,7 +172,8 @@ TEST(TransformSystem_BasicSetup) {
 TEST(TransformSystem_RootEntity_UpdateWorldMatrix) {
     ComponentRegistry registry;
     registry.RegisterComponent<Transform>();
-    TransformSystem system(&registry);
+    HierarchyManager hierarchy;
+    TransformSystem system(&registry, &hierarchy);
 
     EntityManager em;
     Entity entity = em.CreateEntity();
@@ -192,10 +195,11 @@ TEST(TransformSystem_RootEntity_UpdateWorldMatrix) {
     ASSERT(updated.isDirty == false);
 }
 
-TEST(TransformSystem_DirtyFlagOptimization) {
+TEST(TransformSystem_HierarchyAlwaysUpdates) {
     ComponentRegistry registry;
     registry.RegisterComponent<Transform>();
-    TransformSystem system(&registry);
+    HierarchyManager hierarchy;
+    TransformSystem system(&registry, &hierarchy);
 
     EntityManager em;
     Entity entity = em.CreateEntity();
@@ -211,23 +215,22 @@ TEST(TransformSystem_DirtyFlagOptimization) {
     Transform& updated = transforms->Get(entity);
     ASSERT(updated.isDirty == false);
 
-    Mat4 originalWorld = updated.worldMatrix;
-
-    // Modify transform but don't mark dirty
+    // Modify transform position
     updated.localPosition = Vec3(100, 100, 100);
-    // isDirty is still false
 
-    // Second update - should NOT recompute
+    // Second update - hierarchy system always updates transforms
     system.Update(0.016f);
 
-    // World matrix should be unchanged (still old value)
-    ASSERT(Mat4Equal(updated.worldMatrix, originalWorld));
+    // World matrix should be updated with new position
+    Mat4 expected = Translate(Mat4(1.0f), Vec3(100, 100, 100));
+    ASSERT(Mat4Equal(updated.worldMatrix, expected));
 }
 
 TEST(TransformSystem_DirtyFlagUpdate) {
     ComponentRegistry registry;
     registry.RegisterComponent<Transform>();
-    TransformSystem system(&registry);
+    HierarchyManager hierarchy;
+    TransformSystem system(&registry, &hierarchy);
 
     EntityManager em;
     Entity entity = em.CreateEntity();
@@ -259,7 +262,8 @@ TEST(TransformSystem_DirtyFlagUpdate) {
 TEST(TransformSystem_MultipleEntities) {
     ComponentRegistry registry;
     registry.RegisterComponent<Transform>();
-    TransformSystem system(&registry);
+    HierarchyManager hierarchy;
+    TransformSystem system(&registry, &hierarchy);
 
     EntityManager em;
     Entity e1 = em.CreateEntity();
@@ -304,10 +308,11 @@ TEST(TransformSystem_MultipleEntities) {
     ASSERT(updated3.isDirty == false);
 }
 
-TEST(TransformSystem_ParentReference_NoHierarchyYet) {
+TEST(TransformSystem_ParentChildHierarchy) {
     ComponentRegistry registry;
     registry.RegisterComponent<Transform>();
-    TransformSystem system(&registry);
+    HierarchyManager hierarchy;
+    TransformSystem system(&registry, &hierarchy);
 
     EntityManager em;
     Entity parent = em.CreateEntity();
@@ -315,26 +320,87 @@ TEST(TransformSystem_ParentReference_NoHierarchyYet) {
 
     auto transforms = registry.GetComponentArray<Transform>();
 
+    // Parent at (10, 0, 0)
     Transform parentTransform;
     parentTransform.localPosition = Vec3(10, 0, 0);
     parentTransform.isDirty = true;
     transforms->Add(parent, parentTransform);
 
+    // Child at (5, 0, 0) relative to parent
     Transform childTransform;
     childTransform.localPosition = Vec3(5, 0, 0);
-    childTransform.parent = parent;  // Set parent reference
     childTransform.isDirty = true;
     transforms->Add(child, childTransform);
+
+    // Set up hierarchy
+    hierarchy.SetParent(child, parent);
 
     // Update system
     system.Update(0.016f);
 
-    // Currently, hierarchy is not implemented, so child world = child local
-    // (This is the TODO in TransformSystem)
+    // Child world position should be (15, 0, 0)
+    Transform& updatedParent = transforms->Get(parent);
     Transform& updatedChild = transforms->Get(child);
-    Mat4 expected = Translate(Mat4(1.0f), Vec3(5, 0, 0));
 
-    ASSERT(Mat4Equal(updatedChild.worldMatrix, expected));
+    Mat4 expectedParent = Translate(Mat4(1.0f), Vec3(10, 0, 0));
+    Mat4 expectedChild = Translate(Mat4(1.0f), Vec3(15, 0, 0));
+
+    ASSERT(Mat4Equal(updatedParent.worldMatrix, expectedParent));
+    ASSERT(Mat4Equal(updatedChild.worldMatrix, expectedChild));
+    ASSERT(updatedParent.isDirty == false);
+    ASSERT(updatedChild.isDirty == false);
+}
+
+TEST(TransformSystem_DeepHierarchy) {
+    ComponentRegistry registry;
+    registry.RegisterComponent<Transform>();
+    HierarchyManager hierarchy;
+    TransformSystem system(&registry, &hierarchy);
+
+    EntityManager em;
+    Entity root = em.CreateEntity();
+    Entity child1 = em.CreateEntity();
+    Entity child2 = em.CreateEntity();
+
+    auto transforms = registry.GetComponentArray<Transform>();
+
+    // Root at (10, 0, 0)
+    Transform rootTransform;
+    rootTransform.localPosition = Vec3(10, 0, 0);
+    transforms->Add(root, rootTransform);
+
+    // Child1 at (5, 0, 0) relative to root
+    Transform child1Transform;
+    child1Transform.localPosition = Vec3(5, 0, 0);
+    transforms->Add(child1, child1Transform);
+
+    // Child2 at (3, 0, 0) relative to child1
+    Transform child2Transform;
+    child2Transform.localPosition = Vec3(3, 0, 0);
+    transforms->Add(child2, child2Transform);
+
+    // Set up hierarchy: root -> child1 -> child2
+    hierarchy.SetParent(child1, root);
+    hierarchy.SetParent(child2, child1);
+
+    // Update system
+    system.Update(0.016f);
+
+    // Verify world positions:
+    // root: (10, 0, 0)
+    // child1: (15, 0, 0)
+    // child2: (18, 0, 0)
+    Transform& updatedRoot = transforms->Get(root);
+    Transform& updatedChild1 = transforms->Get(child1);
+    Transform& updatedChild2 = transforms->Get(child2);
+
+    Mat4 expectedRoot = Translate(Mat4(1.0f), Vec3(10, 0, 0));
+    Mat4 expectedChild1 = Translate(Mat4(1.0f), Vec3(15, 0, 0));
+    Mat4 expectedChild2 = Translate(Mat4(1.0f), Vec3(18, 0, 0));
+
+    ASSERT(Mat4Equal(updatedRoot.worldMatrix, expectedRoot));
+    ASSERT(Mat4Equal(updatedChild1.worldMatrix, expectedChild1));
+    ASSERT(Mat4Equal(updatedChild2.worldMatrix, expectedChild2));
 }
 
 // ============================================================================
@@ -359,10 +425,11 @@ int main() {
     std::cout << "--- TransformSystem Tests ---" << std::endl;
     TransformSystem_BasicSetup_runner();
     TransformSystem_RootEntity_UpdateWorldMatrix_runner();
-    TransformSystem_DirtyFlagOptimization_runner();
+    TransformSystem_HierarchyAlwaysUpdates_runner();
     TransformSystem_DirtyFlagUpdate_runner();
     TransformSystem_MultipleEntities_runner();
-    TransformSystem_ParentReference_NoHierarchyYet_runner();
+    TransformSystem_ParentChildHierarchy_runner();
+    TransformSystem_DeepHierarchy_runner();
 
     std::cout << std::endl;
     std::cout << "================================" << std::endl;

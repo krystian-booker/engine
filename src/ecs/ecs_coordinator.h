@@ -25,7 +25,7 @@ public:
         RegisterComponent<Transform>();
 
         // Initialize systems
-        m_TransformSystem = std::make_unique<TransformSystem>(m_ComponentRegistry.get());
+        m_TransformSystem = std::make_unique<TransformSystem>(m_ComponentRegistry.get(), m_HierarchyManager.get());
     }
 
     void Shutdown() {
