@@ -55,10 +55,20 @@ elseif(APPLE)
     add_compile_definitions(PLATFORM_MACOS)
 endif()
 
+# Fetch GLM
+include(FetchContent)
+FetchContent_Declare(
+        glm
+        GIT_REPOSITORY https://github.com/g-truc/glm.git
+        GIT_TAG        1.0.1
+        GIT_SHALLOW    TRUE
+)
+set(GLM_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(glm)
+
 # Source files - we'll add these as we create them
 set(ENGINE_SOURCES
         src/main.cpp
-        src/core/math.h
 )
 
 # Main executable
@@ -67,6 +77,11 @@ add_executable(engine ${ENGINE_SOURCES})
 # Include directories
 target_include_directories(engine PRIVATE
         ${CMAKE_SOURCE_DIR}/src
+)
+
+# Link GLM
+target_link_libraries(engine PRIVATE
+        glm::glm
 )
 
 # Platform-specific linking
