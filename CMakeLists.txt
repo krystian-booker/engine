@@ -70,6 +70,7 @@ FetchContent_MakeAvailable(glm)
 set(ENGINE_SOURCES
         src/main.cpp
         src/core/memory.cpp
+        src/core/job_system.cpp
 )
 
 # Platform-specific source files
@@ -125,3 +126,31 @@ endif()
 
 # Register test with CTest
 add_test(NAME MemoryAllocatorTests COMMAND test_memory)
+
+# Test executable for job system
+add_executable(test_job_system
+        tests/test_job_system.cpp
+        src/core/job_system.cpp
+        src/core/memory.cpp
+)
+
+# Platform-specific source files for job system tests
+if(WIN32)
+    target_sources(test_job_system PRIVATE src/platform/win32_platform.cpp)
+endif()
+
+target_include_directories(test_job_system PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_job_system PRIVATE
+        glm::glm
+)
+
+# Platform-specific linking for job system tests
+if(WIN32)
+    target_link_libraries(test_job_system PRIVATE User32 Gdi32)
+endif()
+
+# Register job system test with CTest
+add_test(NAME JobSystemTests COMMAND test_job_system)

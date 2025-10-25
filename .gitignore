@@ -170,3 +170,4 @@ CMakeUserPresets.json
 # End of https://www.toptal.com/developers/gitignore/api/c++,clion,cmake
 CLAUDE.md
 .claude/settings.local.json
+build/
