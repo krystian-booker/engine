@@ -71,6 +71,7 @@ set(ENGINE_SOURCES
         src/main.cpp
         src/core/memory.cpp
         src/core/job_system.cpp
+        src/ecs/entity_manager.cpp
 )
 
 # Platform-specific source files
@@ -154,3 +155,20 @@ endif()
 
 # Register job system test with CTest
 add_test(NAME JobSystemTests COMMAND test_job_system)
+
+# Test executable for entity system
+add_executable(test_entity
+        tests/test_entity.cpp
+        src/ecs/entity_manager.cpp
+)
+
+target_include_directories(test_entity PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_entity PRIVATE
+        glm::glm
+)
+
+# Register entity test with CTest
+add_test(NAME EntitySystemTests COMMAND test_entity)
