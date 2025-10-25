@@ -1,8 +1,79 @@
 #include <iostream>
 #include "platform/platform.h"
+#include "core/memory.h"
+#include "core/math.h"
 
 int main(int, char**) {
-    std::cout << "=== Game Engine - Day 2: Platform API Tests ===" << std::endl;
+    std::cout << "=== Game Engine - Day 3: Memory Allocators ===" << std::endl;
+    std::cout << std::endl;
+
+    // Memory Allocator Demonstration
+    std::cout << "[DEMO] LinearAllocator:" << std::endl;
+    {
+        LinearAllocator frameAllocator;
+        frameAllocator.Init(1024 * 1024); // 1 MB
+
+        std::cout << "  Initialized with 1 MB capacity" << std::endl;
+
+        // Simulate a few frames
+        for (int frame = 0; frame < 5; frame++) {
+            // Allocate various sizes with different alignments
+            [[maybe_unused]] void* data1 = frameAllocator.Alloc(256, 16);
+            [[maybe_unused]] void* data2 = frameAllocator.Alloc(512, 64);
+            [[maybe_unused]] void* data3 = frameAllocator.Alloc(128, 32);
+
+            std::cout << "  Frame " << frame << ": "
+                      << "allocated 896 bytes, "
+                      << "current offset: " << frameAllocator.GetCurrentOffset()
+                      << ", high-water mark: " << frameAllocator.GetHighWaterMark()
+                      << " bytes" << std::endl;
+
+            // Reset for next frame
+            frameAllocator.Reset();
+        }
+
+        std::cout << "  Peak memory usage across all frames: "
+                  << frameAllocator.GetHighWaterMark() << " bytes" << std::endl;
+
+        frameAllocator.Shutdown();
+        std::cout << "  Allocator shut down" << std::endl;
+    }
+    std::cout << std::endl;
+
+    std::cout << "[DEMO] PoolAllocator:" << std::endl;
+    {
+        struct GameObject {
+            u32 id;
+            Vec3 position;
+            Vec3 velocity;
+        };
+
+        PoolAllocator<GameObject, 16> gameObjectPool;
+
+        std::cout << "  Initialized pool for GameObjects (block size: 16)" << std::endl;
+
+        // Allocate some game objects
+        GameObject* objects[10];
+        for (int i = 0; i < 10; i++) {
+            objects[i] = gameObjectPool.Alloc();
+            objects[i]->id = i;
+            objects[i]->position = Vec3(i * 10.0f, 0.0f, 0.0f);
+        }
+
+        std::cout << "  Allocated 10 GameObjects" << std::endl;
+
+        // Free some objects
+        gameObjectPool.Free(objects[3]);
+        gameObjectPool.Free(objects[7]);
+        std::cout << "  Freed objects 3 and 7" << std::endl;
+
+        // Allocate new objects (should reuse freed slots)
+        [[maybe_unused]] GameObject* newObj1 = gameObjectPool.Alloc();
+        [[maybe_unused]] GameObject* newObj2 = gameObjectPool.Alloc();
+
+        std::cout << "  Allocated 2 new objects (reused freed slots)" << std::endl;
+        std::cout << "  Generation counter: " << gameObjectPool.GetGeneration() << std::endl;
+    }
     std::cout << std::endl;
 
     // Test 1: High-Resolution Timer

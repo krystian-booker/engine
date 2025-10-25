@@ -69,6 +69,7 @@ FetchContent_MakeAvailable(glm)
 # Source files - we'll add these as we create them
 set(ENGINE_SOURCES
         src/main.cpp
+        src/core/memory.cpp
 )
 
 # Platform-specific source files
@@ -97,3 +98,30 @@ endif()
 
 # Enable testing
 enable_testing()
+
+# Test executable for memory allocators
+add_executable(test_memory
+        tests/test_memory.cpp
+        src/core/memory.cpp
+)
+
+# Platform-specific source files for tests
+if(WIN32)
+    target_sources(test_memory PRIVATE src/platform/win32_platform.cpp)
+endif()
+
+target_include_directories(test_memory PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_memory PRIVATE
+        glm::glm
+)
+
+# Platform-specific linking for tests
+if(WIN32)
+    target_link_libraries(test_memory PRIVATE User32 Gdi32)
+endif()
+
+# Register test with CTest
+add_test(NAME MemoryAllocatorTests COMMAND test_memory)
