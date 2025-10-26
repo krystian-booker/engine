@@ -123,6 +123,8 @@ set(ENGINE_SOURCES
         src/platform/input.cpp
         src/resources/mesh_manager.cpp
         src/renderer/vulkan_context.cpp
+        src/renderer/vulkan_swapchain.cpp
+        src/renderer/vulkan_renderer.cpp
 )
 
 # Platform-specific source files
@@ -160,6 +162,7 @@ enable_testing()
 add_executable(test_vulkan
         tests/test_vulkan.cpp
         src/renderer/vulkan_context.cpp
+        src/renderer/vulkan_swapchain.cpp
         src/platform/window.cpp
 )
 

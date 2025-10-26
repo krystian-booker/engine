@@ -32,3 +32,6 @@ ctest --test-dir build -C Debug --output-on-failure
 
 After building, launch `build/bin/engine.exe` (or `build/bin/Debug/engine.exe` depending on generator).
 
+## Vulkan Renderer
+
+The default runtime now initializes a Vulkan context, swapchain, and a minimal render loop that clears the window each frame. Resize or minimize the window to exercise swapchain recreation; the renderer blocks until valid dimensions are available and resumes presenting without restarting the application.

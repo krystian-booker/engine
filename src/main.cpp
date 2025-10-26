@@ -6,6 +6,8 @@
 #include "core/memory.h"
 #include "core/math.h"
 #include "core/time.h"
+#include "renderer/vulkan_context.h"
+#include "renderer/vulkan_renderer.h"
 
 int main(int, char**) {
     std::cout << "=== Game Engine ===" << std::endl;
@@ -178,11 +180,18 @@ int main(int, char**) {
     std::cout << "  Window created successfully (" << window.GetWidth() << "x" << window.GetHeight() << ")" << std::endl;
     std::cout << "  Aspect ratio: " << window.GetAspectRatio() << std::endl;
 
+    VulkanContext context;
+    context.Init(&window);
+
+    VulkanRenderer renderer;
+    renderer.Init(&context, &window);
+
     // Set event callback
-    window.SetEventCallback([](WindowEvent event, u32 w, u32 h) {
+    window.SetEventCallback([&renderer](WindowEvent event, u32 w, u32 h) {
         switch (event) {
             case WindowEvent::Resize:
                 std::cout << "  [EVENT] Window resized to: " << w << "x" << h << std::endl;
+                renderer.OnWindowResized();
                 break;
             case WindowEvent::Focus:
                 std::cout << "  [EVENT] Window gained focus" << std::endl;
@@ -226,6 +235,7 @@ int main(int, char**) {
         Time::Update();   // Update time at start of frame
         Input::Update();  // Must be called before polling events
         window.PollEvents();
+        renderer.DrawFrame();
 
         // Test keyboard input
         if (Input::IsKeyPressed(KeyCode::Space)) {
@@ -285,6 +295,10 @@ int main(int, char**) {
 
     std::cout << std::endl;
     std::cout << "[TEST 8] Cleanup:" << std::endl;
+
+    renderer.Shutdown();
+    context.Shutdown();
+
     std::cout << "  Window will be destroyed automatically by RAII" << std::endl;
 
     u64 endCounter = Platform::GetPerformanceCounter();

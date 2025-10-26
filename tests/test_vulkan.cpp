@@ -1,4 +1,5 @@
 #include "renderer/vulkan_context.h"
+#include "renderer/vulkan_swapchain.h"
 #include "platform/window.h"
 
 #include <iostream>
@@ -34,6 +35,27 @@ static int testsFailed = 0;
             throw std::runtime_error("Assertion failed: " #expr); \
         } \
     } while (0)
+
+struct VulkanSwapchainTestAccess {
+    static VkSurfaceFormatKHR ChooseSurfaceFormat(
+        VulkanSwapchain& swapchain,
+        const std::vector<VkSurfaceFormatKHR>& formats) {
+        return swapchain.ChooseSwapSurfaceFormat(formats);
+    }
+
+    static VkPresentModeKHR ChoosePresentMode(
+        VulkanSwapchain& swapchain,
+        const std::vector<VkPresentModeKHR>& modes) {
+        return swapchain.ChooseSwapPresentMode(modes);
+    }
+
+    static VkExtent2D ChooseExtent(
+        VulkanSwapchain& swapchain,
+        const VkSurfaceCapabilitiesKHR& capabilities,
+        Window* window) {
+        return swapchain.ChooseSwapExtent(capabilities, window);
+    }
+};
 
 TEST(VulkanContext_InitAndShutdown) {
     WindowProperties props;
@@ -82,12 +104,73 @@ TEST(VulkanContext_DebugLayerToggle) {
     context.Shutdown();
 }
 
+TEST(VulkanSwapchain_ChooseSurfaceFormatPrefersSRGB) {
+    VulkanSwapchain swapchain;
+
+    std::vector<VkSurfaceFormatKHR> formats = {
+        { VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR },
+        { VK_FORMAT_B8G8R8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR },
+        { VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR }
+    };
+
+    VkSurfaceFormatKHR chosen = VulkanSwapchainTestAccess::ChooseSurfaceFormat(swapchain, formats);
+    ASSERT(chosen.format == VK_FORMAT_B8G8R8A8_SRGB);
+    ASSERT(chosen.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR);
+}
+
+TEST(VulkanSwapchain_ChoosePresentModePrefersMailbox) {
+    VulkanSwapchain swapchain;
+
+    std::vector<VkPresentModeKHR> modesWithMailbox = {
+        VK_PRESENT_MODE_FIFO_KHR,
+        VK_PRESENT_MODE_MAILBOX_KHR,
+        VK_PRESENT_MODE_IMMEDIATE_KHR
+    };
+
+    VkPresentModeKHR chosen = VulkanSwapchainTestAccess::ChoosePresentMode(swapchain, modesWithMailbox);
+    ASSERT(chosen == VK_PRESENT_MODE_MAILBOX_KHR);
+
+    std::vector<VkPresentModeKHR> modesWithoutMailbox = {
+        VK_PRESENT_MODE_FIFO_KHR,
+        VK_PRESENT_MODE_IMMEDIATE_KHR
+    };
+
+    VkPresentModeKHR fallback = VulkanSwapchainTestAccess::ChoosePresentMode(swapchain, modesWithoutMailbox);
+    ASSERT(fallback == VK_PRESENT_MODE_FIFO_KHR);
+}
+
+TEST(VulkanSwapchain_ChooseExtentClampsToCapabilities) {
+    VulkanSwapchain swapchain;
+
+    WindowProperties props;
+    props.title = "Swapchain Extent Test";
+    props.width = 4000;
+    props.height = 200;
+    props.resizable = false;
+
+    Window window(props);
+
+    VkSurfaceCapabilitiesKHR capabilities{};
+    capabilities.currentExtent.width = UINT32_MAX;
+    capabilities.currentExtent.height = UINT32_MAX;
+    capabilities.minImageExtent = { 640, 480 };
+    capabilities.maxImageExtent = { 1920, 1080 };
+
+    VkExtent2D extent = VulkanSwapchainTestAccess::ChooseExtent(swapchain, capabilities, &window);
+
+    ASSERT(extent.width == capabilities.maxImageExtent.width);
+    ASSERT(extent.height == capabilities.minImageExtent.height);
+}
+
 int main() {
     std::cout << "=== Vulkan Context Tests ===" << std::endl;
     std::cout << std::endl;
 
     VulkanContext_InitAndShutdown_runner();
     VulkanContext_DebugLayerToggle_runner();
+    VulkanSwapchain_ChooseSurfaceFormatPrefersSRGB_runner();
+    VulkanSwapchain_ChoosePresentModePrefersMailbox_runner();
+    VulkanSwapchain_ChooseExtentClampsToCapabilities_runner();
 
     std::cout << std::endl;
     std::cout << "================================" << std::endl;

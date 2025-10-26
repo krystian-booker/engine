@@ -26,6 +26,7 @@ void VulkanContext::Init(Window* window) {
 
 void VulkanContext::Shutdown() {
     if (m_Device != VK_NULL_HANDLE) {
+        vkDeviceWaitIdle(m_Device);
         vkDestroyDevice(m_Device, nullptr);
         m_Device = VK_NULL_HANDLE;
     }
