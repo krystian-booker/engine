@@ -187,6 +187,26 @@ public:
         // Add more systems here as we build them
     }
 
+    // ========================================================================
+    // Internal Access (for serialization, etc.)
+    // ========================================================================
+
+    ComponentRegistry* GetComponentRegistry() {
+        return m_ComponentRegistry.get();
+    }
+
+    const ComponentRegistry* GetComponentRegistry() const {
+        return m_ComponentRegistry.get();
+    }
+
+    HierarchyManager* GetHierarchyManager() {
+        return m_HierarchyManager.get();
+    }
+
+    const HierarchyManager* GetHierarchyManager() const {
+        return m_HierarchyManager.get();
+    }
+
 private:
     // ========================================================================
     // Query Helpers

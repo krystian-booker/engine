@@ -66,6 +66,16 @@ FetchContent_Declare(
 set(GLM_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(glm)
 
+# Fetch nlohmann/json
+FetchContent_Declare(
+        json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG        v3.11.3
+        GIT_SHALLOW    TRUE
+)
+set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(json)
+
 # Source files - we'll add these as we create them
 set(ENGINE_SOURCES
         src/main.cpp
@@ -73,6 +83,7 @@ set(ENGINE_SOURCES
         src/core/job_system.cpp
         src/ecs/entity_manager.cpp
         src/ecs/hierarchy_manager.cpp
+        src/ecs/scene_serializer.cpp
         src/ecs/systems/transform_system.cpp
 )
 
@@ -89,9 +100,10 @@ target_include_directories(engine PRIVATE
         ${CMAKE_SOURCE_DIR}/src
 )
 
-# Link GLM
+# Link GLM and JSON
 target_link_libraries(engine PRIVATE
         glm::glm
+        nlohmann_json::nlohmann_json
 )
 
 # Platform-specific linking
@@ -280,3 +292,24 @@ target_link_libraries(test_hierarchy_manager PRIVATE
 
 # Register hierarchy manager test with CTest
 add_test(NAME HierarchyManagerTests COMMAND test_hierarchy_manager)
+
+# Test executable for scene serializer
+add_executable(test_scene_serializer
+        tests/test_scene_serializer.cpp
+        src/ecs/entity_manager.cpp
+        src/ecs/hierarchy_manager.cpp
+        src/ecs/scene_serializer.cpp
+        src/ecs/systems/transform_system.cpp
+)
+
+target_include_directories(test_scene_serializer PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_scene_serializer PRIVATE
+        glm::glm
+        nlohmann_json::nlohmann_json
+)
+
+# Register scene serializer test with CTest
+add_test(NAME SceneSerializerTests COMMAND test_scene_serializer)
