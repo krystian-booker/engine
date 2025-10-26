@@ -1,9 +1,11 @@
 #include "renderer/vulkan_buffer.h"
 #include "renderer/vulkan_context.h"
+#include "renderer/vertex.h"
 #include "platform/window.h"
 
 #include <algorithm>
 #include <array>
+#include <cstring>
 #include <cstdint>
 #include <iostream>
 #include <stdexcept>
@@ -221,12 +223,65 @@ TEST(VulkanBuffer_MoveTransfersOwnership) {
     context.Shutdown();
 }
 
+TEST(VulkanBuffer_CreateAndUploadVertexBuffer) {
+    WindowProperties props;
+    props.title = "Vulkan Vertex Buffer Upload Test";
+    props.width = 320;
+    props.height = 240;
+    props.resizable = false;
+
+    Window window(props);
+
+    VulkanContext context;
+    context.Init(&window);
+
+    std::array<Vertex, 3> vertices = {
+        Vertex{Vec3(-0.5f, -0.5f, 0.0f), Vec3(0.0f, 0.0f, 1.0f), Vec3(1.0f, 0.0f, 0.0f), Vec2(0.0f, 0.0f)},
+        Vertex{Vec3(0.5f, -0.5f, 0.0f), Vec3(0.0f, 0.0f, 1.0f), Vec3(0.0f, 1.0f, 0.0f), Vec2(1.0f, 0.0f)},
+        Vertex{Vec3(0.0f, 0.5f, 0.0f), Vec3(0.0f, 0.0f, 1.0f), Vec3(0.0f, 0.0f, 1.0f), Vec2(0.5f, 1.0f)}
+    };
+
+    VulkanBuffer vertexBuffer;
+    vertexBuffer.CreateAndUpload(
+        &context,
+        sizeof(vertices),
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        vertices.data());
+
+    ASSERT(vertexBuffer.GetSize() == sizeof(vertices));
+    ASSERT(vertexBuffer.GetUsage() & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+
+    VulkanBuffer readback;
+    readback.Create(
+        &context,
+        sizeof(vertices),
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    ImmediateCopyBuffer(&context, vertexBuffer.GetBuffer(), readback.GetBuffer(), sizeof(vertices));
+
+    auto* mapped = static_cast<Vertex*>(readback.Map());
+    std::array<Vertex, vertices.size()> readbackData{};
+    std::copy(mapped, mapped + readbackData.size(), readbackData.begin());
+    readback.Unmap();
+
+    for (size_t i = 0; i < vertices.size(); ++i) {
+        ASSERT(std::memcmp(&readbackData[i], &vertices[i], sizeof(Vertex)) == 0);
+    }
+
+    readback.Destroy();
+    vertexBuffer.Destroy();
+    context.Shutdown();
+}
+
 int main() {
     std::cout << "=== Vulkan Buffer Tests ===" << std::endl << std::endl;
 
     VulkanBuffer_HostVisibleUploadCopiesData_runner();
     VulkanBuffer_DeviceLocalUploadUsesStaging_runner();
     VulkanBuffer_MoveTransfersOwnership_runner();
+    VulkanBuffer_CreateAndUploadVertexBuffer_runner();
 
     std::cout << std::endl;
     std::cout << "================================" << std::endl;

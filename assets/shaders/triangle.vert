@@ -1,25 +1,20 @@
 // HLSL vertex shader (compiled for Vulkan SPIR-V via DXC)
-// Hardcoded triangle vertices
-static const float2 positions[3] = {
-    float2(0.0, -0.5),
-    float2(0.5, 0.5),
-    float2(-0.5, 0.5)
+
+struct VSInput {
+    [[vk::location(0)]] float3 position : POSITION;
+    [[vk::location(1)]] float3 normal   : NORMAL;
+    [[vk::location(2)]] float3 color    : COLOR0;
+    [[vk::location(3)]] float2 texCoord : TEXCOORD0;
 };
 
-static const float3 colors[3] = {
-    float3(1.0, 0.0, 0.0),  // Red
-    float3(0.0, 1.0, 0.0),  // Green
-    float3(0.0, 0.0, 1.0)   // Blue
+struct VSOutput {
+    float4 position              : SV_Position;
+    [[vk::location(0)]] float3 color : COLOR0;
 };
 
-struct VSOut {
-    float4 pos   : SV_Position;
-    float3 color : COLOR0;
-};
-
-VSOut main(uint vid : SV_VertexID) {
-    VSOut o;
-    o.pos = float4(positions[vid], 0.0, 1.0);
-    o.color = colors[vid];
-    return o;
+VSOutput main(VSInput input) {
+    VSOutput output;
+    output.position = float4(input.position, 1.0f);
+    output.color = input.color;
+    return output;
 }

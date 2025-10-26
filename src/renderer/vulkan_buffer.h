@@ -23,6 +23,14 @@ public:
         VkMemoryPropertyFlags properties,
         VkSharingMode sharingMode = VK_SHARING_MODE_EXCLUSIVE);
 
+    void CreateAndUpload(
+        VulkanContext* context,
+        VkDeviceSize size,
+        VkBufferUsageFlags usage,
+        VkMemoryPropertyFlags properties,
+        const void* data,
+        VkSharingMode sharingMode = VK_SHARING_MODE_EXCLUSIVE);
+
     void Destroy();
 
     void* Map(VkDeviceSize size = VK_WHOLE_SIZE, VkDeviceSize offset = 0);

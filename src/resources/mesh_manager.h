@@ -1,14 +1,22 @@
 #pragma once
 #include "core/resource_manager.h"
 #include "core/math.h"
+#include "renderer/vertex.h"
+#include "renderer/vulkan_buffer.h"
 #include <vector>
 
 // Simplified mesh data (will expand for GPU upload)
 struct MeshData {
-    std::vector<f32> vertices;   // Position (3) + Normal (3) + TexCoord (2) = 8 floats per vertex
+    std::vector<Vertex> vertices;
     std::vector<u32> indices;
     u32 vertexCount = 0;
     u32 indexCount = 0;
+
+    // GPU resources (populated on-demand by renderer)
+    VulkanBuffer vertexBuffer;
+    VulkanBuffer indexBuffer;
+    VkIndexType indexType = VK_INDEX_TYPE_UINT32;
+    bool gpuUploaded = false;
 
     // Bounding box for culling
     Vec3 boundsMin{0, 0, 0};

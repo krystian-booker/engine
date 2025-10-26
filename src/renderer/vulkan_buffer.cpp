@@ -103,6 +103,25 @@ void VulkanBuffer::Create(
     }
 }
 
+void VulkanBuffer::CreateAndUpload(
+    VulkanContext* context,
+    VkDeviceSize size,
+    VkBufferUsageFlags usage,
+    VkMemoryPropertyFlags properties,
+    const void* data,
+    VkSharingMode sharingMode) {
+
+    if (data == nullptr && size != 0) {
+        throw std::invalid_argument("VulkanBuffer::CreateAndUpload requires non-null data for non-zero size");
+    }
+
+    Create(context, size, usage, properties, sharingMode);
+
+    if (size != 0) {
+        CopyFrom(data, size, 0);
+    }
+}
+
 void VulkanBuffer::Destroy() {
     if (m_Context == nullptr) {
         Reset();

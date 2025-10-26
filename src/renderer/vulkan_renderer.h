@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/types.h"
+#include "core/resource_handle.h"
 #include "renderer/frame_context.h"
 #include "renderer/vulkan_framebuffer.h"
 #include "renderer/vulkan_command_buffer.h"
@@ -40,6 +41,8 @@ private:
     void DestroyFrameContexts();
     void RecreateSwapchain();
     void ResizeImagesInFlight();
+    void InitMeshResources();
+    void DestroyMeshResources();
 
     VulkanContext* m_Context = nullptr;
     Window* m_Window = nullptr;
@@ -57,4 +60,6 @@ private:
     u32 m_CurrentFrame = 0;
     bool m_FramebufferResized = false;
     bool m_Initialized = false;
+
+    MeshHandle m_ActiveMesh = MeshHandle::Invalid;
 };

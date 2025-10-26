@@ -177,6 +177,7 @@ add_executable(test_vulkan
         src/renderer/vulkan_command_buffer.cpp
         src/renderer/vulkan_buffer.cpp
         src/platform/window.cpp
+        src/resources/mesh_manager.cpp
 )
 
 target_include_directories(test_vulkan PRIVATE
@@ -461,6 +462,7 @@ add_test(NAME TimeSystemTests COMMAND test_time)
 add_executable(test_resource_handle
         tests/test_resource_handle.cpp
         src/resources/mesh_manager.cpp
+        src/renderer/vulkan_buffer.cpp
 )
 
 target_include_directories(test_resource_handle PRIVATE
@@ -469,6 +471,7 @@ target_include_directories(test_resource_handle PRIVATE
 
 target_link_libraries(test_resource_handle PRIVATE
         glm::glm
+        Vulkan::Vulkan
 )
 
 # Register resource handle test with CTest
@@ -478,6 +481,7 @@ add_test(NAME ResourceHandleTests COMMAND test_resource_handle)
 add_executable(resource_handle_example
         examples/resource_handle_example.cpp
         src/resources/mesh_manager.cpp
+        src/renderer/vulkan_buffer.cpp
 )
 
 target_include_directories(resource_handle_example PRIVATE
@@ -486,6 +490,7 @@ target_include_directories(resource_handle_example PRIVATE
 
 target_link_libraries(resource_handle_example PRIVATE
         glm::glm
+        Vulkan::Vulkan
 )
 
 # Test executable for file watcher system

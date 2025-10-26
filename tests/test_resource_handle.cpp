@@ -16,8 +16,9 @@ void TestHandleCreation() {
     // Verify we can get the mesh data
     MeshData* cubeData = meshMgr.Get(cube);
     assert(cubeData != nullptr);
-    assert(cubeData->vertexCount == 8);
+    assert(cubeData->vertexCount == 24);
     assert(cubeData->indexCount == 36);
+    assert(!cubeData->gpuUploaded);
     std::cout << "  ✓ Cube mesh data: " << cubeData->vertexCount << " vertices, " << cubeData->indexCount << " indices" << std::endl;
 
     std::cout << std::endl;

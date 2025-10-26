@@ -20,20 +20,43 @@ std::unique_ptr<MeshData> MeshManager::LoadResource(const std::string& filepath)
 MeshHandle MeshManager::CreateCube() {
     auto mesh = std::make_unique<MeshData>();
 
-    // Cube vertices (position only for simplicity)
-    // 8 vertices, 36 indices (12 triangles, 2 per face)
+    // Cube with per-face normals and colors for visibility
     mesh->vertices = {
-        // Positions (x, y, z)
-        // Front face
-        -0.5f, -0.5f,  0.5f,
-         0.5f, -0.5f,  0.5f,
-         0.5f,  0.5f,  0.5f,
-        -0.5f,  0.5f,  0.5f,
-        // Back face
-        -0.5f, -0.5f, -0.5f,
-         0.5f, -0.5f, -0.5f,
-         0.5f,  0.5f, -0.5f,
-        -0.5f,  0.5f, -0.5f,
+        // Front face (red)
+        {{-0.5f, -0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{ 0.5f, -0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+        {{ 0.5f,  0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f}},
+        {{-0.5f,  0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f}},
+
+        // Back face (green)
+        {{ 0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+        {{-0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+        {{-0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f}},
+        {{ 0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f}},
+
+        // Left face (blue)
+        {{-0.5f, -0.5f, -0.5f}, {-1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
+        {{-0.5f, -0.5f,  0.5f}, {-1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
+        {{-0.5f,  0.5f,  0.5f}, {-1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+        {{-0.5f,  0.5f, -0.5f}, {-1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+
+        // Right face (yellow)
+        {{ 0.5f, -0.5f,  0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+        {{ 0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+        {{ 0.5f,  0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 1.0f}},
+        {{ 0.5f,  0.5f,  0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f}},
+
+        // Top face (cyan)
+        {{-0.5f,  0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f}},
+        {{ 0.5f,  0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 1.0f}, {1.0f, 0.0f}},
+        {{ 0.5f,  0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
+        {{-0.5f,  0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
+
+        // Bottom face (magenta)
+        {{-0.5f, -0.5f, -0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
+        {{ 0.5f, -0.5f, -0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
+        {{ 0.5f, -0.5f,  0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+        {{-0.5f, -0.5f,  0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
     };
 
     mesh->indices = {
@@ -51,7 +74,7 @@ MeshHandle MeshManager::CreateCube() {
         4, 5, 1,  1, 0, 4,
     };
 
-    mesh->vertexCount = 8;
+    mesh->vertexCount = static_cast<u32>(mesh->vertices.size());
     mesh->indexCount = 36;
     mesh->boundsMin = Vec3(-0.5f, -0.5f, -0.5f);
     mesh->boundsMax = Vec3(0.5f, 0.5f, 0.5f);
@@ -78,9 +101,12 @@ MeshHandle MeshManager::CreateSphere(u32 segments) {
             f32 x = std::cos(2 * pi * s * S) * std::sin(pi * r * R);
             f32 z = std::sin(2 * pi * s * S) * std::sin(pi * r * R);
 
-            mesh->vertices.push_back(x);
-            mesh->vertices.push_back(y);
-            mesh->vertices.push_back(z);
+            Vertex vertex{};
+            vertex.position = Vec3(x, y, z);
+            vertex.normal = Normalize(Vec3(x, y, z));
+            vertex.color = Vec3(1.0f, 1.0f, 1.0f);
+            vertex.texCoord = Vec2(s * S, r * R);
+            mesh->vertices.push_back(vertex);
         }
     }
 
@@ -100,7 +126,7 @@ MeshHandle MeshManager::CreateSphere(u32 segments) {
         }
     }
 
-    mesh->vertexCount = rings * sectors;
+    mesh->vertexCount = static_cast<u32>(mesh->vertices.size());
     mesh->indexCount = static_cast<u32>(mesh->indices.size());
     mesh->boundsMin = Vec3(-1, -1, -1);
     mesh->boundsMax = Vec3(1, 1, 1);
@@ -113,15 +139,15 @@ MeshHandle MeshManager::CreatePlane() {
 
     // Plane on XZ plane (Y = 0)
     mesh->vertices = {
-        -1.0f, 0.0f, -1.0f,
-         1.0f, 0.0f, -1.0f,
-         1.0f, 0.0f,  1.0f,
-        -1.0f, 0.0f,  1.0f,
+        {{-1.0f, 0.0f, -1.0f}, {0.0f, 1.0f, 0.0f}, {0.6f, 0.6f, 0.6f}, {0.0f, 0.0f}},
+        {{ 1.0f, 0.0f, -1.0f}, {0.0f, 1.0f, 0.0f}, {0.6f, 0.6f, 0.6f}, {1.0f, 0.0f}},
+        {{ 1.0f, 0.0f,  1.0f}, {0.0f, 1.0f, 0.0f}, {0.6f, 0.6f, 0.6f}, {1.0f, 1.0f}},
+        {{-1.0f, 0.0f,  1.0f}, {0.0f, 1.0f, 0.0f}, {0.6f, 0.6f, 0.6f}, {0.0f, 1.0f}},
     };
 
     mesh->indices = {0, 1, 2,  2, 3, 0};
 
-    mesh->vertexCount = 4;
+    mesh->vertexCount = static_cast<u32>(mesh->vertices.size());
     mesh->indexCount = 6;
     mesh->boundsMin = Vec3(-1, 0, -1);
     mesh->boundsMax = Vec3(1, 0, 1);
@@ -134,15 +160,15 @@ MeshHandle MeshManager::CreateQuad() {
 
     // Quad on XY plane (Z = 0), for UI/sprites
     mesh->vertices = {
-        -0.5f, -0.5f, 0.0f,
-         0.5f, -0.5f, 0.0f,
-         0.5f,  0.5f, 0.0f,
-        -0.5f,  0.5f, 0.0f,
+        {{-0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, -1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f}},
+        {{ 0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, -1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 0.0f}},
+        {{ 0.5f,  0.5f, 0.0f}, {0.0f, 0.0f, -1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
+        {{-0.5f,  0.5f, 0.0f}, {0.0f, 0.0f, -1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
     };
 
     mesh->indices = {0, 1, 2,  2, 3, 0};
 
-    mesh->vertexCount = 4;
+    mesh->vertexCount = static_cast<u32>(mesh->vertices.size());
     mesh->indexCount = 6;
     mesh->boundsMin = Vec3(-0.5f, -0.5f, 0);
     mesh->boundsMax = Vec3(0.5f, 0.5f, 0);

@@ -32,6 +32,13 @@ int main() {
                   << cubeData->boundsMin.y << ", " << cubeData->boundsMin.z << "), "
                   << "max(" << cubeData->boundsMax.x << ", "
                   << cubeData->boundsMax.y << ", " << cubeData->boundsMax.z << ")" << std::endl;
+        if (!cubeData->vertices.empty()) {
+            const Vertex& v = cubeData->vertices.front();
+            std::cout << "    First vertex position: (" << v.position.x << ", " << v.position.y << ", " << v.position.z << ")" << std::endl;
+            std::cout << "    First vertex color:    (" << v.color.r << ", " << v.color.g << ", " << v.color.b << ")" << std::endl;
+            std::cout << "    First vertex texcoord: (" << v.texCoord.x << ", " << v.texCoord.y << ")" << std::endl;
+        }
+        std::cout << "    GPU uploaded: " << std::boolalpha << cubeData->gpuUploaded << std::noboolalpha << std::endl;
     }
     std::cout << std::endl;
 

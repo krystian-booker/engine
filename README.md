@@ -34,4 +34,14 @@ After building, launch `build/bin/engine.exe` (or `build/bin/Debug/engine.exe` d
 
 ## Vulkan Renderer
 
-The default runtime now initializes a Vulkan context, swapchain, and a minimal render loop that clears the window each frame. Resize or minimize the window to exercise swapchain recreation; the renderer blocks until valid dimensions are available and resumes presenting without restarting the application.
+The default runtime now initializes a Vulkan context, swapchain, and a render loop that uploads a cube mesh into device-local vertex/index buffers. The graphics pipeline consumes the `Vertex` layout (position/normal/color/UV) and renders the indexed cube with face-dependent colors. Resize or minimize the window to exercise swapchain recreation; the renderer blocks until valid dimensions are available and resumes presenting without restarting the application.
+
+## Shaders
+
+Shader sources live in `assets/shaders`. After editing `triangle.vert` or `triangle.frag`, rebuild the SPIR-V binaries using:
+
+```powershell
+.\compile_shaders.bat
+```
+
+The script expects the Microsoft DXC compiler (`dxc.exe`) from the Vulkan SDK to be available on `PATH`.

@@ -2,6 +2,8 @@
 
 #include "platform/window.h"
 #include "renderer/vulkan_context.h"
+#include "renderer/vertex.h"
+#include "resources/mesh_manager.h"
 
 #include <stdexcept>
 
@@ -41,6 +43,7 @@ void VulkanRenderer::Init(VulkanContext* context, Window* window) {
     m_Swapchain.Init(m_Context, m_Window);
     InitSwapchainResources();
     CreateFrameContexts();
+    InitMeshResources();
 
     m_Initialized = true;
 }
@@ -53,6 +56,7 @@ void VulkanRenderer::Shutdown() {
     VkDevice device = m_Context->GetDevice();
     vkDeviceWaitIdle(device);
 
+    DestroyMeshResources();
     DestroyFrameContexts();
     DestroySwapchainResources();
     m_Swapchain.Shutdown();
@@ -79,7 +83,18 @@ void VulkanRenderer::DrawFrame() {
     BeginDefaultRenderPass(*frame, imageIndex, clearColor);
 
     vkCmdBindPipeline(frame->commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_Pipeline.GetPipeline());
-    vkCmdDraw(frame->commandBuffer, 3, 1, 0, 0);
+
+    MeshManager& meshManager = MeshManager::Instance();
+    MeshData* meshData = meshManager.Get(m_ActiveMesh);
+    if (meshData == nullptr || !meshData->gpuUploaded) {
+        throw std::runtime_error("VulkanRenderer::DrawFrame missing uploaded mesh data");
+    }
+
+    VkBuffer vertexBuffers[] = { meshData->vertexBuffer.GetBuffer() };
+    VkDeviceSize offsets[] = { 0 };
+    vkCmdBindVertexBuffers(frame->commandBuffer, 0, ARRAY_COUNT(vertexBuffers), vertexBuffers, offsets);
+    vkCmdBindIndexBuffer(frame->commandBuffer, meshData->indexBuffer.GetBuffer(), 0, meshData->indexType);
+    vkCmdDrawIndexed(frame->commandBuffer, meshData->indexCount, 1, 0, 0, 0);
 
     EndDefaultRenderPass(*frame);
     EndFrame(*frame, imageIndex);
@@ -306,4 +321,70 @@ void VulkanRenderer::RecreateSwapchain() {
 
 void VulkanRenderer::ResizeImagesInFlight() {
     m_ImagesInFlight.assign(m_Swapchain.GetImageCount(), VK_NULL_HANDLE);
+}
+
+void VulkanRenderer::InitMeshResources() {
+    MeshManager& meshManager = MeshManager::Instance();
+
+    if (m_ActiveMesh.IsValid()) {
+        DestroyMeshResources();
+    }
+
+    m_ActiveMesh = meshManager.CreateCube();
+    MeshData* meshData = meshManager.Get(m_ActiveMesh);
+
+    if (meshData == nullptr) {
+        throw std::runtime_error("VulkanRenderer::InitMeshResources failed to create cube mesh");
+    }
+
+    if (!m_Context) {
+        throw std::runtime_error("VulkanRenderer::InitMeshResources requires valid Vulkan context");
+    }
+
+    if (!meshData->gpuUploaded) {
+        const VkDeviceSize vertexBufferSize = static_cast<VkDeviceSize>(meshData->vertices.size() * sizeof(Vertex));
+        if (vertexBufferSize == 0) {
+            throw std::runtime_error("Cube mesh has no vertex data");
+        }
+
+        meshData->vertexBuffer.CreateAndUpload(
+            m_Context,
+            vertexBufferSize,
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            meshData->vertices.data());
+
+        const VkDeviceSize indexBufferSize = static_cast<VkDeviceSize>(meshData->indices.size() * sizeof(u32));
+        if (indexBufferSize == 0) {
+            throw std::runtime_error("Cube mesh has no index data");
+        }
+
+        meshData->indexBuffer.CreateAndUpload(
+            m_Context,
+            indexBufferSize,
+            VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            meshData->indices.data());
+
+        meshData->indexType = VK_INDEX_TYPE_UINT32;
+        meshData->gpuUploaded = true;
+    }
+}
+
+void VulkanRenderer::DestroyMeshResources() {
+    MeshManager& meshManager = MeshManager::Instance();
+
+    if (!m_ActiveMesh.IsValid()) {
+        return;
+    }
+
+    MeshData* meshData = meshManager.Get(m_ActiveMesh);
+    if (meshData != nullptr && meshData->gpuUploaded) {
+        meshData->vertexBuffer.Destroy();
+        meshData->indexBuffer.Destroy();
+        meshData->gpuUploaded = false;
+    }
+
+    meshManager.Destroy(m_ActiveMesh);
+    m_ActiveMesh = MeshHandle::Invalid;
 }
