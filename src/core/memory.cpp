@@ -40,10 +40,9 @@ void* LinearAllocator::Alloc(size_t size, size_t align) {
     // Calculate aligned offset
     size_t alignedOffset = ALIGN_UP(offset, align);
 
-    // Check for overflow
+    // Check for overflow: return nullptr instead of asserting
     size_t newOffset = alignedOffset + size;
     if (newOffset > capacity) {
-        ENGINE_ASSERT(false && "LinearAllocator overflow");
         return nullptr;
     }
 

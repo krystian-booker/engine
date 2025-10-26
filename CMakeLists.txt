@@ -89,6 +89,9 @@ set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(GLFW_LIBRARY_TYPE "STATIC" CACHE STRING "" FORCE)
 FetchContent_MakeAvailable(glfw)
 
+# Vulkan
+find_package(Vulkan REQUIRED)
+
 # GLFW is external code - disable warnings-as-errors for it
 if(TARGET glfw)
     # Remove -Werror/-WX from GLFW target
@@ -119,6 +122,7 @@ set(ENGINE_SOURCES
         src/platform/window.cpp
         src/platform/input.cpp
         src/resources/mesh_manager.cpp
+        src/renderer/vulkan_context.cpp
 )
 
 # Platform-specific source files
@@ -139,7 +143,10 @@ target_link_libraries(engine PRIVATE
         glm::glm
         nlohmann_json::nlohmann_json
         glfw
+        Vulkan::Vulkan
 )
+
+target_compile_features(engine PRIVATE cxx_std_20)
 
 # Platform-specific linking
 if(WIN32)
@@ -149,6 +156,28 @@ endif()
 
 # Enable testing
 enable_testing()
+
+add_executable(test_vulkan
+        tests/test_vulkan.cpp
+        src/renderer/vulkan_context.cpp
+        src/platform/window.cpp
+)
+
+target_include_directories(test_vulkan PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_vulkan PRIVATE
+        glfw
+        Vulkan::Vulkan
+)
+
+if(WIN32)
+    target_sources(test_vulkan PRIVATE src/platform/win32_platform.cpp)
+    target_link_libraries(test_vulkan PRIVATE User32 Gdi32)
+endif()
+
+add_test(NAME VulkanTests COMMAND test_vulkan)
 
 # Test executable for memory allocators
 add_executable(test_memory

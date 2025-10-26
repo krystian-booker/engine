@@ -1,0 +1,69 @@
+#pragma once
+
+#include "core/types.h"
+
+#include <vulkan/vulkan.h>
+
+#include <string>
+#include <vector>
+
+class Window;
+
+class VulkanContext {
+public:
+    VulkanContext() = default;
+    ~VulkanContext();
+
+    void Init(Window* window);
+    void Shutdown();
+
+    VkInstance GetInstance() const { return m_Instance; }
+    VkPhysicalDevice GetPhysicalDevice() const { return m_PhysicalDevice; }
+    VkDevice GetDevice() const { return m_Device; }
+    VkQueue GetGraphicsQueue() const { return m_GraphicsQueue; }
+    VkQueue GetPresentQueue() const { return m_PresentQueue; }
+    VkSurfaceKHR GetSurface() const { return m_Surface; }
+
+    u32 GetGraphicsQueueFamily() const { return m_GraphicsQueueFamily; }
+    u32 GetPresentQueueFamily() const { return m_PresentQueueFamily; }
+
+private:
+    VkInstance m_Instance = VK_NULL_HANDLE;
+    VkDebugUtilsMessengerEXT m_DebugMessenger = VK_NULL_HANDLE;
+
+    VkPhysicalDevice m_PhysicalDevice = VK_NULL_HANDLE;
+
+    VkDevice m_Device = VK_NULL_HANDLE;
+
+    VkQueue m_GraphicsQueue = VK_NULL_HANDLE;
+    VkQueue m_PresentQueue = VK_NULL_HANDLE;
+    u32 m_GraphicsQueueFamily = 0;
+    u32 m_PresentQueueFamily = 0;
+
+    VkSurfaceKHR m_Surface = VK_NULL_HANDLE;
+
+    const std::vector<const char*> m_ValidationLayers = {
+        "VK_LAYER_KHRONOS_validation"
+    };
+
+#ifdef _DEBUG
+    const bool m_EnableValidationLayers = true;
+#else
+    const bool m_EnableValidationLayers = false;
+#endif
+
+    void CreateInstance();
+    void SetupDebugMessenger();
+    void CreateSurface(Window* window);
+    void PickPhysicalDevice();
+    void CreateLogicalDevice();
+
+    bool CheckValidationLayerSupport();
+    std::vector<const char*> GetRequiredExtensions();
+
+    static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
+        VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+        VkDebugUtilsMessageTypeFlagsEXT messageType,
+        const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+        void* pUserData);
+};

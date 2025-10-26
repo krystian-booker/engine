@@ -175,3 +175,4 @@ CMakeUserPresets.json
 CLAUDE.md
 .claude/settings.local.json
 build/
+AGENTS.md
