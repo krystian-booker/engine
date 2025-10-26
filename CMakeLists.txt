@@ -111,6 +111,7 @@ set(ENGINE_SOURCES
         src/core/memory.cpp
         src/core/job_system.cpp
         src/core/time.cpp
+        src/core/file_watcher.cpp
         src/ecs/entity_manager.cpp
         src/ecs/hierarchy_manager.cpp
         src/ecs/scene_serializer.cpp
@@ -396,3 +397,48 @@ target_include_directories(resource_handle_example PRIVATE
 target_link_libraries(resource_handle_example PRIVATE
         glm::glm
 )
+
+# Test executable for file watcher system
+add_executable(test_file_watcher
+        tests/test_file_watcher.cpp
+        src/core/file_watcher.cpp
+)
+
+target_include_directories(test_file_watcher PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_file_watcher PRIVATE
+        glm::glm
+)
+
+# Register file watcher test with CTest
+add_test(NAME FileWatcherTests COMMAND test_file_watcher)
+
+# Example executable for file watcher system
+add_executable(file_watcher_example
+        examples/file_watcher_example.cpp
+        src/core/file_watcher.cpp
+        src/core/time.cpp
+        src/platform/window.cpp
+        src/platform/input.cpp
+)
+
+# Platform-specific source files for file watcher example
+if(WIN32)
+    target_sources(file_watcher_example PRIVATE src/platform/win32_platform.cpp)
+endif()
+
+target_include_directories(file_watcher_example PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(file_watcher_example PRIVATE
+        glm::glm
+        glfw
+)
+
+# Platform-specific linking for file watcher example
+if(WIN32)
+    target_link_libraries(file_watcher_example PRIVATE User32 Gdi32)
+endif()
