@@ -76,6 +76,35 @@ FetchContent_Declare(
 set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(json)
 
+# Fetch GLFW
+FetchContent_Declare(
+        glfw
+        GIT_REPOSITORY https://github.com/glfw/glfw.git
+        GIT_TAG        3.4
+        GIT_SHALLOW    TRUE
+)
+set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(GLFW_LIBRARY_TYPE "STATIC" CACHE STRING "" FORCE)
+FetchContent_MakeAvailable(glfw)
+
+# GLFW is external code - disable warnings-as-errors for it
+if(TARGET glfw)
+    # Remove -Werror/-WX from GLFW target
+    get_target_property(GLFW_COMPILE_OPTIONS glfw COMPILE_OPTIONS)
+    if(GLFW_COMPILE_OPTIONS)
+        list(REMOVE_ITEM GLFW_COMPILE_OPTIONS "-Werror" "/WX")
+        set_target_properties(glfw PROPERTIES COMPILE_OPTIONS "${GLFW_COMPILE_OPTIONS}")
+    endif()
+    # Also suppress warnings entirely for GLFW
+    if(MSVC)
+        target_compile_options(glfw PRIVATE /W0)
+    else()
+        target_compile_options(glfw PRIVATE -w)
+    endif()
+endif()
+
 # Source files - we'll add these as we create them
 set(ENGINE_SOURCES
         src/main.cpp
@@ -85,6 +114,7 @@ set(ENGINE_SOURCES
         src/ecs/hierarchy_manager.cpp
         src/ecs/scene_serializer.cpp
         src/ecs/systems/transform_system.cpp
+        src/platform/window.cpp
 )
 
 # Platform-specific source files
@@ -100,10 +130,11 @@ target_include_directories(engine PRIVATE
         ${CMAKE_SOURCE_DIR}/src
 )
 
-# Link GLM and JSON
+# Link GLM, JSON, and GLFW
 target_link_libraries(engine PRIVATE
         glm::glm
         nlohmann_json::nlohmann_json
+        glfw
 )
 
 # Platform-specific linking

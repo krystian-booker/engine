@@ -1,10 +1,11 @@
 #include <iostream>
 #include "platform/platform.h"
+#include "platform/window.h"
 #include "core/memory.h"
 #include "core/math.h"
 
 int main(int, char**) {
-    std::cout << "=== Game Engine - Day 3: Memory Allocators ===" << std::endl;
+    std::cout << "=== Game Engine ===" << std::endl;
     std::cout << std::endl;
 
     // Memory Allocator Demonstration
@@ -158,17 +159,43 @@ int main(int, char**) {
     }
     std::cout << std::endl;
 
-    // Test 5: Window Creation and Event Loop
-    std::cout << "[TEST 5] Window Creation:" << std::endl;
+    // Test 5: GLFW Window Creation and Event Loop
+    std::cout << "[TEST 5] GLFW Window Creation:" << std::endl;
 
-    Platform::WindowHandle* window = Platform::CreateWindow("Game Engine - Platform Test", 800, 600);
+    WindowProperties props;
+    props.title = "Game Engine - GLFW Window Test";
+    props.width = 1280;
+    props.height = 720;
+    props.vsync = true;
+    props.resizable = true;
+    props.fullscreen = false;
 
-    if (!window) {
-        std::cout << "  ERROR: Failed to create window" << std::endl;
-        return 1;
-    }
+    Window window(props);
 
-    std::cout << "  Window created successfully (800x600)" << std::endl;
+    std::cout << "  Window created successfully (" << window.GetWidth() << "x" << window.GetHeight() << ")" << std::endl;
+    std::cout << "  Aspect ratio: " << window.GetAspectRatio() << std::endl;
+
+    // Set event callback
+    window.SetEventCallback([](WindowEvent event, u32 w, u32 h) {
+        switch (event) {
+            case WindowEvent::Resize:
+                std::cout << "  [EVENT] Window resized to: " << w << "x" << h << std::endl;
+                break;
+            case WindowEvent::Focus:
+                std::cout << "  [EVENT] Window gained focus" << std::endl;
+                break;
+            case WindowEvent::LostFocus:
+                std::cout << "  [EVENT] Window lost focus" << std::endl;
+                break;
+            case WindowEvent::Close:
+                std::cout << "  [EVENT] Window close requested" << std::endl;
+                break;
+            default:
+                break;
+        }
+    });
+
+    std::cout << "  Event callbacks registered" << std::endl;
     std::cout << "  Entering event loop (close window to exit)..." << std::endl;
     std::cout << std::endl;
 
@@ -176,7 +203,8 @@ int main(int, char**) {
     u64 frameCount = 0;
     u64 lastCounter = Platform::GetPerformanceCounter();
 
-    while (Platform::PollEvents(window)) {
+    while (!window.ShouldClose()) {
+        window.PollEvents();
         frameCount++;
 
         // Print stats every second
@@ -186,6 +214,8 @@ int main(int, char**) {
 
         if (elapsedSeconds >= 1.0) {
             std::cout << "  FPS: " << frameCount << " | Frames: " << frameCount << std::endl;
+            // Update window title with FPS
+            window.SetTitle("Game Engine - GLFW Window Test | FPS: " + std::to_string(frameCount));
             frameCount = 0;
             lastCounter = currentCounter;
         }
@@ -196,9 +226,7 @@ int main(int, char**) {
 
     std::cout << std::endl;
     std::cout << "[TEST 6] Cleanup:" << std::endl;
-
-    Platform::DestroyWindow(window);
-    std::cout << "  Window destroyed" << std::endl;
+    std::cout << "  Window will be destroyed automatically by RAII" << std::endl;
 
     u64 endCounter = Platform::GetPerformanceCounter();
     u64 totalElapsed = endCounter - startCounter;
@@ -208,8 +236,8 @@ int main(int, char**) {
     std::cout << std::endl;
 
     std::cout << "===============================================" << std::endl;
-    std::cout << "All platform tests completed successfully!" << std::endl;
-    std::cout << "Window system, timing, memory, file I/O, and threading primitives working." << std::endl;
+    std::cout << "All tests completed successfully!" << std::endl;
+    std::cout << "GLFW window system, timing, memory, file I/O, and threading primitives working." << std::endl;
     std::cout << "===============================================" << std::endl;
 
     return 0;
