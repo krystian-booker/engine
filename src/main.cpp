@@ -1,6 +1,8 @@
 #include <iostream>
+#include <cmath>
 #include "platform/platform.h"
 #include "platform/window.h"
+#include "platform/input.h"
 #include "core/memory.h"
 #include "core/math.h"
 
@@ -196,6 +198,19 @@ int main(int, char**) {
     });
 
     std::cout << "  Event callbacks registered" << std::endl;
+    std::cout << std::endl;
+
+    // Initialize input system
+    std::cout << "[TEST 6] Input System:" << std::endl;
+    Input::Init(&window);
+    std::cout << "  Input system ready" << std::endl;
+    std::cout << "  Controls:" << std::endl;
+    std::cout << "    - Press SPACE to test key pressed" << std::endl;
+    std::cout << "    - Hold W to test key down" << std::endl;
+    std::cout << "    - Press ESC to test key released" << std::endl;
+    std::cout << "    - Move mouse to test mouse delta" << std::endl;
+    std::cout << "    - Click mouse buttons to test mouse input" << std::endl;
+    std::cout << "    - Scroll to test scroll wheel" << std::endl;
     std::cout << "  Entering event loop (close window to exit)..." << std::endl;
     std::cout << std::endl;
 
@@ -204,8 +219,47 @@ int main(int, char**) {
     u64 lastCounter = Platform::GetPerformanceCounter();
 
     while (!window.ShouldClose()) {
+        Input::Update();  // Must be called before polling events
         window.PollEvents();
         frameCount++;
+
+        // Test keyboard input
+        if (Input::IsKeyPressed(KeyCode::Space)) {
+            std::cout << "  [INPUT] Space key pressed!" << std::endl;
+        }
+
+        if (Input::IsKeyDown(KeyCode::W)) {
+            std::cout << "  [INPUT] W key held down" << std::endl;
+        }
+
+        if (Input::IsKeyReleased(KeyCode::Escape)) {
+            std::cout << "  [INPUT] Escape key released!" << std::endl;
+        }
+
+        // Test mouse buttons
+        if (Input::IsMouseButtonPressed(MouseButton::Left)) {
+            Vec2 pos = Input::GetMousePosition();
+            std::cout << "  [INPUT] Left mouse button pressed at (" << pos.x << ", " << pos.y << ")" << std::endl;
+        }
+
+        if (Input::IsMouseButtonPressed(MouseButton::Right)) {
+            std::cout << "  [INPUT] Right mouse button pressed!" << std::endl;
+        }
+
+        // Test mouse movement
+        Vec2 mouseDelta = Input::GetMouseDelta();
+        if (mouseDelta.x != 0.0f || mouseDelta.y != 0.0f) {
+            // Only print significant movement to avoid spam
+            if (std::abs(mouseDelta.x) > 5.0f || std::abs(mouseDelta.y) > 5.0f) {
+                std::cout << "  [INPUT] Mouse moved: delta(" << mouseDelta.x << ", " << mouseDelta.y << ")" << std::endl;
+            }
+        }
+
+        // Test scroll wheel
+        Vec2 scroll = Input::GetMouseScroll();
+        if (scroll.x != 0.0f || scroll.y != 0.0f) {
+            std::cout << "  [INPUT] Mouse scroll: (" << scroll.x << ", " << scroll.y << ")" << std::endl;
+        }
 
         // Print stats every second
         u64 currentCounter = Platform::GetPerformanceCounter();
@@ -225,7 +279,7 @@ int main(int, char**) {
     }
 
     std::cout << std::endl;
-    std::cout << "[TEST 6] Cleanup:" << std::endl;
+    std::cout << "[TEST 7] Cleanup:" << std::endl;
     std::cout << "  Window will be destroyed automatically by RAII" << std::endl;
 
     u64 endCounter = Platform::GetPerformanceCounter();

@@ -115,6 +115,7 @@ set(ENGINE_SOURCES
         src/ecs/scene_serializer.cpp
         src/ecs/systems/transform_system.cpp
         src/platform/window.cpp
+        src/platform/input.cpp
 )
 
 # Platform-specific source files
