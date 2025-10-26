@@ -540,6 +540,287 @@ TEST(ECSCoordinator_TransformSystem_DirtyFlagUpdate) {
 }
 
 // ============================================================================
+// Query API Tests
+// ============================================================================
+
+TEST(ECSCoordinator_QueryEntities_SingleComponent) {
+    ECSCoordinator coordinator;
+    coordinator.Init();
+    coordinator.RegisterComponent<TestComponent>();
+
+    // Create entities, some with TestComponent
+    Entity e1 = coordinator.CreateEntity();
+    coordinator.CreateEntity(); // e2 - has no TestComponent
+    Entity e3 = coordinator.CreateEntity();
+
+    TestComponent comp;
+    comp.value = Vec3(1.0f, 2.0f, 3.0f);
+
+    coordinator.AddComponent(e1, comp);
+    coordinator.AddComponent(e3, comp);
+    // e2 has no TestComponent
+
+    // Query for entities with TestComponent
+    auto entities = coordinator.QueryEntities<TestComponent>();
+
+    ASSERT(entities.size() == 2);
+    ASSERT((entities[0] == e1 || entities[0] == e3));
+    ASSERT((entities[1] == e1 || entities[1] == e3));
+    ASSERT(entities[0] != entities[1]);
+
+    coordinator.Shutdown();
+}
+
+TEST(ECSCoordinator_QueryEntities_MultipleComponents) {
+    ECSCoordinator coordinator;
+    coordinator.Init();
+    coordinator.RegisterComponent<TestComponent>();
+    coordinator.RegisterComponent<AnotherComponent>();
+
+    // Create entities with different component combinations
+    Entity e1 = coordinator.CreateEntity();
+    Entity e2 = coordinator.CreateEntity();
+    Entity e3 = coordinator.CreateEntity();
+    coordinator.CreateEntity(); // e4 - no components
+
+    TestComponent comp1;
+    comp1.value = Vec3(1.0f, 2.0f, 3.0f);
+
+    AnotherComponent comp2;
+    comp2.health = 100.0f;
+    comp2.maxHealth = 100.0f;
+
+    // e1: both components
+    coordinator.AddComponent(e1, comp1);
+    coordinator.AddComponent(e1, comp2);
+
+    // e2: only TestComponent
+    coordinator.AddComponent(e2, comp1);
+
+    // e3: only AnotherComponent
+    coordinator.AddComponent(e3, comp2);
+
+    // e4: no components
+
+    // Query for entities with both components
+    auto entities = coordinator.QueryEntities<TestComponent, AnotherComponent>();
+
+    ASSERT(entities.size() == 1);
+    ASSERT(entities[0] == e1);
+
+    coordinator.Shutdown();
+}
+
+TEST(ECSCoordinator_QueryEntities_NoMatches) {
+    ECSCoordinator coordinator;
+    coordinator.Init();
+    coordinator.RegisterComponent<TestComponent>();
+
+    // Create entities without TestComponent
+    coordinator.CreateEntity();
+    coordinator.CreateEntity();
+
+    // Query for entities with TestComponent
+    auto entities = coordinator.QueryEntities<TestComponent>();
+
+    ASSERT(entities.size() == 0);
+
+    coordinator.Shutdown();
+}
+
+TEST(ECSCoordinator_QueryEntities_WithTransform) {
+    ECSCoordinator coordinator;
+    coordinator.Init();
+    coordinator.RegisterComponent<TestComponent>();
+
+    Entity e1 = coordinator.CreateEntity();
+    Entity e2 = coordinator.CreateEntity();
+    Entity e3 = coordinator.CreateEntity();
+
+    Transform t;
+    t.localPosition = Vec3(1.0f, 2.0f, 3.0f);
+
+    TestComponent comp;
+    comp.value = Vec3(5.0f, 6.0f, 7.0f);
+
+    // e1 and e2: both Transform and TestComponent
+    coordinator.AddComponent(e1, t);
+    coordinator.AddComponent(e1, comp);
+    coordinator.AddComponent(e2, t);
+    coordinator.AddComponent(e2, comp);
+
+    // e3: only Transform
+    coordinator.AddComponent(e3, t);
+
+    // Query for entities with both
+    auto entities = coordinator.QueryEntities<Transform, TestComponent>();
+
+    ASSERT(entities.size() == 2);
+
+    coordinator.Shutdown();
+}
+
+TEST(ECSCoordinator_ForEach_SingleComponent) {
+    ECSCoordinator coordinator;
+    coordinator.Init();
+    coordinator.RegisterComponent<TestComponent>();
+
+    Entity e1 = coordinator.CreateEntity();
+    Entity e2 = coordinator.CreateEntity();
+
+    TestComponent comp1;
+    comp1.value = Vec3(1.0f, 2.0f, 3.0f);
+
+    TestComponent comp2;
+    comp2.value = Vec3(4.0f, 5.0f, 6.0f);
+
+    coordinator.AddComponent(e1, comp1);
+    coordinator.AddComponent(e2, comp2);
+
+    // Use ForEach to modify all components
+    int count = 0;
+    coordinator.ForEach<TestComponent>([&count]([[maybe_unused]] Entity e, TestComponent& comp) {
+        comp.value.x += 10.0f;
+        count++;
+    });
+
+    ASSERT(count == 2);
+    ASSERT(FloatEqual(coordinator.GetComponent<TestComponent>(e1).value.x, 11.0f));
+    ASSERT(FloatEqual(coordinator.GetComponent<TestComponent>(e2).value.x, 14.0f));
+
+    coordinator.Shutdown();
+}
+
+TEST(ECSCoordinator_ForEach_MultipleComponents) {
+    ECSCoordinator coordinator;
+    coordinator.Init();
+    coordinator.RegisterComponent<TestComponent>();
+    coordinator.RegisterComponent<AnotherComponent>();
+
+    Entity e1 = coordinator.CreateEntity();
+    Entity e2 = coordinator.CreateEntity();
+
+    TestComponent comp1;
+    comp1.value = Vec3(1.0f, 2.0f, 3.0f);
+
+    AnotherComponent comp2;
+    comp2.health = 50.0f;
+    comp2.maxHealth = 100.0f;
+
+    coordinator.AddComponent(e1, comp1);
+    coordinator.AddComponent(e1, comp2);
+
+    // e2 only has TestComponent
+    coordinator.AddComponent(e2, comp1);
+
+    // ForEach with both components should only iterate e1
+    int count = 0;
+    coordinator.ForEach<TestComponent, AnotherComponent>(
+        [&count]([[maybe_unused]] Entity e, TestComponent& tc, AnotherComponent& ac) {
+            tc.value.x = 999.0f;
+            ac.health = 25.0f;
+            count++;
+        });
+
+    ASSERT(count == 1);
+    ASSERT(FloatEqual(coordinator.GetComponent<TestComponent>(e1).value.x, 999.0f));
+    ASSERT(FloatEqual(coordinator.GetComponent<AnotherComponent>(e1).health, 25.0f));
+
+    // e2 should be unchanged
+    ASSERT(FloatEqual(coordinator.GetComponent<TestComponent>(e2).value.x, 1.0f));
+
+    coordinator.Shutdown();
+}
+
+TEST(ECSCoordinator_ForEach_WithTransform) {
+    ECSCoordinator coordinator;
+    coordinator.Init();
+
+    Entity e1 = coordinator.CreateEntity();
+    Entity e2 = coordinator.CreateEntity();
+    Entity e3 = coordinator.CreateEntity();
+
+    Transform t1;
+    t1.localPosition = Vec3(0.0f, 0.0f, 0.0f);
+    t1.isDirty = true;
+
+    Transform t2;
+    t2.localPosition = Vec3(5.0f, 5.0f, 5.0f);
+    t2.isDirty = true;
+
+    Transform t3;
+    t3.localPosition = Vec3(10.0f, 10.0f, 10.0f);
+    t3.isDirty = true;
+
+    coordinator.AddComponent(e1, t1);
+    coordinator.AddComponent(e2, t2);
+    coordinator.AddComponent(e3, t3);
+
+    // Move all entities up by 1.0 unit
+    coordinator.ForEach<Transform>([]([[maybe_unused]] Entity e, Transform& t) {
+        t.localPosition.y += 1.0f;
+        t.MarkDirty();
+    });
+
+    ASSERT(FloatEqual(coordinator.GetComponent<Transform>(e1).localPosition.y, 1.0f));
+    ASSERT(FloatEqual(coordinator.GetComponent<Transform>(e2).localPosition.y, 6.0f));
+    ASSERT(FloatEqual(coordinator.GetComponent<Transform>(e3).localPosition.y, 11.0f));
+
+    coordinator.Shutdown();
+}
+
+TEST(ECSCoordinator_Query_Performance) {
+    ECSCoordinator coordinator;
+    coordinator.Init();
+    coordinator.RegisterComponent<TestComponent>();
+    coordinator.RegisterComponent<AnotherComponent>();
+
+    const int numEntities = 1000;
+
+    // Create many entities with different component combinations
+    for (int i = 0; i < numEntities; i++) {
+        Entity e = coordinator.CreateEntity();
+
+        Transform t;
+        t.localPosition = Vec3(static_cast<f32>(i), 0.0f, 0.0f);
+        coordinator.AddComponent(e, t);
+
+        // Every 2nd entity gets TestComponent
+        if (i % 2 == 0) {
+            TestComponent comp;
+            comp.value = Vec3(static_cast<f32>(i), static_cast<f32>(i), static_cast<f32>(i));
+            coordinator.AddComponent(e, comp);
+        }
+
+        // Every 3rd entity gets AnotherComponent
+        if (i % 3 == 0) {
+            AnotherComponent comp;
+            comp.health = static_cast<f32>(i);
+            comp.maxHealth = 100.0f;
+            coordinator.AddComponent(e, comp);
+        }
+    }
+
+    // Query entities with Transform and TestComponent
+    auto transformAndTest = coordinator.QueryEntities<Transform, TestComponent>();
+    ASSERT(transformAndTest.size() == 500); // Every 2nd entity
+
+    // Query entities with all three components (every 6th entity)
+    auto allThree = coordinator.QueryEntities<Transform, TestComponent, AnotherComponent>();
+    ASSERT(allThree.size() == 167); // 1000 / 6 = 166.67, rounded
+
+    // Use ForEach to modify large number of entities
+    int count = 0;
+    coordinator.ForEach<Transform>([&count]([[maybe_unused]] Entity e, Transform& t) {
+        t.localPosition.y += 0.1f;
+        count++;
+    });
+    ASSERT(count == numEntities);
+
+    coordinator.Shutdown();
+}
+
+// ============================================================================
 // Full Integration Tests
 // ============================================================================
 
@@ -713,6 +994,17 @@ int main() {
     ECSCoordinator_TransformSystem_MultipleEntities_runner();
     ECSCoordinator_TransformSystem_HierarchyAlwaysUpdates_runner();
     ECSCoordinator_TransformSystem_DirtyFlagUpdate_runner();
+
+    std::cout << std::endl;
+    std::cout << "--- Query API Tests ---" << std::endl;
+    ECSCoordinator_QueryEntities_SingleComponent_runner();
+    ECSCoordinator_QueryEntities_MultipleComponents_runner();
+    ECSCoordinator_QueryEntities_NoMatches_runner();
+    ECSCoordinator_QueryEntities_WithTransform_runner();
+    ECSCoordinator_ForEach_SingleComponent_runner();
+    ECSCoordinator_ForEach_MultipleComponents_runner();
+    ECSCoordinator_ForEach_WithTransform_runner();
+    ECSCoordinator_Query_Performance_runner();
 
     std::cout << std::endl;
     std::cout << "--- Full Integration Tests ---" << std::endl;

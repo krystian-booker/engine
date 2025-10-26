@@ -33,6 +33,16 @@ public:
         return std::static_pointer_cast<ComponentArray<T>>(m_ComponentArrays[typeIndex]);
     }
 
+    // Const overload for GetComponentArray
+    template<typename T>
+    std::shared_ptr<ComponentArray<T>> GetComponentArray() const {
+        std::type_index typeIndex = std::type_index(typeid(T));
+        assert(m_ComponentArrays.find(typeIndex) != m_ComponentArrays.end()
+               && "Component not registered");
+
+        return std::static_pointer_cast<ComponentArray<T>>(m_ComponentArrays.at(typeIndex));
+    }
+
     // Entity destroyed - remove all its components from all arrays
     // Safe to call even if entity doesn't have components in some arrays
     void OnEntityDestroyed(Entity entity) {

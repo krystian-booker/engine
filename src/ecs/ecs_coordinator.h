@@ -4,6 +4,9 @@
 #include "hierarchy_manager.h"
 #include "systems/transform_system.h"
 #include <memory>
+#include <functional>
+#include <vector>
+#include <tuple>
 
 // Central hub for all ECS operations
 // Provides unified API for entity, component, and system management
@@ -97,6 +100,52 @@ public:
     }
 
     // ========================================================================
+    // Query API
+    // ========================================================================
+
+    // Query entities that have all specified components
+    // Returns a vector of entities with all required components
+    // Optimized: iterates the first component array and checks for others
+    template<typename... Components>
+    std::vector<Entity> QueryEntities() {
+        static_assert(sizeof...(Components) > 0, "Must specify at least one component type");
+
+        std::vector<Entity> result;
+
+        // Get the first component array to iterate
+        // In a more optimized version, we could find the smallest array
+        // But for type safety, we'll iterate the first type's array
+        using FirstComponent = typename std::tuple_element<0, std::tuple<Components...>>::type;
+        auto firstArray = m_ComponentRegistry->GetComponentArray<FirstComponent>();
+
+        // Check each entity in the first array
+        for (size_t i = 0; i < firstArray->Size(); ++i) {
+            Entity entity = firstArray->GetEntity(i);
+
+            // Verify entity has all required components
+            if (HasAllComponents<Components...>(entity)) {
+                result.push_back(entity);
+            }
+        }
+
+        return result;
+    }
+
+    // Iterate entities with callback, providing component references
+    // Callback signature: void(Entity, ComponentA&, ComponentB&, ...)
+    // Components are passed by reference and can be modified
+    template<typename... Components, typename Func>
+    void ForEach(Func&& callback) {
+        static_assert(sizeof...(Components) > 0, "Must specify at least one component type");
+
+        auto entities = QueryEntities<Components...>();
+
+        for (Entity entity : entities) {
+            callback(entity, GetComponent<Components>(entity)...);
+        }
+    }
+
+    // ========================================================================
     // Hierarchy API
     // ========================================================================
 
@@ -139,6 +188,17 @@ public:
     }
 
 private:
+    // ========================================================================
+    // Query Helpers
+    // ========================================================================
+
+    // Check if entity has all specified components
+    // Uses fold expressions for compile-time expansion
+    template<typename... Components>
+    bool HasAllComponents(Entity entity) const {
+        return (HasComponent<Components>(entity) && ...);
+    }
+
     std::unique_ptr<EntityManager> m_EntityManager;
     std::unique_ptr<ComponentRegistry> m_ComponentRegistry;
     std::unique_ptr<HierarchyManager> m_HierarchyManager;
