@@ -3,6 +3,9 @@
 #include "component_registry.h"
 #include "hierarchy_manager.h"
 #include "systems/transform_system.h"
+#include "components/mesh_renderer.h"
+#include "components/camera.h"
+#include "components/light.h"
 #include <memory>
 #include <functional>
 #include <vector>
@@ -26,6 +29,9 @@ public:
 
         // Register core components
         RegisterComponent<Transform>();
+        RegisterComponent<MeshRenderer>();
+        RegisterComponent<Camera>();
+        RegisterComponent<Light>();
 
         // Initialize systems
         m_TransformSystem = std::make_unique<TransformSystem>(m_ComponentRegistry.get(), m_HierarchyManager.get());
