@@ -2,9 +2,10 @@
 
 #include "core/types.h"
 #include "renderer/frame_context.h"
-#include "renderer/vulkan_swapchain.h"
-#include "renderer/vulkan_render_pass.h"
 #include "renderer/vulkan_framebuffers.h"
+#include "renderer/vulkan_pipeline.h"
+#include "renderer/vulkan_render_pass.h"
+#include "renderer/vulkan_swapchain.h"
 
 #include <vulkan/vulkan.h>
 
@@ -45,6 +46,7 @@ private:
     VulkanSwapchain m_Swapchain;
     VulkanRenderPass m_RenderPass;
     VulkanFramebuffers m_Framebuffers;
+    VulkanPipeline m_Pipeline;
 
     static constexpr u32 MAX_FRAMES_IN_FLIGHT = 2;
     std::vector<FrameContext> m_Frames;

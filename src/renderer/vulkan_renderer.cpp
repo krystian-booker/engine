@@ -94,6 +94,10 @@ void VulkanRenderer::DrawFrame() {
     clearColor.float32[3] = 1.0f;
 
     BeginDefaultRenderPass(*frame, imageIndex, clearColor);
+
+    vkCmdBindPipeline(frame->commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_Pipeline.GetPipeline());
+    vkCmdDraw(frame->commandBuffer, 3, 1, 0, 0);
+
     EndDefaultRenderPass(*frame);
     EndFrame(*frame, imageIndex);
 }
@@ -223,12 +227,14 @@ void VulkanRenderer::EndFrame(FrameContext& frame, u32 imageIndex) {
 
 void VulkanRenderer::InitSwapchainResources() {
     m_RenderPass.Init(m_Context, &m_Swapchain);
+    m_Pipeline.Init(m_Context, &m_RenderPass, &m_Swapchain);
     m_Framebuffers.Init(m_Context, &m_Swapchain, &m_RenderPass);
     ResizeImagesInFlight();
 }
 
 void VulkanRenderer::DestroySwapchainResources() {
     m_Framebuffers.Shutdown();
+    m_Pipeline.Shutdown();
     m_RenderPass.Shutdown();
     m_ImagesInFlight.clear();
 }

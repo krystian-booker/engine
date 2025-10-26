@@ -125,6 +125,7 @@ set(ENGINE_SOURCES
         src/renderer/vulkan_context.cpp
         src/renderer/vulkan_swapchain.cpp
         src/renderer/vulkan_renderer.cpp
+        src/renderer/vulkan_pipeline.cpp
         src/renderer/vulkan_render_pass.cpp
         src/renderer/vulkan_framebuffers.cpp
 )
@@ -150,6 +151,8 @@ target_link_libraries(engine PRIVATE
         Vulkan::Vulkan
 )
 
+target_compile_definitions(engine PRIVATE ENGINE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
 target_compile_features(engine PRIVATE cxx_std_20)
 
 # Platform-specific linking
@@ -166,6 +169,7 @@ add_executable(test_vulkan
         src/renderer/vulkan_context.cpp
         src/renderer/vulkan_swapchain.cpp
         src/renderer/vulkan_renderer.cpp
+        src/renderer/vulkan_pipeline.cpp
         src/renderer/vulkan_render_pass.cpp
         src/renderer/vulkan_framebuffers.cpp
         src/platform/window.cpp
@@ -180,12 +184,57 @@ target_link_libraries(test_vulkan PRIVATE
         Vulkan::Vulkan
 )
 
+target_compile_definitions(test_vulkan PRIVATE ENGINE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
 if(WIN32)
     target_sources(test_vulkan PRIVATE src/platform/win32_platform.cpp)
     target_link_libraries(test_vulkan PRIVATE User32 Gdi32)
 endif()
 
 add_test(NAME VulkanTests COMMAND test_vulkan)
+
+# Shader compilation helper (uses dxc when available)
+set(TRIANGLE_VERT_HLSL ${CMAKE_SOURCE_DIR}/assets/shaders/triangle.vert)
+set(TRIANGLE_FRAG_HLSL ${CMAKE_SOURCE_DIR}/assets/shaders/triangle.frag)
+set(TRIANGLE_VERT_SPV ${CMAKE_SOURCE_DIR}/assets/shaders/triangle.vert.spv)
+set(TRIANGLE_FRAG_SPV ${CMAKE_SOURCE_DIR}/assets/shaders/triangle.frag.spv)
+
+find_program(DXC_EXECUTABLE dxc)
+
+if(DXC_EXECUTABLE)
+    add_custom_command(
+            OUTPUT ${TRIANGLE_VERT_SPV}
+            COMMAND ${DXC_EXECUTABLE} -spirv -fspv-target-env=vulkan1.2 -T vs_6_7 -E main
+                    ${TRIANGLE_VERT_HLSL} -Fo ${TRIANGLE_VERT_SPV}
+            DEPENDS ${TRIANGLE_VERT_HLSL}
+            COMMENT "Compiling triangle vertex shader to SPIR-V"
+            VERBATIM
+    )
+
+    add_custom_command(
+            OUTPUT ${TRIANGLE_FRAG_SPV}
+            COMMAND ${DXC_EXECUTABLE} -spirv -fspv-target-env=vulkan1.2 -T ps_6_7 -E main
+                    ${TRIANGLE_FRAG_HLSL} -Fo ${TRIANGLE_FRAG_SPV}
+            DEPENDS ${TRIANGLE_FRAG_HLSL}
+            COMMENT "Compiling triangle fragment shader to SPIR-V"
+            VERBATIM
+    )
+
+    add_custom_target(Shaders ALL
+            DEPENDS ${TRIANGLE_VERT_SPV} ${TRIANGLE_FRAG_SPV}
+    )
+
+    add_custom_command(TARGET Shaders POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/assets/shaders
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${TRIANGLE_VERT_SPV} ${CMAKE_BINARY_DIR}/assets/shaders/triangle.vert.spv
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${TRIANGLE_FRAG_SPV} ${CMAKE_BINARY_DIR}/assets/shaders/triangle.frag.spv
+    )
+
+    add_dependencies(engine Shaders)
+    add_dependencies(test_vulkan Shaders)
+else()
+    message(WARNING "DXC not found; run compile_shaders.sh or compile_shaders.bat manually to generate SPIR-V binaries.")
+endif()
 
 # Test executable for memory allocators
 add_executable(test_memory
