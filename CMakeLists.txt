@@ -129,6 +129,7 @@ set(ENGINE_SOURCES
         src/renderer/vulkan_render_pass.cpp
         src/renderer/vulkan_framebuffer.cpp
         src/renderer/vulkan_command_buffer.cpp
+        src/renderer/vulkan_buffer.cpp
 )
 
 # Platform-specific source files
@@ -174,6 +175,7 @@ add_executable(test_vulkan
         src/renderer/vulkan_render_pass.cpp
         src/renderer/vulkan_framebuffer.cpp
         src/renderer/vulkan_command_buffer.cpp
+        src/renderer/vulkan_buffer.cpp
         src/platform/window.cpp
 )
 
@@ -530,3 +532,55 @@ target_link_libraries(file_watcher_example PRIVATE
 if(WIN32)
     target_link_libraries(file_watcher_example PRIVATE User32 Gdi32)
 endif()
+
+# Example executable for Vulkan buffer usage
+add_executable(vulkan_buffer_example
+        examples/vulkan_buffer_example.cpp
+        src/renderer/vulkan_context.cpp
+        src/renderer/vulkan_buffer.cpp
+        src/platform/window.cpp
+)
+
+if(WIN32)
+    target_sources(vulkan_buffer_example PRIVATE src/platform/win32_platform.cpp)
+endif()
+
+target_include_directories(vulkan_buffer_example PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(vulkan_buffer_example PRIVATE
+        glfw
+        Vulkan::Vulkan
+)
+
+if(WIN32)
+    target_link_libraries(vulkan_buffer_example PRIVATE User32 Gdi32)
+endif()
+
+# Test executable for Vulkan buffer abstraction
+add_executable(test_vulkan_buffer
+        tests/test_vulkan_buffer.cpp
+        src/renderer/vulkan_context.cpp
+        src/renderer/vulkan_buffer.cpp
+        src/platform/window.cpp
+)
+
+if(WIN32)
+    target_sources(test_vulkan_buffer PRIVATE src/platform/win32_platform.cpp)
+endif()
+
+target_include_directories(test_vulkan_buffer PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_vulkan_buffer PRIVATE
+        glfw
+        Vulkan::Vulkan
+)
+
+if(WIN32)
+    target_link_libraries(test_vulkan_buffer PRIVATE User32 Gdi32)
+endif()
+
+add_test(NAME VulkanBufferTests COMMAND test_vulkan_buffer)
