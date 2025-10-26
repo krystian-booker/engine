@@ -27,6 +27,12 @@ void VulkanContext::Init(Window* window) {
 void VulkanContext::Shutdown() {
     if (m_Device != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(m_Device);
+
+        if (m_CommandPool != VK_NULL_HANDLE) {
+            vkDestroyCommandPool(m_Device, m_CommandPool, nullptr);
+            m_CommandPool = VK_NULL_HANDLE;
+        }
+
         vkDestroyDevice(m_Device, nullptr);
         m_Device = VK_NULL_HANDLE;
     }
@@ -242,6 +248,15 @@ void VulkanContext::CreateLogicalDevice() {
 
     vkGetDeviceQueue(m_Device, graphicsFamily, 0, &m_GraphicsQueue);
     vkGetDeviceQueue(m_Device, presentFamily, 0, &m_PresentQueue);
+
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT | VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    poolInfo.queueFamilyIndex = m_GraphicsQueueFamily;
+
+    if (vkCreateCommandPool(m_Device, &poolInfo, nullptr, &m_CommandPool) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create graphics command pool");
+    }
 
     std::cout << "Logical device created" << std::endl;
     std::cout << "Graphics queue family: " << graphicsFamily << std::endl;

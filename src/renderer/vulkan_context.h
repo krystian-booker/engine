@@ -23,6 +23,7 @@ public:
     VkQueue GetGraphicsQueue() const { return m_GraphicsQueue; }
     VkQueue GetPresentQueue() const { return m_PresentQueue; }
     VkSurfaceKHR GetSurface() const { return m_Surface; }
+    VkCommandPool GetCommandPool() const { return m_CommandPool; }
 
     u32 GetGraphicsQueueFamily() const { return m_GraphicsQueueFamily; }
     u32 GetPresentQueueFamily() const { return m_PresentQueueFamily; }
@@ -39,6 +40,7 @@ private:
     VkQueue m_PresentQueue = VK_NULL_HANDLE;
     u32 m_GraphicsQueueFamily = 0;
     u32 m_PresentQueueFamily = 0;
+    VkCommandPool m_CommandPool = VK_NULL_HANDLE;
 
     VkSurfaceKHR m_Surface = VK_NULL_HANDLE;
 

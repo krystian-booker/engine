@@ -2,7 +2,7 @@
 #include "core/resource_manager.h"
 #include "core/math.h"
 #include "renderer/vertex.h"
-#include "renderer/vulkan_buffer.h"
+#include "renderer/vulkan_mesh.h"
 #include <vector>
 
 // Simplified mesh data (will expand for GPU upload)
@@ -13,9 +13,7 @@ struct MeshData {
     u32 indexCount = 0;
 
     // GPU resources (populated on-demand by renderer)
-    VulkanBuffer vertexBuffer;
-    VulkanBuffer indexBuffer;
-    VkIndexType indexType = VK_INDEX_TYPE_UINT32;
+    VulkanMesh gpuMesh;
     bool gpuUploaded = false;
 
     // Bounding box for culling

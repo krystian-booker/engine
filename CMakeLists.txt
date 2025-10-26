@@ -125,6 +125,7 @@ set(ENGINE_SOURCES
         src/renderer/vulkan_context.cpp
         src/renderer/vulkan_swapchain.cpp
         src/renderer/vulkan_renderer.cpp
+        src/renderer/vulkan_mesh.cpp
         src/renderer/vulkan_pipeline.cpp
         src/renderer/vulkan_render_pass.cpp
         src/renderer/vulkan_framebuffer.cpp
@@ -171,6 +172,7 @@ add_executable(test_vulkan
         src/renderer/vulkan_context.cpp
         src/renderer/vulkan_swapchain.cpp
         src/renderer/vulkan_renderer.cpp
+        src/renderer/vulkan_mesh.cpp
         src/renderer/vulkan_pipeline.cpp
         src/renderer/vulkan_render_pass.cpp
         src/renderer/vulkan_framebuffer.cpp
@@ -462,6 +464,7 @@ add_test(NAME TimeSystemTests COMMAND test_time)
 add_executable(test_resource_handle
         tests/test_resource_handle.cpp
         src/resources/mesh_manager.cpp
+        src/renderer/vulkan_mesh.cpp
         src/renderer/vulkan_buffer.cpp
 )
 
@@ -481,6 +484,7 @@ add_test(NAME ResourceHandleTests COMMAND test_resource_handle)
 add_executable(resource_handle_example
         examples/resource_handle_example.cpp
         src/resources/mesh_manager.cpp
+        src/renderer/vulkan_mesh.cpp
         src/renderer/vulkan_buffer.cpp
 )
 

@@ -316,16 +316,10 @@ void VulkanBuffer::CopyFromDeviceLocal(const void* data, VkDeviceSize size, VkDe
     staging.CopyFromHostVisible(data, size, 0);
 
     VkDevice device = m_Context->GetDevice();
-
-    VkCommandPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    poolInfo.queueFamilyIndex = m_Context->GetGraphicsQueueFamily();
-    poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-
-    VkCommandPool commandPool = VK_NULL_HANDLE;
-    if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS) {
+    VkCommandPool commandPool = m_Context->GetCommandPool();
+    if (commandPool == VK_NULL_HANDLE) {
         staging.Destroy();
-        throw std::runtime_error("Failed to create command pool for buffer copy");
+        throw std::runtime_error("Vulkan context does not provide a command pool for buffer copy");
     }
 
     VkCommandBufferAllocateInfo allocInfo{};
@@ -336,7 +330,6 @@ void VulkanBuffer::CopyFromDeviceLocal(const void* data, VkDeviceSize size, VkDe
 
     VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
     if (vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer) != VK_SUCCESS) {
-        vkDestroyCommandPool(device, commandPool, nullptr);
         staging.Destroy();
         throw std::runtime_error("Failed to allocate command buffer for buffer copy");
     }
@@ -347,7 +340,6 @@ void VulkanBuffer::CopyFromDeviceLocal(const void* data, VkDeviceSize size, VkDe
 
     if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
         vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
-        vkDestroyCommandPool(device, commandPool, nullptr);
         staging.Destroy();
         throw std::runtime_error("Failed to begin command buffer for buffer copy");
     }
@@ -361,7 +353,6 @@ void VulkanBuffer::CopyFromDeviceLocal(const void* data, VkDeviceSize size, VkDe
 
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
         vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
-        vkDestroyCommandPool(device, commandPool, nullptr);
         staging.Destroy();
         throw std::runtime_error("Failed to record buffer copy command");
     }
@@ -374,7 +365,6 @@ void VulkanBuffer::CopyFromDeviceLocal(const void* data, VkDeviceSize size, VkDe
     VkQueue queue = m_Context->GetGraphicsQueue();
     if (vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
         vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
-        vkDestroyCommandPool(device, commandPool, nullptr);
         staging.Destroy();
         throw std::runtime_error("Failed to submit buffer copy command");
     }
@@ -382,7 +372,6 @@ void VulkanBuffer::CopyFromDeviceLocal(const void* data, VkDeviceSize size, VkDe
     vkQueueWaitIdle(queue);
 
     vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
-    vkDestroyCommandPool(device, commandPool, nullptr);
 
     staging.Destroy();
 }

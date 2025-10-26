@@ -90,11 +90,8 @@ void VulkanRenderer::DrawFrame() {
         throw std::runtime_error("VulkanRenderer::DrawFrame missing uploaded mesh data");
     }
 
-    VkBuffer vertexBuffers[] = { meshData->vertexBuffer.GetBuffer() };
-    VkDeviceSize offsets[] = { 0 };
-    vkCmdBindVertexBuffers(frame->commandBuffer, 0, ARRAY_COUNT(vertexBuffers), vertexBuffers, offsets);
-    vkCmdBindIndexBuffer(frame->commandBuffer, meshData->indexBuffer.GetBuffer(), 0, meshData->indexType);
-    vkCmdDrawIndexed(frame->commandBuffer, meshData->indexCount, 1, 0, 0, 0);
+    meshData->gpuMesh.Bind(frame->commandBuffer);
+    meshData->gpuMesh.Draw(frame->commandBuffer);
 
     EndDefaultRenderPass(*frame);
     EndFrame(*frame, imageIndex);
@@ -342,31 +339,7 @@ void VulkanRenderer::InitMeshResources() {
     }
 
     if (!meshData->gpuUploaded) {
-        const VkDeviceSize vertexBufferSize = static_cast<VkDeviceSize>(meshData->vertices.size() * sizeof(Vertex));
-        if (vertexBufferSize == 0) {
-            throw std::runtime_error("Cube mesh has no vertex data");
-        }
-
-        meshData->vertexBuffer.CreateAndUpload(
-            m_Context,
-            vertexBufferSize,
-            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            meshData->vertices.data());
-
-        const VkDeviceSize indexBufferSize = static_cast<VkDeviceSize>(meshData->indices.size() * sizeof(u32));
-        if (indexBufferSize == 0) {
-            throw std::runtime_error("Cube mesh has no index data");
-        }
-
-        meshData->indexBuffer.CreateAndUpload(
-            m_Context,
-            indexBufferSize,
-            VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            meshData->indices.data());
-
-        meshData->indexType = VK_INDEX_TYPE_UINT32;
+        meshData->gpuMesh.Create(m_Context, meshData);
         meshData->gpuUploaded = true;
     }
 }
@@ -380,8 +353,7 @@ void VulkanRenderer::DestroyMeshResources() {
 
     MeshData* meshData = meshManager.Get(m_ActiveMesh);
     if (meshData != nullptr && meshData->gpuUploaded) {
-        meshData->vertexBuffer.Destroy();
-        meshData->indexBuffer.Destroy();
+        meshData->gpuMesh.Destroy();
         meshData->gpuUploaded = false;
     }
 
