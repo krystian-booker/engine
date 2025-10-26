@@ -1,7 +1,10 @@
 #pragma once
 
 #include "core/types.h"
+#include "renderer/frame_context.h"
 #include "renderer/vulkan_swapchain.h"
+#include "renderer/vulkan_render_pass.h"
+#include "renderer/vulkan_framebuffers.h"
 
 #include <vulkan/vulkan.h>
 
@@ -21,36 +24,33 @@ public:
     void DrawFrame();
     void OnWindowResized();
 
+    bool BeginFrame(FrameContext*& outFrame, u32& outImageIndex);
+    void BeginDefaultRenderPass(FrameContext& frame, u32 imageIndex, const VkClearColorValue& clearColor);
+    void EndDefaultRenderPass(FrameContext& frame);
+    void EndFrame(FrameContext& frame, u32 imageIndex);
+    VkCommandBuffer GetCommandBuffer(const FrameContext& frame) const { return frame.commandBuffer; }
+
 private:
-    void CreateRenderPass();
-    void CreateFramebuffers();
-    void CreateCommandPool();
-    void CreateCommandBuffers();
-    void CreateSyncObjects();
-    void CleanupSwapchainResources();
+    void InitSwapchainResources();
+    void DestroySwapchainResources();
+
+    void CreateFrameContexts();
+    void DestroyFrameContexts();
     void RecreateSwapchain();
-    void RecordCommandBuffer(VkCommandBuffer commandBuffer, u32 imageIndex);
     void ResizeImagesInFlight();
 
     VulkanContext* m_Context = nullptr;
     Window* m_Window = nullptr;
 
     VulkanSwapchain m_Swapchain;
-
-    VkRenderPass m_RenderPass = VK_NULL_HANDLE;
-    std::vector<VkFramebuffer> m_Framebuffers;
-
-    VkCommandPool m_CommandPool = VK_NULL_HANDLE;
-    std::vector<VkCommandBuffer> m_CommandBuffers;
+    VulkanRenderPass m_RenderPass;
+    VulkanFramebuffers m_Framebuffers;
 
     static constexpr u32 MAX_FRAMES_IN_FLIGHT = 2;
-    std::vector<VkSemaphore> m_ImageAvailableSemaphores;
-    std::vector<VkSemaphore> m_RenderFinishedSemaphores;
-    std::vector<VkFence> m_InFlightFences;
+    std::vector<FrameContext> m_Frames;
     std::vector<VkFence> m_ImagesInFlight;
 
     u32 m_CurrentFrame = 0;
     bool m_FramebufferResized = false;
     bool m_Initialized = false;
 };
-

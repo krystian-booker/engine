@@ -1,4 +1,7 @@
 #include "renderer/vulkan_context.h"
+#include "renderer/vulkan_framebuffers.h"
+#include "renderer/vulkan_render_pass.h"
+#include "renderer/vulkan_renderer.h"
 #include "renderer/vulkan_swapchain.h"
 #include "platform/window.h"
 
@@ -162,6 +165,70 @@ TEST(VulkanSwapchain_ChooseExtentClampsToCapabilities) {
     ASSERT(extent.height == capabilities.minImageExtent.height);
 }
 
+TEST(VulkanRenderPass_CreatesColorOnlyPass) {
+    WindowProperties props;
+    props.title = "Render Pass Test";
+    props.width = 800;
+    props.height = 600;
+    props.resizable = false;
+
+    Window window(props);
+
+    VulkanContext context;
+    context.Init(&window);
+
+    VulkanSwapchain swapchain;
+    swapchain.Init(&context, &window);
+
+    VulkanRenderPass renderPass;
+    renderPass.Init(&context, &swapchain);
+
+    ASSERT(renderPass.Get() != VK_NULL_HANDLE);
+
+    VulkanFramebuffers framebuffers;
+    framebuffers.Init(&context, &swapchain, &renderPass);
+    ASSERT(framebuffers.GetAll().size() == swapchain.GetImageCount());
+
+    framebuffers.Shutdown();
+    renderPass.Shutdown();
+    swapchain.Shutdown();
+    context.Shutdown();
+}
+
+TEST(VulkanRenderer_FrameLifecycleHandlesBeginEnd) {
+    WindowProperties props;
+    props.title = "Renderer Frame Test";
+    props.width = 640;
+    props.height = 480;
+    props.resizable = false;
+
+    Window window(props);
+
+    VulkanContext context;
+    context.Init(&window);
+
+    VulkanRenderer renderer;
+    renderer.Init(&context, &window);
+
+    FrameContext* frame = nullptr;
+    u32 imageIndex = 0;
+    ASSERT(renderer.BeginFrame(frame, imageIndex));
+    ASSERT(frame != nullptr);
+
+    VkClearColorValue clear{};
+    clear.float32[0] = 0.05f;
+    clear.float32[1] = 0.05f;
+    clear.float32[2] = 0.1f;
+    clear.float32[3] = 1.0f;
+
+    renderer.BeginDefaultRenderPass(*frame, imageIndex, clear);
+    renderer.EndDefaultRenderPass(*frame);
+    renderer.EndFrame(*frame, imageIndex);
+
+    renderer.Shutdown();
+    context.Shutdown();
+}
+
 int main() {
     std::cout << "=== Vulkan Context Tests ===" << std::endl;
     std::cout << std::endl;
@@ -171,6 +238,8 @@ int main() {
     VulkanSwapchain_ChooseSurfaceFormatPrefersSRGB_runner();
     VulkanSwapchain_ChoosePresentModePrefersMailbox_runner();
     VulkanSwapchain_ChooseExtentClampsToCapabilities_runner();
+    VulkanRenderPass_CreatesColorOnlyPass_runner();
+    VulkanRenderer_FrameLifecycleHandlesBeginEnd_runner();
 
     std::cout << std::endl;
     std::cout << "================================" << std::endl;
