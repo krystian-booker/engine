@@ -50,17 +50,21 @@ VulkanPipeline::~VulkanPipeline() {
     Shutdown();
 }
 
-void VulkanPipeline::Init(VulkanContext* context, VulkanRenderPass* renderPass, VulkanSwapchain* swapchain) {
+void VulkanPipeline::Init(VulkanContext* context, VulkanRenderPass* renderPass, VulkanSwapchain* swapchain, VkDescriptorSetLayout descriptorSetLayout) {
     if (!context || !renderPass || !swapchain) {
         throw std::invalid_argument("VulkanPipeline::Init requires valid context, render pass, and swapchain");
+    }
+
+    if (descriptorSetLayout == VK_NULL_HANDLE) {
+        throw std::invalid_argument("VulkanPipeline::Init requires a valid descriptor set layout");
     }
 
     Shutdown();
 
     m_Context = context;
 
-    const auto vertShaderCode = ReadFile("assets/shaders/triangle.vert.spv");
-    const auto fragShaderCode = ReadFile("assets/shaders/triangle.frag.spv");
+    const auto vertShaderCode = ReadFile("assets/shaders/cube.vert.spv");
+    const auto fragShaderCode = ReadFile("assets/shaders/cube.frag.spv");
 
     VkShaderModule vertShaderModule = CreateShaderModule(vertShaderCode);
     VkShaderModule fragShaderModule = CreateShaderModule(fragShaderCode);
@@ -141,7 +145,8 @@ void VulkanPipeline::Init(VulkanContext* context, VulkanRenderPass* renderPass, 
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 0;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
     pipelineLayoutInfo.pushConstantRangeCount = 0;
 
     if (vkCreatePipelineLayout(m_Context->GetDevice(), &pipelineLayoutInfo, nullptr, &m_PipelineLayout) != VK_SUCCESS) {
@@ -149,6 +154,14 @@ void VulkanPipeline::Init(VulkanContext* context, VulkanRenderPass* renderPass, 
         vkDestroyShaderModule(m_Context->GetDevice(), fragShaderModule, nullptr);
         throw std::runtime_error("Failed to create Vulkan pipeline layout");
     }
+
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+    depthStencil.depthBoundsTestEnable = VK_FALSE;
+    depthStencil.stencilTestEnable = VK_FALSE;
 
     VkGraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -160,6 +173,7 @@ void VulkanPipeline::Init(VulkanContext* context, VulkanRenderPass* renderPass, 
     pipelineInfo.pRasterizationState = &rasterizer;
     pipelineInfo.pMultisampleState = &multisampling;
     pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.pDepthStencilState = &depthStencil;
     pipelineInfo.layout = m_PipelineLayout;
     pipelineInfo.renderPass = renderPass->Get();
     pipelineInfo.subpass = 0;

@@ -127,6 +127,7 @@ set(ENGINE_SOURCES
         src/renderer/vulkan_renderer.cpp
         src/renderer/vulkan_mesh.cpp
         src/renderer/vulkan_pipeline.cpp
+        src/renderer/vulkan_descriptors.cpp
         src/renderer/vulkan_render_pass.cpp
         src/renderer/vulkan_framebuffer.cpp
         src/renderer/vulkan_command_buffer.cpp
@@ -174,12 +175,14 @@ add_executable(test_vulkan
         src/renderer/vulkan_renderer.cpp
         src/renderer/vulkan_mesh.cpp
         src/renderer/vulkan_pipeline.cpp
+        src/renderer/vulkan_descriptors.cpp
         src/renderer/vulkan_render_pass.cpp
         src/renderer/vulkan_framebuffer.cpp
         src/renderer/vulkan_command_buffer.cpp
         src/renderer/vulkan_buffer.cpp
         src/platform/window.cpp
         src/resources/mesh_manager.cpp
+        src/core/time.cpp
 )
 
 target_include_directories(test_vulkan PRIVATE
@@ -201,40 +204,40 @@ endif()
 add_test(NAME VulkanTests COMMAND test_vulkan)
 
 # Shader compilation helper (uses dxc when available)
-set(TRIANGLE_VERT_HLSL ${CMAKE_SOURCE_DIR}/assets/shaders/triangle.vert)
-set(TRIANGLE_FRAG_HLSL ${CMAKE_SOURCE_DIR}/assets/shaders/triangle.frag)
-set(TRIANGLE_VERT_SPV ${CMAKE_SOURCE_DIR}/assets/shaders/triangle.vert.spv)
-set(TRIANGLE_FRAG_SPV ${CMAKE_SOURCE_DIR}/assets/shaders/triangle.frag.spv)
+set(CUBE_VERT_HLSL ${CMAKE_SOURCE_DIR}/assets/shaders/cube.vert)
+set(CUBE_FRAG_HLSL ${CMAKE_SOURCE_DIR}/assets/shaders/cube.frag)
+set(CUBE_VERT_SPV ${CMAKE_SOURCE_DIR}/assets/shaders/cube.vert.spv)
+set(CUBE_FRAG_SPV ${CMAKE_SOURCE_DIR}/assets/shaders/cube.frag.spv)
 
 find_program(DXC_EXECUTABLE dxc)
 
 if(DXC_EXECUTABLE)
     add_custom_command(
-            OUTPUT ${TRIANGLE_VERT_SPV}
+            OUTPUT ${CUBE_VERT_SPV}
             COMMAND ${DXC_EXECUTABLE} -spirv -fspv-target-env=vulkan1.2 -T vs_6_7 -E main
-                    ${TRIANGLE_VERT_HLSL} -Fo ${TRIANGLE_VERT_SPV}
-            DEPENDS ${TRIANGLE_VERT_HLSL}
-            COMMENT "Compiling triangle vertex shader to SPIR-V"
+                    ${CUBE_VERT_HLSL} -Fo ${CUBE_VERT_SPV}
+            DEPENDS ${CUBE_VERT_HLSL}
+            COMMENT "Compiling cube vertex shader to SPIR-V"
             VERBATIM
     )
 
     add_custom_command(
-            OUTPUT ${TRIANGLE_FRAG_SPV}
+            OUTPUT ${CUBE_FRAG_SPV}
             COMMAND ${DXC_EXECUTABLE} -spirv -fspv-target-env=vulkan1.2 -T ps_6_7 -E main
-                    ${TRIANGLE_FRAG_HLSL} -Fo ${TRIANGLE_FRAG_SPV}
-            DEPENDS ${TRIANGLE_FRAG_HLSL}
-            COMMENT "Compiling triangle fragment shader to SPIR-V"
+                    ${CUBE_FRAG_HLSL} -Fo ${CUBE_FRAG_SPV}
+            DEPENDS ${CUBE_FRAG_HLSL}
+            COMMENT "Compiling cube fragment shader to SPIR-V"
             VERBATIM
     )
 
     add_custom_target(Shaders ALL
-            DEPENDS ${TRIANGLE_VERT_SPV} ${TRIANGLE_FRAG_SPV}
+            DEPENDS ${CUBE_VERT_SPV} ${CUBE_FRAG_SPV}
     )
 
     add_custom_command(TARGET Shaders POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/assets/shaders
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${TRIANGLE_VERT_SPV} ${CMAKE_BINARY_DIR}/assets/shaders/triangle.vert.spv
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${TRIANGLE_FRAG_SPV} ${CMAKE_BINARY_DIR}/assets/shaders/triangle.frag.spv
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CUBE_VERT_SPV} ${CMAKE_BINARY_DIR}/assets/shaders/cube.vert.spv
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CUBE_FRAG_SPV} ${CMAKE_BINARY_DIR}/assets/shaders/cube.frag.spv
     )
 
     add_dependencies(engine Shaders)

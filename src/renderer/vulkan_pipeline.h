@@ -16,7 +16,7 @@ public:
     VulkanPipeline() = default;
     ~VulkanPipeline();
 
-    void Init(VulkanContext* context, VulkanRenderPass* renderPass, VulkanSwapchain* swapchain);
+    void Init(VulkanContext* context, VulkanRenderPass* renderPass, VulkanSwapchain* swapchain, VkDescriptorSetLayout descriptorSetLayout);
     void Shutdown();
 
     VkPipeline GetPipeline() const { return m_Pipeline; }
@@ -30,4 +30,3 @@ private:
     VkPipeline m_Pipeline = VK_NULL_HANDLE;
     VkPipelineLayout m_PipelineLayout = VK_NULL_HANDLE;
 };
-

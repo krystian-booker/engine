@@ -5,6 +5,8 @@
 #include "renderer/vulkan_swapchain.h"
 #include "platform/window.h"
 
+#include <vector>
+
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -60,6 +62,133 @@ struct VulkanSwapchainTestAccess {
     }
 };
 
+static u32 FindMemoryType(
+    VulkanContext& context,
+    u32 typeFilter,
+    VkMemoryPropertyFlags properties) {
+
+    VkPhysicalDeviceMemoryProperties memProperties{};
+    vkGetPhysicalDeviceMemoryProperties(context.GetPhysicalDevice(), &memProperties);
+
+    for (u32 i = 0; i < memProperties.memoryTypeCount; ++i) {
+        if ((typeFilter & (1u << i)) &&
+            (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+            return i;
+        }
+    }
+
+    throw std::runtime_error("FindMemoryType failed to locate suitable memory type for depth resources");
+}
+
+static bool HasStencilComponent(VkFormat format) {
+    return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
+}
+
+static void CreateDepthResources(
+    VulkanContext& context,
+    VulkanSwapchain& swapchain,
+    VkFormat depthFormat,
+    std::vector<VkImage>& depthImages,
+    std::vector<VkDeviceMemory>& depthMemory,
+    std::vector<VkImageView>& depthViews) {
+
+    const auto& swapchainImageViews = swapchain.GetImageViews();
+    if (swapchainImageViews.empty()) {
+        throw std::runtime_error("CreateDepthResources requires swapchain images");
+    }
+
+    VkDevice device = context.GetDevice();
+    VkExtent2D extent = swapchain.GetExtent();
+
+    depthImages.resize(swapchainImageViews.size(), VK_NULL_HANDLE);
+    depthMemory.resize(swapchainImageViews.size(), VK_NULL_HANDLE);
+    depthViews.resize(swapchainImageViews.size(), VK_NULL_HANDLE);
+
+    for (size_t i = 0; i < swapchainImageViews.size(); ++i) {
+        VkImageCreateInfo imageInfo{};
+        imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        imageInfo.imageType = VK_IMAGE_TYPE_2D;
+        imageInfo.extent.width = extent.width;
+        imageInfo.extent.height = extent.height;
+        imageInfo.extent.depth = 1;
+        imageInfo.mipLevels = 1;
+        imageInfo.arrayLayers = 1;
+        imageInfo.format = depthFormat;
+        imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        imageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+        imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        if (vkCreateImage(device, &imageInfo, nullptr, &depthImages[i]) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create depth image for test");
+        }
+
+        VkMemoryRequirements memRequirements{};
+        vkGetImageMemoryRequirements(device, depthImages[i], &memRequirements);
+
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memRequirements.size;
+        allocInfo.memoryTypeIndex = FindMemoryType(context, memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+        if (vkAllocateMemory(device, &allocInfo, nullptr, &depthMemory[i]) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to allocate depth image memory for test");
+        }
+
+        if (vkBindImageMemory(device, depthImages[i], depthMemory[i], 0) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to bind depth image memory for test");
+        }
+
+        VkImageViewCreateInfo viewInfo{};
+        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.image = depthImages[i];
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.format = depthFormat;
+        viewInfo.subresourceRange.aspectMask = HasStencilComponent(depthFormat)
+            ? (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)
+            : VK_IMAGE_ASPECT_DEPTH_BIT;
+        viewInfo.subresourceRange.baseMipLevel = 0;
+        viewInfo.subresourceRange.levelCount = 1;
+        viewInfo.subresourceRange.baseArrayLayer = 0;
+        viewInfo.subresourceRange.layerCount = 1;
+
+        if (vkCreateImageView(device, &viewInfo, nullptr, &depthViews[i]) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create depth image view for test");
+        }
+    }
+}
+
+static void DestroyDepthResources(
+    VulkanContext& context,
+    std::vector<VkImage>& depthImages,
+    std::vector<VkDeviceMemory>& depthMemory,
+    std::vector<VkImageView>& depthViews) {
+
+    VkDevice device = context.GetDevice();
+
+    for (VkImageView view : depthViews) {
+        if (view != VK_NULL_HANDLE) {
+            vkDestroyImageView(device, view, nullptr);
+        }
+    }
+
+    for (VkImage image : depthImages) {
+        if (image != VK_NULL_HANDLE) {
+            vkDestroyImage(device, image, nullptr);
+        }
+    }
+
+    for (VkDeviceMemory memory : depthMemory) {
+        if (memory != VK_NULL_HANDLE) {
+            vkFreeMemory(device, memory, nullptr);
+        }
+    }
+
+    depthImages.clear();
+    depthMemory.clear();
+    depthViews.clear();
+}
 TEST(VulkanContext_InitAndShutdown) {
     WindowProperties props;
     props.title = "Vulkan Test";
@@ -165,7 +294,7 @@ TEST(VulkanSwapchain_ChooseExtentClampsToCapabilities) {
     ASSERT(extent.height == capabilities.minImageExtent.height);
 }
 
-TEST(VulkanRenderPass_CreatesColorOnlyPass) {
+TEST(VulkanRenderPass_CreatesColorDepthPass) {
     WindowProperties props;
     props.title = "Render Pass Test";
     props.width = 800;
@@ -184,12 +313,19 @@ TEST(VulkanRenderPass_CreatesColorOnlyPass) {
     renderPass.Init(&context, &swapchain);
 
     ASSERT(renderPass.Get() != VK_NULL_HANDLE);
+    ASSERT(renderPass.GetDepthFormat() != VK_FORMAT_UNDEFINED);
+
+    std::vector<VkImage> depthImages;
+    std::vector<VkDeviceMemory> depthMemory;
+    std::vector<VkImageView> depthViews;
+    CreateDepthResources(context, swapchain, renderPass.GetDepthFormat(), depthImages, depthMemory, depthViews);
 
     VulkanFramebuffer framebuffer;
-    framebuffer.Init(&context, &swapchain, &renderPass);
+    framebuffer.Init(&context, &swapchain, &renderPass, depthViews);
     ASSERT(framebuffer.GetCount() == swapchain.GetImageCount());
 
     framebuffer.Shutdown();
+    DestroyDepthResources(context, depthImages, depthMemory, depthViews);
     renderPass.Shutdown();
     swapchain.Shutdown();
     context.Shutdown();
@@ -238,7 +374,7 @@ int main() {
     VulkanSwapchain_ChooseSurfaceFormatPrefersSRGB_runner();
     VulkanSwapchain_ChoosePresentModePrefersMailbox_runner();
     VulkanSwapchain_ChooseExtentClampsToCapabilities_runner();
-    VulkanRenderPass_CreatesColorOnlyPass_runner();
+    VulkanRenderPass_CreatesColorDepthPass_runner();
     VulkanRenderer_FrameLifecycleHandlesBeginEnd_runner();
 
     std::cout << std::endl;

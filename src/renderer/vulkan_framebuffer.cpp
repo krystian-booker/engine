@@ -10,7 +10,12 @@ VulkanFramebuffer::~VulkanFramebuffer() {
     Shutdown();
 }
 
-void VulkanFramebuffer::Init(VulkanContext* context, VulkanSwapchain* swapchain, VulkanRenderPass* renderPass) {
+void VulkanFramebuffer::Init(
+    VulkanContext* context,
+    VulkanSwapchain* swapchain,
+    VulkanRenderPass* renderPass,
+    const std::vector<VkImageView>& depthImageViews) {
+
     if (!context || !swapchain || !renderPass) {
         throw std::invalid_argument("VulkanFramebuffer::Init requires valid context, swapchain, and render pass");
     }
@@ -18,7 +23,7 @@ void VulkanFramebuffer::Init(VulkanContext* context, VulkanSwapchain* swapchain,
     Shutdown();
 
     m_Context = context;
-    CreateFramebuffers(swapchain, renderPass);
+    CreateFramebuffers(swapchain, renderPass, depthImageViews);
 }
 
 void VulkanFramebuffer::Shutdown() {
@@ -39,7 +44,11 @@ void VulkanFramebuffer::Shutdown() {
     m_Context = nullptr;
 }
 
-void VulkanFramebuffer::Recreate(VulkanSwapchain* swapchain, VulkanRenderPass* renderPass) {
+void VulkanFramebuffer::Recreate(
+    VulkanSwapchain* swapchain,
+    VulkanRenderPass* renderPass,
+    const std::vector<VkImageView>& depthImageViews) {
+
     VulkanContext* context = m_Context;
     Shutdown();
 
@@ -47,7 +56,7 @@ void VulkanFramebuffer::Recreate(VulkanSwapchain* swapchain, VulkanRenderPass* r
         throw std::runtime_error("VulkanFramebuffer::Recreate called before initialization");
     }
 
-    Init(context, swapchain, renderPass);
+    Init(context, swapchain, renderPass, depthImageViews);
 }
 
 VkFramebuffer VulkanFramebuffer::Get(u32 index) const {
@@ -58,10 +67,18 @@ VkFramebuffer VulkanFramebuffer::Get(u32 index) const {
     return m_Framebuffers[index];
 }
 
-void VulkanFramebuffer::CreateFramebuffers(VulkanSwapchain* swapchain, VulkanRenderPass* renderPass) {
+void VulkanFramebuffer::CreateFramebuffers(
+    VulkanSwapchain* swapchain,
+    VulkanRenderPass* renderPass,
+    const std::vector<VkImageView>& depthImageViews) {
+
     const auto& imageViews = swapchain->GetImageViews();
     if (imageViews.empty()) {
         throw std::runtime_error("VulkanFramebuffer::CreateFramebuffers no swapchain image views");
+    }
+
+    if (imageViews.size() != depthImageViews.size()) {
+        throw std::runtime_error("VulkanFramebuffer::CreateFramebuffers depth image count mismatch");
     }
 
     m_Framebuffers.resize(imageViews.size(), VK_NULL_HANDLE);
@@ -69,12 +86,12 @@ void VulkanFramebuffer::CreateFramebuffers(VulkanSwapchain* swapchain, VulkanRen
     VkDevice device = m_Context->GetDevice();
 
     for (size_t i = 0; i < imageViews.size(); ++i) {
-        VkImageView attachments[] = { imageViews[i] };
+        const VkImageView attachments[] = { imageViews[i], depthImageViews[i] };
 
         VkFramebufferCreateInfo framebufferInfo{};
         framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         framebufferInfo.renderPass = renderPass->Get();
-        framebufferInfo.attachmentCount = 1;
+        framebufferInfo.attachmentCount = ARRAY_COUNT(attachments);
         framebufferInfo.pAttachments = attachments;
         framebufferInfo.width = swapchain->GetExtent().width;
         framebufferInfo.height = swapchain->GetExtent().height;
