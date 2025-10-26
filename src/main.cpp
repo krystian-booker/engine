@@ -5,6 +5,7 @@
 #include "platform/input.h"
 #include "core/memory.h"
 #include "core/math.h"
+#include "core/time.h"
 
 int main(int, char**) {
     std::cout << "=== Game Engine ===" << std::endl;
@@ -204,6 +205,12 @@ int main(int, char**) {
     std::cout << "[TEST 6] Input System:" << std::endl;
     Input::Init(&window);
     std::cout << "  Input system ready" << std::endl;
+    std::cout << std::endl;
+
+    // Initialize time system
+    std::cout << "[TEST 7] Time System:" << std::endl;
+    Time::Init();
+    std::cout << "  Time system ready" << std::endl;
     std::cout << "  Controls:" << std::endl;
     std::cout << "    - Press SPACE to test key pressed" << std::endl;
     std::cout << "    - Hold W to test key down" << std::endl;
@@ -215,13 +222,10 @@ int main(int, char**) {
     std::cout << std::endl;
 
     // Main event loop
-    u64 frameCount = 0;
-    u64 lastCounter = Platform::GetPerformanceCounter();
-
     while (!window.ShouldClose()) {
+        Time::Update();   // Update time at start of frame
         Input::Update();  // Must be called before polling events
         window.PollEvents();
-        frameCount++;
 
         // Test keyboard input
         if (Input::IsKeyPressed(KeyCode::Space)) {
@@ -261,25 +265,26 @@ int main(int, char**) {
             std::cout << "  [INPUT] Mouse scroll: (" << scroll.x << ", " << scroll.y << ")" << std::endl;
         }
 
-        // Print stats every second
-        u64 currentCounter = Platform::GetPerformanceCounter();
-        u64 elapsed = currentCounter - lastCounter;
-        f64 elapsedSeconds = static_cast<f64>(elapsed) / static_cast<f64>(frequency);
-
-        if (elapsedSeconds >= 1.0) {
-            std::cout << "  FPS: " << frameCount << " | Frames: " << frameCount << std::endl;
-            // Update window title with FPS
-            window.SetTitle("Game Engine - GLFW Window Test | FPS: " + std::to_string(frameCount));
-            frameCount = 0;
-            lastCounter = currentCounter;
+        // Update window title with FPS every 60 frames
+        if (Time::FrameCount() % 60 == 0) {
+            f32 fps = Time::FPS();
+            f32 deltaMs = Time::DeltaTimeMs();
+            std::string title = "Game Engine - FPS: " + std::to_string(static_cast<i32>(fps)) +
+                                " | Frame Time: " + std::to_string(deltaMs) + "ms";
+            window.SetTitle(title);
         }
+
+        // Example: Frame-rate independent movement
+        // f32 dt = Time::DeltaTime();
+        // f32 speed = 5.0f;
+        // position += velocity * speed * dt;
 
         // Sleep a tiny bit to avoid maxing out CPU
         // (In a real engine, we'd do rendering here)
     }
 
     std::cout << std::endl;
-    std::cout << "[TEST 7] Cleanup:" << std::endl;
+    std::cout << "[TEST 8] Cleanup:" << std::endl;
     std::cout << "  Window will be destroyed automatically by RAII" << std::endl;
 
     u64 endCounter = Platform::GetPerformanceCounter();
@@ -287,6 +292,8 @@ int main(int, char**) {
     f64 totalSeconds = static_cast<f64>(totalElapsed) / static_cast<f64>(frequency);
 
     std::cout << "  Total runtime: " << totalSeconds << " seconds" << std::endl;
+    std::cout << "  Time system runtime: " << Time::TotalTime() << " seconds" << std::endl;
+    std::cout << "  Total frames: " << Time::FrameCount() << std::endl;
     std::cout << std::endl;
 
     std::cout << "===============================================" << std::endl;

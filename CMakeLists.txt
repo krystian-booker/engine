@@ -110,6 +110,7 @@ set(ENGINE_SOURCES
         src/main.cpp
         src/core/memory.cpp
         src/core/job_system.cpp
+        src/core/time.cpp
         src/ecs/entity_manager.cpp
         src/ecs/hierarchy_manager.cpp
         src/ecs/scene_serializer.cpp
@@ -345,3 +346,21 @@ target_link_libraries(test_scene_serializer PRIVATE
 
 # Register scene serializer test with CTest
 add_test(NAME SceneSerializerTests COMMAND test_scene_serializer)
+
+# Test executable for time system
+add_executable(test_time
+        tests/test_time.cpp
+        src/core/time.cpp
+)
+
+target_include_directories(test_time PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_time PRIVATE
+        glm::glm
+        glfw
+)
+
+# Register time system test with CTest
+add_test(NAME TimeSystemTests COMMAND test_time)
