@@ -117,6 +117,7 @@ set(ENGINE_SOURCES
         src/ecs/systems/transform_system.cpp
         src/platform/window.cpp
         src/platform/input.cpp
+        src/resources/mesh_manager.cpp
 )
 
 # Platform-specific source files
@@ -364,3 +365,34 @@ target_link_libraries(test_time PRIVATE
 
 # Register time system test with CTest
 add_test(NAME TimeSystemTests COMMAND test_time)
+
+# Test executable for resource handle system
+add_executable(test_resource_handle
+        tests/test_resource_handle.cpp
+        src/resources/mesh_manager.cpp
+)
+
+target_include_directories(test_resource_handle PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_resource_handle PRIVATE
+        glm::glm
+)
+
+# Register resource handle test with CTest
+add_test(NAME ResourceHandleTests COMMAND test_resource_handle)
+
+# Example executable for resource handle system
+add_executable(resource_handle_example
+        examples/resource_handle_example.cpp
+        src/resources/mesh_manager.cpp
+)
+
+target_include_directories(resource_handle_example PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(resource_handle_example PRIVATE
+        glm::glm
+)
