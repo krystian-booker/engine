@@ -127,7 +127,8 @@ set(ENGINE_SOURCES
         src/renderer/vulkan_renderer.cpp
         src/renderer/vulkan_pipeline.cpp
         src/renderer/vulkan_render_pass.cpp
-        src/renderer/vulkan_framebuffers.cpp
+        src/renderer/vulkan_framebuffer.cpp
+        src/renderer/vulkan_command_buffer.cpp
 )
 
 # Platform-specific source files
@@ -171,7 +172,8 @@ add_executable(test_vulkan
         src/renderer/vulkan_renderer.cpp
         src/renderer/vulkan_pipeline.cpp
         src/renderer/vulkan_render_pass.cpp
-        src/renderer/vulkan_framebuffers.cpp
+        src/renderer/vulkan_framebuffer.cpp
+        src/renderer/vulkan_command_buffer.cpp
         src/platform/window.cpp
 )
 

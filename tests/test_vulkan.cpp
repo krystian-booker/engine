@@ -1,5 +1,5 @@
 #include "renderer/vulkan_context.h"
-#include "renderer/vulkan_framebuffers.h"
+#include "renderer/vulkan_framebuffer.h"
 #include "renderer/vulkan_render_pass.h"
 #include "renderer/vulkan_renderer.h"
 #include "renderer/vulkan_swapchain.h"
@@ -185,11 +185,11 @@ TEST(VulkanRenderPass_CreatesColorOnlyPass) {
 
     ASSERT(renderPass.Get() != VK_NULL_HANDLE);
 
-    VulkanFramebuffers framebuffers;
-    framebuffers.Init(&context, &swapchain, &renderPass);
-    ASSERT(framebuffers.GetAll().size() == swapchain.GetImageCount());
+    VulkanFramebuffer framebuffer;
+    framebuffer.Init(&context, &swapchain, &renderPass);
+    ASSERT(framebuffer.GetCount() == swapchain.GetImageCount());
 
-    framebuffers.Shutdown();
+    framebuffer.Shutdown();
     renderPass.Shutdown();
     swapchain.Shutdown();
     context.Shutdown();

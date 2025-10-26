@@ -7,23 +7,6 @@
 
 namespace {
 
-VkCommandPoolCreateInfo CreateCommandPoolInfo(u32 queueFamilyIndex) {
-    VkCommandPoolCreateInfo info{};
-    info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    info.queueFamilyIndex = queueFamilyIndex;
-    info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-    return info;
-}
-
-VkCommandBufferAllocateInfo CreateCommandBufferInfo(VkCommandPool pool) {
-    VkCommandBufferAllocateInfo info{};
-    info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    info.commandPool = pool;
-    info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    info.commandBufferCount = 1;
-    return info;
-}
-
 VkFenceCreateInfo CreateFenceInfo() {
     VkFenceCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
@@ -148,7 +131,7 @@ bool VulkanRenderer::BeginFrame(FrameContext*& outFrame, u32& outImageIndex) {
     m_ImagesInFlight[imageIndex] = frame.inFlightFence;
 
     vkResetFences(device, 1, &frame.inFlightFence);
-    vkResetCommandPool(device, frame.commandPool, 0);
+    m_CommandBuffers.Reset(m_CurrentFrame);
 
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -242,19 +225,19 @@ void VulkanRenderer::DestroySwapchainResources() {
 void VulkanRenderer::CreateFrameContexts() {
     DestroyFrameContexts();
 
+    m_CommandBuffers.Init(m_Context, MAX_FRAMES_IN_FLIGHT);
+
     VkDevice device = m_Context->GetDevice();
     m_Frames.resize(MAX_FRAMES_IN_FLIGHT);
 
-    for (FrameContext& frame : m_Frames) {
-        VkCommandPoolCreateInfo poolInfo = CreateCommandPoolInfo(m_Context->GetGraphicsQueueFamily());
-        if (vkCreateCommandPool(device, &poolInfo, nullptr, &frame.commandPool) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create command pool");
-        }
+    const auto& commandBuffers = m_CommandBuffers.GetCommandBuffers();
+    if (commandBuffers.size() < m_Frames.size()) {
+        throw std::runtime_error("VulkanRenderer::CreateFrameContexts insufficient command buffers allocated");
+    }
 
-        VkCommandBufferAllocateInfo commandBufferInfo = CreateCommandBufferInfo(frame.commandPool);
-        if (vkAllocateCommandBuffers(device, &commandBufferInfo, &frame.commandBuffer) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to allocate command buffer");
-        }
+    for (size_t i = 0; i < m_Frames.size(); ++i) {
+        FrameContext& frame = m_Frames[i];
+        frame.commandBuffer = commandBuffers[i];
 
         VkFenceCreateInfo fenceInfo = CreateFenceInfo();
         if (vkCreateFence(device, &fenceInfo, nullptr, &frame.inFlightFence) != VK_SUCCESS) {
@@ -271,6 +254,7 @@ void VulkanRenderer::CreateFrameContexts() {
 
 void VulkanRenderer::DestroyFrameContexts() {
     if (!m_Context) {
+        m_CommandBuffers.Shutdown();
         m_Frames.clear();
         return;
     }
@@ -278,10 +262,6 @@ void VulkanRenderer::DestroyFrameContexts() {
     VkDevice device = m_Context->GetDevice();
 
     for (FrameContext& frame : m_Frames) {
-        if (frame.commandPool != VK_NULL_HANDLE) {
-            vkDestroyCommandPool(device, frame.commandPool, nullptr);
-        }
-
         if (frame.inFlightFence != VK_NULL_HANDLE) {
             vkDestroyFence(device, frame.inFlightFence, nullptr);
         }
@@ -297,6 +277,7 @@ void VulkanRenderer::DestroyFrameContexts() {
         frame = FrameContext{};
     }
 
+    m_CommandBuffers.Shutdown();
     m_Frames.clear();
 }
 
