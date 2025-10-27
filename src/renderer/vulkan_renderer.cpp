@@ -80,18 +80,7 @@ void VulkanRenderer::DrawFrame() {
     }
 
     const u32 currentFrameIndex = m_CurrentFrame;
-
-    const VkExtent2D extent = m_Swapchain.GetExtent();
-    const f32 aspect = static_cast<f32>(extent.width) / static_cast<f32>(extent.height == 0 ? 1 : extent.height);
-
-    const f32 rotationSpeed = Radians(45.0f);
-    UniformBufferObject ubo{};
-    ubo.model = Rotate(Mat4(1.0f), rotationSpeed * Time::TotalTime(), Vec3(0.0f, 1.0f, 0.0f));
-    ubo.view = LookAt(Vec3(0.0f, 0.0f, -5.0f), Vec3(0.0f), Vec3(0.0f, 1.0f, 0.0f));
-    ubo.projection = Perspective(Radians(60.0f), aspect, 0.1f, 100.0f);
-    ubo.projection[1][1] *= -1.0f;
-
-    m_Descriptors.UpdateUniformBuffer(currentFrameIndex, &ubo, sizeof(ubo));
+    UpdateUniformBuffer(currentFrameIndex);
 
     VkClearColorValue clearColor{};
     clearColor.float32[0] = 0.1f;
@@ -249,6 +238,33 @@ void VulkanRenderer::EndFrame(FrameContext& frame, u32 imageIndex) {
     }
 
     m_CurrentFrame = (m_CurrentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+}
+
+void VulkanRenderer::UpdateUniformBuffer(u32 currentFrame) {
+    const VkExtent2D extent = m_Swapchain.GetExtent();
+    const f32 width = static_cast<f32>(extent.width);
+    const f32 height = static_cast<f32>(extent.height == 0 ? 1 : extent.height);
+    const f32 aspect = height != 0.0f ? width / height : 1.0f;
+
+    const f32 rotationSpeed = Radians(45.0f);
+    const f32 fullRotation = Radians(360.0f);
+    m_Rotation += rotationSpeed * Time::DeltaTime();
+    while (m_Rotation > fullRotation) {
+        m_Rotation -= fullRotation;
+    }
+
+    UniformBufferObject ubo{};
+    ubo.model = Rotate(Mat4(1.0f), m_Rotation, Vec3(0.0f, 1.0f, 0.0f));
+
+    const Vec3 eye(3.0f, 3.0f, 3.0f);
+    const Vec3 center(0.0f, 0.0f, 0.0f);
+    const Vec3 up(0.0f, 1.0f, 0.0f);
+    ubo.view = LookAt(eye, center, up);
+
+    ubo.projection = Perspective(Radians(45.0f), aspect, 0.1f, 100.0f);
+    ubo.projection[1][1] *= -1.0f;
+
+    m_Descriptors.UpdateUniformBuffer(currentFrame, &ubo, sizeof(ubo));
 }
 
 void VulkanRenderer::InitSwapchainResources() {

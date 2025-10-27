@@ -45,6 +45,7 @@ private:
     void ResizeImagesInFlight();
     void InitMeshResources();
     void DestroyMeshResources();
+    void UpdateUniformBuffer(u32 currentFrame);
 
     VulkanContext* m_Context = nullptr;
     Window* m_Window = nullptr;
@@ -64,6 +65,8 @@ private:
     u32 m_CurrentFrame = 0;
     bool m_FramebufferResized = false;
     bool m_Initialized = false;
+
+    f32 m_Rotation = 0.0f;
 
     MeshHandle m_ActiveMesh = MeshHandle::Invalid;
 };
