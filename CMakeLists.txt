@@ -428,6 +428,24 @@ target_link_libraries(test_ecs_queries PRIVATE
 
 add_test(NAME ECSQueryTests COMMAND test_ecs_queries)
 
+add_executable(test_renderable
+        tests/test_renderable.cpp
+        src/ecs/ecs_coordinator.cpp
+        src/ecs/entity_manager.cpp
+        src/ecs/hierarchy_manager.cpp
+        src/ecs/systems/transform_system.cpp
+)
+
+target_include_directories(test_renderable PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_renderable PRIVATE
+        glm::glm
+)
+
+add_test(NAME RenderableTests COMMAND test_renderable)
+
 add_executable(test_ecs_deferred
         tests/test_ecs_deferred.cpp
         src/ecs/ecs_coordinator.cpp

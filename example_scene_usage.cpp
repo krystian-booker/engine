@@ -4,6 +4,8 @@
 #include "ecs/ecs_coordinator.h"
 #include "ecs/scene_serializer.h"
 #include "ecs/components/transform.h"
+#include "ecs/components/renderable.h"
+#include "resources/mesh_manager.h"
 #include <iostream>
 
 int main() {
@@ -19,12 +21,21 @@ int main() {
     parentTransform.localScale = Vec3(1.0f, 1.0f, 1.0f);
     ecs.AddComponent(parent, parentTransform);
 
+    Renderable parentRenderable;
+    parentRenderable.mesh = MeshManager::Instance().CreateCube();
+    ecs.AddComponent(parent, parentRenderable);
+
     Entity child = ecs.CreateEntity();
     Transform childTransform;
     childTransform.localPosition = Vec3(2.0f, 0.0f, 0.0f);
     childTransform.localRotation = Quat(1.0f, 0.0f, 0.0f, 0.0f);
     childTransform.localScale = Vec3(0.5f, 0.5f, 0.5f);
     ecs.AddComponent(child, childTransform);
+
+    Renderable childRenderable;
+    childRenderable.mesh = parentRenderable.mesh; // Share mesh for now
+    childRenderable.visible = false;              // Hidden child in this example
+    ecs.AddComponent(child, childRenderable);
 
     ecs.SetParent(child, parent);
 
