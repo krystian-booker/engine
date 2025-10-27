@@ -2,6 +2,7 @@
 
 #include "core/types.h"
 #include <cstddef>
+#include <memory>
 
 namespace Platform {
 
@@ -11,12 +12,17 @@ namespace Platform {
 
 struct WindowHandle;
 
+/// Custom deleter for WindowHandle (calls platform-specific cleanup)
+struct WindowHandleDeleter {
+    void operator()(WindowHandle* window) const;
+};
+
+/// Smart pointer type for WindowHandle with automatic cleanup
+using WindowPtr = std::unique_ptr<WindowHandle, WindowHandleDeleter>;
+
 /// Creates a platform window with the specified title and dimensions
 /// Returns nullptr on failure
-WindowHandle* CreateWindow(const char* title, u32 width, u32 height);
-
-/// Destroys a previously created window
-void DestroyWindow(WindowHandle* window);
+WindowPtr CreateWindow(const char* title, u32 width, u32 height);
 
 /// Polls and processes window events
 /// Returns true if the window should stay open, false if it should close
@@ -49,17 +55,22 @@ void VirtualFree(void* ptr, size_t size);
 
 struct FileHandle;
 
+/// Custom deleter for FileHandle (calls platform-specific cleanup)
+struct FileHandleDeleter {
+    void operator()(FileHandle* file) const;
+};
+
+/// Smart pointer type for FileHandle with automatic cleanup
+using FilePtr = std::unique_ptr<FileHandle, FileHandleDeleter>;
+
 /// Opens a file for reading or writing
 /// write=false: opens for reading, write=true: opens for writing (creates if doesn't exist)
 /// Returns nullptr on failure
-FileHandle* OpenFile(const char* path, bool write);
+FilePtr OpenFile(const char* path, bool write);
 
 /// Reads bytes from a file into a buffer
 /// Returns the number of bytes actually read (may be less than requested)
 size_t ReadFile(FileHandle* file, void* buffer, size_t bytes);
-
-/// Closes a previously opened file
-void CloseFile(FileHandle* file);
 
 // ============================================================================
 // Threading Primitives
@@ -67,9 +78,17 @@ void CloseFile(FileHandle* file);
 
 struct Mutex;
 
+/// Custom deleter for Mutex (calls platform-specific cleanup)
+struct MutexDeleter {
+    void operator()(Mutex* mutex) const;
+};
+
+/// Smart pointer type for Mutex with automatic cleanup
+using MutexPtr = std::unique_ptr<Mutex, MutexDeleter>;
+
 /// Creates a mutex for synchronization
 /// Returns nullptr on failure
-Mutex* CreateMutex();
+MutexPtr CreateMutex();
 
 /// Locks the mutex (blocks if already locked)
 void Lock(Mutex* mutex);
@@ -77,18 +96,20 @@ void Lock(Mutex* mutex);
 /// Unlocks the mutex
 void Unlock(Mutex* mutex);
 
-/// Destroys a previously created mutex
-void DestroyMutex(Mutex* mutex);
-
 struct Semaphore;
+
+/// Custom deleter for Semaphore (calls platform-specific cleanup)
+struct SemaphoreDeleter {
+    void operator()(Semaphore* semaphore) const;
+};
+
+/// Smart pointer type for Semaphore with automatic cleanup
+using SemaphorePtr = std::unique_ptr<Semaphore, SemaphoreDeleter>;
 
 /// Creates a counting semaphore
 /// @param initial_count Initial signal count
 /// @return Pointer to created semaphore or nullptr on failure
-Semaphore* CreateSemaphore(u32 initial_count = 0);
-
-/// Destroys a previously created semaphore
-void DestroySemaphore(Semaphore* semaphore);
+SemaphorePtr CreateSemaphore(u32 initial_count = 0);
 
 /// Waits for the semaphore to be signaled
 /// @param semaphore Semaphore to wait on

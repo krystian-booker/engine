@@ -56,7 +56,18 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
     }
 }
 
-WindowHandle* CreateWindow(const char* title, u32 width, u32 height) {
+// Custom deleter implementation
+void WindowHandleDeleter::operator()(WindowHandle* window) const {
+    if (!window) return;
+
+    if (window->hwnd) {
+        ::DestroyWindow(window->hwnd);
+    }
+
+    delete window;
+}
+
+WindowPtr CreateWindow(const char* title, u32 width, u32 height) {
     // Register window class (only once)
     if (!windowClassRegistered) {
         WNDCLASSEXA wc = {};
@@ -113,17 +124,7 @@ WindowHandle* CreateWindow(const char* title, u32 width, u32 height) {
     ShowWindow(hwnd, SW_SHOW);
     UpdateWindow(hwnd);
 
-    return window;
-}
-
-void DestroyWindow(WindowHandle* window) {
-    if (!window) return;
-
-    if (window->hwnd) {
-        ::DestroyWindow(window->hwnd);
-    }
-
-    delete window;
+    return WindowPtr(window);
 }
 
 bool PollEvents(WindowHandle* window) {
@@ -189,7 +190,18 @@ struct FileHandle {
     HANDLE handle;
 };
 
-FileHandle* OpenFile(const char* path, bool write) {
+// Custom deleter implementation
+void FileHandleDeleter::operator()(FileHandle* file) const {
+    if (!file) return;
+
+    if (file->handle != INVALID_HANDLE_VALUE) {
+        CloseHandle(file->handle);
+    }
+
+    delete file;
+}
+
+FilePtr OpenFile(const char* path, bool write) {
     if (!path) return nullptr;
 
     DWORD access = write ? GENERIC_WRITE : GENERIC_READ;
@@ -211,7 +223,7 @@ FileHandle* OpenFile(const char* path, bool write) {
 
     FileHandle* file = new FileHandle();
     file->handle = handle;
-    return file;
+    return FilePtr(file);
 }
 
 size_t ReadFile(FileHandle* file, void* buffer, size_t bytes) {
@@ -229,16 +241,6 @@ size_t ReadFile(FileHandle* file, void* buffer, size_t bytes) {
     return result ? static_cast<size_t>(bytesRead) : 0;
 }
 
-void CloseFile(FileHandle* file) {
-    if (!file) return;
-
-    if (file->handle != INVALID_HANDLE_VALUE) {
-        CloseHandle(file->handle);
-    }
-
-    delete file;
-}
-
 // ============================================================================
 // Threading Primitives Implementation
 // ============================================================================
@@ -251,10 +253,18 @@ struct Semaphore {
     HANDLE handle;
 };
 
-Mutex* CreateMutex() {
+// Custom deleter implementation
+void MutexDeleter::operator()(Mutex* mutex) const {
+    if (!mutex) return;
+
+    DeleteCriticalSection(&mutex->criticalSection);
+    delete mutex;
+}
+
+MutexPtr CreateMutex() {
     Mutex* mutex = new Mutex();
     InitializeCriticalSection(&mutex->criticalSection);
-    return mutex;
+    return MutexPtr(mutex);
 }
 
 void Lock(Mutex* mutex) {
@@ -267,30 +277,24 @@ void Unlock(Mutex* mutex) {
     LeaveCriticalSection(&mutex->criticalSection);
 }
 
-void DestroyMutex(Mutex* mutex) {
-    if (!mutex) return;
-
-    DeleteCriticalSection(&mutex->criticalSection);
-    delete mutex;
-}
-
-Semaphore* CreateSemaphore(u32 initial_count) {
-    Semaphore* semaphore = new Semaphore();
-    semaphore->handle = ::CreateSemaphoreA(nullptr, static_cast<LONG>(initial_count), LONG_MAX, nullptr);
-    if (!semaphore->handle) {
-        delete semaphore;
-        return nullptr;
-    }
-    return semaphore;
-}
-
-void DestroySemaphore(Semaphore* semaphore) {
+// Custom deleter implementation
+void SemaphoreDeleter::operator()(Semaphore* semaphore) const {
     if (!semaphore) return;
     if (semaphore->handle) {
         ::CloseHandle(semaphore->handle);
         semaphore->handle = nullptr;
     }
     delete semaphore;
+}
+
+SemaphorePtr CreateSemaphore(u32 initial_count) {
+    Semaphore* semaphore = new Semaphore();
+    semaphore->handle = ::CreateSemaphoreA(nullptr, static_cast<LONG>(initial_count), LONG_MAX, nullptr);
+    if (!semaphore->handle) {
+        delete semaphore;
+        return nullptr;
+    }
+    return SemaphorePtr(semaphore);
 }
 
 void WaitSemaphore(Semaphore* semaphore, u32 timeout_ms) {

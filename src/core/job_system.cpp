@@ -16,9 +16,9 @@ namespace JobSystem {
 /// Per-thread work queue with mutex protection (Day 1 implementation)
 struct WorkQueue {
     std::array<std::deque<Job*>, kPriorityCount> jobs;
-    Platform::Mutex* mutex;
+    Platform::MutexPtr mutex;
 
-    WorkQueue() : mutex(nullptr) {}
+    WorkQueue() = default;
 
     void Init() {
         mutex = Platform::CreateMutex();
@@ -26,26 +26,26 @@ struct WorkQueue {
 
     void Shutdown() {
         if (mutex) {
-            Platform::DestroyMutex(mutex);
-            mutex = nullptr;
+        // Mutex automatically cleaned up by unique_ptr
+        mutex.reset();
         }
     }
 
     /// Push job to the front of the queue (LIFO for own thread)
     void Push(Job* job) {
-        Platform::Lock(mutex);
+        Platform::Lock(mutex.get());
         u32 priority_index = static_cast<u32>(job->priority);
         if (priority_index >= kPriorityCount) {
             priority_index = static_cast<u32>(JobPriority::Normal);
         }
         jobs[priority_index].push_front(job);
-        Platform::Unlock(mutex);
+        Platform::Unlock(mutex.get());
     }
 
     /// Pop job from the front of the queue (LIFO for own thread)
     Job* Pop() {
         Job* job = nullptr;
-        Platform::Lock(mutex);
+        Platform::Lock(mutex.get());
         for (u32 priority = 0; priority < kPriorityCount; ++priority) {
             auto& queue = jobs[priority];
             if (!queue.empty()) {
@@ -54,14 +54,14 @@ struct WorkQueue {
                 break;
             }
         }
-        Platform::Unlock(mutex);
+        Platform::Unlock(mutex.get());
         return job;
     }
 
     /// Steal job from the back of the queue (FIFO for stealing - better cache locality)
     Job* Steal() {
         Job* job = nullptr;
-        Platform::Lock(mutex);
+        Platform::Lock(mutex.get());
         for (u32 priority = 0; priority < kPriorityCount; ++priority) {
             auto& queue = jobs[priority];
             if (!queue.empty()) {
@@ -70,7 +70,7 @@ struct WorkQueue {
                 break;
             }
         }
-        Platform::Unlock(mutex);
+        Platform::Unlock(mutex.get());
         return job;
     }
 };
@@ -85,7 +85,7 @@ static std::atomic<bool> g_shutdown{false};
 static u32 g_num_threads = 0;
 static std::vector<std::thread> g_worker_threads;
 static std::vector<WorkQueue> g_work_queues;
-static Platform::Semaphore* g_work_semaphore = nullptr;
+static Platform::SemaphorePtr g_work_semaphore;
 static std::atomic<u32> g_submission_index{0};
 static std::vector<LinearAllocator> g_worker_scratch_allocators;
 static constexpr size_t kScratchAllocatorSize = 128 * 1024; // 128 KB per worker
@@ -215,7 +215,7 @@ static void WorkerThreadMain(u32 thread_index) {
             ExecuteJob(job);
         } else {
             // 4. No work available, wait on semaphore to avoid busy-waiting
-            Platform::WaitSemaphore(g_work_semaphore);
+            Platform::WaitSemaphore(g_work_semaphore.get());
         }
     }
 }
@@ -283,7 +283,7 @@ void Shutdown() {
     // Signal all threads to shut down
     g_shutdown.store(true, std::memory_order_release);
     if (g_work_semaphore) {
-        Platform::SignalSemaphore(g_work_semaphore, g_num_threads > 0 ? g_num_threads : 1);
+        Platform::SignalSemaphore(g_work_semaphore.get(), g_num_threads > 0 ? g_num_threads : 1);
     }
 
     // Wait for all worker threads to finish
@@ -314,7 +314,6 @@ void Shutdown() {
     g_submission_index.store(0, std::memory_order_relaxed);
 
     if (g_work_semaphore) {
-        Platform::DestroySemaphore(g_work_semaphore);
         g_work_semaphore = nullptr;
     }
 
@@ -393,7 +392,7 @@ void Run(Job* job) {
     g_work_queues[thread_index].Push(job);
 
     if (g_work_semaphore) {
-        Platform::SignalSemaphore(g_work_semaphore, 1);
+        Platform::SignalSemaphore(g_work_semaphore.get(), 1);
     }
 }
 
