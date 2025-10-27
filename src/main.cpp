@@ -3,6 +3,11 @@
 #include "core/time.h"
 #include "renderer/vulkan_context.h"
 #include "renderer/vulkan_renderer.h"
+#include "ecs/ecs_coordinator.h"
+#include "ecs/systems/render_system.h"
+#include "ecs/components/transform.h"
+#include "ecs/components/renderable.h"
+#include "resources/mesh_manager.h"
 
 #include <iostream>
 #include <string>
@@ -29,6 +34,29 @@ int main() {
     VulkanRenderer renderer;
     renderer.Init(&context, &window);
 
+    ECSCoordinator ecs;
+    ecs.Init();
+
+    RenderSystem renderSystem(&ecs, &context);
+    renderer.SetRenderSystem(&renderSystem);
+
+    Entity cubeEntity = ecs.CreateEntity();
+
+    Transform cubeTransform;
+    cubeTransform.localPosition = Vec3(0.0f, 0.0f, 0.0f);
+    cubeTransform.localScale = Vec3(1.0f, 1.0f, 1.0f);
+    ecs.AddComponent(cubeEntity, cubeTransform);
+
+    MeshHandle cubeMesh = MeshManager::Instance().CreateCube();
+
+    Renderable cubeRenderable;
+    cubeRenderable.mesh = cubeMesh;
+    cubeRenderable.visible = true;
+    ecs.AddComponent(cubeEntity, cubeRenderable);
+
+    ecs.Update(0.0f);
+    renderSystem.UploadMeshes();
+
     window.SetEventCallback([&renderer](WindowEvent event, u32 width, u32 height) {
         (void)width;
         (void)height;
@@ -36,6 +64,8 @@ int main() {
             renderer.OnWindowResized();
         }
     });
+
+    Transform& cubeTransformRef = ecs.GetComponent<Transform>(cubeEntity);
 
     while (!window.ShouldClose()) {
         Time::Update();
@@ -46,6 +76,16 @@ int main() {
             break;
         }
 
+        const f32 rotationSpeed = Radians(45.0f);
+        const f32 deltaRadians = rotationSpeed * Time::DeltaTime();
+        if (deltaRadians != 0.0f) {
+            const Quat delta = glm::angleAxis(deltaRadians, Vec3(0.0f, 1.0f, 0.0f));
+            cubeTransformRef.localRotation = glm::normalize(delta * cubeTransformRef.localRotation);
+            cubeTransformRef.MarkDirty();
+        }
+
+        ecs.Update(Time::DeltaTime());
+        renderSystem.Update();
         renderer.DrawFrame();
 
         if (Time::FrameCount() % 60 == 0) {
@@ -53,6 +93,11 @@ int main() {
             window.SetTitle(title);
         }
     }
+
+    renderSystem.Shutdown();
+    MeshManager::Instance().Destroy(cubeMesh);
+
+    ecs.Shutdown();
 
     renderer.Shutdown();
     context.Shutdown();

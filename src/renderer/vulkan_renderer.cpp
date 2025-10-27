@@ -2,6 +2,7 @@
 
 #include "core/math.h"
 #include "core/time.h"
+#include "ecs/systems/render_system.h"
 #include "platform/window.h"
 #include "renderer/vulkan_context.h"
 #include "renderer/uniform_buffers.h"
@@ -80,8 +81,6 @@ void VulkanRenderer::DrawFrame() {
     }
 
     const u32 currentFrameIndex = m_CurrentFrame;
-    UpdateUniformBuffer(currentFrameIndex);
-
     VkClearColorValue clearColor{};
     clearColor.float32[0] = 0.1f;
     clearColor.float32[1] = 0.1f;
@@ -102,14 +101,43 @@ void VulkanRenderer::DrawFrame() {
         0,
         nullptr);
 
-    MeshManager& meshManager = MeshManager::Instance();
-    MeshData* meshData = meshManager.Get(m_ActiveMesh);
-    if (meshData == nullptr || !meshData->gpuUploaded) {
-        throw std::runtime_error("VulkanRenderer::DrawFrame missing uploaded mesh data");
+    bool rendered = false;
+
+    if (m_RenderSystem) {
+        const auto& renderList = m_RenderSystem->GetRenderData();
+        for (const RenderData& renderData : renderList) {
+            VulkanMesh* mesh = m_RenderSystem->GetVulkanMesh(renderData.meshHandle);
+            if (!mesh || !mesh->IsValid()) {
+                continue;
+            }
+
+            UpdateUniformBuffer(currentFrameIndex, renderData.modelMatrix);
+            mesh->Bind(frame->commandBuffer);
+            mesh->Draw(frame->commandBuffer);
+            rendered = true;
+        }
     }
 
-    meshData->gpuMesh.Bind(frame->commandBuffer);
-    meshData->gpuMesh.Draw(frame->commandBuffer);
+    if (!rendered) {
+        MeshManager& meshManager = MeshManager::Instance();
+        MeshData* meshData = meshManager.Get(m_ActiveMesh);
+        if (meshData == nullptr || !meshData->gpuUploaded) {
+            throw std::runtime_error("VulkanRenderer::DrawFrame missing uploaded mesh data");
+        }
+
+        const f32 rotationSpeed = Radians(45.0f);
+        const f32 fullRotation = Radians(360.0f);
+        m_Rotation += rotationSpeed * Time::DeltaTime();
+        while (m_Rotation > fullRotation) {
+            m_Rotation -= fullRotation;
+        }
+
+        const Mat4 fallbackModel = Rotate(Mat4(1.0f), m_Rotation, Vec3(0.0f, 1.0f, 0.0f));
+        UpdateUniformBuffer(currentFrameIndex, fallbackModel);
+
+        meshData->gpuMesh.Bind(frame->commandBuffer);
+        meshData->gpuMesh.Draw(frame->commandBuffer);
+    }
 
     EndDefaultRenderPass(*frame);
     EndFrame(*frame, imageIndex);
@@ -240,21 +268,14 @@ void VulkanRenderer::EndFrame(FrameContext& frame, u32 imageIndex) {
     m_CurrentFrame = (m_CurrentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
-void VulkanRenderer::UpdateUniformBuffer(u32 currentFrame) {
+void VulkanRenderer::UpdateUniformBuffer(u32 currentFrame, const Mat4& modelMatrix) {
     const VkExtent2D extent = m_Swapchain.GetExtent();
     const f32 width = static_cast<f32>(extent.width);
     const f32 height = static_cast<f32>(extent.height == 0 ? 1 : extent.height);
     const f32 aspect = height != 0.0f ? width / height : 1.0f;
 
-    const f32 rotationSpeed = Radians(45.0f);
-    const f32 fullRotation = Radians(360.0f);
-    m_Rotation += rotationSpeed * Time::DeltaTime();
-    while (m_Rotation > fullRotation) {
-        m_Rotation -= fullRotation;
-    }
-
     UniformBufferObject ubo{};
-    ubo.model = Rotate(Mat4(1.0f), m_Rotation, Vec3(0.0f, 1.0f, 0.0f));
+    ubo.model = modelMatrix;
 
     const Vec3 eye(3.0f, 3.0f, 3.0f);
     const Vec3 center(0.0f, 0.0f, 0.0f);

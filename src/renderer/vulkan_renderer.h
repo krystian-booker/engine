@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/types.h"
+#include "core/math.h"
 #include "core/resource_handle.h"
 #include "renderer/frame_context.h"
 #include "renderer/vulkan_framebuffer.h"
@@ -17,6 +18,7 @@
 
 class VulkanContext;
 class Window;
+class RenderSystem;
 
 class VulkanRenderer {
 public:
@@ -28,6 +30,7 @@ public:
 
     void DrawFrame();
     void OnWindowResized();
+    void SetRenderSystem(RenderSystem* renderSystem) { m_RenderSystem = renderSystem; }
 
     bool BeginFrame(FrameContext*& outFrame, u32& outImageIndex);
     void BeginDefaultRenderPass(FrameContext& frame, u32 imageIndex, const VkClearColorValue& clearColor);
@@ -45,10 +48,11 @@ private:
     void ResizeImagesInFlight();
     void InitMeshResources();
     void DestroyMeshResources();
-    void UpdateUniformBuffer(u32 currentFrame);
+    void UpdateUniformBuffer(u32 currentFrame, const Mat4& modelMatrix);
 
     VulkanContext* m_Context = nullptr;
     Window* m_Window = nullptr;
+    RenderSystem* m_RenderSystem = nullptr;
 
     VulkanSwapchain m_Swapchain;
     VulkanRenderPass m_RenderPass;

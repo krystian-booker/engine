@@ -129,6 +129,10 @@ void VulkanBuffer::Destroy() {
     }
 
     VkDevice device = m_Context->GetDevice();
+    if (device == VK_NULL_HANDLE) {
+        Reset();
+        return;
+    }
 
     if (m_MappedData != nullptr) {
         vkUnmapMemory(device, m_Memory);

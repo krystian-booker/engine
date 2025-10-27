@@ -36,6 +36,10 @@ After building, launch `build/bin/engine.exe` (or `build/bin/Debug/engine.exe` d
 
 The default runtime now initializes a Vulkan context, swapchain, and a render loop that uploads a cube mesh into device-local vertex/index buffers. The graphics pipeline consumes the `Vertex` layout (position/normal/color/UV) and renders the indexed cube with face-dependent colors. Resize or minimize the window to exercise swapchain recreation; the renderer blocks until valid dimensions are available and resumes presenting without restarting the application.
 
+## Render System
+
+The ECS-driven render path assembles draw calls by querying entities that own both `Transform` and `Renderable` components. `RenderSystem::Update` collects a list of `RenderData` entries (world matrix + mesh handle), lazily uploads meshes through `MeshManager`, and exposes cached `VulkanMesh` instances for the renderer. The main loop now updates transforms each frame, invokes `RenderSystem::Update`, then asks `VulkanRenderer` to iterate that list and issue draw calls; a fallback path draws the legacy rotating cube when no renderable entities are available.
+
 ## Shaders
 
 Shader sources live in `assets/shaders`. After editing `triangle.vert` or `triangle.frag`, rebuild the SPIR-V binaries using:

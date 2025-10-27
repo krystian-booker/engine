@@ -120,6 +120,7 @@ set(ENGINE_SOURCES
         src/ecs/hierarchy_manager.cpp
         src/ecs/scene_serializer.cpp
         src/ecs/systems/transform_system.cpp
+        src/ecs/systems/render_system.cpp
         src/platform/window.cpp
         src/platform/input.cpp
         src/resources/mesh_manager.cpp
@@ -175,6 +176,9 @@ add_executable(test_vulkan
         src/renderer/vulkan_context.cpp
         src/renderer/vulkan_swapchain.cpp
         src/renderer/vulkan_renderer.cpp
+        src/ecs/systems/render_system.cpp
+        src/ecs/entity_manager.cpp
+        src/resources/mesh_manager.cpp
         src/renderer/vulkan_mesh.cpp
         src/renderer/vulkan_pipeline.cpp
         src/renderer/vulkan_descriptors.cpp
@@ -445,6 +449,29 @@ target_link_libraries(test_renderable PRIVATE
 )
 
 add_test(NAME RenderableTests COMMAND test_renderable)
+
+add_executable(test_render_system
+        tests/test_render_system.cpp
+        src/ecs/ecs_coordinator.cpp
+        src/ecs/entity_manager.cpp
+        src/ecs/hierarchy_manager.cpp
+        src/ecs/systems/transform_system.cpp
+        src/ecs/systems/render_system.cpp
+        src/resources/mesh_manager.cpp
+        src/renderer/vulkan_mesh.cpp
+        src/renderer/vulkan_buffer.cpp
+)
+
+target_include_directories(test_render_system PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_render_system PRIVATE
+        glm::glm
+        Vulkan::Vulkan
+)
+
+add_test(NAME RenderSystemTests COMMAND test_render_system)
 
 add_executable(test_ecs_deferred
         tests/test_ecs_deferred.cpp
