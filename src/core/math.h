@@ -81,3 +81,7 @@ inline f32 Radians(f32 degrees) {
 inline f32 Degrees(f32 radians) {
     return glm::degrees(radians);
 }
+
+inline f32 Clamp(f32 value, f32 min, f32 max) {
+    return glm::clamp(value, min, max);
+}

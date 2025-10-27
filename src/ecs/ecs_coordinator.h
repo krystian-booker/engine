@@ -16,6 +16,7 @@
 
 class TransformSystem;
 class CameraSystem;
+class CameraController;
 
 // Central hub for all ECS operations
 // Provides unified API for entity, component, and system management
@@ -62,6 +63,10 @@ public:
         void operator()(CameraSystem* system) const;
     };
 
+    struct CameraControllerDeleter {
+        void operator()(CameraController* controller) const;
+    };
+
     // ========================================================================
     // Lifecycle Management
     // ========================================================================
@@ -69,6 +74,9 @@ public:
     void Init();
 
     void Shutdown();
+
+    // Initialize camera controller (call after Init, requires Window*)
+    void SetupCameraController(class Window* window);
 
     // ========================================================================
     // Entity API
@@ -84,6 +92,14 @@ public:
 
     const CameraSystem* GetCameraSystem() const {
         return m_CameraSystem.get();
+    }
+
+    CameraController* GetCameraController() {
+        return m_CameraController.get();
+    }
+
+    const CameraController* GetCameraController() const {
+        return m_CameraController.get();
     }
 
     void DestroyEntity(Entity entity) {
@@ -581,6 +597,7 @@ private:
     std::unique_ptr<HierarchyManager> m_HierarchyManager;
     std::unique_ptr<TransformSystem, TransformSystemDeleter> m_TransformSystem;
     std::unique_ptr<CameraSystem, CameraSystemDeleter> m_CameraSystem;
+    std::unique_ptr<CameraController, CameraControllerDeleter> m_CameraController;
     std::vector<DeferredOp> m_DeferredOps;
     u32 m_DeferDepth = 0;
     u32 m_SafeIterationDepth = 0;

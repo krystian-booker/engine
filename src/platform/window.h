@@ -54,6 +54,10 @@ public:
     // Get native window (for rendering backend - Vulkan/D3D12)
     GLFWwindow* GetNativeWindow() const { return m_Window; }
 
+    // Cursor management
+    void SetCursorMode(bool locked);
+    void SetCursorVisible(bool visible);
+
 private:
     GLFWwindow* m_Window;
     WindowProperties m_Properties;

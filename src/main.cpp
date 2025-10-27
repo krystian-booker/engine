@@ -4,6 +4,7 @@
 #include "ecs/components/transform.h"
 #include "ecs/ecs_coordinator.h"
 #include "ecs/systems/camera_system.h"
+#include "ecs/systems/camera_controller.h"
 #include "examples/test_scene.h"
 #include "platform/input.h"
 #include "platform/window.h"
@@ -39,6 +40,10 @@ int main() {
 
     CameraSystem* cameraSystem = ecs.GetCameraSystem();
 
+    // Setup camera controller
+    ecs.SetupCameraController(&window);
+    CameraController* cameraController = ecs.GetCameraController();
+
     CreateTestScene(ecs);
 
     MeshHandle cubeMeshHandle = MeshHandle::Invalid;
@@ -50,6 +55,14 @@ int main() {
     ecs.Update(0.0f);
     if (cameraSystem) {
         cameraSystem->Update(window.GetWidth(), window.GetHeight());
+    }
+
+    // Set the active camera as the controlled camera (AFTER camera system has found it)
+    if (cameraController && cameraSystem) {
+        Entity activeCamera = cameraSystem->GetActiveCamera();
+        if (activeCamera.IsValid()) {
+            cameraController->SetControlledCamera(activeCamera);
+        }
     }
 
     VulkanRenderer renderer;
@@ -74,6 +87,12 @@ int main() {
         }
 
         const f32 deltaTime = Time::DeltaTime();
+
+        // Update camera controller
+        if (cameraController) {
+            cameraController->Update(deltaTime);
+        }
+
         ecs.ForEach<Rotator, Transform>([deltaTime](Entity, Rotator& rotator, Transform& transform) {
             if (rotator.speed == 0.0f || deltaTime == 0.0f) {
                 return;

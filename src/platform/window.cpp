@@ -120,3 +120,19 @@ void Window::WindowFocusCallback(GLFWwindow* window, int focused) {
         win->m_EventCallback(event, 0, 0);
     }
 }
+
+void Window::SetCursorMode(bool locked) {
+    if (locked) {
+        glfwSetInputMode(m_Window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    } else {
+        glfwSetInputMode(m_Window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    }
+}
+
+void Window::SetCursorVisible(bool visible) {
+    if (visible) {
+        glfwSetInputMode(m_Window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    } else {
+        glfwSetInputMode(m_Window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
+    }
+}

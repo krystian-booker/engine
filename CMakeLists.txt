@@ -122,6 +122,7 @@ set(ENGINE_SOURCES
         src/ecs/scene_serializer.cpp
         src/ecs/systems/transform_system.cpp
         src/ecs/systems/camera_system.cpp
+        src/ecs/systems/camera_controller.cpp
         src/ecs/systems/render_system.cpp
         src/platform/window.cpp
         src/platform/input.cpp
