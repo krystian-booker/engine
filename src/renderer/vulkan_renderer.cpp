@@ -120,6 +120,8 @@ void VulkanRenderer::DrawFrame() {
         0,
         nullptr);
 
+    UpdateGlobalUniforms(currentFrameIndex);
+
     bool rendered = false;
 
     if (m_RenderSystem) {
@@ -130,7 +132,7 @@ void VulkanRenderer::DrawFrame() {
                 continue;
             }
 
-            UpdateObjectUniforms(currentFrameIndex, renderData.modelMatrix);
+            PushModelMatrix(frame->commandBuffer, renderData.modelMatrix);
             mesh->Bind(frame->commandBuffer);
             mesh->Draw(frame->commandBuffer);
             rendered = true;
@@ -152,7 +154,7 @@ void VulkanRenderer::DrawFrame() {
         }
 
         const Mat4 fallbackModel = Rotate(Mat4(1.0f), m_Rotation, Vec3(0.0f, 1.0f, 0.0f));
-        UpdateObjectUniforms(currentFrameIndex, fallbackModel);
+        PushModelMatrix(frame->commandBuffer, fallbackModel);
 
         meshData->gpuMesh.Bind(frame->commandBuffer);
         meshData->gpuMesh.Draw(frame->commandBuffer);
@@ -293,14 +295,13 @@ void VulkanRenderer::EndFrame(FrameContext& frame, u32 imageIndex) {
     m_CurrentFrame = (m_CurrentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
-void VulkanRenderer::UpdateObjectUniforms(u32 frameIndex, const Mat4& modelMatrix) {
+void VulkanRenderer::UpdateGlobalUniforms(u32 frameIndex) {
     const VkExtent2D extent = m_Swapchain.GetExtent();
     const f32 width = static_cast<f32>(extent.width);
     const f32 height = static_cast<f32>(extent.height == 0 ? 1 : extent.height);
     const f32 aspect = height != 0.0f ? width / height : 1.0f;
 
     UniformBufferObject ubo{};
-    ubo.model = modelMatrix;
 
     if (m_HasCameraMatrices) {
         ubo.view = m_ViewMatrix;
@@ -316,6 +317,10 @@ void VulkanRenderer::UpdateObjectUniforms(u32 frameIndex, const Mat4& modelMatri
     }
 
     m_Descriptors.UpdateUniformBuffer(frameIndex, &ubo, sizeof(ubo));
+}
+
+void VulkanRenderer::PushModelMatrix(VkCommandBuffer commandBuffer, const Mat4& modelMatrix) {
+    vkCmdPushConstants(commandBuffer, m_Pipeline.GetLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Mat4), &modelMatrix);
 }
 
 void VulkanRenderer::InitSwapchainResources() {

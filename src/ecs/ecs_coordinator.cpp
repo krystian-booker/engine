@@ -2,6 +2,7 @@
 #include "ecs/components/transform.h"
 #include "ecs/components/mesh_renderer.h"
 #include "ecs/components/renderable.h"
+#include "ecs/components/rotator.h"
 #include "ecs/components/camera.h"
 #include "ecs/components/light.h"
 #include "ecs/systems/transform_system.h"
@@ -19,6 +20,7 @@ void ECSCoordinator::Init() {
     RegisterComponent<Transform>();
     RegisterComponent<MeshRenderer>();
     RegisterComponent<Renderable>();
+    RegisterComponent<Rotator>();
     RegisterComponent<Camera>();
     RegisterComponent<Light>();
 

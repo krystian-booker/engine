@@ -50,7 +50,8 @@ private:
     void ResizeImagesInFlight();
     void InitMeshResources();
     void DestroyMeshResources();
-    void UpdateObjectUniforms(u32 frameIndex, const Mat4& modelMatrix);
+    void UpdateGlobalUniforms(u32 frameIndex);
+    void PushModelMatrix(VkCommandBuffer commandBuffer, const Mat4& modelMatrix);
 
     VulkanContext* m_Context = nullptr;
     Window* m_Window = nullptr;

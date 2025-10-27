@@ -111,6 +111,7 @@ endif()
 # Source files - we'll add these as we create them
 set(ENGINE_SOURCES
         src/main.cpp
+        src/examples/test_scene.cpp
         src/core/memory.cpp
         src/core/job_system.cpp
         src/core/time.cpp
@@ -375,6 +376,22 @@ target_link_libraries(test_component_registry PRIVATE
 
 # Register component registry test with CTest
 add_test(NAME ComponentRegistryTests COMMAND test_component_registry)
+
+# Test executable for left-handed math validation
+add_executable(test_left_handed_math
+        tests/test_left_handed_math.cpp
+)
+
+target_include_directories(test_left_handed_math PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_left_handed_math PRIVATE
+        glm::glm
+)
+
+add_test(NAME LeftHandedMathTests COMMAND test_left_handed_math)
+
 # Test executable for transform system
 add_executable(test_transform
         tests/test_transform.cpp

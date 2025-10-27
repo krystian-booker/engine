@@ -1,3 +1,4 @@
+#include "core/types.h"
 #include "ecs/systems/render_system.h"
 #include "ecs/ecs_coordinator.h"
 #include "ecs/components/transform.h"
@@ -171,12 +172,62 @@ TEST(RenderSystem_LoadsEachMeshOnce) {
     DestroyTestMesh(meshHandleB);
 }
 
+TEST(RenderSystem_CollectsMultipleTransformsUnique) {
+    ECSCoordinator ecs;
+    ecs.Init();
+
+    StubRenderSystem renderSystem(&ecs);
+
+    MeshHandle meshHandle = CreateTestMesh();
+
+    const Vec3 positions[] = {
+        Vec3(0.0f, 0.0f, 0.0f),
+        Vec3(5.0f, 0.0f, 0.0f),
+        Vec3(0.0f, 0.0f, 5.0f)
+    };
+
+    for (const Vec3& pos : positions) {
+        Entity entity = ecs.CreateEntity();
+        Transform transform;
+        transform.localPosition = pos;
+        transform.MarkDirty();
+        ecs.AddComponent(entity, transform);
+
+        Renderable renderable;
+        renderable.mesh = meshHandle;
+        ecs.AddComponent(entity, renderable);
+    }
+
+    ecs.Update(0.0f);
+    renderSystem.Update();
+
+    const auto& renderData = renderSystem.GetRenderData();
+    ASSERT(renderData.size() == ARRAY_COUNT(positions));
+
+    bool translationsDiffer = false;
+    for (size_t i = 0; i < renderData.size() && !translationsDiffer; ++i) {
+        for (size_t j = i + 1; j < renderData.size() && !translationsDiffer; ++j) {
+            const Mat4& a = renderData[i].modelMatrix;
+            const Mat4& b = renderData[j].modelMatrix;
+            if (a[3][0] != b[3][0] || a[3][1] != b[3][1] || a[3][2] != b[3][2]) {
+                translationsDiffer = true;
+            }
+        }
+    }
+    ASSERT(translationsDiffer);
+
+    renderSystem.Shutdown();
+    ecs.Shutdown();
+    DestroyTestMesh(meshHandle);
+}
+
 int main() {
     std::cout << "=== RenderSystem Tests ===" << std::endl << std::endl;
 
     RenderSystem_UpdateCollectsRenderableEntities_runner();
     RenderSystem_SkipsInvisibleOrInvalid_runner();
     RenderSystem_LoadsEachMeshOnce_runner();
+    RenderSystem_CollectsMultipleTransformsUnique_runner();
 
     std::cout << std::endl;
     std::cout << "================================" << std::endl;
