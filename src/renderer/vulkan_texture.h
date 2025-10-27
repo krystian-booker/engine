@@ -49,6 +49,9 @@ private:
     void CreateImageView();
     void CreateSampler(const TextureData* data);
     void GenerateMipmaps(VkImage image, VkFormat format, u32 width, u32 height, u32 mipLevels);
+    void GenerateMipmapsBlit(VkImage image, VkFormat format, u32 width, u32 height, u32 mipLevels);
+    void GenerateMipmapsCompute(VkImage image, VkFormat format, u32 width, u32 height, u32 mipLevels);
+    void GenerateMipmapsCPU(VkImage image, VkFormat format, u32 width, u32 height, u32 mipLevels);
     void TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout,
                                VkImageLayout newLayout, u32 mipLevels);
     void CopyBufferToImage(VkBuffer buffer, VkImage image, u32 width, u32 height);

@@ -6,6 +6,7 @@
 
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 class Window;
 
@@ -28,6 +29,16 @@ public:
     u32 GetGraphicsQueueFamily() const { return m_GraphicsQueueFamily; }
     u32 GetPresentQueueFamily() const { return m_PresentQueueFamily; }
 
+    // Format capability queries
+    bool SupportsLinearBlit(VkFormat format) const;
+    bool SupportsColorAttachment(VkFormat format) const;
+    bool SupportsDepthStencilAttachment(VkFormat format) const;
+    bool SupportsTransferSrc(VkFormat format) const;
+    bool SupportsTransferDst(VkFormat format) const;
+    bool SupportsSampledImage(VkFormat format) const;
+    bool SupportsStorageImage(VkFormat format) const;
+    const VkFormatProperties* GetFormatProperties(VkFormat format) const;
+
 private:
     VkInstance m_Instance = VK_NULL_HANDLE;
     VkDebugUtilsMessengerEXT m_DebugMessenger = VK_NULL_HANDLE;
@@ -44,6 +55,9 @@ private:
 
     VkSurfaceKHR m_Surface = VK_NULL_HANDLE;
 
+    // Format capabilities cache
+    mutable std::unordered_map<VkFormat, VkFormatProperties> m_FormatCapabilities;
+
     const std::vector<const char*> m_ValidationLayers = {
         "VK_LAYER_KHRONOS_validation"
     };
@@ -59,6 +73,7 @@ private:
     void CreateSurface(Window* window);
     void PickPhysicalDevice();
     void CreateLogicalDevice();
+    void CacheFormatCapabilities();
 
     bool CheckValidationLayerSupport();
     std::vector<const char*> GetRequiredExtensions();

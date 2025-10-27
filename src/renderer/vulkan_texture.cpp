@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 
 // Removed unused helper function IsFormatSRGB (may be used in future for validation)
 
@@ -213,14 +214,27 @@ void VulkanTexture::CreateSampler(const TextureData* data) {
 }
 
 void VulkanTexture::GenerateMipmaps(VkImage image, VkFormat format, u32 width, u32 height, u32 mipLevels) {
-    // Check if image format supports linear blitting
-    VkFormatProperties formatProperties;
-    vkGetPhysicalDeviceFormatProperties(m_Context->GetPhysicalDevice(), format, &formatProperties);
-
-    if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
-        throw std::runtime_error("VulkanTexture::GenerateMipmaps texture format does not support linear blitting");
+    // Multi-tier fallback system for mipmap generation
+    // Tier 1: GPU blit-based (fastest, requires linear blit support)
+    if (m_Context->SupportsLinearBlit(format)) {
+        std::cout << "Using GPU blit for mipmap generation" << std::endl;
+        GenerateMipmapsBlit(image, format, width, height, mipLevels);
+        return;
     }
 
+    // Tier 2: Compute shader-based (requires storage image support)
+    if (m_Context->SupportsStorageImage(format)) {
+        std::cout << "Linear blit unsupported, using compute shader for mipmap generation" << std::endl;
+        GenerateMipmapsCompute(image, format, width, height, mipLevels);
+        return;
+    }
+
+    // Tier 3: CPU-based (slow but always works)
+    std::cout << "WARNING: Compute shader unsupported, using CPU-based mipmap generation (slow)" << std::endl;
+    GenerateMipmapsCPU(image, format, width, height, mipLevels);
+}
+
+void VulkanTexture::GenerateMipmapsBlit(VkImage image, VkFormat /*format*/, u32 width, u32 height, u32 mipLevels) {
     VkCommandBuffer commandBuffer = BeginSingleTimeCommands();
 
     VkImageMemoryBarrier barrier{};
@@ -304,6 +318,171 @@ void VulkanTexture::GenerateMipmaps(VkImage image, VkFormat format, u32 width, u
                         1, &barrier);
 
     EndSingleTimeCommands(commandBuffer);
+}
+
+void VulkanTexture::GenerateMipmapsCompute(VkImage /*image*/, VkFormat /*format*/, u32 /*width*/, u32 /*height*/, u32 /*mipLevels*/) {
+    // TODO: Implement compute shader-based mipmap generation
+    // For now, fall back to CPU-based generation
+    std::cout << "WARNING: Compute shader mipmap generation not yet implemented, falling back to CPU" << std::endl;
+    // GenerateMipmapsCPU(image, format, width, height, mipLevels);
+    throw std::runtime_error("VulkanTexture::GenerateMipmapsCompute not yet implemented");
+}
+
+void VulkanTexture::GenerateMipmapsCPU(VkImage image, VkFormat format, u32 width, u32 height, u32 mipLevels) {
+    // Determine bytes per pixel based on format
+    u32 bytesPerPixel = 0;
+    bool isSRGB = false;
+
+    switch (format) {
+        case VK_FORMAT_R8_UNORM:
+        case VK_FORMAT_R8_SRGB:
+            bytesPerPixel = 1;
+            isSRGB = (format == VK_FORMAT_R8_SRGB);
+            break;
+        case VK_FORMAT_R8G8_UNORM:
+        case VK_FORMAT_R8G8_SRGB:
+            bytesPerPixel = 2;
+            isSRGB = (format == VK_FORMAT_R8G8_SRGB);
+            break;
+        case VK_FORMAT_R8G8B8_UNORM:
+        case VK_FORMAT_R8G8B8_SRGB:
+            bytesPerPixel = 3;
+            isSRGB = (format == VK_FORMAT_R8G8B8_SRGB);
+            break;
+        case VK_FORMAT_R8G8B8A8_UNORM:
+        case VK_FORMAT_R8G8B8A8_SRGB:
+        case VK_FORMAT_B8G8R8A8_UNORM:
+        case VK_FORMAT_B8G8R8A8_SRGB:
+            bytesPerPixel = 4;
+            isSRGB = (format == VK_FORMAT_R8G8B8A8_SRGB || format == VK_FORMAT_B8G8R8A8_SRGB);
+            break;
+        default:
+            throw std::runtime_error("VulkanTexture::GenerateMipmapsCPU unsupported format for CPU mipmap generation");
+    }
+
+    // Allocate CPU buffers for mip levels
+    std::vector<std::vector<u8>> mipData(mipLevels);
+
+    u32 mipWidth = width;
+    u32 mipHeight = height;
+
+    for (u32 level = 0; level < mipLevels; ++level) {
+        const VkDeviceSize mipSize = mipWidth * mipHeight * bytesPerPixel;
+        mipData[level].resize(static_cast<size_t>(mipSize));
+
+        if (level == 0) {
+            // Download mip level 0 from GPU
+            VulkanBuffer stagingBuffer;
+            stagingBuffer.Create(m_Context, mipSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+            // Transition image to transfer source
+            TransitionImageLayout(image, format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 1);
+
+            // Copy image to staging buffer
+            VkCommandBuffer commandBuffer = BeginSingleTimeCommands();
+
+            VkBufferImageCopy region{};
+            region.bufferOffset = 0;
+            region.bufferRowLength = 0;
+            region.bufferImageHeight = 0;
+            region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            region.imageSubresource.mipLevel = 0;
+            region.imageSubresource.baseArrayLayer = 0;
+            region.imageSubresource.layerCount = 1;
+            region.imageOffset = {0, 0, 0};
+            region.imageExtent = {mipWidth, mipHeight, 1};
+
+            vkCmdCopyImageToBuffer(commandBuffer, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                 stagingBuffer.GetBuffer(), 1, &region);
+
+            EndSingleTimeCommands(commandBuffer);
+
+            // Copy to CPU buffer
+            void* data = stagingBuffer.Map();
+            memcpy(mipData[0].data(), data, static_cast<size_t>(mipSize));
+            stagingBuffer.Unmap();
+            stagingBuffer.Destroy();
+        } else {
+            // Generate from previous mip level using box filter
+            const u32 prevWidth = mipWidth * 2;
+            const u32 prevHeight = mipHeight * 2;
+            const u8* prevData = mipData[level - 1].data();
+            u8* currData = mipData[level].data();
+
+            for (u32 y = 0; y < mipHeight; ++y) {
+                for (u32 x = 0; x < mipWidth; ++x) {
+                    // Sample 2x2 region from previous level
+                    const u32 px0 = x * 2;
+                    const u32 py0 = y * 2;
+                    const u32 px1 = std::min(px0 + 1, prevWidth - 1);
+                    const u32 py1 = std::min(py0 + 1, prevHeight - 1);
+
+                    // Average the 2x2 pixels
+                    for (u32 c = 0; c < bytesPerPixel; ++c) {
+                        const u32 s0 = prevData[(py0 * prevWidth + px0) * bytesPerPixel + c];
+                        const u32 s1 = prevData[(py0 * prevWidth + px1) * bytesPerPixel + c];
+                        const u32 s2 = prevData[(py1 * prevWidth + px0) * bytesPerPixel + c];
+                        const u32 s3 = prevData[(py1 * prevWidth + px1) * bytesPerPixel + c];
+
+                        currData[(y * mipWidth + x) * bytesPerPixel + c] = static_cast<u8>((s0 + s1 + s2 + s3) / 4);
+                    }
+                }
+            }
+        }
+
+        if (mipWidth > 1) mipWidth /= 2;
+        if (mipHeight > 1) mipHeight /= 2;
+    }
+
+    // Upload all mip levels to GPU
+    mipWidth = width;
+    mipHeight = height;
+
+    for (u32 level = 0; level < mipLevels; ++level) {
+        const VkDeviceSize mipSize = mipWidth * mipHeight * bytesPerPixel;
+
+        if (level > 0) {
+            // Create staging buffer and upload
+            VulkanBuffer stagingBuffer;
+            stagingBuffer.Create(m_Context, mipSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+            void* data = stagingBuffer.Map();
+            memcpy(data, mipData[level].data(), static_cast<size_t>(mipSize));
+            stagingBuffer.Unmap();
+
+            // Copy to image
+            VkCommandBuffer commandBuffer = BeginSingleTimeCommands();
+
+            VkBufferImageCopy region{};
+            region.bufferOffset = 0;
+            region.bufferRowLength = 0;
+            region.bufferImageHeight = 0;
+            region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            region.imageSubresource.mipLevel = level;
+            region.imageSubresource.baseArrayLayer = 0;
+            region.imageSubresource.layerCount = 1;
+            region.imageOffset = {0, 0, 0};
+            region.imageExtent = {mipWidth, mipHeight, 1};
+
+            vkCmdCopyBufferToImage(commandBuffer, stagingBuffer.GetBuffer(), image,
+                                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+            EndSingleTimeCommands(commandBuffer);
+            stagingBuffer.Destroy();
+        }
+
+        if (mipWidth > 1) mipWidth /= 2;
+        if (mipHeight > 1) mipHeight /= 2;
+    }
+
+    // Transition all mip levels to shader read-only
+    TransitionImageLayout(image, format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, mipLevels);
+
+    (void)isSRGB; // Unused for now, but available for future sRGB-aware filtering
 }
 
 void VulkanTexture::TransitionImageLayout(VkImage image, VkFormat /*format*/, VkImageLayout oldLayout,

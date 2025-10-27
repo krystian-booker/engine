@@ -19,6 +19,7 @@ void VulkanContext::Init(Window* window) {
     SetupDebugMessenger();
     CreateSurface(window);
     PickPhysicalDevice();
+    CacheFormatCapabilities();
     CreateLogicalDevice();
 
     std::cout << "Vulkan context initialized" << std::endl;
@@ -263,6 +264,78 @@ void VulkanContext::CreateLogicalDevice() {
     std::cout << "Present queue family: " << presentFamily << std::endl;
 }
 
+void VulkanContext::CacheFormatCapabilities() {
+    // Extended format set: PBR textures, HDR, compression, depth/stencil
+    const std::vector<VkFormat> formatsToCache = {
+        // 8-bit UNORM formats
+        VK_FORMAT_R8_UNORM,
+        VK_FORMAT_R8G8_UNORM,
+        VK_FORMAT_R8G8B8_UNORM,
+        VK_FORMAT_R8G8B8A8_UNORM,
+        VK_FORMAT_B8G8R8A8_UNORM,
+
+        // 8-bit SRGB formats
+        VK_FORMAT_R8_SRGB,
+        VK_FORMAT_R8G8_SRGB,
+        VK_FORMAT_R8G8B8_SRGB,
+        VK_FORMAT_R8G8B8A8_SRGB,
+        VK_FORMAT_B8G8R8A8_SRGB,
+
+        // 16-bit float formats (HDR)
+        VK_FORMAT_R16_SFLOAT,
+        VK_FORMAT_R16G16_SFLOAT,
+        VK_FORMAT_R16G16B16_SFLOAT,
+        VK_FORMAT_R16G16B16A16_SFLOAT,
+
+        // 16-bit UNORM formats
+        VK_FORMAT_R16_UNORM,
+        VK_FORMAT_R16G16_UNORM,
+        VK_FORMAT_R16G16B16A16_UNORM,
+
+        // 32-bit float formats (HDR)
+        VK_FORMAT_R32_SFLOAT,
+        VK_FORMAT_R32G32_SFLOAT,
+        VK_FORMAT_R32G32B32_SFLOAT,
+        VK_FORMAT_R32G32B32A32_SFLOAT,
+
+        // Packed formats
+        VK_FORMAT_A2B10G10R10_UNORM_PACK32,
+
+        // Depth/Stencil formats
+        VK_FORMAT_D16_UNORM,
+        VK_FORMAT_D32_SFLOAT,
+        VK_FORMAT_D24_UNORM_S8_UINT,
+        VK_FORMAT_D32_SFLOAT_S8_UINT,
+
+        // BC compression formats (UNORM)
+        VK_FORMAT_BC1_RGB_UNORM_BLOCK,
+        VK_FORMAT_BC1_RGBA_UNORM_BLOCK,
+        VK_FORMAT_BC2_UNORM_BLOCK,
+        VK_FORMAT_BC3_UNORM_BLOCK,
+        VK_FORMAT_BC4_UNORM_BLOCK,
+        VK_FORMAT_BC5_UNORM_BLOCK,
+        VK_FORMAT_BC6H_SFLOAT_BLOCK,
+        VK_FORMAT_BC7_UNORM_BLOCK,
+
+        // BC compression formats (SRGB)
+        VK_FORMAT_BC1_RGB_SRGB_BLOCK,
+        VK_FORMAT_BC1_RGBA_SRGB_BLOCK,
+        VK_FORMAT_BC2_SRGB_BLOCK,
+        VK_FORMAT_BC3_SRGB_BLOCK,
+        VK_FORMAT_BC7_SRGB_BLOCK,
+    };
+
+    std::cout << "Caching format capabilities for " << formatsToCache.size() << " formats..." << std::endl;
+
+    for (VkFormat format : formatsToCache) {
+        VkFormatProperties properties{};
+        vkGetPhysicalDeviceFormatProperties(m_PhysicalDevice, format, &properties);
+        m_FormatCapabilities[format] = properties;
+    }
+
+    std::cout << "Format capabilities cached" << std::endl;
+}
+
 bool VulkanContext::CheckValidationLayerSupport() {
     u32 layerCount = 0;
     vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
@@ -299,6 +372,85 @@ std::vector<const char*> VulkanContext::GetRequiredExtensions() {
     }
 
     return extensions;
+}
+
+const VkFormatProperties* VulkanContext::GetFormatProperties(VkFormat format) const {
+    // Check cache first
+    auto it = m_FormatCapabilities.find(format);
+    if (it != m_FormatCapabilities.end()) {
+        return &it->second;
+    }
+
+    // Not cached - query and cache on-demand
+    VkFormatProperties properties{};
+    vkGetPhysicalDeviceFormatProperties(m_PhysicalDevice, format, &properties);
+    m_FormatCapabilities[format] = properties;
+
+    return &m_FormatCapabilities[format];
+}
+
+bool VulkanContext::SupportsLinearBlit(VkFormat format) const {
+    const VkFormatProperties* props = GetFormatProperties(format);
+    if (!props) {
+        return false;
+    }
+
+    // Check if optimal tiling supports linear filtering for sampled images
+    return (props->optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0;
+}
+
+bool VulkanContext::SupportsColorAttachment(VkFormat format) const {
+    const VkFormatProperties* props = GetFormatProperties(format);
+    if (!props) {
+        return false;
+    }
+
+    return (props->optimalTilingFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT) != 0;
+}
+
+bool VulkanContext::SupportsDepthStencilAttachment(VkFormat format) const {
+    const VkFormatProperties* props = GetFormatProperties(format);
+    if (!props) {
+        return false;
+    }
+
+    return (props->optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0;
+}
+
+bool VulkanContext::SupportsTransferSrc(VkFormat format) const {
+    const VkFormatProperties* props = GetFormatProperties(format);
+    if (!props) {
+        return false;
+    }
+
+    return (props->optimalTilingFeatures & VK_FORMAT_FEATURE_TRANSFER_SRC_BIT) != 0;
+}
+
+bool VulkanContext::SupportsTransferDst(VkFormat format) const {
+    const VkFormatProperties* props = GetFormatProperties(format);
+    if (!props) {
+        return false;
+    }
+
+    return (props->optimalTilingFeatures & VK_FORMAT_FEATURE_TRANSFER_DST_BIT) != 0;
+}
+
+bool VulkanContext::SupportsSampledImage(VkFormat format) const {
+    const VkFormatProperties* props = GetFormatProperties(format);
+    if (!props) {
+        return false;
+    }
+
+    return (props->optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) != 0;
+}
+
+bool VulkanContext::SupportsStorageImage(VkFormat format) const {
+    const VkFormatProperties* props = GetFormatProperties(format);
+    if (!props) {
+        return false;
+    }
+
+    return (props->optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) != 0;
 }
 
 VKAPI_ATTR VkBool32 VKAPI_CALL VulkanContext::DebugCallback(

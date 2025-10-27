@@ -872,3 +872,29 @@ target_link_libraries(test_texture_async PRIVATE
 )
 
 add_test(NAME TextureAsyncTests COMMAND test_texture_async)
+
+# Test executable for format support detection
+add_executable(test_format_support
+        tests/test_format_support.cpp
+        src/renderer/vulkan_context.cpp
+        src/platform/window.cpp
+)
+
+if(WIN32)
+    target_sources(test_format_support PRIVATE src/platform/win32_platform.cpp)
+endif()
+
+target_include_directories(test_format_support PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_format_support PRIVATE
+        glfw
+        Vulkan::Vulkan
+)
+
+if(WIN32)
+    target_link_libraries(test_format_support PRIVATE User32 Gdi32)
+endif()
+
+add_test(NAME FormatSupportTests COMMAND test_format_support)
