@@ -89,6 +89,15 @@ set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(GLFW_LIBRARY_TYPE "STATIC" CACHE STRING "" FORCE)
 FetchContent_MakeAvailable(glfw)
 
+# Fetch stb (for stb_image)
+FetchContent_Declare(
+        stb
+        GIT_REPOSITORY https://github.com/nothings/stb.git
+        GIT_TAG        master
+        GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(stb)
+
 # Vulkan
 find_package(Vulkan REQUIRED)
 
@@ -108,6 +117,12 @@ if(TARGET glfw)
     endif()
 endif()
 
+# stb is header-only, so we just need the include directory
+FetchContent_GetProperties(stb)
+if(NOT stb_POPULATED)
+    FetchContent_Populate(stb)
+endif()
+
 # Source files - we'll add these as we create them
 set(ENGINE_SOURCES
         src/main.cpp
@@ -116,6 +131,7 @@ set(ENGINE_SOURCES
         src/core/job_system.cpp
         src/core/time.cpp
         src/core/file_watcher.cpp
+        src/core/texture_data.cpp
         src/ecs/ecs_coordinator.cpp
         src/ecs/entity_manager.cpp
         src/ecs/hierarchy_manager.cpp
@@ -127,10 +143,13 @@ set(ENGINE_SOURCES
         src/platform/window.cpp
         src/platform/input.cpp
         src/resources/mesh_manager.cpp
+        src/resources/image_loader.cpp
+        src/resources/texture_manager.cpp
         src/renderer/vulkan_context.cpp
         src/renderer/vulkan_swapchain.cpp
         src/renderer/vulkan_renderer.cpp
         src/renderer/vulkan_mesh.cpp
+        src/renderer/vulkan_texture.cpp
         src/renderer/vulkan_pipeline.cpp
         src/renderer/vulkan_descriptors.cpp
         src/renderer/vulkan_render_pass.cpp
@@ -151,6 +170,7 @@ add_executable(engine ${ENGINE_SOURCES})
 # Include directories
 target_include_directories(engine PRIVATE
         ${CMAKE_SOURCE_DIR}/src
+        ${stb_SOURCE_DIR}
 )
 
 # Link GLM, JSON, and GLFW
@@ -790,3 +810,42 @@ if(WIN32)
 endif()
 
 add_test(NAME VulkanBufferTests COMMAND test_vulkan_buffer)
+
+# Test executable for texture loading
+add_executable(test_texture_loading
+        tests/test_texture_loading.cpp
+        src/core/texture_data.cpp
+        src/resources/image_loader.cpp
+)
+
+target_include_directories(test_texture_loading PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${stb_SOURCE_DIR}
+)
+
+target_link_libraries(test_texture_loading PRIVATE
+        glm::glm
+        Vulkan::Vulkan
+)
+
+add_test(NAME TextureLoadingTests COMMAND test_texture_loading)
+
+# Test executable for texture manager
+add_executable(test_texture_manager
+        tests/test_texture_manager.cpp
+        src/core/texture_data.cpp
+        src/resources/image_loader.cpp
+        src/resources/texture_manager.cpp
+)
+
+target_include_directories(test_texture_manager PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${stb_SOURCE_DIR}
+)
+
+target_link_libraries(test_texture_manager PRIVATE
+        glm::glm
+        Vulkan::Vulkan
+)
+
+add_test(NAME TextureManagerTests COMMAND test_texture_manager)
