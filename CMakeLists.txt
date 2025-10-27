@@ -115,6 +115,7 @@ set(ENGINE_SOURCES
         src/core/job_system.cpp
         src/core/time.cpp
         src/core/file_watcher.cpp
+        src/ecs/ecs_coordinator.cpp
         src/ecs/entity_manager.cpp
         src/ecs/hierarchy_manager.cpp
         src/ecs/scene_serializer.cpp
@@ -392,6 +393,7 @@ add_test(NAME TransformSystemTests COMMAND test_transform)
 # Test executable for ECS coordinator
 add_executable(test_ecs_coordinator
         tests/test_ecs_coordinator.cpp
+        src/ecs/ecs_coordinator.cpp
         src/ecs/entity_manager.cpp
         src/ecs/hierarchy_manager.cpp
         src/ecs/systems/transform_system.cpp
@@ -407,6 +409,102 @@ target_link_libraries(test_ecs_coordinator PRIVATE
 
 # Register ECS coordinator test with CTest
 add_test(NAME ECSCoordinatorTests COMMAND test_ecs_coordinator)
+
+add_executable(test_ecs_queries
+        tests/test_ecs_queries.cpp
+        src/ecs/ecs_coordinator.cpp
+        src/ecs/entity_manager.cpp
+        src/ecs/hierarchy_manager.cpp
+        src/ecs/systems/transform_system.cpp
+)
+
+target_include_directories(test_ecs_queries PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_ecs_queries PRIVATE
+        glm::glm
+)
+
+add_test(NAME ECSQueryTests COMMAND test_ecs_queries)
+
+add_executable(test_ecs_deferred
+        tests/test_ecs_deferred.cpp
+        src/ecs/ecs_coordinator.cpp
+        src/ecs/entity_manager.cpp
+        src/ecs/hierarchy_manager.cpp
+        src/ecs/systems/transform_system.cpp
+)
+
+target_include_directories(test_ecs_deferred PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_ecs_deferred PRIVATE
+        glm::glm
+)
+
+add_test(NAME ECSDeferredTests COMMAND test_ecs_deferred)
+
+add_executable(test_ecs_versions
+        tests/test_ecs_versions.cpp
+        src/ecs/ecs_coordinator.cpp
+        src/ecs/entity_manager.cpp
+        src/ecs/hierarchy_manager.cpp
+        src/ecs/systems/transform_system.cpp
+)
+
+target_include_directories(test_ecs_versions PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_ecs_versions PRIVATE
+        glm::glm
+)
+
+add_test(NAME ECSVersionTests COMMAND test_ecs_versions)
+
+add_executable(test_ecs_signatures
+        tests/test_ecs_signatures.cpp
+        src/ecs/ecs_coordinator.cpp
+        src/ecs/entity_manager.cpp
+        src/ecs/hierarchy_manager.cpp
+        src/ecs/systems/transform_system.cpp
+)
+
+target_include_directories(test_ecs_signatures PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_ecs_signatures PRIVATE
+        glm::glm
+)
+
+add_test(NAME ECSSignatureTests COMMAND test_ecs_signatures)
+
+add_executable(test_ecs_parallel
+        tests/test_ecs_parallel.cpp
+        src/ecs/ecs_coordinator.cpp
+        src/ecs/entity_manager.cpp
+        src/ecs/hierarchy_manager.cpp
+        src/ecs/systems/transform_system.cpp
+        src/core/job_system.cpp
+        src/core/memory.cpp
+)
+
+if(WIN32)
+    target_sources(test_ecs_parallel PRIVATE src/platform/win32_platform.cpp)
+endif()
+
+target_include_directories(test_ecs_parallel PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_ecs_parallel PRIVATE
+        glm::glm
+)
+
+add_test(NAME ECSParallelTests COMMAND test_ecs_parallel)
 
 # Test executable for hierarchy manager
 add_executable(test_hierarchy_manager
@@ -429,6 +527,7 @@ add_test(NAME HierarchyManagerTests COMMAND test_hierarchy_manager)
 # Test executable for scene serializer
 add_executable(test_scene_serializer
         tests/test_scene_serializer.cpp
+        src/ecs/ecs_coordinator.cpp
         src/ecs/entity_manager.cpp
         src/ecs/hierarchy_manager.cpp
         src/ecs/scene_serializer.cpp

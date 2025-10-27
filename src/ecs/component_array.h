@@ -1,6 +1,10 @@
 #pragma once
 #include "entity.h"
 #include "core/types.h"
+#include "core/config.h"
+#if ECS_USE_SMALL_VECTOR
+#include "core/small_vector.h"
+#endif
 #include <vector>
 #include <cassert>
 
@@ -17,10 +21,12 @@ public:
 template<typename T>
 class ComponentArray : public IComponentArray {
 public:
-    ComponentArray(u32 maxEntities = 1024) {
+    ComponentArray(u32 maxEntities = 1024)
+        : m_VersionCounter(0) {
         m_Sparse.resize(maxEntities, INVALID_INDEX);
         m_Dense.reserve(maxEntities);
         m_Entities.reserve(maxEntities);
+        m_Versions.reserve(maxEntities);
     }
 
     // Add component to entity
@@ -36,6 +42,7 @@ public:
         m_Sparse[entity.index] = denseIndex;
         m_Dense.push_back(component);
         m_Entities.push_back(entity);
+        m_Versions.push_back(NextVersion());
     }
 
     // Remove component from entity
@@ -48,6 +55,7 @@ public:
         // Swap with last element
         m_Dense[denseIndex] = m_Dense[lastIndex];
         m_Entities[denseIndex] = m_Entities[lastIndex];
+        m_Versions[denseIndex] = m_Versions[lastIndex];
 
         // Update sparse array for swapped entity
         Entity lastEntity = m_Entities[denseIndex];
@@ -57,6 +65,7 @@ public:
         m_Sparse[entity.index] = INVALID_INDEX;
         m_Dense.pop_back();
         m_Entities.pop_back();
+        m_Versions.pop_back();
     }
 
     // Get component (const and non-const)
@@ -68,6 +77,21 @@ public:
     const T& Get(Entity entity) const {
         assert(Has(entity) && "Component doesn't exist");
         return m_Dense[m_Sparse[entity.index]];
+    }
+
+    T& GetMutable(Entity entity) {
+        MarkDirty(entity);
+        return Get(entity);
+    }
+
+    u32 GetVersion(Entity entity) const {
+        assert(Has(entity) && "Component doesn't exist");
+        return m_Versions[m_Sparse[entity.index]];
+    }
+
+    void MarkDirty(Entity entity) {
+        assert(Has(entity) && "Component doesn't exist");
+        m_Versions[m_Sparse[entity.index]] = NextVersion();
     }
 
     // Check if entity has component
@@ -99,9 +123,30 @@ public:
     }
 
 private:
+    u32 NextVersion() {
+        ++m_VersionCounter;
+        if (m_VersionCounter == 0) {
+            ++m_VersionCounter;
+        }
+        return m_VersionCounter;
+    }
+
     static constexpr u32 INVALID_INDEX = 0xFFFFFFFF;
 
     std::vector<u32> m_Sparse;      // entity.index -> dense index
-    std::vector<T> m_Dense;         // Packed component data
-    std::vector<Entity> m_Entities; // entity for each component (parallel to dense)
+
+#if ECS_USE_SMALL_VECTOR
+    using DenseStorage = SmallVector<T, ECS_SMALL_VECTOR_INLINE_CAPACITY>;
+    using EntityStorage = SmallVector<Entity, ECS_SMALL_VECTOR_INLINE_CAPACITY>;
+    using VersionStorage = SmallVector<u32, ECS_SMALL_VECTOR_INLINE_CAPACITY>;
+#else
+    using DenseStorage = std::vector<T>;
+    using EntityStorage = std::vector<Entity>;
+    using VersionStorage = std::vector<u32>;
+#endif
+
+    DenseStorage m_Dense;         // Packed component data
+    EntityStorage m_Entities;     // entity for each component (parallel to dense)
+    VersionStorage m_Versions;    // version per component slot
+    u32 m_VersionCounter;
 };

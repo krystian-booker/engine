@@ -19,11 +19,17 @@ Entity EntityManager::CreateEntity() {
         index = m_FreeList.front();
         m_FreeList.pop();
         generation = m_Generations[index];
+#if ECS_ENABLE_SIGNATURES
+        m_Signatures[index] = 0;
+#endif
     } else {
         // Allocate a new slot
         index = static_cast<u32>(m_Generations.size());
         generation = 0;
         m_Generations.push_back(generation);
+#if ECS_ENABLE_SIGNATURES
+        m_Signatures.push_back(0);
+#endif
     }
 
     m_AliveCount++;
@@ -38,6 +44,10 @@ void EntityManager::DestroyEntity(Entity entity) {
 
     // Increment generation counter to invalidate old handles
     m_Generations[entity.index]++;
+
+#if ECS_ENABLE_SIGNATURES
+    m_Signatures[entity.index] = 0;
+#endif
 
     // Add to free list for reuse
     m_FreeList.push(entity.index);
@@ -57,3 +67,38 @@ bool EntityManager::IsAlive(Entity entity) const {
     // Check if generation matches
     return m_Generations[entity.index] == entity.generation;
 }
+
+#if ECS_ENABLE_SIGNATURES
+EntitySignature EntityManager::GetSignature(Entity entity) const {
+    if (!entity.IsValid() || entity.index >= m_Signatures.size()) {
+        return 0;
+    }
+    return m_Signatures[entity.index];
+}
+
+void EntityManager::SetSignatureBit(Entity entity, u32 bitIndex) {
+    if (!entity.IsValid() || entity.index >= m_Signatures.size()) {
+        return;
+    }
+
+    ENGINE_ASSERT(bitIndex < ECS_SIGNATURE_BITS);
+    m_Signatures[entity.index] |= (EntitySignature{1} << bitIndex);
+}
+
+void EntityManager::ClearSignatureBit(Entity entity, u32 bitIndex) {
+    if (!entity.IsValid() || entity.index >= m_Signatures.size()) {
+        return;
+    }
+
+    ENGINE_ASSERT(bitIndex < ECS_SIGNATURE_BITS);
+    m_Signatures[entity.index] &= ~(EntitySignature{1} << bitIndex);
+}
+
+void EntityManager::ResetSignature(Entity entity) {
+    if (!entity.IsValid() || entity.index >= m_Signatures.size()) {
+        return;
+    }
+
+    m_Signatures[entity.index] = 0;
+}
+#endif

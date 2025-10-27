@@ -1,5 +1,6 @@
 #pragma once
 #include "component_array.h"
+#include "core/config.h"
 #include <memory>
 #include <unordered_map>
 #include <typeindex>
@@ -20,6 +21,13 @@ public:
                && "Component already registered");
 
         m_ComponentArrays[typeIndex] = std::make_shared<ComponentArray<T>>();
+
+#if ECS_ENABLE_SIGNATURES
+        assert(m_ComponentTypeIds.find(typeIndex) == m_ComponentTypeIds.end()
+               && "Component type id already registered");
+        assert(m_NextComponentTypeId < ECS_SIGNATURE_BITS && "Exceeded signature bit capacity");
+        m_ComponentTypeIds[typeIndex] = m_NextComponentTypeId++;
+#endif
     }
 
     // Get component array for a registered type
@@ -43,6 +51,16 @@ public:
         return std::static_pointer_cast<ComponentArray<T>>(m_ComponentArrays.at(typeIndex));
     }
 
+#if ECS_ENABLE_SIGNATURES
+    template<typename T>
+    u32 GetComponentTypeId() const {
+        std::type_index typeIndex = std::type_index(typeid(T));
+        auto it = m_ComponentTypeIds.find(typeIndex);
+        assert(it != m_ComponentTypeIds.end() && "Component not registered");
+        return it->second;
+    }
+#endif
+
     // Entity destroyed - remove all its components from all arrays
     // Safe to call even if entity doesn't have components in some arrays
     void OnEntityDestroyed(Entity entity) {
@@ -56,4 +74,8 @@ public:
 private:
     // Maps type_index to component arrays (stored as void* for type erasure)
     std::unordered_map<std::type_index, std::shared_ptr<void>> m_ComponentArrays;
+#if ECS_ENABLE_SIGNATURES
+    std::unordered_map<std::type_index, u32> m_ComponentTypeIds;
+    u32 m_NextComponentTypeId = 0;
+#endif
 };
