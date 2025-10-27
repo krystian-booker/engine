@@ -5,22 +5,19 @@
 
 #include <stdexcept>
 #include <array>
-#include <vector>
-
 VulkanRenderPass::~VulkanRenderPass() {
     Shutdown();
 }
 
-void VulkanRenderPass::Init(VulkanContext* context, VulkanSwapchain* swapchain) {
-    if (!context || !swapchain) {
-        throw std::invalid_argument("VulkanRenderPass::Init requires valid context and swapchain");
+void VulkanRenderPass::Init(VulkanContext* context, VulkanSwapchain* swapchain, VkFormat depthFormat) {
+    if (!context || !swapchain || depthFormat == VK_FORMAT_UNDEFINED) {
+        throw std::invalid_argument("VulkanRenderPass::Init requires valid context, swapchain, and depth format");
     }
 
+    Shutdown();
+
     m_Context = context;
-    m_DepthFormat = FindDepthFormat(context);
-    if (m_DepthFormat == VK_FORMAT_UNDEFINED) {
-        throw std::runtime_error("VulkanRenderPass::Init failed to find suitable depth format");
-    }
+    m_DepthFormat = depthFormat;
 
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format = swapchain->GetImageFormat();
@@ -91,42 +88,4 @@ void VulkanRenderPass::Shutdown() {
     m_RenderPass = VK_NULL_HANDLE;
     m_Context = nullptr;
     m_DepthFormat = VK_FORMAT_UNDEFINED;
-}
-
-VkFormat VulkanRenderPass::FindDepthFormat(VulkanContext* context) {
-    const std::vector<VkFormat> candidates = {
-        VK_FORMAT_D32_SFLOAT,
-        VK_FORMAT_D32_SFLOAT_S8_UINT,
-        VK_FORMAT_D24_UNORM_S8_UINT
-    };
-
-    return FindSupportedFormat(
-        context,
-        candidates,
-        VK_IMAGE_TILING_OPTIMAL,
-        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
-}
-
-VkFormat VulkanRenderPass::FindSupportedFormat(
-    VulkanContext* context,
-    const std::vector<VkFormat>& candidates,
-    VkImageTiling tiling,
-    VkFormatFeatureFlags features) {
-
-    for (VkFormat format : candidates) {
-        VkFormatProperties props{};
-        vkGetPhysicalDeviceFormatProperties(context->GetPhysicalDevice(), format, &props);
-
-        if (tiling == VK_IMAGE_TILING_LINEAR &&
-            (props.linearTilingFeatures & features) == features) {
-            return format;
-        }
-
-        if (tiling == VK_IMAGE_TILING_OPTIMAL &&
-            (props.optimalTilingFeatures & features) == features) {
-            return format;
-        }
-    }
-
-    return VK_FORMAT_UNDEFINED;
 }

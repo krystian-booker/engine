@@ -9,6 +9,7 @@
 #include "renderer/vulkan_render_pass.h"
 #include "renderer/vulkan_swapchain.h"
 #include "renderer/vulkan_descriptors.h"
+#include "renderer/vulkan_depth.h"
 
 #include <vulkan/vulkan.h>
 
@@ -44,10 +45,6 @@ private:
     void ResizeImagesInFlight();
     void InitMeshResources();
     void DestroyMeshResources();
-    void CreateDepthResources();
-    void DestroyDepthResources();
-    u32 FindMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties) const;
-    bool HasStencilComponent(VkFormat format) const;
 
     VulkanContext* m_Context = nullptr;
     Window* m_Window = nullptr;
@@ -58,15 +55,11 @@ private:
     VulkanCommandBuffer m_CommandBuffers;
     VulkanPipeline m_Pipeline;
     VulkanDescriptors m_Descriptors;
+    VulkanDepthBuffer m_DepthBuffer;
 
     static constexpr u32 MAX_FRAMES_IN_FLIGHT = 2;
     std::vector<FrameContext> m_Frames;
     std::vector<VkFence> m_ImagesInFlight;
-
-    std::vector<VkImage> m_DepthImages;
-    std::vector<VkDeviceMemory> m_DepthImageMemory;
-    std::vector<VkImageView> m_DepthImageViews;
-    VkFormat m_DepthFormat = VK_FORMAT_UNDEFINED;
 
     u32 m_CurrentFrame = 0;
     bool m_FramebufferResized = false;

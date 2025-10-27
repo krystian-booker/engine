@@ -14,16 +14,16 @@ void VulkanFramebuffer::Init(
     VulkanContext* context,
     VulkanSwapchain* swapchain,
     VulkanRenderPass* renderPass,
-    const std::vector<VkImageView>& depthImageViews) {
+    VkImageView depthImageView) {
 
-    if (!context || !swapchain || !renderPass) {
-        throw std::invalid_argument("VulkanFramebuffer::Init requires valid context, swapchain, and render pass");
+    if (!context || !swapchain || !renderPass || depthImageView == VK_NULL_HANDLE) {
+        throw std::invalid_argument("VulkanFramebuffer::Init requires valid context, swapchain, render pass, and depth view");
     }
 
     Shutdown();
 
     m_Context = context;
-    CreateFramebuffers(swapchain, renderPass, depthImageViews);
+    CreateFramebuffers(swapchain, renderPass, depthImageView);
 }
 
 void VulkanFramebuffer::Shutdown() {
@@ -47,16 +47,16 @@ void VulkanFramebuffer::Shutdown() {
 void VulkanFramebuffer::Recreate(
     VulkanSwapchain* swapchain,
     VulkanRenderPass* renderPass,
-    const std::vector<VkImageView>& depthImageViews) {
+    VkImageView depthImageView) {
 
     VulkanContext* context = m_Context;
     Shutdown();
 
-    if (!context) {
+    if (!context || depthImageView == VK_NULL_HANDLE) {
         throw std::runtime_error("VulkanFramebuffer::Recreate called before initialization");
     }
 
-    Init(context, swapchain, renderPass, depthImageViews);
+    Init(context, swapchain, renderPass, depthImageView);
 }
 
 VkFramebuffer VulkanFramebuffer::Get(u32 index) const {
@@ -70,15 +70,15 @@ VkFramebuffer VulkanFramebuffer::Get(u32 index) const {
 void VulkanFramebuffer::CreateFramebuffers(
     VulkanSwapchain* swapchain,
     VulkanRenderPass* renderPass,
-    const std::vector<VkImageView>& depthImageViews) {
+    VkImageView depthImageView) {
 
     const auto& imageViews = swapchain->GetImageViews();
     if (imageViews.empty()) {
         throw std::runtime_error("VulkanFramebuffer::CreateFramebuffers no swapchain image views");
     }
 
-    if (imageViews.size() != depthImageViews.size()) {
-        throw std::runtime_error("VulkanFramebuffer::CreateFramebuffers depth image count mismatch");
+    if (depthImageView == VK_NULL_HANDLE) {
+        throw std::runtime_error("VulkanFramebuffer::CreateFramebuffers requires valid depth image view");
     }
 
     m_Framebuffers.resize(imageViews.size(), VK_NULL_HANDLE);
@@ -86,7 +86,7 @@ void VulkanFramebuffer::CreateFramebuffers(
     VkDevice device = m_Context->GetDevice();
 
     for (size_t i = 0; i < imageViews.size(); ++i) {
-        const VkImageView attachments[] = { imageViews[i], depthImageViews[i] };
+        const VkImageView attachments[] = { imageViews[i], depthImageView };
 
         VkFramebufferCreateInfo framebufferInfo{};
         framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;

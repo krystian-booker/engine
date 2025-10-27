@@ -129,6 +129,7 @@ set(ENGINE_SOURCES
         src/renderer/vulkan_pipeline.cpp
         src/renderer/vulkan_descriptors.cpp
         src/renderer/vulkan_render_pass.cpp
+        src/renderer/vulkan_depth.cpp
         src/renderer/vulkan_framebuffer.cpp
         src/renderer/vulkan_command_buffer.cpp
         src/renderer/vulkan_buffer.cpp
@@ -177,6 +178,7 @@ add_executable(test_vulkan
         src/renderer/vulkan_pipeline.cpp
         src/renderer/vulkan_descriptors.cpp
         src/renderer/vulkan_render_pass.cpp
+        src/renderer/vulkan_depth.cpp
         src/renderer/vulkan_framebuffer.cpp
         src/renderer/vulkan_command_buffer.cpp
         src/renderer/vulkan_buffer.cpp

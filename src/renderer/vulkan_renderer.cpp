@@ -252,18 +252,18 @@ void VulkanRenderer::EndFrame(FrameContext& frame, u32 imageIndex) {
 }
 
 void VulkanRenderer::InitSwapchainResources() {
-    m_RenderPass.Init(m_Context, &m_Swapchain);
-    CreateDepthResources();
+    m_DepthBuffer.Init(m_Context, &m_Swapchain);
+    m_RenderPass.Init(m_Context, &m_Swapchain, m_DepthBuffer.GetFormat());
     m_Pipeline.Init(m_Context, &m_RenderPass, &m_Swapchain, m_Descriptors.GetLayout());
-    m_Framebuffers.Init(m_Context, &m_Swapchain, &m_RenderPass, m_DepthImageViews);
+    m_Framebuffers.Init(m_Context, &m_Swapchain, &m_RenderPass, m_DepthBuffer.GetImageView());
     ResizeImagesInFlight();
 }
 
 void VulkanRenderer::DestroySwapchainResources() {
     m_Framebuffers.Shutdown();
-    DestroyDepthResources();
     m_Pipeline.Shutdown();
     m_RenderPass.Shutdown();
+    m_DepthBuffer.Shutdown();
     m_ImagesInFlight.clear();
 }
 
@@ -392,133 +392,4 @@ void VulkanRenderer::DestroyMeshResources() {
 
     meshManager.Destroy(m_ActiveMesh);
     m_ActiveMesh = MeshHandle::Invalid;
-}
-
-void VulkanRenderer::CreateDepthResources() {
-    DestroyDepthResources();
-
-    if (!m_Context) {
-        return;
-    }
-
-    const auto& swapchainImageViews = m_Swapchain.GetImageViews();
-    if (swapchainImageViews.empty()) {
-        throw std::runtime_error("VulkanRenderer::CreateDepthResources requires swapchain image views");
-    }
-
-    VkDevice device = m_Context->GetDevice();
-    m_DepthFormat = m_RenderPass.GetDepthFormat();
-
-    const VkExtent2D extent = m_Swapchain.GetExtent();
-
-    m_DepthImages.resize(swapchainImageViews.size(), VK_NULL_HANDLE);
-    m_DepthImageMemory.resize(swapchainImageViews.size(), VK_NULL_HANDLE);
-    m_DepthImageViews.resize(swapchainImageViews.size(), VK_NULL_HANDLE);
-
-    for (size_t i = 0; i < swapchainImageViews.size(); ++i) {
-        VkImageCreateInfo imageInfo{};
-        imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        imageInfo.imageType = VK_IMAGE_TYPE_2D;
-        imageInfo.extent.width = extent.width;
-        imageInfo.extent.height = extent.height;
-        imageInfo.extent.depth = 1;
-        imageInfo.mipLevels = 1;
-        imageInfo.arrayLayers = 1;
-        imageInfo.format = m_DepthFormat;
-        imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-        imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        imageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-        imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-
-        if (vkCreateImage(device, &imageInfo, nullptr, &m_DepthImages[i]) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create depth image");
-        }
-
-        VkMemoryRequirements memRequirements{};
-        vkGetImageMemoryRequirements(device, m_DepthImages[i], &memRequirements);
-
-        VkMemoryAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        allocInfo.allocationSize = memRequirements.size;
-        allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-        if (vkAllocateMemory(device, &allocInfo, nullptr, &m_DepthImageMemory[i]) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to allocate depth image memory");
-        }
-
-        if (vkBindImageMemory(device, m_DepthImages[i], m_DepthImageMemory[i], 0) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to bind depth image memory");
-        }
-
-        VkImageViewCreateInfo viewInfo{};
-        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        viewInfo.image = m_DepthImages[i];
-        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        viewInfo.format = m_DepthFormat;
-        viewInfo.subresourceRange.aspectMask = HasStencilComponent(m_DepthFormat)
-            ? (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)
-            : VK_IMAGE_ASPECT_DEPTH_BIT;
-        viewInfo.subresourceRange.baseMipLevel = 0;
-        viewInfo.subresourceRange.levelCount = 1;
-        viewInfo.subresourceRange.baseArrayLayer = 0;
-        viewInfo.subresourceRange.layerCount = 1;
-
-        if (vkCreateImageView(device, &viewInfo, nullptr, &m_DepthImageViews[i]) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create depth image view");
-        }
-    }
-}
-
-void VulkanRenderer::DestroyDepthResources() {
-    if (!m_Context) {
-        m_DepthImages.clear();
-        m_DepthImageMemory.clear();
-        m_DepthImageViews.clear();
-        m_DepthFormat = VK_FORMAT_UNDEFINED;
-        return;
-    }
-
-    VkDevice device = m_Context->GetDevice();
-
-    for (VkImageView view : m_DepthImageViews) {
-        if (view != VK_NULL_HANDLE) {
-            vkDestroyImageView(device, view, nullptr);
-        }
-    }
-
-    for (VkImage image : m_DepthImages) {
-        if (image != VK_NULL_HANDLE) {
-            vkDestroyImage(device, image, nullptr);
-        }
-    }
-
-    for (VkDeviceMemory memory : m_DepthImageMemory) {
-        if (memory != VK_NULL_HANDLE) {
-            vkFreeMemory(device, memory, nullptr);
-        }
-    }
-
-    m_DepthImages.clear();
-    m_DepthImageMemory.clear();
-    m_DepthImageViews.clear();
-    m_DepthFormat = VK_FORMAT_UNDEFINED;
-}
-
-u32 VulkanRenderer::FindMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties) const {
-    VkPhysicalDeviceMemoryProperties memProperties{};
-    vkGetPhysicalDeviceMemoryProperties(m_Context->GetPhysicalDevice(), &memProperties);
-
-    for (u32 i = 0; i < memProperties.memoryTypeCount; ++i) {
-        if ((typeFilter & (1u << i)) &&
-            (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
-            return i;
-        }
-    }
-
-    throw std::runtime_error("VulkanRenderer::FindMemoryType failed to locate suitable memory type");
-}
-
-bool VulkanRenderer::HasStencilComponent(VkFormat format) const {
-    return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
 }

@@ -20,12 +20,12 @@ public:
         VulkanContext* context,
         VulkanSwapchain* swapchain,
         VulkanRenderPass* renderPass,
-        const std::vector<VkImageView>& depthImageViews);
+        VkImageView depthImageView);
     void Shutdown();
     void Recreate(
         VulkanSwapchain* swapchain,
         VulkanRenderPass* renderPass,
-        const std::vector<VkImageView>& depthImageViews);
+        VkImageView depthImageView);
 
     VkFramebuffer Get(u32 index) const;
     const std::vector<VkFramebuffer>& GetFramebuffers() const { return m_Framebuffers; }
@@ -35,7 +35,7 @@ private:
     void CreateFramebuffers(
         VulkanSwapchain* swapchain,
         VulkanRenderPass* renderPass,
-        const std::vector<VkImageView>& depthImageViews);
+        VkImageView depthImageView);
 
     VulkanContext* m_Context = nullptr;
     std::vector<VkFramebuffer> m_Framebuffers;
