@@ -21,6 +21,7 @@
 class VulkanContext;
 class Window;
 class ECSCoordinator;
+class CameraSystem;
 
 class VulkanRenderer {
 public:
@@ -32,7 +33,6 @@ public:
 
     void DrawFrame();
     void OnWindowResized();
-    void SetCameraMatrices(const Mat4& view, const Mat4& projection);
 
     bool BeginFrame(FrameContext*& outFrame, u32& outImageIndex);
     void BeginDefaultRenderPass(FrameContext& frame, u32 imageIndex, const VkClearColorValue& clearColor);
@@ -56,6 +56,7 @@ private:
     VulkanContext* m_Context = nullptr;
     Window* m_Window = nullptr;
     ECSCoordinator* m_ECS = nullptr;
+    CameraSystem* m_CameraSystem = nullptr;
     std::unique_ptr<RenderSystem> m_RenderSystem;
 
     VulkanSwapchain m_Swapchain;
@@ -75,9 +76,6 @@ private:
     bool m_Initialized = false;
 
     f32 m_Rotation = 0.0f;
-    Mat4 m_ViewMatrix = Mat4(1.0f);
-    Mat4 m_ProjectionMatrix = Mat4(1.0f);
-    bool m_HasCameraMatrices = false;
 
     MeshHandle m_ActiveMesh = MeshHandle::Invalid;
 };

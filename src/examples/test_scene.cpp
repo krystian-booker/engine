@@ -1,5 +1,6 @@
 #include "examples/test_scene.h"
 
+#include "ecs/components/camera.h"
 #include "ecs/components/transform.h"
 #include "ecs/components/renderable.h"
 #include "ecs/components/rotator.h"
@@ -53,6 +54,22 @@ void CreateTestScene(ECSCoordinator& ecs) {
     rotator.axis = Vec3(0.0f, 1.0f, 0.0f);
     rotator.speed = 45.0f;
     ecs.AddComponent(floatingCube, rotator);
+
+    Entity cameraEntity = ecs.CreateEntity();
+
+    Transform cameraTransform;
+    cameraTransform.localPosition = Vec3(0.0f, 5.0f, 10.0f);
+    cameraTransform.localRotation = QuatFromAxisAngle(Vec3(1.0f, 0.0f, 0.0f), Radians(-25.0f));
+    cameraTransform.MarkDirty();
+    ecs.AddComponent(cameraEntity, cameraTransform);
+
+    Camera cameraComponent;
+    cameraComponent.isActive = true;
+    cameraComponent.clearColor = Vec4(0.05f, 0.05f, 0.08f, 1.0f);
+    cameraComponent.fov = 60.0f;
+    cameraComponent.nearPlane = 0.1f;
+    cameraComponent.farPlane = 500.0f;
+    ecs.AddComponent(cameraEntity, cameraComponent);
 
     std::cout << "Created scene with " << (spawned + 1) << " cubes" << std::endl;
 }

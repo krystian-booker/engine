@@ -121,6 +121,7 @@ set(ENGINE_SOURCES
         src/ecs/hierarchy_manager.cpp
         src/ecs/scene_serializer.cpp
         src/ecs/systems/transform_system.cpp
+        src/ecs/systems/camera_system.cpp
         src/ecs/systems/render_system.cpp
         src/platform/window.cpp
         src/platform/input.cpp
@@ -177,6 +178,7 @@ add_executable(test_vulkan
         src/renderer/vulkan_context.cpp
         src/renderer/vulkan_swapchain.cpp
         src/renderer/vulkan_renderer.cpp
+        src/ecs/systems/camera_system.cpp
         src/ecs/systems/render_system.cpp
         src/ecs/entity_manager.cpp
         src/resources/mesh_manager.cpp
@@ -418,6 +420,7 @@ add_executable(test_ecs_coordinator
         src/ecs/entity_manager.cpp
         src/ecs/hierarchy_manager.cpp
         src/ecs/systems/transform_system.cpp
+        src/ecs/systems/camera_system.cpp
 )
 
 target_include_directories(test_ecs_coordinator PRIVATE
@@ -437,6 +440,7 @@ add_executable(test_ecs_queries
         src/ecs/entity_manager.cpp
         src/ecs/hierarchy_manager.cpp
         src/ecs/systems/transform_system.cpp
+        src/ecs/systems/camera_system.cpp
 )
 
 target_include_directories(test_ecs_queries PRIVATE
@@ -455,6 +459,7 @@ add_executable(test_renderable
         src/ecs/entity_manager.cpp
         src/ecs/hierarchy_manager.cpp
         src/ecs/systems/transform_system.cpp
+        src/ecs/systems/camera_system.cpp
 )
 
 target_include_directories(test_renderable PRIVATE
@@ -473,6 +478,7 @@ add_executable(test_render_system
         src/ecs/entity_manager.cpp
         src/ecs/hierarchy_manager.cpp
         src/ecs/systems/transform_system.cpp
+        src/ecs/systems/camera_system.cpp
         src/ecs/systems/render_system.cpp
         src/resources/mesh_manager.cpp
         src/renderer/vulkan_mesh.cpp
@@ -490,12 +496,32 @@ target_link_libraries(test_render_system PRIVATE
 
 add_test(NAME RenderSystemTests COMMAND test_render_system)
 
+add_executable(test_camera
+        tests/test_camera.cpp
+        src/ecs/ecs_coordinator.cpp
+        src/ecs/entity_manager.cpp
+        src/ecs/hierarchy_manager.cpp
+        src/ecs/systems/transform_system.cpp
+        src/ecs/systems/camera_system.cpp
+)
+
+target_include_directories(test_camera PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_camera PRIVATE
+        glm::glm
+)
+
+add_test(NAME CameraSystemTests COMMAND test_camera)
+
 add_executable(test_ecs_deferred
         tests/test_ecs_deferred.cpp
         src/ecs/ecs_coordinator.cpp
         src/ecs/entity_manager.cpp
         src/ecs/hierarchy_manager.cpp
         src/ecs/systems/transform_system.cpp
+        src/ecs/systems/camera_system.cpp
 )
 
 target_include_directories(test_ecs_deferred PRIVATE
@@ -514,6 +540,7 @@ add_executable(test_ecs_versions
         src/ecs/entity_manager.cpp
         src/ecs/hierarchy_manager.cpp
         src/ecs/systems/transform_system.cpp
+        src/ecs/systems/camera_system.cpp
 )
 
 target_include_directories(test_ecs_versions PRIVATE
@@ -532,6 +559,7 @@ add_executable(test_ecs_signatures
         src/ecs/entity_manager.cpp
         src/ecs/hierarchy_manager.cpp
         src/ecs/systems/transform_system.cpp
+        src/ecs/systems/camera_system.cpp
 )
 
 target_include_directories(test_ecs_signatures PRIVATE
@@ -550,6 +578,7 @@ add_executable(test_ecs_parallel
         src/ecs/entity_manager.cpp
         src/ecs/hierarchy_manager.cpp
         src/ecs/systems/transform_system.cpp
+        src/ecs/systems/camera_system.cpp
         src/core/job_system.cpp
         src/core/memory.cpp
 )
@@ -594,6 +623,7 @@ add_executable(test_scene_serializer
         src/ecs/hierarchy_manager.cpp
         src/ecs/scene_serializer.cpp
         src/ecs/systems/transform_system.cpp
+        src/ecs/systems/camera_system.cpp
 )
 
 target_include_directories(test_scene_serializer PRIVATE

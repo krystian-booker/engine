@@ -3,6 +3,7 @@
 #include "ecs/components/rotator.h"
 #include "ecs/components/transform.h"
 #include "ecs/ecs_coordinator.h"
+#include "ecs/systems/camera_system.h"
 #include "examples/test_scene.h"
 #include "platform/input.h"
 #include "platform/window.h"
@@ -36,6 +37,8 @@ int main() {
     ECSCoordinator ecs;
     ecs.Init();
 
+    CameraSystem* cameraSystem = ecs.GetCameraSystem();
+
     CreateTestScene(ecs);
 
     MeshHandle cubeMeshHandle = MeshHandle::Invalid;
@@ -45,15 +48,19 @@ int main() {
     }
 
     ecs.Update(0.0f);
+    if (cameraSystem) {
+        cameraSystem->Update(window.GetWidth(), window.GetHeight());
+    }
 
     VulkanRenderer renderer;
     renderer.Init(&context, &window, &ecs);
 
-    window.SetEventCallback([&renderer](WindowEvent event, u32 width, u32 height) {
-        (void)width;
-        (void)height;
+    window.SetEventCallback([&renderer, cameraSystem](WindowEvent event, u32 width, u32 height) {
         if (event == WindowEvent::Resize) {
             renderer.OnWindowResized();
+            if (cameraSystem) {
+                cameraSystem->Update(width, height);
+            }
         }
     });
 
@@ -91,18 +98,9 @@ int main() {
 
         ecs.Update(deltaTime);
 
-        const Vec3 eye(0.0f, 5.0f, -10.0f);
-        const Vec3 center(0.0f, 0.0f, 0.0f);
-        const Vec3 up(0.0f, 1.0f, 0.0f);
-        const Mat4 view = LookAt(eye, center, up);
-
-        const u32 windowWidth = window.GetWidth();
-        const u32 windowHeight = window.GetHeight() == 0 ? 1 : window.GetHeight();
-        const f32 aspect = static_cast<f32>(windowWidth) / static_cast<f32>(windowHeight);
-
-        Mat4 projection = Perspective(Radians(60.0f), aspect, 0.1f, 100.0f);
-        projection[1][1] *= -1.0f;
-        renderer.SetCameraMatrices(view, projection);
+        if (cameraSystem) {
+            cameraSystem->Update(window.GetWidth(), window.GetHeight());
+        }
 
         renderer.DrawFrame();
 

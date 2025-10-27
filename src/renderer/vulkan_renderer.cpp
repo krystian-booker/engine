@@ -2,6 +2,8 @@
 
 #include "core/math.h"
 #include "core/time.h"
+#include "ecs/ecs_coordinator.h"
+#include "ecs/systems/camera_system.h"
 #include "ecs/systems/render_system.h"
 #include "platform/window.h"
 #include "renderer/vulkan_context.h"
@@ -44,6 +46,7 @@ void VulkanRenderer::Init(VulkanContext* context, Window* window, ECSCoordinator
     m_Context = context;
     m_Window = window;
     m_ECS = ecs;
+    m_CameraSystem = (ecs != nullptr) ? ecs->GetCameraSystem() : nullptr;
 
     m_Swapchain.Init(m_Context, m_Window);
     m_Descriptors.Init(m_Context, MAX_FRAMES_IN_FLIGHT);
@@ -83,8 +86,8 @@ void VulkanRenderer::Shutdown() {
     m_Context = nullptr;
     m_Window = nullptr;
     m_ECS = nullptr;
+    m_CameraSystem = nullptr;
     m_Initialized = false;
-    m_HasCameraMatrices = false;
 }
 
 void VulkanRenderer::DrawFrame() {
@@ -100,11 +103,16 @@ void VulkanRenderer::DrawFrame() {
     }
 
     const u32 currentFrameIndex = m_CurrentFrame;
+    Vec4 clearColorVec = Vec4(0.1f, 0.1f, 0.1f, 1.0f);
+    if (m_CameraSystem != nullptr) {
+        clearColorVec = m_CameraSystem->GetClearColor();
+    }
+
     VkClearColorValue clearColor{};
-    clearColor.float32[0] = 0.1f;
-    clearColor.float32[1] = 0.1f;
-    clearColor.float32[2] = 0.2f;
-    clearColor.float32[3] = 1.0f;
+    clearColor.float32[0] = clearColorVec.x;
+    clearColor.float32[1] = clearColorVec.y;
+    clearColor.float32[2] = clearColorVec.z;
+    clearColor.float32[3] = clearColorVec.w;
 
     BeginDefaultRenderPass(*frame, imageIndex, clearColor);
 
@@ -166,12 +174,6 @@ void VulkanRenderer::DrawFrame() {
 
 void VulkanRenderer::OnWindowResized() {
     m_FramebufferResized = true;
-}
-
-void VulkanRenderer::SetCameraMatrices(const Mat4& view, const Mat4& projection) {
-    m_ViewMatrix = view;
-    m_ProjectionMatrix = projection;
-    m_HasCameraMatrices = true;
 }
 
 bool VulkanRenderer::BeginFrame(FrameContext*& outFrame, u32& outImageIndex) {
@@ -303,9 +305,10 @@ void VulkanRenderer::UpdateGlobalUniforms(u32 frameIndex) {
 
     UniformBufferObject ubo{};
 
-    if (m_HasCameraMatrices) {
-        ubo.view = m_ViewMatrix;
-        ubo.projection = m_ProjectionMatrix;
+    const Entity activeCamera = (m_CameraSystem != nullptr) ? m_CameraSystem->GetActiveCamera() : Entity::Invalid;
+    if (m_CameraSystem != nullptr && activeCamera.IsValid()) {
+        ubo.view = m_CameraSystem->GetViewMatrix();
+        ubo.projection = m_CameraSystem->GetProjectionMatrix();
     } else {
         const Vec3 eye(3.0f, 3.0f, 3.0f);
         const Vec3 center(0.0f, 0.0f, 0.0f);
