@@ -1,5 +1,6 @@
 #pragma once
 #include "resource_handle.h"
+#include "platform/platform.h"
 #include <vector>
 #include <queue>
 #include <unordered_map>
@@ -14,12 +15,15 @@ public:
     ResourceManager(u32 initialCapacity = 256) {
         m_Resources.reserve(initialCapacity);
         m_Generations.reserve(initialCapacity);
+        m_Mutex = Platform::CreateMutex();
     }
 
     virtual ~ResourceManager() = default;
 
-    // Create resource from data
+    // Create resource from data (thread-safe)
     Handle Create(std::unique_ptr<T> resource) {
+        Platform::Lock(m_Mutex.get());
+
         Handle handle;
 
         if (!m_FreeList.empty()) {
@@ -36,16 +40,21 @@ public:
             m_Generations.push_back(0);
         }
 
+        Platform::Unlock(m_Mutex.get());
         return handle;
     }
 
     // Load from file (returns handle, caches by path)
     Handle Load(const std::string& filepath) {
-        // Check if already loaded
+        // Check if already loaded (thread-safe)
+        Platform::Lock(m_Mutex.get());
         auto it = m_PathToHandle.find(filepath);
         if (it != m_PathToHandle.end() && IsValid(it->second)) {
-            return it->second;
+            Handle existingHandle = it->second;
+            Platform::Unlock(m_Mutex.get());
+            return existingHandle;
         }
+        Platform::Unlock(m_Mutex.get());
 
         // Load resource (virtual function, implemented by derived class)
         auto resource = LoadResource(filepath);
@@ -54,18 +63,25 @@ public:
             return Handle::Invalid;
         }
 
+        // Create handle (already thread-safe via mutex in Create())
         Handle handle = Create(std::move(resource));
+
+        // Update path maps (thread-safe)
+        Platform::Lock(m_Mutex.get());
         m_PathToHandle[filepath] = handle;
         m_HandleToPath[handle] = filepath;
+        Platform::Unlock(m_Mutex.get());
 
         return handle;
     }
 
-    // Destroy resource
+    // Destroy resource (thread-safe)
     void Destroy(Handle handle) {
         if (!IsValid(handle)) {
             return;
         }
+
+        Platform::Lock(m_Mutex.get());
 
         // Remove from path maps
         auto pathIt = m_HandleToPath.find(handle);
@@ -77,6 +93,8 @@ public:
         // Free resource
         m_Resources[handle.index].reset();
         m_FreeList.push(handle.index);
+
+        Platform::Unlock(m_Mutex.get());
     }
 
     // Get resource (returns nullptr if invalid)
@@ -101,16 +119,22 @@ public:
                m_Resources[handle.index] != nullptr;
     }
 
-    // Get handle from filepath
+    // Get handle from filepath (thread-safe)
     Handle GetHandle(const std::string& filepath) const {
+        Platform::Lock(m_Mutex.get());
         auto it = m_PathToHandle.find(filepath);
-        return (it != m_PathToHandle.end()) ? it->second : Handle::Invalid;
+        Handle result = (it != m_PathToHandle.end()) ? it->second : Handle::Invalid;
+        Platform::Unlock(m_Mutex.get());
+        return result;
     }
 
-    // Get filepath from handle
+    // Get filepath from handle (thread-safe)
     std::string GetPath(Handle handle) const {
+        Platform::Lock(m_Mutex.get());
         auto it = m_HandleToPath.find(handle);
-        return (it != m_HandleToPath.end()) ? it->second : "";
+        std::string result = (it != m_HandleToPath.end()) ? it->second : "";
+        Platform::Unlock(m_Mutex.get());
+        return result;
     }
 
     // Resource count (active resources)
@@ -133,4 +157,7 @@ private:
     // Path <-> Handle mapping (prevents duplicate loads)
     std::unordered_map<std::string, Handle> m_PathToHandle;
     std::unordered_map<Handle, std::string> m_HandleToPath;
+
+    // Thread safety
+    mutable Platform::MutexPtr m_Mutex;
 };

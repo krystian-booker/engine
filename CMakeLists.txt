@@ -849,3 +849,26 @@ target_link_libraries(test_texture_manager PRIVATE
 )
 
 add_test(NAME TextureManagerTests COMMAND test_texture_manager)
+
+# Test executable for async texture loading
+add_executable(test_texture_async
+        tests/test_texture_async.cpp
+        src/core/texture_data.cpp
+        src/core/job_system.cpp
+        src/core/memory.cpp
+        src/resources/image_loader.cpp
+        src/resources/texture_manager.cpp
+        src/platform/win32_platform.cpp
+)
+
+target_include_directories(test_texture_async PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${stb_SOURCE_DIR}
+)
+
+target_link_libraries(test_texture_async PRIVATE
+        glm::glm
+        Vulkan::Vulkan
+)
+
+add_test(NAME TextureAsyncTests COMMAND test_texture_async)
