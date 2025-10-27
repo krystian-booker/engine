@@ -22,6 +22,7 @@ void CameraSystem::Update(u32 windowWidth, u32 windowHeight) {
         return;
     }
 
+    // Validate existing active camera (entity alive, has required components, still marked active)
     if (m_ActiveCamera.IsValid()) {
         if (!m_ECS->IsEntityAlive(m_ActiveCamera) || !m_ECS->HasComponent<Camera>(m_ActiveCamera) ||
             !m_ECS->HasComponent<Transform>(m_ActiveCamera)) {
@@ -34,6 +35,7 @@ void CameraSystem::Update(u32 windowWidth, u32 windowHeight) {
         }
     }
 
+    // Re-scan all cameras to find the active one (handles invalidated camera or first-time setup)
     FindActiveCamera();
 
     if (!m_ActiveCamera.IsValid()) {
@@ -114,11 +116,20 @@ void CameraSystem::FindActiveCamera() {
 
         if (entity != found) {
             camera.isActive = false;
-            std::cerr << "CameraSystem: Multiple active cameras detected; "
-                         "disabling camera at index "
-                      << entity.index << std::endl;
+            // Only warn once per entity to prevent console spam
+            if (m_WarnedMultipleCameras.find(entity.index) == m_WarnedMultipleCameras.end()) {
+                std::cerr << "CameraSystem: Multiple active cameras detected; "
+                             "disabling camera at index "
+                          << entity.index << std::endl;
+                m_WarnedMultipleCameras.insert(entity.index);
+            }
         }
     });
+
+    // Clear warning set when active camera changes (allows re-warning if situation recurs)
+    if (found != m_ActiveCamera) {
+        m_WarnedMultipleCameras.clear();
+    }
 
     m_ActiveCamera = found;
 }

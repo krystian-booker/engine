@@ -29,12 +29,13 @@ void RenderSystem::Update() {
                 return;
             }
 
-            if (m_VulkanMeshes.find(renderable.mesh) == m_VulkanMeshes.end()) {
+            auto it = m_VulkanMeshes.find(renderable.mesh);
+            if (it == m_VulkanMeshes.end()) {
                 LoadMesh(renderable.mesh);
-            }
-
-            if (m_VulkanMeshes.find(renderable.mesh) == m_VulkanMeshes.end()) {
-                return;
+                it = m_VulkanMeshes.find(renderable.mesh);
+                if (it == m_VulkanMeshes.end()) {
+                    return;  // Still failed after load attempt
+                }
             }
 
             RenderData data{};

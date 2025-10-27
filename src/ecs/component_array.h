@@ -52,6 +52,15 @@ public:
         u32 denseIndex = m_Sparse[entity.index];
         u32 lastIndex = static_cast<u32>(m_Dense.size()) - 1;
 
+        // If removing last element, no swap needed
+        if (denseIndex == lastIndex) {
+            m_Sparse[entity.index] = INVALID_INDEX;
+            m_Dense.pop_back();
+            m_Entities.pop_back();
+            m_Versions.pop_back();
+            return;
+        }
+
         // Swap with last element
         m_Dense[denseIndex] = m_Dense[lastIndex];
         m_Entities[denseIndex] = m_Entities[lastIndex];
