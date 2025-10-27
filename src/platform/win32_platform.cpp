@@ -11,6 +11,7 @@
 #undef CreateWindow
 #undef DestroyWindow
 #undef CreateMutex
+#undef CreateSemaphore
 #undef ReadFile
 
 namespace Platform {
@@ -246,6 +247,10 @@ struct Mutex {
     CRITICAL_SECTION criticalSection;
 };
 
+struct Semaphore {
+    HANDLE handle;
+};
+
 Mutex* CreateMutex() {
     Mutex* mutex = new Mutex();
     InitializeCriticalSection(&mutex->criticalSection);
@@ -267,6 +272,36 @@ void DestroyMutex(Mutex* mutex) {
 
     DeleteCriticalSection(&mutex->criticalSection);
     delete mutex;
+}
+
+Semaphore* CreateSemaphore(u32 initial_count) {
+    Semaphore* semaphore = new Semaphore();
+    semaphore->handle = ::CreateSemaphoreA(nullptr, static_cast<LONG>(initial_count), LONG_MAX, nullptr);
+    if (!semaphore->handle) {
+        delete semaphore;
+        return nullptr;
+    }
+    return semaphore;
+}
+
+void DestroySemaphore(Semaphore* semaphore) {
+    if (!semaphore) return;
+    if (semaphore->handle) {
+        ::CloseHandle(semaphore->handle);
+        semaphore->handle = nullptr;
+    }
+    delete semaphore;
+}
+
+void WaitSemaphore(Semaphore* semaphore, u32 timeout_ms) {
+    if (!semaphore || !semaphore->handle) return;
+    DWORD wait_time = timeout_ms == 0xFFFFFFFF ? INFINITE : timeout_ms;
+    ::WaitForSingleObject(semaphore->handle, wait_time);
+}
+
+void SignalSemaphore(Semaphore* semaphore, u32 count) {
+    if (!semaphore || !semaphore->handle) return;
+    ::ReleaseSemaphore(semaphore->handle, static_cast<LONG>(count), nullptr);
 }
 
 } // namespace Platform

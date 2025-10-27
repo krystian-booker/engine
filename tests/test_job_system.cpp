@@ -1,10 +1,13 @@
 #include "core/job_system.h"
 #include "core/types.h"
+#include "core/memory.h"
 #include "platform/platform.h"
 #include <iostream>
 #include <atomic>
 #include <thread>
 #include <chrono>
+#include <mutex>
+#include <vector>
 
 // Test result tracking
 static int testsRun = 0;
@@ -83,6 +86,48 @@ struct PrintData {
 static void PrintHello(void* data) {
     PrintData* printData = static_cast<PrintData*>(data);
     std::cout << "  Hello from job on thread " << printData->thread_num << std::endl;
+}
+
+struct OrderData {
+    std::vector<int>* order;
+    std::mutex* mutex;
+    int value;
+};
+
+static void RecordOrder(void* data) {
+    auto* orderData = static_cast<OrderData*>(data);
+    std::lock_guard<std::mutex> lock(*orderData->mutex);
+    orderData->order->push_back(orderData->value);
+}
+
+struct ScratchCheckData {
+    std::atomic<bool>* success;
+};
+
+static void ScratchAllocatorJob(void* data) {
+    auto* payload = static_cast<ScratchCheckData*>(data);
+
+    LinearAllocator* scratch = JobSystem::GetScratchAllocator();
+    if (!scratch) {
+        payload->success->store(false, std::memory_order_relaxed);
+        return;
+    }
+
+    if (scratch->GetCurrentOffset() != 0) {
+        payload->success->store(false, std::memory_order_relaxed);
+        return;
+    }
+
+    constexpr size_t ALLOC_SIZE = 1024;
+    void* mem = scratch->Alloc(ALLOC_SIZE);
+    if (!mem) {
+        payload->success->store(false, std::memory_order_relaxed);
+        return;
+    }
+
+    if (scratch->GetCurrentOffset() < ALLOC_SIZE) {
+        payload->success->store(false, std::memory_order_relaxed);
+    }
 }
 
 // ============================================================================
@@ -374,6 +419,117 @@ TEST(JobSystem_WaitActuallyBlocks) {
     JobSystem::Shutdown();
 }
 
+TEST(JobSystem_PriorityOrdering) {
+    JobSystem::Init(1);
+
+    std::vector<int> order;
+    std::mutex orderMutex;
+
+    OrderData lowData{&order, &orderMutex, 0};
+    OrderData highData{&order, &orderMutex, 1};
+
+    Job* low = JobSystem::CreateJob(RecordOrder, &lowData);
+    ASSERT(low != nullptr);
+    JobSystem::SetPriority(low, JobSystem::JobPriority::Low);
+
+    Job* high = JobSystem::CreateJob(RecordOrder, &highData);
+    ASSERT(high != nullptr);
+    JobSystem::SetPriority(high, JobSystem::JobPriority::High);
+
+    JobSystem::Run(low);
+    JobSystem::Run(high);
+
+    JobSystem::Wait(high);
+    JobSystem::Wait(low);
+
+    ASSERT(order.size() == 2);
+    ASSERT(order[0] == 1);
+    ASSERT(order[1] == 0);
+
+    JobSystem::Shutdown();
+}
+
+TEST(JobSystem_ScratchAllocatorResets) {
+    JobSystem::Init(1);
+
+    std::atomic<bool> success{true};
+    ScratchCheckData data{&success};
+
+    Job* job1 = JobSystem::CreateJob(ScratchAllocatorJob, &data);
+    ASSERT(job1 != nullptr);
+    success.store(true, std::memory_order_relaxed);
+    JobSystem::Run(job1);
+    JobSystem::Wait(job1);
+    ASSERT(success.load(std::memory_order_relaxed));
+
+    Job* job2 = JobSystem::CreateJob(ScratchAllocatorJob, &data);
+    ASSERT(job2 != nullptr);
+    success.store(true, std::memory_order_relaxed);
+    JobSystem::Run(job2);
+    JobSystem::Wait(job2);
+    ASSERT(success.load(std::memory_order_relaxed));
+
+    JobSystem::Shutdown();
+}
+
+TEST(JobSystem_TaskGroupWait) {
+    JobSystem::Init(4);
+
+    JobSystem::TaskGroup group;
+    JobSystem::InitTaskGroup(group);
+
+    constexpr u32 NUM_JOBS = 32;
+    std::atomic<i32> counter{0};
+    TestData jobData[NUM_JOBS];
+    Job* jobs[NUM_JOBS];
+
+    for (u32 i = 0; i < NUM_JOBS; ++i) {
+        jobData[i].counter = &counter;
+        jobData[i].value = 1;
+        jobs[i] = JobSystem::CreateJob(IncrementCounter, &jobData[i]);
+        ASSERT(jobs[i] != nullptr);
+        JobSystem::AttachToTaskGroup(group, jobs[i]);
+        JobSystem::Run(jobs[i]);
+    }
+
+    JobSystem::Wait(group);
+
+    ASSERT(counter.load(std::memory_order_relaxed) == static_cast<i32>(NUM_JOBS));
+
+    JobSystem::Shutdown();
+}
+
+TEST(JobSystem_TaskGroupManualSignals) {
+    JobSystem::Init(2);
+
+    JobSystem::TaskGroup group;
+    JobSystem::InitTaskGroup(group);
+
+    std::atomic<i32> counter{0};
+    TestData data{&counter, 1};
+
+    Job* job = JobSystem::CreateJob(IncrementCounter, &data);
+    ASSERT(job != nullptr);
+    JobSystem::AttachToTaskGroup(group, job);
+
+    JobSystem::AddToTaskGroup(group, 1);
+
+    JobSystem::Run(job);
+
+    std::thread manual([&group]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        JobSystem::CompleteTaskGroupWork(group, 1);
+    });
+
+    JobSystem::Wait(group);
+
+    ASSERT(counter.load(std::memory_order_relaxed) == 1);
+
+    manual.join();
+
+    JobSystem::Shutdown();
+}
+
 TEST(JobSystem_ParallelHelloWorld) {
     JobSystem::Init(4);
 
@@ -420,6 +576,10 @@ int main() {
     JobSystem_NestedParentChild_runner();
     JobSystem_StressTest_runner();
     JobSystem_WaitActuallyBlocks_runner();
+    JobSystem_PriorityOrdering_runner();
+    JobSystem_ScratchAllocatorResets_runner();
+    JobSystem_TaskGroupWait_runner();
+    JobSystem_TaskGroupManualSignals_runner();
     JobSystem_ParallelHelloWorld_runner();
 
     std::cout << "================================" << std::endl;

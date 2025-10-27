@@ -5,6 +5,7 @@
 #include <deque>
 #include <vector>
 #include <random>
+#include <array>
 
 namespace JobSystem {
 
@@ -14,7 +15,7 @@ namespace JobSystem {
 
 /// Per-thread work queue with mutex protection (Day 1 implementation)
 struct WorkQueue {
-    std::deque<Job*> jobs;
+    std::array<std::deque<Job*>, kPriorityCount> jobs;
     Platform::Mutex* mutex;
 
     WorkQueue() : mutex(nullptr) {}
@@ -33,7 +34,11 @@ struct WorkQueue {
     /// Push job to the front of the queue (LIFO for own thread)
     void Push(Job* job) {
         Platform::Lock(mutex);
-        jobs.push_front(job);
+        u32 priority_index = static_cast<u32>(job->priority);
+        if (priority_index >= kPriorityCount) {
+            priority_index = static_cast<u32>(JobPriority::Normal);
+        }
+        jobs[priority_index].push_front(job);
         Platform::Unlock(mutex);
     }
 
@@ -41,9 +46,13 @@ struct WorkQueue {
     Job* Pop() {
         Job* job = nullptr;
         Platform::Lock(mutex);
-        if (!jobs.empty()) {
-            job = jobs.front();
-            jobs.pop_front();
+        for (u32 priority = 0; priority < kPriorityCount; ++priority) {
+            auto& queue = jobs[priority];
+            if (!queue.empty()) {
+                job = queue.front();
+                queue.pop_front();
+                break;
+            }
         }
         Platform::Unlock(mutex);
         return job;
@@ -53,9 +62,13 @@ struct WorkQueue {
     Job* Steal() {
         Job* job = nullptr;
         Platform::Lock(mutex);
-        if (!jobs.empty()) {
-            job = jobs.back();
-            jobs.pop_back();
+        for (u32 priority = 0; priority < kPriorityCount; ++priority) {
+            auto& queue = jobs[priority];
+            if (!queue.empty()) {
+                job = queue.back();
+                queue.pop_back();
+                break;
+            }
         }
         Platform::Unlock(mutex);
         return job;
@@ -66,70 +79,127 @@ struct WorkQueue {
 // Global State
 // ============================================================================
 
-static bool g_initialized = false;
-static bool g_shutdown = false;
+static std::atomic<bool> g_initialized{false};
+static std::atomic<bool> g_shutdown{false};
 
 static u32 g_num_threads = 0;
 static std::vector<std::thread> g_worker_threads;
 static std::vector<WorkQueue> g_work_queues;
+static Platform::Semaphore* g_work_semaphore = nullptr;
+static std::atomic<u32> g_submission_index{0};
+static std::vector<LinearAllocator> g_worker_scratch_allocators;
+static constexpr size_t kScratchAllocatorSize = 128 * 1024; // 128 KB per worker
 
 static PoolAllocator<Job, 64> g_job_allocator;
 
 /// Thread-local index for identifying which queue belongs to this thread
 thread_local u32 t_thread_index = 0xFFFFFFFF;
+thread_local LinearAllocator* t_scratch_allocator = nullptr;
+thread_local LinearAllocator t_external_scratch_allocator;
+thread_local bool t_external_scratch_initialized = false;
 
 // ============================================================================
 // Worker Thread Implementation
 // ============================================================================
 
-/// Get a random thread index different from current thread (for work stealing)
-static u32 GetRandomVictimThread(u32 current_thread) {
+/// Attempt to steal work for a worker thread using round-robin starting at a rotating offset
+static Job* StealWorkForWorker(u32 thread_index) {
     if (g_num_threads <= 1) {
-        return current_thread;
+        return nullptr;
+    }
+
+    thread_local std::mt19937 rng(std::random_device{}());
+    thread_local u32 steal_offset = rng() % g_num_threads;
+
+    Job* job = nullptr;
+    for (u32 attempt = 0; attempt < g_num_threads && !job; ++attempt) {
+        u32 victim = (thread_index + 1 + steal_offset + attempt) % g_num_threads;
+        if (victim == thread_index) {
+            continue;
+        }
+
+        job = g_work_queues[victim].Steal();
+    }
+
+    if (g_num_threads > 0) {
+        steal_offset = (steal_offset + 1) % g_num_threads;
+    }
+    return job;
+}
+
+/// Attempt to steal work from any queue (used by Waiters on external threads)
+static Job* StealWorkFromAny(u32 avoid_thread) {
+    if (g_num_threads == 0) {
+        return nullptr;
     }
 
     static thread_local std::mt19937 rng(std::random_device{}());
-    std::uniform_int_distribution<u32> dist(0, g_num_threads - 1);
+    u32 start = rng() % g_num_threads;
 
-    u32 victim;
-    do {
-        victim = dist(rng);
-    } while (victim == current_thread);
+    for (u32 attempt = 0; attempt < g_num_threads; ++attempt) {
+        u32 victim = (start + attempt) % g_num_threads;
+        if (victim == avoid_thread) {
+            continue;
+        }
 
-    return victim;
+        Job* job = g_work_queues[victim].Steal();
+        if (job) {
+            return job;
+        }
+    }
+
+    return nullptr;
+}
+
+/// Decrement the unfinished counter, cascade to parent, and free when complete
+static void TryCompleteAndFree(Job* job) {
+    if (!job) return;
+
+    Job* parent = job->parent;
+    TaskGroup* group = job->group;
+    if (job->unfinished_jobs.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+        job->group = nullptr;
+        TryCompleteAndFree(parent);
+        if (group) {
+            CompleteTaskGroupWork(*group);
+        }
+        g_job_allocator.Free(job);
+    }
 }
 
 /// Execute a job and handle counter decrements
 static void ExecuteJob(Job* job) {
     if (!job) return;
 
-    // Call the job function
+    LinearAllocator* scratch = t_scratch_allocator;
+    if (!scratch) {
+        if (!t_external_scratch_initialized) {
+            t_external_scratch_allocator.Init(kScratchAllocatorSize);
+            t_external_scratch_initialized = true;
+        }
+        scratch = &t_external_scratch_allocator;
+        t_scratch_allocator = scratch;
+    }
+
+    if (scratch) {
+        scratch->Reset();
+    }
+
     job->function(job->data);
 
-    // Decrement this job's counter
-    u32 unfinished = job->unfinished_jobs.fetch_sub(1, std::memory_order_release);
-
-    // If this was the last unfinished job (counter was 1, now 0)
-    if (unfinished == 1) {
-        // Decrement parent's counter if exists
-        if (job->parent) {
-            u32 parent_unfinished = job->parent->unfinished_jobs.fetch_sub(1, std::memory_order_release);
-
-            // If parent also completed, it will be cleaned up when someone waits on it
-            // or when it's the last reference
-            (void)parent_unfinished;
-        }
-
-        // Job is complete, free it
-        g_job_allocator.Free(job);
+    if (scratch) {
+        scratch->Reset();
     }
+
+    TryCompleteAndFree(job);
 }
 
 /// Worker thread main loop
 static void WorkerThreadMain(u32 thread_index) {
     t_thread_index = thread_index;
+    t_scratch_allocator = &g_worker_scratch_allocators[thread_index];
 
-    while (!g_shutdown) {
+    while (!g_shutdown.load(std::memory_order_acquire)) {
         Job* job = nullptr;
 
         // 1. Try to get job from own queue
@@ -137,16 +207,15 @@ static void WorkerThreadMain(u32 thread_index) {
 
         // 2. If own queue is empty, try to steal from another thread
         if (!job) {
-            u32 victim = GetRandomVictimThread(thread_index);
-            job = g_work_queues[victim].Steal();
+            job = StealWorkForWorker(thread_index);
         }
 
         // 3. If we got a job, execute it
         if (job) {
             ExecuteJob(job);
         } else {
-            // 4. No work available, yield to avoid busy-waiting
-            std::this_thread::yield();
+            // 4. No work available, wait on semaphore to avoid busy-waiting
+            Platform::WaitSemaphore(g_work_semaphore);
         }
     }
 }
@@ -156,7 +225,7 @@ static void WorkerThreadMain(u32 thread_index) {
 // ============================================================================
 
 void Init(u32 num_threads) {
-    if (g_initialized) {
+    if (g_initialized.load(std::memory_order_acquire)) {
         return; // Already initialized
     }
 
@@ -168,7 +237,7 @@ void Init(u32 num_threads) {
     }
 
     g_num_threads = num_threads;
-    g_shutdown = false;
+    g_shutdown.store(false, std::memory_order_relaxed);
 
     // Initialize work queues
     g_work_queues.resize(g_num_threads);
@@ -176,22 +245,46 @@ void Init(u32 num_threads) {
         g_work_queues[i].Init();
     }
 
+    g_worker_scratch_allocators.resize(g_num_threads);
+    for (u32 i = 0; i < g_num_threads; ++i) {
+        g_worker_scratch_allocators[i].Init(kScratchAllocatorSize);
+    }
+
+    g_work_semaphore = Platform::CreateSemaphore(0);
+    if (!g_work_semaphore) {
+        for (u32 i = 0; i < g_num_threads; ++i) {
+            g_work_queues[i].Shutdown();
+        }
+        for (u32 i = 0; i < g_worker_scratch_allocators.size(); ++i) {
+            g_worker_scratch_allocators[i].Shutdown();
+        }
+        g_work_queues.clear();
+        g_worker_scratch_allocators.clear();
+        g_num_threads = 0;
+        return;
+    }
+
+    g_submission_index.store(0, std::memory_order_relaxed);
+
     // Spawn worker threads
     g_worker_threads.reserve(g_num_threads);
     for (u32 i = 0; i < g_num_threads; i++) {
         g_worker_threads.emplace_back(WorkerThreadMain, i);
     }
 
-    g_initialized = true;
+    g_initialized.store(true, std::memory_order_release);
 }
 
 void Shutdown() {
-    if (!g_initialized) {
+    if (!g_initialized.load(std::memory_order_acquire)) {
         return;
     }
 
     // Signal all threads to shut down
-    g_shutdown = true;
+    g_shutdown.store(true, std::memory_order_release);
+    if (g_work_semaphore) {
+        Platform::SignalSemaphore(g_work_semaphore, g_num_threads > 0 ? g_num_threads : 1);
+    }
 
     // Wait for all worker threads to finish
     for (auto& thread : g_worker_threads) {
@@ -210,13 +303,26 @@ void Shutdown() {
         g_work_queues[i].Shutdown();
     }
 
+    for (u32 i = 0; i < g_worker_scratch_allocators.size(); ++i) {
+        g_worker_scratch_allocators[i].Shutdown();
+    }
+
     g_worker_threads.clear();
     g_work_queues.clear();
+    g_worker_scratch_allocators.clear();
     g_num_threads = 0;
-    g_initialized = false;
+    g_submission_index.store(0, std::memory_order_relaxed);
+
+    if (g_work_semaphore) {
+        Platform::DestroySemaphore(g_work_semaphore);
+        g_work_semaphore = nullptr;
+    }
+
+    g_initialized.store(false, std::memory_order_release);
+    g_shutdown.store(false, std::memory_order_relaxed);
 }
 
-Job* CreateJob(void (*func)(void*), void* data) {
+Job* CreateJob(void (*func)(void*), void* data, JobPriority priority, TaskGroup* group) {
     if (!func) {
         return nullptr;
     }
@@ -230,11 +336,16 @@ Job* CreateJob(void (*func)(void*), void* data) {
     job->data = data;
     job->unfinished_jobs.store(1, std::memory_order_relaxed); // 1 = the job itself
     job->parent = nullptr;
+    job->priority = priority;
+    job->group = group;
+    if (group) {
+        group->counter.fetch_add(1, std::memory_order_relaxed);
+    }
 
     return job;
 }
 
-Job* CreateJobAsChild(Job* parent, void (*func)(void*), void* data) {
+Job* CreateJobAsChild(Job* parent, void (*func)(void*), void* data, JobPriority priority, TaskGroup* group) {
     if (!parent || !func) {
         return nullptr;
     }
@@ -248,15 +359,24 @@ Job* CreateJobAsChild(Job* parent, void (*func)(void*), void* data) {
     job->data = data;
     job->unfinished_jobs.store(1, std::memory_order_relaxed); // 1 = the job itself
     job->parent = parent;
+    JobPriority effective_priority = priority;
+    if (priority == JobPriority::Normal) {
+        effective_priority = parent->priority;
+    }
+    job->priority = effective_priority;
+    job->group = group ? group : parent->group;
+    if (job->group) {
+        job->group->counter.fetch_add(1, std::memory_order_relaxed);
+    }
 
     // Increment parent's unfinished counter (atomic)
-    parent->unfinished_jobs.fetch_add(1, std::memory_order_acquire);
+    parent->unfinished_jobs.fetch_add(1, std::memory_order_relaxed);
 
     return job;
 }
 
 void Run(Job* job) {
-    if (!job || !g_initialized) {
+    if (!job || !g_initialized.load(std::memory_order_acquire)) {
         return;
     }
 
@@ -265,11 +385,16 @@ void Run(Job* job) {
 
     // If called from main thread or unknown thread, use queue 0
     if (thread_index >= g_num_threads) {
-        thread_index = 0;
+        u32 rr = g_submission_index.fetch_add(1, std::memory_order_relaxed);
+        thread_index = g_num_threads > 0 ? rr % g_num_threads : 0;
     }
 
     // Push job to the queue
     g_work_queues[thread_index].Push(job);
+
+    if (g_work_semaphore) {
+        Platform::SignalSemaphore(g_work_semaphore, 1);
+    }
 }
 
 void Wait(Job* job) {
@@ -277,11 +402,14 @@ void Wait(Job* job) {
         return;
     }
 
+    // Hold a reference so the job memory remains valid while we wait
+    job->unfinished_jobs.fetch_add(1, std::memory_order_acq_rel);
+
     // Brief spin-wait (avoid context switches for short jobs)
     constexpr u32 MAX_SPIN_COUNT = 100;
     u32 spin_count = 0;
 
-    while (job->unfinished_jobs.load(std::memory_order_acquire) > 0) {
+    while (job->unfinished_jobs.load(std::memory_order_acquire) > 1) {
         if (spin_count < MAX_SPIN_COUNT) {
             spin_count++;
             // Just spin
@@ -290,13 +418,78 @@ void Wait(Job* job) {
             Job* work = nullptr;
 
             // Try to get work from a random queue
-            u32 queue_index = GetRandomVictimThread(t_thread_index >= g_num_threads ? 0 : t_thread_index);
-            work = g_work_queues[queue_index].Steal();
+            u32 current_thread = t_thread_index < g_num_threads ? t_thread_index : 0xFFFFFFFF;
+            work = StealWorkFromAny(current_thread);
 
             if (work) {
                 ExecuteJob(work);
             } else {
                 // No work available, yield
+                std::this_thread::yield();
+            }
+        }
+    }
+
+    // Release the reference we acquired above
+    TryCompleteAndFree(job);
+}
+
+void SetPriority(Job* job, JobPriority priority) {
+    if (!job) {
+        return;
+    }
+    job->priority = priority;
+}
+
+LinearAllocator* GetScratchAllocator() {
+    return t_scratch_allocator;
+}
+
+void InitTaskGroup(TaskGroup& group) {
+    group.counter.store(0, std::memory_order_relaxed);
+}
+
+void AttachToTaskGroup(TaskGroup& group, Job* job) {
+    if (!job) {
+        return;
+    }
+
+    if (job->group == &group) {
+        return;
+    }
+
+    if (!job->group) {
+        job->group = &group;
+        group.counter.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
+void AddToTaskGroup(TaskGroup& group, u32 count) {
+    if (count == 0) {
+        return;
+    }
+    group.counter.fetch_add(count, std::memory_order_relaxed);
+}
+
+void CompleteTaskGroupWork(TaskGroup& group, u32 count) {
+    if (count == 0) {
+        return;
+    }
+    group.counter.fetch_sub(count, std::memory_order_acq_rel);
+}
+
+void Wait(TaskGroup& group) {
+    constexpr u32 MAX_SPIN_COUNT = 100;
+    u32 spin_count = 0;
+
+    while (group.counter.load(std::memory_order_acquire) > 0) {
+        if (spin_count < MAX_SPIN_COUNT) {
+            spin_count++;
+        } else {
+            Job* work = StealWorkFromAny(t_thread_index < g_num_threads ? t_thread_index : 0xFFFFFFFF);
+            if (work) {
+                ExecuteJob(work);
+            } else {
                 std::this_thread::yield();
             }
         }

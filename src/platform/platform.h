@@ -80,4 +80,24 @@ void Unlock(Mutex* mutex);
 /// Destroys a previously created mutex
 void DestroyMutex(Mutex* mutex);
 
+struct Semaphore;
+
+/// Creates a counting semaphore
+/// @param initial_count Initial signal count
+/// @return Pointer to created semaphore or nullptr on failure
+Semaphore* CreateSemaphore(u32 initial_count = 0);
+
+/// Destroys a previously created semaphore
+void DestroySemaphore(Semaphore* semaphore);
+
+/// Waits for the semaphore to be signaled
+/// @param semaphore Semaphore to wait on
+/// @param timeout_ms Timeout in milliseconds (0xFFFFFFFF for infinite)
+void WaitSemaphore(Semaphore* semaphore, u32 timeout_ms = 0xFFFFFFFF);
+
+/// Signals (releases) the semaphore a specified number of times
+/// @param semaphore Semaphore to signal
+/// @param count Number of permits to release
+void SignalSemaphore(Semaphore* semaphore, u32 count = 1);
+
 } // namespace Platform
