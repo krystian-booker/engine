@@ -11,26 +11,28 @@
 #include "renderer/vulkan_swapchain.h"
 #include "renderer/vulkan_descriptors.h"
 #include "renderer/vulkan_depth.h"
+#include "ecs/systems/render_system.h"
 
 #include <vulkan/vulkan.h>
 
+#include <memory>
 #include <vector>
 
 class VulkanContext;
 class Window;
-class RenderSystem;
+class ECSCoordinator;
 
 class VulkanRenderer {
 public:
     VulkanRenderer() = default;
     ~VulkanRenderer();
 
-    void Init(VulkanContext* context, Window* window);
+    void Init(VulkanContext* context, Window* window, ECSCoordinator* ecs);
     void Shutdown();
 
     void DrawFrame();
     void OnWindowResized();
-    void SetRenderSystem(RenderSystem* renderSystem) { m_RenderSystem = renderSystem; }
+    void SetCameraMatrices(const Mat4& view, const Mat4& projection);
 
     bool BeginFrame(FrameContext*& outFrame, u32& outImageIndex);
     void BeginDefaultRenderPass(FrameContext& frame, u32 imageIndex, const VkClearColorValue& clearColor);
@@ -48,11 +50,12 @@ private:
     void ResizeImagesInFlight();
     void InitMeshResources();
     void DestroyMeshResources();
-    void UpdateUniformBuffer(u32 currentFrame, const Mat4& modelMatrix);
+    void UpdateObjectUniforms(u32 frameIndex, const Mat4& modelMatrix);
 
     VulkanContext* m_Context = nullptr;
     Window* m_Window = nullptr;
-    RenderSystem* m_RenderSystem = nullptr;
+    ECSCoordinator* m_ECS = nullptr;
+    std::unique_ptr<RenderSystem> m_RenderSystem;
 
     VulkanSwapchain m_Swapchain;
     VulkanRenderPass m_RenderPass;
@@ -71,6 +74,9 @@ private:
     bool m_Initialized = false;
 
     f32 m_Rotation = 0.0f;
+    Mat4 m_ViewMatrix = Mat4(1.0f);
+    Mat4 m_ProjectionMatrix = Mat4(1.0f);
+    bool m_HasCameraMatrices = false;
 
     MeshHandle m_ActiveMesh = MeshHandle::Invalid;
 };

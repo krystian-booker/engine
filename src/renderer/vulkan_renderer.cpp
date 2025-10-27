@@ -32,7 +32,7 @@ VulkanRenderer::~VulkanRenderer() {
     Shutdown();
 }
 
-void VulkanRenderer::Init(VulkanContext* context, Window* window) {
+void VulkanRenderer::Init(VulkanContext* context, Window* window, ECSCoordinator* ecs) {
     if (m_Initialized) {
         return;
     }
@@ -43,12 +43,20 @@ void VulkanRenderer::Init(VulkanContext* context, Window* window) {
 
     m_Context = context;
     m_Window = window;
+    m_ECS = ecs;
 
     m_Swapchain.Init(m_Context, m_Window);
     m_Descriptors.Init(m_Context, MAX_FRAMES_IN_FLIGHT);
     InitSwapchainResources();
     CreateFrameContexts();
     InitMeshResources();
+
+    if (m_ECS) {
+        m_RenderSystem = std::make_unique<RenderSystem>(m_ECS, m_Context);
+        m_RenderSystem->UploadMeshes();
+    } else {
+        m_RenderSystem.reset();
+    }
 
     m_Initialized = true;
 }
@@ -61,6 +69,11 @@ void VulkanRenderer::Shutdown() {
     VkDevice device = m_Context->GetDevice();
     vkDeviceWaitIdle(device);
 
+    if (m_RenderSystem) {
+        m_RenderSystem->Shutdown();
+        m_RenderSystem.reset();
+    }
+
     DestroyMeshResources();
     DestroyFrameContexts();
     DestroySwapchainResources();
@@ -69,10 +82,16 @@ void VulkanRenderer::Shutdown() {
 
     m_Context = nullptr;
     m_Window = nullptr;
+    m_ECS = nullptr;
     m_Initialized = false;
+    m_HasCameraMatrices = false;
 }
 
 void VulkanRenderer::DrawFrame() {
+    if (m_RenderSystem) {
+        m_RenderSystem->Update();
+    }
+
     FrameContext* frame = nullptr;
     u32 imageIndex = 0;
 
@@ -111,7 +130,7 @@ void VulkanRenderer::DrawFrame() {
                 continue;
             }
 
-            UpdateUniformBuffer(currentFrameIndex, renderData.modelMatrix);
+            UpdateObjectUniforms(currentFrameIndex, renderData.modelMatrix);
             mesh->Bind(frame->commandBuffer);
             mesh->Draw(frame->commandBuffer);
             rendered = true;
@@ -133,7 +152,7 @@ void VulkanRenderer::DrawFrame() {
         }
 
         const Mat4 fallbackModel = Rotate(Mat4(1.0f), m_Rotation, Vec3(0.0f, 1.0f, 0.0f));
-        UpdateUniformBuffer(currentFrameIndex, fallbackModel);
+        UpdateObjectUniforms(currentFrameIndex, fallbackModel);
 
         meshData->gpuMesh.Bind(frame->commandBuffer);
         meshData->gpuMesh.Draw(frame->commandBuffer);
@@ -145,6 +164,12 @@ void VulkanRenderer::DrawFrame() {
 
 void VulkanRenderer::OnWindowResized() {
     m_FramebufferResized = true;
+}
+
+void VulkanRenderer::SetCameraMatrices(const Mat4& view, const Mat4& projection) {
+    m_ViewMatrix = view;
+    m_ProjectionMatrix = projection;
+    m_HasCameraMatrices = true;
 }
 
 bool VulkanRenderer::BeginFrame(FrameContext*& outFrame, u32& outImageIndex) {
@@ -268,7 +293,7 @@ void VulkanRenderer::EndFrame(FrameContext& frame, u32 imageIndex) {
     m_CurrentFrame = (m_CurrentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
-void VulkanRenderer::UpdateUniformBuffer(u32 currentFrame, const Mat4& modelMatrix) {
+void VulkanRenderer::UpdateObjectUniforms(u32 frameIndex, const Mat4& modelMatrix) {
     const VkExtent2D extent = m_Swapchain.GetExtent();
     const f32 width = static_cast<f32>(extent.width);
     const f32 height = static_cast<f32>(extent.height == 0 ? 1 : extent.height);
@@ -277,15 +302,20 @@ void VulkanRenderer::UpdateUniformBuffer(u32 currentFrame, const Mat4& modelMatr
     UniformBufferObject ubo{};
     ubo.model = modelMatrix;
 
-    const Vec3 eye(3.0f, 3.0f, 3.0f);
-    const Vec3 center(0.0f, 0.0f, 0.0f);
-    const Vec3 up(0.0f, 1.0f, 0.0f);
-    ubo.view = LookAt(eye, center, up);
+    if (m_HasCameraMatrices) {
+        ubo.view = m_ViewMatrix;
+        ubo.projection = m_ProjectionMatrix;
+    } else {
+        const Vec3 eye(3.0f, 3.0f, 3.0f);
+        const Vec3 center(0.0f, 0.0f, 0.0f);
+        const Vec3 up(0.0f, 1.0f, 0.0f);
+        ubo.view = LookAt(eye, center, up);
 
-    ubo.projection = Perspective(Radians(45.0f), aspect, 0.1f, 100.0f);
-    ubo.projection[1][1] *= -1.0f;
+        ubo.projection = Perspective(Radians(45.0f), aspect, 0.1f, 100.0f);
+        ubo.projection[1][1] *= -1.0f;
+    }
 
-    m_Descriptors.UpdateUniformBuffer(currentFrame, &ubo, sizeof(ubo));
+    m_Descriptors.UpdateUniformBuffer(frameIndex, &ubo, sizeof(ubo));
 }
 
 void VulkanRenderer::InitSwapchainResources() {

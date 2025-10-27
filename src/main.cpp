@@ -4,7 +4,6 @@
 #include "renderer/vulkan_context.h"
 #include "renderer/vulkan_renderer.h"
 #include "ecs/ecs_coordinator.h"
-#include "ecs/systems/render_system.h"
 #include "ecs/components/transform.h"
 #include "ecs/components/renderable.h"
 #include "resources/mesh_manager.h"
@@ -31,14 +30,8 @@ int main() {
     VulkanContext context;
     context.Init(&window);
 
-    VulkanRenderer renderer;
-    renderer.Init(&context, &window);
-
     ECSCoordinator ecs;
     ecs.Init();
-
-    RenderSystem renderSystem(&ecs, &context);
-    renderer.SetRenderSystem(&renderSystem);
 
     Entity cubeEntity = ecs.CreateEntity();
 
@@ -55,7 +48,9 @@ int main() {
     ecs.AddComponent(cubeEntity, cubeRenderable);
 
     ecs.Update(0.0f);
-    renderSystem.UploadMeshes();
+
+    VulkanRenderer renderer;
+    renderer.Init(&context, &window, &ecs);
 
     window.SetEventCallback([&renderer](WindowEvent event, u32 width, u32 height) {
         (void)width;
@@ -85,7 +80,22 @@ int main() {
         }
 
         ecs.Update(Time::DeltaTime());
-        renderSystem.Update();
+
+        const Vec3 eye(3.0f, 3.0f, 3.0f);
+        const Vec3 center(0.0f, 0.0f, 0.0f);
+        const Vec3 up(0.0f, 1.0f, 0.0f);
+        const Mat4 view = LookAt(eye, center, up);
+
+        const u32 windowWidth = window.GetWidth();
+        const u32 windowHeight = window.GetHeight() == 0 ? 1 : window.GetHeight();
+        const f32 aspect = static_cast<f32>(windowHeight) != 0.0f
+            ? static_cast<f32>(windowWidth) / static_cast<f32>(windowHeight)
+            : 1.0f;
+
+        Mat4 projection = Perspective(Radians(45.0f), aspect, 0.1f, 100.0f);
+        projection[1][1] *= -1.0f;
+        renderer.SetCameraMatrices(view, projection);
+
         renderer.DrawFrame();
 
         if (Time::FrameCount() % 60 == 0) {
@@ -94,12 +104,11 @@ int main() {
         }
     }
 
-    renderSystem.Shutdown();
+    renderer.Shutdown();
     MeshManager::Instance().Destroy(cubeMesh);
 
     ecs.Shutdown();
 
-    renderer.Shutdown();
     context.Shutdown();
 
     std::cout << "Engine shutdown complete." << std::endl;
