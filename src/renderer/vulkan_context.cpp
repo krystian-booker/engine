@@ -1,6 +1,7 @@
 #include "vulkan_context.h"
 
 #include "platform/window.h"
+#include "renderer/vulkan_mipmap_compute.h"
 
 #include <GLFW/glfw3.h>
 
@@ -28,6 +29,11 @@ void VulkanContext::Init(Window* window) {
 void VulkanContext::Shutdown() {
     if (m_Device != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(m_Device);
+
+        if (m_MipmapCompute) {
+            m_MipmapCompute->Shutdown();
+            m_MipmapCompute.reset();
+        }
 
         if (m_CommandPool != VK_NULL_HANDLE) {
             vkDestroyCommandPool(m_Device, m_CommandPool, nullptr);
@@ -57,7 +63,15 @@ void VulkanContext::Shutdown() {
         m_Instance = VK_NULL_HANDLE;
     }
 
-    std::cout << "Vulkan context shut down" << std::endl;
+        std::cout << "Vulkan context shut down" << std::endl;
+}
+
+VulkanMipmapCompute* VulkanContext::GetMipmapCompute() {
+    if (!m_MipmapCompute) {
+        m_MipmapCompute = std::make_unique<VulkanMipmapCompute>();
+        m_MipmapCompute->Initialize(this);
+    }
+    return m_MipmapCompute.get();
 }
 
 void VulkanContext::CreateInstance() {

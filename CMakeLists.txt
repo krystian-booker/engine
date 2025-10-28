@@ -150,6 +150,7 @@ set(ENGINE_SOURCES
         src/renderer/vulkan_renderer.cpp
         src/renderer/vulkan_mesh.cpp
         src/renderer/vulkan_texture.cpp
+        src/renderer/vulkan_mipmap_compute.cpp
         src/renderer/vulkan_pipeline.cpp
         src/renderer/vulkan_descriptors.cpp
         src/renderer/vulkan_render_pass.cpp
@@ -197,9 +198,11 @@ enable_testing()
 add_executable(test_vulkan
         tests/test_vulkan.cpp
         src/renderer/vulkan_context.cpp
+        src/renderer/vulkan_mipmap_compute.cpp
         src/renderer/vulkan_swapchain.cpp
         src/renderer/vulkan_renderer.cpp
         src/ecs/systems/camera_system.cpp
+        tests/stubs/camera_controller_stub.cpp
         src/ecs/systems/render_system.cpp
         src/ecs/entity_manager.cpp
         src/resources/mesh_manager.cpp
@@ -239,6 +242,15 @@ set(CUBE_VERT_HLSL ${CMAKE_SOURCE_DIR}/assets/shaders/cube.vert)
 set(CUBE_FRAG_HLSL ${CMAKE_SOURCE_DIR}/assets/shaders/cube.frag)
 set(CUBE_VERT_SPV ${CMAKE_SOURCE_DIR}/assets/shaders/cube.vert.spv)
 set(CUBE_FRAG_SPV ${CMAKE_SOURCE_DIR}/assets/shaders/cube.frag.spv)
+set(MIPGEN_COMMON_HLSL ${CMAKE_SOURCE_DIR}/assets/shaders/mipgen_common.hlsl)
+set(MIPGEN_COLOR_HLSL ${CMAKE_SOURCE_DIR}/assets/shaders/mipgen_color.comp)
+set(MIPGEN_COLOR_SPV ${CMAKE_SOURCE_DIR}/assets/shaders/mipgen_color.comp.spv)
+set(MIPGEN_NORMAL_HLSL ${CMAKE_SOURCE_DIR}/assets/shaders/mipgen_normal.comp)
+set(MIPGEN_NORMAL_SPV ${CMAKE_SOURCE_DIR}/assets/shaders/mipgen_normal.comp.spv)
+set(MIPGEN_ROUGHNESS_HLSL ${CMAKE_SOURCE_DIR}/assets/shaders/mipgen_roughness.comp)
+set(MIPGEN_ROUGHNESS_SPV ${CMAKE_SOURCE_DIR}/assets/shaders/mipgen_roughness.comp.spv)
+set(MIPGEN_SRGB_HLSL ${CMAKE_SOURCE_DIR}/assets/shaders/mipgen_srgb.comp)
+set(MIPGEN_SRGB_SPV ${CMAKE_SOURCE_DIR}/assets/shaders/mipgen_srgb.comp.spv)
 
 find_program(DXC_EXECUTABLE dxc)
 
@@ -261,14 +273,54 @@ if(DXC_EXECUTABLE)
             VERBATIM
     )
 
+    add_custom_command(
+            OUTPUT ${MIPGEN_COLOR_SPV}
+            COMMAND ${DXC_EXECUTABLE} -spirv -fspv-target-env=vulkan1.2 -T cs_6_7 -E main
+                    ${MIPGEN_COLOR_HLSL} -Fo ${MIPGEN_COLOR_SPV} -I ${CMAKE_SOURCE_DIR}/assets/shaders
+            DEPENDS ${MIPGEN_COLOR_HLSL} ${MIPGEN_COMMON_HLSL}
+            COMMENT "Compiling mipgen_color compute shader to SPIR-V"
+            VERBATIM
+    )
+
+    add_custom_command(
+            OUTPUT ${MIPGEN_NORMAL_SPV}
+            COMMAND ${DXC_EXECUTABLE} -spirv -fspv-target-env=vulkan1.2 -T cs_6_7 -E main
+                    ${MIPGEN_NORMAL_HLSL} -Fo ${MIPGEN_NORMAL_SPV} -I ${CMAKE_SOURCE_DIR}/assets/shaders
+            DEPENDS ${MIPGEN_NORMAL_HLSL} ${MIPGEN_COMMON_HLSL}
+            COMMENT "Compiling mipgen_normal compute shader to SPIR-V"
+            VERBATIM
+    )
+
+    add_custom_command(
+            OUTPUT ${MIPGEN_ROUGHNESS_SPV}
+            COMMAND ${DXC_EXECUTABLE} -spirv -fspv-target-env=vulkan1.2 -T cs_6_7 -E main
+                    ${MIPGEN_ROUGHNESS_HLSL} -Fo ${MIPGEN_ROUGHNESS_SPV} -I ${CMAKE_SOURCE_DIR}/assets/shaders
+            DEPENDS ${MIPGEN_ROUGHNESS_HLSL} ${MIPGEN_COMMON_HLSL}
+            COMMENT "Compiling mipgen_roughness compute shader to SPIR-V"
+            VERBATIM
+    )
+
+    add_custom_command(
+            OUTPUT ${MIPGEN_SRGB_SPV}
+            COMMAND ${DXC_EXECUTABLE} -spirv -fspv-target-env=vulkan1.2 -T cs_6_7 -E main
+                    ${MIPGEN_SRGB_HLSL} -Fo ${MIPGEN_SRGB_SPV} -I ${CMAKE_SOURCE_DIR}/assets/shaders
+            DEPENDS ${MIPGEN_SRGB_HLSL} ${MIPGEN_COMMON_HLSL}
+            COMMENT "Compiling mipgen_srgb compute shader to SPIR-V"
+            VERBATIM
+    )
+
     add_custom_target(Shaders ALL
-            DEPENDS ${CUBE_VERT_SPV} ${CUBE_FRAG_SPV}
+            DEPENDS ${CUBE_VERT_SPV} ${CUBE_FRAG_SPV} ${MIPGEN_COLOR_SPV} ${MIPGEN_NORMAL_SPV} ${MIPGEN_ROUGHNESS_SPV} ${MIPGEN_SRGB_SPV}
     )
 
     add_custom_command(TARGET Shaders POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/assets/shaders
             COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CUBE_VERT_SPV} ${CMAKE_BINARY_DIR}/assets/shaders/cube.vert.spv
             COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CUBE_FRAG_SPV} ${CMAKE_BINARY_DIR}/assets/shaders/cube.frag.spv
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MIPGEN_COLOR_SPV} ${CMAKE_BINARY_DIR}/assets/shaders/mipgen_color.comp.spv
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MIPGEN_NORMAL_SPV} ${CMAKE_BINARY_DIR}/assets/shaders/mipgen_normal.comp.spv
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MIPGEN_ROUGHNESS_SPV} ${CMAKE_BINARY_DIR}/assets/shaders/mipgen_roughness.comp.spv
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MIPGEN_SRGB_SPV} ${CMAKE_BINARY_DIR}/assets/shaders/mipgen_srgb.comp.spv
     )
 
     add_dependencies(engine Shaders)
@@ -442,6 +494,7 @@ add_executable(test_ecs_coordinator
         src/ecs/hierarchy_manager.cpp
         src/ecs/systems/transform_system.cpp
         src/ecs/systems/camera_system.cpp
+        tests/stubs/camera_controller_stub.cpp
 )
 
 target_include_directories(test_ecs_coordinator PRIVATE
@@ -462,6 +515,7 @@ add_executable(test_ecs_queries
         src/ecs/hierarchy_manager.cpp
         src/ecs/systems/transform_system.cpp
         src/ecs/systems/camera_system.cpp
+        tests/stubs/camera_controller_stub.cpp
 )
 
 target_include_directories(test_ecs_queries PRIVATE
@@ -481,6 +535,7 @@ add_executable(test_renderable
         src/ecs/hierarchy_manager.cpp
         src/ecs/systems/transform_system.cpp
         src/ecs/systems/camera_system.cpp
+        tests/stubs/camera_controller_stub.cpp
 )
 
 target_include_directories(test_renderable PRIVATE
@@ -500,6 +555,7 @@ add_executable(test_render_system
         src/ecs/hierarchy_manager.cpp
         src/ecs/systems/transform_system.cpp
         src/ecs/systems/camera_system.cpp
+        tests/stubs/camera_controller_stub.cpp
         src/ecs/systems/render_system.cpp
         src/resources/mesh_manager.cpp
         src/renderer/vulkan_mesh.cpp
@@ -524,6 +580,7 @@ add_executable(test_camera
         src/ecs/hierarchy_manager.cpp
         src/ecs/systems/transform_system.cpp
         src/ecs/systems/camera_system.cpp
+        tests/stubs/camera_controller_stub.cpp
 )
 
 target_include_directories(test_camera PRIVATE
@@ -543,6 +600,7 @@ add_executable(test_ecs_deferred
         src/ecs/hierarchy_manager.cpp
         src/ecs/systems/transform_system.cpp
         src/ecs/systems/camera_system.cpp
+        tests/stubs/camera_controller_stub.cpp
 )
 
 target_include_directories(test_ecs_deferred PRIVATE
@@ -562,6 +620,7 @@ add_executable(test_ecs_versions
         src/ecs/hierarchy_manager.cpp
         src/ecs/systems/transform_system.cpp
         src/ecs/systems/camera_system.cpp
+        tests/stubs/camera_controller_stub.cpp
 )
 
 target_include_directories(test_ecs_versions PRIVATE
@@ -581,6 +640,7 @@ add_executable(test_ecs_signatures
         src/ecs/hierarchy_manager.cpp
         src/ecs/systems/transform_system.cpp
         src/ecs/systems/camera_system.cpp
+        tests/stubs/camera_controller_stub.cpp
 )
 
 target_include_directories(test_ecs_signatures PRIVATE
@@ -600,6 +660,7 @@ add_executable(test_ecs_parallel
         src/ecs/hierarchy_manager.cpp
         src/ecs/systems/transform_system.cpp
         src/ecs/systems/camera_system.cpp
+        tests/stubs/camera_controller_stub.cpp
         src/core/job_system.cpp
         src/core/memory.cpp
 )
@@ -645,6 +706,7 @@ add_executable(test_scene_serializer
         src/ecs/scene_serializer.cpp
         src/ecs/systems/transform_system.cpp
         src/ecs/systems/camera_system.cpp
+        tests/stubs/camera_controller_stub.cpp
 )
 
 target_include_directories(test_scene_serializer PRIVATE
@@ -763,6 +825,7 @@ endif()
 add_executable(vulkan_buffer_example
         examples/vulkan_buffer_example.cpp
         src/renderer/vulkan_context.cpp
+        src/renderer/vulkan_mipmap_compute.cpp
         src/renderer/vulkan_buffer.cpp
         src/platform/window.cpp
 )
@@ -788,6 +851,7 @@ endif()
 add_executable(test_vulkan_buffer
         tests/test_vulkan_buffer.cpp
         src/renderer/vulkan_context.cpp
+        src/renderer/vulkan_mipmap_compute.cpp
         src/renderer/vulkan_buffer.cpp
         src/platform/window.cpp
 )
@@ -877,6 +941,7 @@ add_test(NAME TextureAsyncTests COMMAND test_texture_async)
 add_executable(test_format_support
         tests/test_format_support.cpp
         src/renderer/vulkan_context.cpp
+        src/renderer/vulkan_mipmap_compute.cpp
         src/platform/window.cpp
 )
 
@@ -898,3 +963,28 @@ if(WIN32)
 endif()
 
 add_test(NAME FormatSupportTests COMMAND test_format_support)
+
+add_executable(test_mipgen_compute
+        tests/test_mipgen_compute.cpp
+        src/renderer/vulkan_context.cpp
+        src/renderer/vulkan_mipmap_compute.cpp
+        src/renderer/vulkan_buffer.cpp
+        src/platform/window.cpp
+)
+
+if(WIN32)
+    target_sources(test_mipgen_compute PRIVATE src/platform/win32_platform.cpp)
+endif()
+
+target_include_directories(test_mipgen_compute PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_mipgen_compute PRIVATE
+        glfw
+        Vulkan::Vulkan
+)
+
+target_compile_definitions(test_mipgen_compute PRIVATE ENGINE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
+add_test(NAME MipgenComputeTests COMMAND test_mipgen_compute)

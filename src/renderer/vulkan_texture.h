@@ -1,4 +1,5 @@
 #pragma once
+#include "core/texture_data.h"
 #include "core/types.h"
 #include <vulkan/vulkan.h>
 
@@ -43,6 +44,7 @@ private:
     VkSampler m_Sampler = VK_NULL_HANDLE;
     VkFormat m_Format = VK_FORMAT_UNDEFINED;
     u32 m_MipLevels = 1;
+    TextureUsage m_Usage = TextureUsage::Generic;
 
     // Helper functions
     void CreateImage(const TextureData* data);

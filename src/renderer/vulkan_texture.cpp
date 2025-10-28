@@ -1,5 +1,6 @@
 #include "renderer/vulkan_texture.h"
 #include "renderer/vulkan_context.h"
+#include "renderer/vulkan_mipmap_compute.h"
 #include "renderer/vulkan_buffer.h"
 #include "core/texture_data.h"
 #include <stdexcept>
@@ -7,7 +8,32 @@
 #include <cmath>
 #include <iostream>
 
-// Removed unused helper function IsFormatSRGB (may be used in future for validation)
+namespace {
+bool IsFormatSRGB(VkFormat format) {
+    switch (format) {
+        case VK_FORMAT_R8_SRGB:
+        case VK_FORMAT_R8G8_SRGB:
+        case VK_FORMAT_R8G8B8_SRGB:
+        case VK_FORMAT_R8G8B8A8_SRGB:
+        case VK_FORMAT_B8G8R8A8_SRGB:
+            return true;
+        default:
+            return false;
+    }
+}
+
+VkFormat GetLinearFormatFor(VkFormat format) {
+    switch (format) {
+        case VK_FORMAT_R8_SRGB: return VK_FORMAT_R8_UNORM;
+        case VK_FORMAT_R8G8_SRGB: return VK_FORMAT_R8G8_UNORM;
+        case VK_FORMAT_R8G8B8_SRGB: return VK_FORMAT_R8G8B8_UNORM;
+        case VK_FORMAT_R8G8B8A8_SRGB: return VK_FORMAT_R8G8B8A8_UNORM;
+        case VK_FORMAT_B8G8R8A8_SRGB: return VK_FORMAT_B8G8R8A8_UNORM;
+        default:
+            return format;
+    }
+}
+} // namespace
 
 VulkanTexture::~VulkanTexture() {
     Destroy();
@@ -27,6 +53,7 @@ void VulkanTexture::Create(VulkanContext* context, const TextureData* textureDat
 
     m_Context = context;
     m_Format = DetermineVulkanFormat(textureData);
+    m_Usage = textureData->usage;
 
     // Calculate mip levels if requested
     if (HasFlag(textureData->flags, TextureFlags::GenerateMipmaps)) {
@@ -75,6 +102,7 @@ void VulkanTexture::Destroy() {
     m_Context = nullptr;
     m_Format = VK_FORMAT_UNDEFINED;
     m_MipLevels = 1;
+    m_Usage = TextureUsage::Generic;
 }
 
 void VulkanTexture::CreateImage(const TextureData* data) {
@@ -104,10 +132,26 @@ void VulkanTexture::CreateImage(const TextureData* data) {
     imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    imageInfo.flags = 0;
 
-    // Add mipmap generation usage flags if needed
-    if (m_MipLevels > 1) {
+    const bool wantsMipmaps = m_MipLevels > 1;
+    if (wantsMipmaps) {
         imageInfo.usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    }
+
+    if (wantsMipmaps) {
+        const VkFormat storageCandidate = GetLinearFormatFor(m_Format);
+        bool supportsStorage = m_Context->SupportsStorageImage(m_Format);
+        if (!supportsStorage && storageCandidate != m_Format) {
+            supportsStorage = m_Context->SupportsStorageImage(storageCandidate);
+        }
+
+        if (supportsStorage) {
+            imageInfo.usage |= VK_IMAGE_USAGE_STORAGE_BIT;
+            if (IsFormatSRGB(m_Format) && storageCandidate != m_Format) {
+                imageInfo.flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
+            }
+        }
     }
 
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -223,7 +267,13 @@ void VulkanTexture::GenerateMipmaps(VkImage image, VkFormat format, u32 width, u
     }
 
     // Tier 2: Compute shader-based (requires storage image support)
-    if (m_Context->SupportsStorageImage(format)) {
+    const VkFormat storageCandidate = GetLinearFormatFor(format);
+    bool supportsCompute = m_Context->SupportsStorageImage(format);
+    if (!supportsCompute && storageCandidate != format) {
+        supportsCompute = m_Context->SupportsStorageImage(storageCandidate);
+    }
+
+    if (supportsCompute) {
         std::cout << "Linear blit unsupported, using compute shader for mipmap generation" << std::endl;
         GenerateMipmapsCompute(image, format, width, height, mipLevels);
         return;
@@ -320,12 +370,40 @@ void VulkanTexture::GenerateMipmapsBlit(VkImage image, VkFormat /*format*/, u32 
     EndSingleTimeCommands(commandBuffer);
 }
 
-void VulkanTexture::GenerateMipmapsCompute(VkImage /*image*/, VkFormat /*format*/, u32 /*width*/, u32 /*height*/, u32 /*mipLevels*/) {
-    // TODO: Implement compute shader-based mipmap generation
-    // For now, fall back to CPU-based generation
-    std::cout << "WARNING: Compute shader mipmap generation not yet implemented, falling back to CPU" << std::endl;
-    // GenerateMipmapsCPU(image, format, width, height, mipLevels);
-    throw std::runtime_error("VulkanTexture::GenerateMipmapsCompute not yet implemented");
+void VulkanTexture::GenerateMipmapsCompute(VkImage image, VkFormat format, u32 width, u32 height, u32 mipLevels) {
+    VulkanMipmapCompute* mipmapCompute = m_Context->GetMipmapCompute();
+    if (!mipmapCompute) {
+        throw std::runtime_error("VulkanTexture::GenerateMipmapsCompute requires initialized compute subsystem");
+    }
+
+    VulkanMipmapCompute::Variant variant = VulkanMipmapCompute::Variant::Color;
+    switch (m_Usage) {
+        case TextureUsage::Normal:
+            variant = VulkanMipmapCompute::Variant::Normal;
+            break;
+        case TextureUsage::Roughness:
+            variant = VulkanMipmapCompute::Variant::Roughness;
+            break;
+        default:
+            variant = IsFormatSRGB(format) ? VulkanMipmapCompute::Variant::Srgb
+                                           : VulkanMipmapCompute::Variant::Color;
+            break;
+    }
+
+    VulkanMipmapCompute::Params params{};
+    params.image = image;
+    params.format = format;
+    params.width = width;
+    params.height = height;
+    params.mipLevels = mipLevels;
+    params.baseArrayLayer = 0;
+    params.layerCount = 1;
+    params.variant = variant;
+    params.hasNormalMap = false;
+    params.normalImage = VK_NULL_HANDLE;
+    params.normalFormat = VK_FORMAT_UNDEFINED;
+
+    mipmapCompute->Generate(params);
 }
 
 void VulkanTexture::GenerateMipmapsCPU(VkImage image, VkFormat format, u32 width, u32 height, u32 mipLevels) {

@@ -1,0 +1,72 @@
+#include "mipgen_common.hlsl"
+
+[[vk::binding(0, 0)]] Texture2D<float4> g_Source;
+[[vk::binding(1, 0)]] RWTexture2D<float4> g_Destination;
+
+struct MipgenPushConstants
+{
+    uint SrcWidth;
+    uint SrcHeight;
+    uint DstWidth;
+    uint DstHeight;
+    uint SrcLevel;
+    uint Options;
+};
+
+[[vk::push_constant]]
+MipgenPushConstants g_Params;
+
+#define MIPGEN_FLAG_PREMULTIPLIED_ALPHA 0x1u
+
+[numthreads(8, 8, 1)]
+void main(uint3 dispatchThreadID : SV_DispatchThreadID)
+{
+    uint2 dstCoord = dispatchThreadID.xy;
+    if (dstCoord.x >= g_Params.DstWidth || dstCoord.y >= g_Params.DstHeight)
+    {
+        return;
+    }
+
+    uint2 srcBase = dstCoord * 2;
+    uint2 srcSize = uint2(g_Params.SrcWidth, g_Params.SrcHeight);
+    uint2 maxCoord = max(srcSize - 1, uint2(0, 0));
+
+    uint2 fetchCoords[4];
+    fetchCoords[0] = ClampCoord(srcBase, maxCoord);
+    fetchCoords[1] = ClampCoord(srcBase + uint2(1, 0), maxCoord);
+    fetchCoords[2] = ClampCoord(srcBase + uint2(0, 1), maxCoord);
+    fetchCoords[3] = ClampCoord(srcBase + uint2(1, 1), maxCoord);
+
+    float3 accumRGB = float3(0.0f, 0.0f, 0.0f);
+    float accumAlpha = 0.0f;
+    float3 accumPremultRGB = float3(0.0f, 0.0f, 0.0f);
+
+    [unroll]
+    for (uint i = 0; i < 4; ++i)
+    {
+        float4 sample = g_Source.Load(int3(fetchCoords[i], g_Params.SrcLevel));
+        accumRGB += sample.rgb;
+        accumAlpha += sample.a;
+        accumPremultRGB += sample.rgb * sample.a;
+    }
+
+    const float invCount = 1.0f / 4.0f;
+    float4 result;
+
+    if ((g_Params.Options & MIPGEN_FLAG_PREMULTIPLIED_ALPHA) != 0u)
+    {
+        float combinedAlpha = accumAlpha * invCount;
+        float3 combinedRGB = float3(0.0f, 0.0f, 0.0f);
+        if (combinedAlpha > 1e-5f)
+        {
+            combinedRGB = accumPremultRGB / accumAlpha;
+        }
+        result = float4(saturate(combinedRGB), saturate(combinedAlpha));
+    }
+    else
+    {
+        result = float4(saturate(accumRGB * invCount), saturate(accumAlpha * invCount));
+    }
+
+    g_Destination[dstCoord] = result;
+}

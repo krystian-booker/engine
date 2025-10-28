@@ -1,9 +1,11 @@
 #pragma once
 
 #include "core/types.h"
+#include "renderer/vulkan_mipmap_compute.h"
 
 #include <vulkan/vulkan.h>
 
+#include <memory>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -25,6 +27,7 @@ public:
     VkQueue GetPresentQueue() const { return m_PresentQueue; }
     VkSurfaceKHR GetSurface() const { return m_Surface; }
     VkCommandPool GetCommandPool() const { return m_CommandPool; }
+    VulkanMipmapCompute* GetMipmapCompute();
 
     u32 GetGraphicsQueueFamily() const { return m_GraphicsQueueFamily; }
     u32 GetPresentQueueFamily() const { return m_PresentQueueFamily; }
@@ -57,6 +60,8 @@ private:
 
     // Format capabilities cache
     mutable std::unordered_map<VkFormat, VkFormatProperties> m_FormatCapabilities;
+
+    std::unique_ptr<VulkanMipmapCompute> m_MipmapCompute;
 
     const std::vector<const char*> m_ValidationLayers = {
         "VK_LAYER_KHRONOS_validation"
