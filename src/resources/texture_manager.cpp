@@ -5,6 +5,7 @@
 #include "platform/platform.h"
 #include <iostream>
 #include <cstring>
+#include <algorithm>
 
 namespace TextureConfig {
     u32 g_DefaultAnisotropy = 16;
@@ -70,8 +71,9 @@ TextureHandle TextureManager::Load(const std::string& filepath, const TextureLoa
     textureData->formatOverride = options.formatOverride;
     textureData->flags = options.flags;
     textureData->compressionHint = options.compressionHint;
+    textureData->samplerSettings = options.samplerSettings;
 
-    // Set anisotropy level (0 means use global default)
+    // Set anisotropy level (0 means use global default, DEPRECATED)
     if (HasFlag(options.flags, TextureFlags::AnisotropyOverride)) {
         textureData->anisotropyLevel = options.anisotropyLevel;
     } else {
@@ -104,6 +106,214 @@ TextureHandle TextureManager::Load(const std::string& filepath, const TextureLoa
     TextureHandle handle = Create(std::move(textureData));
 
     return handle;
+}
+
+TextureHandle TextureManager::LoadArray(
+    const std::vector<std::string>& layerPaths,
+    const TextureLoadOptions& options)
+{
+    // Validate input
+    if (layerPaths.empty()) {
+        std::cerr << "TextureManager::LoadArray: empty layer paths" << std::endl;
+        return TextureHandle::Invalid;
+    }
+
+    // Note: Array textures are not cached by default (would need ResourceManager extension)
+    // Each call creates a new texture unless the exact same vector is reused by caller
+
+    // Load all layers using ImageLoader
+    std::vector<ImageData> layers = ImageLoader::LoadImageArray(layerPaths, options);
+    if (layers.empty()) {
+        std::cerr << "TextureManager::LoadArray: failed to load layer images" << std::endl;
+        return TextureHandle::Invalid;
+    }
+
+    // Create TextureData
+    auto textureData = std::make_unique<TextureData>();
+    textureData->width = layers[0].width;
+    textureData->height = layers[0].height;
+    textureData->channels = layers[0].channels;
+    textureData->arrayLayers = static_cast<u32>(layers.size());
+    textureData->usage = options.usage;
+    textureData->type = TextureType::TextureArray;
+    textureData->formatOverride = options.formatOverride;
+    textureData->flags = options.flags;
+    textureData->compressionHint = options.compressionHint;
+    textureData->samplerSettings = options.samplerSettings;
+
+    // Set anisotropy level (DEPRECATED)
+    if (HasFlag(options.flags, TextureFlags::AnisotropyOverride)) {
+        textureData->anisotropyLevel = options.anisotropyLevel;
+    } else {
+        textureData->anisotropyLevel = 0;
+    }
+
+    // Set mipmap generation policy and quality
+    if (options.overrideMipmapPolicy) {
+        textureData->mipmapPolicy = options.mipmapPolicy;
+    }
+
+    if (options.overrideQualityHint) {
+        textureData->qualityHint = options.qualityHint;
+    } else {
+        textureData->qualityHint = TextureConfig::GetDefaultMipmapQuality();
+    }
+
+    // Calculate mip levels if GenerateMipmaps flag is set
+    if (HasFlag(options.flags, TextureFlags::GenerateMipmaps)) {
+        u32 maxDim = std::max(textureData->width, textureData->height);
+        textureData->mipLevels = static_cast<u32>(std::floor(std::log2(maxDim))) + 1;
+    } else {
+        textureData->mipLevels = 1;
+    }
+
+    // Store per-layer pixel data
+    textureData->layerPixels.reserve(layers.size());
+    for (auto& layer : layers) {
+        textureData->layerPixels.push_back(layer.pixels);
+        layer.pixels = nullptr;  // Transfer ownership
+    }
+
+    // Pack layers into contiguous staging buffer
+    if (!textureData->PackLayersIntoStagingBuffer()) {
+        std::cerr << "TextureManager::LoadArray: failed to pack layer data" << std::endl;
+        return TextureHandle::Invalid;
+    }
+
+    // Add to resource manager
+    TextureHandle handle = Create(std::move(textureData));
+
+    return handle;
+}
+
+TextureHandle TextureManager::LoadArrayPattern(
+    const std::string& pathPattern,
+    u32 layerCount,
+    const TextureLoadOptions& options)
+{
+    // Generate layer paths from pattern
+    std::vector<std::string> layerPaths;
+    layerPaths.reserve(layerCount);
+    size_t placeholderPos = pathPattern.find("{}");
+    if (placeholderPos == std::string::npos) {
+        std::cerr << "TextureManager::LoadArrayPattern: pattern must contain '{}'" << std::endl;
+        return TextureHandle::Invalid;
+    }
+
+    for (u32 i = 0; i < layerCount; ++i) {
+        std::string path = pathPattern;
+        path.replace(placeholderPos, 2, std::to_string(i));
+        layerPaths.push_back(path);
+    }
+
+    // Use LoadArray implementation
+    return LoadArray(layerPaths, options);
+}
+
+// ============================================================================
+// Cubemap Loading
+// ============================================================================
+
+TextureHandle TextureManager::LoadCubemap(
+    const std::vector<std::string>& facePaths,
+    const TextureLoadOptions& options)
+{
+    if (facePaths.size() != 6) {
+        std::cerr << "TextureManager::LoadCubemap: expected 6 face paths, got " << facePaths.size() << std::endl;
+        return TextureHandle::Invalid;
+    }
+
+    // Load all 6 faces using ImageLoader
+    std::vector<ImageData> faces = ImageLoader::LoadCubemap(facePaths, options);
+    if (faces.empty()) {
+        return TextureHandle::Invalid;
+    }
+
+    // Create TextureData for cubemap
+    auto textureData = std::make_unique<TextureData>();
+    textureData->width = faces[0].width;
+    textureData->height = faces[0].height;
+    textureData->channels = faces[0].channels;
+    textureData->arrayLayers = 6;  // Cubemaps always have 6 faces
+    textureData->usage = options.usage;
+    textureData->type = TextureType::Cubemap;
+    textureData->formatOverride = options.formatOverride;
+    textureData->flags = options.flags;
+    textureData->compressionHint = options.compressionHint;
+    textureData->samplerSettings = options.samplerSettings;
+
+    // Set anisotropy level (DEPRECATED)
+    if (HasFlag(options.flags, TextureFlags::AnisotropyOverride)) {
+        textureData->anisotropyLevel = options.anisotropyLevel;
+    } else {
+        textureData->anisotropyLevel = 0;
+    }
+
+    // Set mipmap generation policy and quality
+    if (options.overrideMipmapPolicy) {
+        textureData->mipmapPolicy = options.mipmapPolicy;
+    }
+
+    if (options.overrideQualityHint) {
+        textureData->qualityHint = options.qualityHint;
+    } else {
+        textureData->qualityHint = TextureConfig::GetDefaultMipmapQuality();
+    }
+
+    // Calculate mip levels if needed
+    if (HasFlag(options.flags, TextureFlags::GenerateMipmaps)) {
+        u32 maxDim = std::max(textureData->width, textureData->height);
+        textureData->mipLevels = static_cast<u32>(std::floor(std::log2(maxDim))) + 1;
+    } else {
+        textureData->mipLevels = 1;
+    }
+
+    // Transfer face pixel data to layerPixels
+    textureData->layerPixels.reserve(6);
+    for (auto& face : faces) {
+        textureData->layerPixels.push_back(face.pixels);
+        face.pixels = nullptr;  // Transfer ownership
+    }
+
+    // Pack layers into contiguous staging buffer
+    if (!textureData->PackLayersIntoStagingBuffer()) {
+        std::cerr << "TextureManager::LoadCubemap: failed to pack face data" << std::endl;
+        return TextureHandle::Invalid;
+    }
+
+    // Validate cubemap structure
+    if (!textureData->ValidateCubemap()) {
+        std::cerr << "TextureManager::LoadCubemap: cubemap validation failed" << std::endl;
+        return TextureHandle::Invalid;
+    }
+
+    return Create(std::move(textureData));
+}
+
+TextureHandle TextureManager::LoadCubemapPattern(
+    const std::string& pathPattern,
+    const TextureLoadOptions& options)
+{
+    // Validate pattern contains "{}"
+    size_t placeholderPos = pathPattern.find("{}");
+    if (placeholderPos == std::string::npos) {
+        std::cerr << "TextureManager::LoadCubemapPattern: pattern must contain '{}'" << std::endl;
+        return TextureHandle::Invalid;
+    }
+
+    // Generate face paths using pattern
+    const char* faceNames[6] = {"px", "nx", "py", "ny", "pz", "nz"};
+    std::vector<std::string> facePaths;
+    facePaths.reserve(6);
+
+    for (u32 i = 0; i < 6; ++i) {
+        std::string path = pathPattern;
+        path.replace(placeholderPos, 2, faceNames[i]);
+        facePaths.push_back(path);
+    }
+
+    // Use LoadCubemap implementation
+    return LoadCubemap(facePaths, options);
 }
 
 std::unique_ptr<TextureData> TextureManager::LoadResource(const std::string& filepath) {
@@ -316,6 +526,97 @@ TextureHandle TextureManager::LoadAsync(
     return handle;
 }
 
+// Forward declaration of array texture worker function
+static void TextureLoadWorkerArray(void* data);
+
+TextureHandle TextureManager::LoadArrayAsync(
+    const std::vector<std::string>& layerPaths,
+    const TextureLoadOptions& options,
+    AsyncLoadCallback callback,
+    void* userData)
+{
+    // Validate input
+    if (layerPaths.empty()) {
+        std::cerr << "TextureManager::LoadArrayAsync: empty layer paths" << std::endl;
+        return TextureHandle::Invalid;
+    }
+
+    // Note: Array textures don't use cache checking for now
+    // Create placeholder handle immediately
+    auto placeholderData = std::make_unique<TextureData>();
+
+    // Get white placeholder texture data
+    TextureData* whiteTexture = Get(CreateWhite());
+    if (whiteTexture) {
+        // Copy placeholder data (shallow copy for GPU texture pointer)
+        placeholderData->width = whiteTexture->width;
+        placeholderData->height = whiteTexture->height;
+        placeholderData->channels = whiteTexture->channels;
+        placeholderData->usage = options.usage;
+        placeholderData->type = TextureType::TextureArray;
+        placeholderData->flags = whiteTexture->flags;
+        placeholderData->mipLevels = whiteTexture->mipLevels;
+        placeholderData->arrayLayers = static_cast<u32>(layerPaths.size());
+
+        // Share GPU texture pointer (both point to same white texture temporarily)
+        placeholderData->gpuTexture = whiteTexture->gpuTexture;
+        placeholderData->gpuUploaded = whiteTexture->gpuUploaded;
+
+        // Don't allocate pixels - we'll replace this data when async load completes
+        placeholderData->pixels = nullptr;
+    }
+
+    // Create handle via thread-safe Create()
+    TextureHandle handle = Create(std::move(placeholderData));
+
+    // Allocate TextureLoadJob from pool
+    TextureLoadJob* loadJob = m_JobAllocator.Alloc();
+    if (!loadJob) {
+        std::cerr << "TextureManager::LoadArrayAsync failed to allocate job" << std::endl;
+
+        // Invoke callback with failure
+        if (callback) {
+            callback(handle, false, userData);
+        }
+
+        return handle;
+    }
+
+    // Initialize job data for array texture
+    loadJob->isArrayTexture = true;
+    loadJob->layerPaths = layerPaths;
+    loadJob->options = options;
+    loadJob->handle = handle;
+    loadJob->userData = userData;
+    loadJob->callback = callback;
+    loadJob->state.store(AsyncLoadState::Pending);
+    loadJob->errorMessage.clear();
+
+    // Create JobSystem job
+    loadJob->job = JobSystem::CreateJob(TextureLoadWorkerArray, loadJob, JobSystem::JobPriority::Normal);
+
+    if (!loadJob->job) {
+        std::cerr << "TextureManager::LoadArrayAsync failed to create JobSystem job" << std::endl;
+        loadJob->state.store(AsyncLoadState::Failed);
+        loadJob->errorMessage = "Failed to create JobSystem job";
+
+        // Cleanup
+        m_JobAllocator.Free(loadJob);
+
+        // Invoke callback with failure
+        if (callback) {
+            callback(handle, false, userData);
+        }
+
+        return handle;
+    }
+
+    // Run job on JobSystem
+    JobSystem::Run(loadJob->job);
+
+    return handle;
+}
+
 void TextureManager::EnqueuePendingUpload(TextureLoadJob* job) {
     Platform::Lock(m_AsyncMutex.get());
     m_PendingUploads.push_back(job);
@@ -346,14 +647,49 @@ void TextureManager::Update() {
 void TextureManager::ProcessUpload(TextureLoadJob* job) {
     job->state.store(AsyncLoadState::Uploading);
 
-    // Create TextureData from ImageData
+    // Create TextureData from ImageData (handle both single and array textures)
     auto textureData = std::make_unique<TextureData>();
-    textureData->pixels = job->imageData.pixels;
-    textureData->width = job->imageData.width;
-    textureData->height = job->imageData.height;
-    textureData->channels = job->imageData.channels;
+
+    if (job->isArrayTexture) {
+        // Array texture loading
+        if (job->layerImageData.empty()) {
+            std::cerr << "TextureManager::ProcessUpload: array texture has no layer data" << std::endl;
+            job->state.store(AsyncLoadState::Failed);
+            ProcessFailure(job);
+            return;
+        }
+
+        textureData->width = job->layerImageData[0].width;
+        textureData->height = job->layerImageData[0].height;
+        textureData->channels = job->layerImageData[0].channels;
+        textureData->arrayLayers = static_cast<u32>(job->layerImageData.size());
+        textureData->type = TextureType::TextureArray;
+
+        // Transfer layer pixel data
+        textureData->layerPixels.reserve(job->layerImageData.size());
+        for (auto& layer : job->layerImageData) {
+            textureData->layerPixels.push_back(layer.pixels);
+            layer.pixels = nullptr;  // Transfer ownership
+        }
+
+        // Pack layers into contiguous buffer
+        if (!textureData->PackLayersIntoStagingBuffer()) {
+            std::cerr << "TextureManager::ProcessUpload: failed to pack array texture layers" << std::endl;
+            job->state.store(AsyncLoadState::Failed);
+            ProcessFailure(job);
+            return;
+        }
+    } else {
+        // Single texture loading
+        textureData->pixels = job->imageData.pixels;
+        textureData->width = job->imageData.width;
+        textureData->height = job->imageData.height;
+        textureData->channels = job->imageData.channels;
+        textureData->type = job->options.type;
+        textureData->arrayLayers = 1;
+    }
+
     textureData->usage = job->options.usage;
-    textureData->type = job->options.type;
     textureData->formatOverride = job->options.formatOverride;
     textureData->flags = job->options.flags;
     textureData->compressionHint = job->options.compressionHint;
@@ -450,5 +786,24 @@ static void TextureLoadWorker(void* data) {
     job->state.store(AsyncLoadState::ReadyForUpload);
 
     // Enqueue for GPU upload on main thread
+    TextureManager::Instance().EnqueuePendingUpload(job);
+}
+
+static void TextureLoadWorkerArray(void* data) {
+    TextureLoadJob* job = static_cast<TextureLoadJob*>(data);
+    job->state.store(AsyncLoadState::Loading);
+
+    // Load all array layers (blocking, on worker thread)
+    job->layerImageData = ImageLoader::LoadImageArray(job->layerPaths, job->options);
+
+    if (job->layerImageData.empty()) {
+        job->state.store(AsyncLoadState::Failed);
+        job->errorMessage = "Failed to load array texture layers";
+        TextureManager::Instance().EnqueuePendingUpload(job);
+        return;
+    }
+
+    // Successfully loaded - ready for GPU upload
+    job->state.store(AsyncLoadState::ReadyForUpload);
     TextureManager::Instance().EnqueuePendingUpload(job);
 }

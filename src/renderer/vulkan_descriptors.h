@@ -20,6 +20,10 @@ public:
     void CreateUniformBuffers(u32 framesInFlight);
     void UpdateUniformBuffer(u32 currentFrame, const void* data, size_t size);
 
+    // Texture binding support
+    void BindTexture(u32 currentFrame, u32 binding, VkImageView imageView, VkSampler sampler);
+    void BindTextureArray(u32 currentFrame, u32 binding, VkImageView imageView, VkSampler sampler);
+
     VkDescriptorSetLayout GetLayout() const { return m_DescriptorSetLayout; }
     VkDescriptorSet GetDescriptorSet(u32 frame) const { return m_DescriptorSets[frame]; }
 

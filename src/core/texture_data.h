@@ -1,6 +1,8 @@
 #pragma once
 #include "core/types.h"
+#include "core/sampler_settings.h"
 #include <vulkan/vulkan.h>
+#include <vector>
 
 // Forward declarations
 class VulkanTexture;
@@ -80,13 +82,22 @@ struct TextureData {
     u32 height = 0;
     u32 channels = 0;           // 1=R, 2=RG, 3=RGB, 4=RGBA
     u32 mipLevels = 1;
+    u32 arrayLayers = 1;        // Number of array layers (1 for regular 2D textures)
+
+    // Per-layer pixel buffers (used during loading before packing)
+    // Each element contains width * height * channels bytes
+    // After packing, this vector is cleared and data is in 'pixels'
+    std::vector<u8*> layerPixels;
 
     // Format metadata
     TextureUsage usage = TextureUsage::Generic;
     TextureType type = TextureType::Texture2D;
     VkFormat formatOverride = VK_FORMAT_UNDEFINED;  // Auto-detect if VK_FORMAT_UNDEFINED
     TextureFlags flags = TextureFlags::None;
-    u32 anisotropyLevel = 0;    // 0 = use global default
+    u32 anisotropyLevel = 0;    // 0 = use global default (DEPRECATED: use samplerSettings)
+
+    // Sampler configuration
+    SamplerSettings samplerSettings = SamplerSettings::Default();
 
     // Mipmap generation policy (requires forward declaration of enums)
     MipmapPolicy mipmapPolicy;  // Default set in .cpp (requires enum definition)
@@ -98,6 +109,21 @@ struct TextureData {
     // GPU resources (populated by VulkanTexture)
     VulkanTexture* gpuTexture = nullptr;
     bool gpuUploaded = false;
+
+    // Helper methods for array textures
+    // Pack per-layer buffers into single contiguous staging buffer
+    // Returns true on success, false on failure
+    bool PackLayersIntoStagingBuffer();
+
+    // Validate that all layers in layerPixels are valid and have matching dimensions
+    // Returns true if valid, false otherwise
+    bool ValidateLayers() const;
+
+    // Validate cubemap-specific requirements
+    // - Must have exactly 6 layers (+X, -X, +Y, -Y, +Z, -Z)
+    // - Must be square (width == height)
+    // Returns true if valid, false otherwise
+    bool ValidateCubemap() const;
 
     // Destructor to free pixel data
     ~TextureData();

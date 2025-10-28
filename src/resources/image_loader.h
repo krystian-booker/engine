@@ -2,6 +2,7 @@
 #include "core/types.h"
 #include "core/texture_load_options.h"
 #include <string>
+#include <vector>
 
 // Loaded image data (CPU-side)
 struct ImageData {
@@ -20,6 +21,42 @@ namespace ImageLoader {
     // Load image from file with options
     // Returns ImageData with allocated pixel buffer (must call FreeImage)
     ImageData LoadImage(const std::string& filepath, const TextureLoadOptions& options);
+
+    // Load array texture from multiple image files
+    // All images must have the same dimensions and channel count
+    // Returns vector of ImageData (one per layer), empty vector on failure
+    // Each ImageData must be freed with FreeImage
+    std::vector<ImageData> LoadImageArray(
+        const std::vector<std::string>& filepaths,
+        const TextureLoadOptions& options);
+
+    // Load array texture using a pattern string (e.g., "textures/layer_{}.png")
+    // Pattern must contain "{}" which will be replaced with layer indices [0, layerCount)
+    // All images must have the same dimensions and channel count
+    // Returns vector of ImageData (one per layer), empty vector on failure
+    // Each ImageData must be freed with FreeImage
+    std::vector<ImageData> LoadImageArrayPattern(
+        const std::string& filepathPattern,
+        u32 layerCount,
+        const TextureLoadOptions& options);
+
+    // Load cubemap from 6 image files (faces: +X, -X, +Y, -Y, +Z, -Z)
+    // All faces must be square and have the same dimensions
+    // Returns vector of 6 ImageData (one per face), empty vector on failure
+    // Each ImageData must be freed with FreeImage
+    std::vector<ImageData> LoadCubemap(
+        const std::vector<std::string>& facePaths,
+        const TextureLoadOptions& options);
+
+    // Load cubemap using a pattern string (e.g., "skybox/sky_{}.png")
+    // Pattern must contain "{}" which will be replaced with face names:
+    // "px" (+X), "nx" (-X), "py" (+Y), "ny" (-Y), "pz" (+Z), "nz" (-Z)
+    // All faces must be square and have the same dimensions
+    // Returns vector of 6 ImageData (one per face), empty vector on failure
+    // Each ImageData must be freed with FreeImage
+    std::vector<ImageData> LoadCubemapPattern(
+        const std::string& filepathPattern,
+        const TextureLoadOptions& options);
 
     // Free image data allocated by LoadImage
     void FreeImage(ImageData& data);

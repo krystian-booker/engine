@@ -965,6 +965,210 @@ target_link_libraries(test_texture_async PRIVATE
 
 add_test(NAME TextureAsyncTests COMMAND test_texture_async)
 
+# Test executable for texture array data validation
+add_executable(test_texture_array_data
+        tests/test_texture_array_data.cpp
+        src/core/texture_data.cpp
+)
+
+target_include_directories(test_texture_array_data PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_texture_array_data PRIVATE
+        Vulkan::Vulkan
+)
+
+add_test(NAME TextureArrayDataTests COMMAND test_texture_array_data)
+
+# Test executable for image loader array functions
+add_executable(test_image_loader_array
+        tests/test_image_loader_array.cpp
+        src/resources/image_loader.cpp
+        src/core/texture_data.cpp
+)
+
+target_include_directories(test_image_loader_array PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${stb_SOURCE_DIR}
+)
+
+target_link_libraries(test_image_loader_array PRIVATE
+        Vulkan::Vulkan
+)
+
+add_test(NAME ImageLoaderArrayTests COMMAND test_image_loader_array)
+
+# Test executable for Vulkan texture array creation
+add_executable(test_vulkan_texture_array
+        tests/test_vulkan_texture_array.cpp
+        src/renderer/vulkan_texture.cpp
+        src/renderer/vulkan_context.cpp
+        src/renderer/vulkan_mipmap_compute.cpp
+        src/renderer/vulkan_buffer.cpp
+        src/renderer/mipmap_policy.cpp
+        src/core/texture_data.cpp
+        src/platform/window.cpp
+)
+
+if(WIN32)
+    target_sources(test_vulkan_texture_array PRIVATE src/platform/win32_platform.cpp)
+endif()
+
+target_include_directories(test_vulkan_texture_array PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_vulkan_texture_array PRIVATE
+        glfw
+        Vulkan::Vulkan
+)
+
+if(WIN32)
+    target_link_libraries(test_vulkan_texture_array PRIVATE User32 Gdi32)
+endif()
+
+add_test(NAME VulkanTextureArrayTests COMMAND test_vulkan_texture_array)
+
+# Test executable for array texture mipmap generation
+add_executable(test_mipmap_array
+        tests/test_mipmap_array.cpp
+        src/renderer/vulkan_texture.cpp
+        src/renderer/vulkan_context.cpp
+        src/renderer/vulkan_mipmap_compute.cpp
+        src/renderer/vulkan_buffer.cpp
+        src/renderer/mipmap_policy.cpp
+        src/core/texture_data.cpp
+        src/platform/window.cpp
+)
+
+if(WIN32)
+    target_sources(test_mipmap_array PRIVATE src/platform/win32_platform.cpp)
+endif()
+
+target_include_directories(test_mipmap_array PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_mipmap_array PRIVATE
+        glfw
+        Vulkan::Vulkan
+)
+
+if(WIN32)
+    target_link_libraries(test_mipmap_array PRIVATE User32 Gdi32)
+endif()
+
+add_test(NAME MipmapArrayTests COMMAND test_mipmap_array)
+
+# Test executable for async array texture loading
+add_executable(test_texture_array_async
+        tests/test_texture_array_async.cpp
+        src/core/texture_data.cpp
+        src/core/job_system.cpp
+        src/core/memory.cpp
+        src/resources/image_loader.cpp
+        src/resources/texture_manager.cpp
+        src/platform/win32_platform.cpp
+)
+
+target_include_directories(test_texture_array_async PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${stb_SOURCE_DIR}
+)
+
+target_link_libraries(test_texture_array_async PRIVATE
+        glm::glm
+        Vulkan::Vulkan
+)
+
+add_test(NAME TextureArrayAsyncTests COMMAND test_texture_array_async)
+
+# Test executable for texture descriptor binding
+add_executable(test_texture_descriptors
+        tests/test_texture_descriptors.cpp
+        src/renderer/vulkan_descriptors.cpp
+        src/renderer/vulkan_texture.cpp
+        src/renderer/vulkan_context.cpp
+        src/renderer/vulkan_mipmap_compute.cpp
+        src/renderer/vulkan_buffer.cpp
+        src/renderer/mipmap_policy.cpp
+        src/core/texture_data.cpp
+        src/platform/window.cpp
+)
+
+if(WIN32)
+    target_sources(test_texture_descriptors PRIVATE src/platform/win32_platform.cpp)
+endif()
+
+target_include_directories(test_texture_descriptors PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_texture_descriptors PRIVATE
+        glfw
+        Vulkan::Vulkan
+)
+
+if(WIN32)
+    target_link_libraries(test_texture_descriptors PRIVATE User32 Gdi32)
+endif()
+
+add_test(NAME TextureDescriptorTests COMMAND test_texture_descriptors)
+
+# Test executable for sampler settings
+add_executable(test_sampler_settings
+        tests/test_sampler_settings.cpp
+        src/core/texture_data.cpp
+)
+
+target_include_directories(test_sampler_settings PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_sampler_settings PRIVATE
+        Vulkan::Vulkan
+)
+
+add_test(NAME SamplerSettingsTests COMMAND test_sampler_settings)
+
+# Test executable for cubemap loading and rendering
+add_executable(test_cubemap
+        tests/test_cubemap.cpp
+        src/renderer/vulkan_texture.cpp
+        src/renderer/vulkan_context.cpp
+        src/renderer/vulkan_mipmap_compute.cpp
+        src/renderer/vulkan_buffer.cpp
+        src/renderer/mipmap_policy.cpp
+        src/core/texture_data.cpp
+        src/resources/image_loader.cpp
+        src/resources/texture_manager.cpp
+        src/core/job_system.cpp
+        src/core/memory.cpp
+        src/platform/window.cpp
+)
+
+if(WIN32)
+    target_sources(test_cubemap PRIVATE src/platform/win32_platform.cpp)
+endif()
+
+target_include_directories(test_cubemap PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${stb_SOURCE_DIR}
+)
+
+target_link_libraries(test_cubemap PRIVATE
+        glfw
+        glm::glm
+        Vulkan::Vulkan
+)
+
+if(WIN32)
+    target_link_libraries(test_cubemap PRIVATE User32 Gdi32)
+endif()
+
+add_test(NAME CubemapTests COMMAND test_cubemap)
+
 # Test executable for format support detection
 add_executable(test_format_support
         tests/test_format_support.cpp

@@ -46,7 +46,9 @@ private:
     VkSampler m_Sampler = VK_NULL_HANDLE;
     VkFormat m_Format = VK_FORMAT_UNDEFINED;
     u32 m_MipLevels = 1;
+    u32 m_ArrayLayers = 1;
     TextureUsage m_Usage = TextureUsage::Generic;
+    TextureType m_Type = TextureType::Texture2D;
     MipmapPolicy m_MipmapPolicy;      // Stored for debugging/logging
     MipmapQuality m_QualityHint;      // Stored for debugging/logging
 
@@ -54,13 +56,13 @@ private:
     void CreateImage(const TextureData* data);
     void CreateImageView();
     void CreateSampler(const TextureData* data);
-    void GenerateMipmaps(VkImage image, VkFormat format, u32 width, u32 height, u32 mipLevels);
-    void GenerateMipmapsBlit(VkImage image, VkFormat format, u32 width, u32 height, u32 mipLevels);
-    void GenerateMipmapsCompute(VkImage image, VkFormat format, u32 width, u32 height, u32 mipLevels);
-    void GenerateMipmapsCPU(VkImage image, VkFormat format, u32 width, u32 height, u32 mipLevels);
+    void GenerateMipmaps(VkImage image, VkFormat format, u32 width, u32 height, u32 mipLevels, u32 arrayLayers);
+    void GenerateMipmapsBlit(VkImage image, VkFormat format, u32 width, u32 height, u32 mipLevels, u32 arrayLayers);
+    void GenerateMipmapsCompute(VkImage image, VkFormat format, u32 width, u32 height, u32 mipLevels, u32 arrayLayers);
+    void GenerateMipmapsCPU(VkImage image, VkFormat format, u32 width, u32 height, u32 mipLevels, u32 arrayLayers);
     void TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout,
-                               VkImageLayout newLayout, u32 mipLevels);
-    void CopyBufferToImage(VkBuffer buffer, VkImage image, u32 width, u32 height);
+                               VkImageLayout newLayout, u32 mipLevels, u32 arrayLayers);
+    void CopyBufferToImage(VkBuffer buffer, VkImage image, u32 width, u32 height, u32 channels, u32 arrayLayers);
 
     // Format detection
     VkFormat DetermineVulkanFormat(const TextureData* data) const;

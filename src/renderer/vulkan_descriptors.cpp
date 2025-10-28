@@ -3,6 +3,7 @@
 #include "renderer/uniform_buffers.h"
 #include "renderer/vulkan_context.h"
 
+#include <array>
 #include <stdexcept>
 
 VulkanDescriptors::~VulkanDescriptors() {
@@ -55,16 +56,27 @@ void VulkanDescriptors::Shutdown() {
 }
 
 void VulkanDescriptors::CreateDescriptorSetLayout() {
+    // Binding 0: UBO (MVP matrices)
     VkDescriptorSetLayoutBinding uboLayoutBinding{};
     uboLayoutBinding.binding = 0;
     uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     uboLayoutBinding.descriptorCount = 1;
     uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
+    // Binding 1: Texture sampler (combined image sampler)
+    VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+    samplerLayoutBinding.binding = 1;
+    samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    samplerLayoutBinding.descriptorCount = 1;
+    samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    samplerLayoutBinding.pImmutableSamplers = nullptr;
+
+    std::array<VkDescriptorSetLayoutBinding, 2> bindings = {uboLayoutBinding, samplerLayoutBinding};
+
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 1;
-    layoutInfo.pBindings = &uboLayoutBinding;
+    layoutInfo.bindingCount = static_cast<u32>(bindings.size());
+    layoutInfo.pBindings = bindings.data();
 
     if (vkCreateDescriptorSetLayout(m_Context->GetDevice(), &layoutInfo, nullptr, &m_DescriptorSetLayout) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create descriptor set layout");
@@ -102,14 +114,20 @@ void VulkanDescriptors::UpdateUniformBuffer(u32 currentFrame, const void* data, 
 }
 
 void VulkanDescriptors::CreateDescriptorPool(u32 framesInFlight) {
-    VkDescriptorPoolSize poolSize{};
-    poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSize.descriptorCount = framesInFlight;
+    std::array<VkDescriptorPoolSize, 2> poolSizes{};
+
+    // UBO pool
+    poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    poolSizes[0].descriptorCount = framesInFlight;
+
+    // Texture sampler pool
+    poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSizes[1].descriptorCount = framesInFlight;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
+    poolInfo.poolSizeCount = static_cast<u32>(poolSizes.size());
+    poolInfo.pPoolSizes = poolSizes.data();
     poolInfo.maxSets = framesInFlight;
 
     if (vkCreateDescriptorPool(m_Context->GetDevice(), &poolInfo, nullptr, &m_DescriptorPool) != VK_SUCCESS) {
@@ -149,5 +167,38 @@ void VulkanDescriptors::CreateDescriptorSets(u32 framesInFlight) {
 
         vkUpdateDescriptorSets(m_Context->GetDevice(), 1, &descriptorWrite, 0, nullptr);
     }
+}
+
+void VulkanDescriptors::BindTexture(u32 currentFrame, u32 binding, VkImageView imageView, VkSampler sampler) {
+    if (currentFrame >= m_DescriptorSets.size()) {
+        throw std::out_of_range("VulkanDescriptors::BindTexture frame index out of range");
+    }
+
+    if (!imageView || !sampler) {
+        throw std::invalid_argument("VulkanDescriptors::BindTexture requires valid imageView and sampler");
+    }
+
+    VkDescriptorImageInfo imageInfo{};
+    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    imageInfo.imageView = imageView;
+    imageInfo.sampler = sampler;
+
+    VkWriteDescriptorSet descriptorWrite{};
+    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.dstSet = m_DescriptorSets[currentFrame];
+    descriptorWrite.dstBinding = binding;
+    descriptorWrite.dstArrayElement = 0;
+    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrite.descriptorCount = 1;
+    descriptorWrite.pImageInfo = &imageInfo;
+
+    vkUpdateDescriptorSets(m_Context->GetDevice(), 1, &descriptorWrite, 0, nullptr);
+}
+
+void VulkanDescriptors::BindTextureArray(u32 currentFrame, u32 binding, VkImageView imageView, VkSampler sampler) {
+    // Array textures use the same binding method as regular textures
+    // The difference is in the image view type (VK_IMAGE_VIEW_TYPE_2D_ARRAY)
+    // which is set when the VulkanTexture is created
+    BindTexture(currentFrame, binding, imageView, sampler);
 }
 

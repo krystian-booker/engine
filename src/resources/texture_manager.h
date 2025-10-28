@@ -39,6 +39,54 @@ public:
         return ResourceManager::Load(filepath);
     }
 
+    // ========================================================================
+    // Array Texture Loading
+    // ========================================================================
+
+    // Load array texture from multiple image files
+    // All images must have the same dimensions and channel count
+    TextureHandle LoadArray(
+        const std::vector<std::string>& layerPaths,
+        const TextureLoadOptions& options);
+
+    TextureHandle LoadArray(const std::vector<std::string>& layerPaths) {
+        return LoadArray(layerPaths, m_DefaultOptions);
+    }
+
+    // Load array texture using a pattern string (e.g., "textures/layer_{}.png")
+    // Pattern must contain "{}" which will be replaced with layer indices [0, layerCount)
+    TextureHandle LoadArrayPattern(
+        const std::string& pathPattern,
+        u32 layerCount,
+        const TextureLoadOptions& options);
+
+    TextureHandle LoadArrayPattern(const std::string& pathPattern, u32 layerCount) {
+        return LoadArrayPattern(pathPattern, layerCount, m_DefaultOptions);
+    }
+
+    // ========================================================================
+    // Cubemap Loading
+    // ========================================================================
+
+    // Load cubemap from 6 image files (faces: +X, -X, +Y, -Y, +Z, -Z)
+    TextureHandle LoadCubemap(
+        const std::vector<std::string>& facePaths,
+        const TextureLoadOptions& options);
+
+    TextureHandle LoadCubemap(const std::vector<std::string>& facePaths) {
+        return LoadCubemap(facePaths, m_DefaultOptions);
+    }
+
+    // Load cubemap using a pattern string (e.g., "skybox/sky_{}.png")
+    // Pattern must contain "{}" which will be replaced with face names
+    TextureHandle LoadCubemapPattern(
+        const std::string& pathPattern,
+        const TextureLoadOptions& options);
+
+    TextureHandle LoadCubemapPattern(const std::string& pathPattern) {
+        return LoadCubemapPattern(pathPattern, m_DefaultOptions);
+    }
+
     // Create procedural textures
     TextureHandle CreateSolid(u32 width, u32 height, const Vec4& color, TextureUsage usage = TextureUsage::Generic);
     TextureHandle CreateWhite();       // 1x1 white (for default albedo)
@@ -71,6 +119,22 @@ public:
         void* userData = nullptr
     ) {
         return LoadAsync(filepath, m_DefaultOptions, callback, userData);
+    }
+
+    // Load array texture asynchronously
+    TextureHandle LoadArrayAsync(
+        const std::vector<std::string>& layerPaths,
+        const TextureLoadOptions& options,
+        AsyncLoadCallback callback,
+        void* userData = nullptr
+    );
+
+    TextureHandle LoadArrayAsync(
+        const std::vector<std::string>& layerPaths,
+        AsyncLoadCallback callback,
+        void* userData = nullptr
+    ) {
+        return LoadArrayAsync(layerPaths, m_DefaultOptions, callback, userData);
     }
 
     // Process pending GPU uploads (call once per frame from main thread)

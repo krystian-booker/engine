@@ -6,6 +6,7 @@
 #include "resources/image_loader.h"
 #include <atomic>
 #include <string>
+#include <vector>
 
 // Forward declaration
 struct Job;
@@ -15,7 +16,9 @@ struct TextureLoadJob {
     // ========================================================================
     // Input Parameters (immutable after creation)
     // ========================================================================
-    std::string filepath;
+    std::string filepath;                      // For single texture loading
+    std::vector<std::string> layerPaths;       // For array texture loading
+    bool isArrayTexture = false;               // True if loading array texture
     TextureLoadOptions options;
     TextureHandle handle;
     void* userData;
@@ -35,8 +38,9 @@ struct TextureLoadJob {
     // ========================================================================
     // Output Data (populated by worker thread)
     // ========================================================================
-    ImageData imageData;          // CPU-side pixel data from stb_image
-    std::string errorMessage;     // Error details if state == Failed
+    ImageData imageData;                       // CPU-side pixel data for single texture
+    std::vector<ImageData> layerImageData;     // CPU-side pixel data for array textures
+    std::string errorMessage;                  // Error details if state == Failed
 
     // ========================================================================
     // Job System Integration

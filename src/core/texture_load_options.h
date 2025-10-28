@@ -1,5 +1,6 @@
 #pragma once
 #include "core/texture_data.h"
+#include "core/sampler_settings.h"
 
 // Forward declarations for mipmap policy enums
 enum class MipmapPolicy : u8;
@@ -26,7 +27,11 @@ struct TextureLoadOptions {
     TextureFlags flags = TextureFlags::GenerateMipmaps;
 
     // Anisotropic filtering level (0 = use global default, 1-16 = per-texture override)
+    // DEPRECATED: Use samplerSettings.maxAnisotropy instead
     u32 anisotropyLevel = 0;
+
+    // Sampler configuration (filtering, wrapping, anisotropy, etc.)
+    SamplerSettings samplerSettings = SamplerSettings::Default();
 
     // Mipmap generation policy and quality preference
     // Defaults are set when constructing TextureData (Auto policy, uses global quality default)
