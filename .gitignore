@@ -177,3 +177,4 @@ CLAUDE.md
 build/
 AGENTS.md
 assets/shaders/*.spv
+assets/models/*

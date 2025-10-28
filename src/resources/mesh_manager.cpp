@@ -1,62 +1,184 @@
 #include "mesh_manager.h"
 #include <iostream>
 #include <cmath>
+#include <cfloat>
 
 // Use GLM's pi constant
 #include <glm/gtc/constants.hpp>
 
+// Assimp includes
+#include <assimp/Importer.hpp>
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
+
 std::unique_ptr<MeshData> MeshManager::LoadResource(const std::string& filepath) {
     std::cout << "Loading mesh: " << filepath << std::endl;
 
-    // TODO: Implement actual mesh loading (GLTF, OBJ, FBX via Assimp)
-    // For now, just return empty mesh
-    auto mesh = std::make_unique<MeshData>();
+    // Check if this is a sub-mesh request (format: "path/to/file.obj#0")
+    size_t hashPos = filepath.find('#');
+    std::string actualPath = filepath;
+    int subMeshIndex = -1;
 
-    std::cerr << "Mesh loading not implemented yet!" << std::endl;
+    if (hashPos != std::string::npos) {
+        actualPath = filepath.substr(0, hashPos);
+        subMeshIndex = std::stoi(filepath.substr(hashPos + 1));
+    }
 
-    return mesh;
+    // Load scene with Assimp
+    Assimp::Importer importer;
+    const aiScene* scene = importer.ReadFile(actualPath,
+        aiProcess_Triangulate |           // Convert all primitives to triangles
+        aiProcess_CalcTangentSpace |      // Generate tangents and bitangents
+        aiProcess_GenSmoothNormals |      // Generate smooth normals if missing
+        aiProcess_JoinIdenticalVertices | // Optimize vertex buffer
+        aiProcess_ImproveCacheLocality |  // Optimize for GPU cache
+
+        // TODO: Validate, I think this is a bug since we're using GLFW LeftHanded
+        // TODO: How will this be handled when we add DirectX support
+        aiProcess_FlipUVs);               // Flip Y coordinate for Vulkan
+
+    // Error handling
+    if (!scene || !scene->mRootNode || (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE)) {
+        std::cerr << "Assimp error loading '" << actualPath << "': " << importer.GetErrorString() << std::endl;
+        return std::make_unique<MeshData>();
+    }
+
+    // If loading a specific sub-mesh, process it directly
+    if (subMeshIndex >= 0) {
+        if (subMeshIndex < static_cast<int>(scene->mNumMeshes)) {
+            return ProcessMesh(scene->mMeshes[subMeshIndex], scene);
+        } else {
+            std::cerr << "Sub-mesh index " << subMeshIndex << " out of range (max: " << scene->mNumMeshes << ")" << std::endl;
+            return std::make_unique<MeshData>();
+        }
+    }
+
+    // Single mesh: load directly
+    if (scene->mNumMeshes == 1) {
+        return ProcessMesh(scene->mMeshes[0], scene);
+    }
+
+    // Multiple meshes: create placeholder parent with sub-mesh paths
+    auto parentMesh = std::make_unique<MeshData>();
+    parentMesh->subMeshPaths.reserve(scene->mNumMeshes);
+    for (unsigned int i = 0; i < scene->mNumMeshes; ++i) {
+        parentMesh->subMeshPaths.push_back(actualPath + "#" + std::to_string(i));
+    }
+
+    std::cout << "Multi-mesh file detected with " << scene->mNumMeshes << " meshes" << std::endl;
+    return parentMesh;
+}
+
+std::unique_ptr<MeshData> MeshManager::ProcessMesh(const aiMesh* mesh, const aiScene* scene) {
+    (void)scene;  // Currently unused, but may be needed for materials later
+    auto meshData = std::make_unique<MeshData>();
+
+    // Reserve space
+    meshData->vertices.reserve(mesh->mNumVertices);
+    meshData->indices.reserve(static_cast<size_t>(mesh->mNumFaces) * 3);
+
+    Vec3 boundsMin(FLT_MAX, FLT_MAX, FLT_MAX);
+    Vec3 boundsMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+
+    // Process vertices
+    for (unsigned int i = 0; i < mesh->mNumVertices; ++i) {
+        Vertex vertex{};
+
+        // Position (required)
+        vertex.position = Vec3(mesh->mVertices[i].x, mesh->mVertices[i].y, mesh->mVertices[i].z);
+        boundsMin = glm::min(boundsMin, vertex.position);
+        boundsMax = glm::max(boundsMax, vertex.position);
+
+        // Normal (required, CalcTangentSpace ensures it exists)
+        if (mesh->mNormals) {
+            vertex.normal = Vec3(mesh->mNormals[i].x, mesh->mNormals[i].y, mesh->mNormals[i].z);
+        } else {
+            vertex.normal = Vec3(0.0f, 1.0f, 0.0f);  // Default normal
+        }
+
+        // Tangent + Bitangent → Vec4 with handedness
+        if (mesh->mTangents && mesh->mBitangents) {
+            Vec3 tangent(mesh->mTangents[i].x, mesh->mTangents[i].y, mesh->mTangents[i].z);
+            Vec3 bitangent(mesh->mBitangents[i].x, mesh->mBitangents[i].y, mesh->mBitangents[i].z);
+
+            // Calculate handedness: sign(dot(cross(normal, tangent), bitangent))
+            f32 handedness = glm::dot(glm::cross(vertex.normal, tangent), bitangent) > 0.0f ? 1.0f : -1.0f;
+            vertex.tangent = Vec4(tangent, handedness);
+        } else {
+            // Default tangent along X axis with positive handedness
+            vertex.tangent = Vec4(1.0f, 0.0f, 0.0f, 1.0f);
+        }
+
+        // Texture coordinates (use first channel, default to (0,0) if missing)
+        if (mesh->mTextureCoords[0]) {
+            vertex.texCoord = Vec2(mesh->mTextureCoords[0][i].x, mesh->mTextureCoords[0][i].y);
+        } else {
+            vertex.texCoord = Vec2(0.0f, 0.0f);
+        }
+
+        meshData->vertices.push_back(vertex);
+    }
+
+    // Process indices
+    for (unsigned int i = 0; i < mesh->mNumFaces; ++i) {
+        const aiFace& face = mesh->mFaces[i];
+        for (unsigned int j = 0; j < face.mNumIndices; ++j) {
+            meshData->indices.push_back(face.mIndices[j]);
+        }
+    }
+
+    meshData->vertexCount = mesh->mNumVertices;
+    meshData->indexCount = static_cast<u32>(meshData->indices.size());
+    meshData->boundsMin = boundsMin;
+    meshData->boundsMax = boundsMax;
+
+    std::cout << "Loaded mesh: " << meshData->vertexCount << " vertices, "
+              << meshData->indexCount << " indices" << std::endl;
+
+    return meshData;
 }
 
 MeshHandle MeshManager::CreateCube() {
     auto mesh = std::make_unique<MeshData>();
 
-    // Cube with per-face normals and colors for visibility
+    // Cube with per-face normals and tangents
+    // Tangent.xyz points in U direction, tangent.w = handedness for bitangent calculation
     mesh->vertices = {
-        // Front face (red)
-        {{-0.5f, -0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-        {{ 0.5f, -0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-        {{ 0.5f,  0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f}},
-        {{-0.5f,  0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f}},
+        // Front face (+Z), tangent points right (+X)
+        {{-0.5f, -0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
+        {{ 0.5f, -0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
+        {{ 0.5f,  0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+        {{-0.5f,  0.5f,  0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
 
-        // Back face (green)
-        {{ 0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-        {{-0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-        {{-0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f}},
-        {{ 0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f}},
+        // Back face (-Z), tangent points left (-X)
+        {{ 0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {-1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
+        {{-0.5f, -0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {-1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
+        {{-0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {-1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+        {{ 0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, -1.0f}, {-1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
 
-        // Left face (blue)
-        {{-0.5f, -0.5f, -0.5f}, {-1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
-        {{-0.5f, -0.5f,  0.5f}, {-1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
-        {{-0.5f,  0.5f,  0.5f}, {-1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-        {{-0.5f,  0.5f, -0.5f}, {-1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+        // Left face (-X), tangent points forward (+Z)
+        {{-0.5f, -0.5f, -0.5f}, {-1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f, 1.0f}, {0.0f, 0.0f}},
+        {{-0.5f, -0.5f,  0.5f}, {-1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f, 1.0f}, {1.0f, 0.0f}},
+        {{-0.5f,  0.5f,  0.5f}, {-1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
+        {{-0.5f,  0.5f, -0.5f}, {-1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
 
-        // Right face (yellow)
-        {{ 0.5f, -0.5f,  0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-        {{ 0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-        {{ 0.5f,  0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {1.0f, 1.0f}},
-        {{ 0.5f,  0.5f,  0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {0.0f, 1.0f}},
+        // Right face (+X), tangent points backward (-Z)
+        {{ 0.5f, -0.5f,  0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, -1.0f, 1.0f}, {0.0f, 0.0f}},
+        {{ 0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, -1.0f, 1.0f}, {1.0f, 0.0f}},
+        {{ 0.5f,  0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, -1.0f, 1.0f}, {1.0f, 1.0f}},
+        {{ 0.5f,  0.5f,  0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, -1.0f, 1.0f}, {0.0f, 1.0f}},
 
-        // Top face (cyan)
-        {{-0.5f,  0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 0.0f}},
-        {{ 0.5f,  0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 1.0f}, {1.0f, 0.0f}},
-        {{ 0.5f,  0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
-        {{-0.5f,  0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
+        // Top face (+Y), tangent points right (+X)
+        {{-0.5f,  0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
+        {{ 0.5f,  0.5f,  0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
+        {{ 0.5f,  0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+        {{-0.5f,  0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
 
-        // Bottom face (magenta)
-        {{-0.5f, -0.5f, -0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
-        {{ 0.5f, -0.5f, -0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
-        {{ 0.5f, -0.5f,  0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-        {{-0.5f, -0.5f,  0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+        // Bottom face (-Y), tangent points right (+X)
+        {{-0.5f, -0.5f, -0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
+        {{ 0.5f, -0.5f, -0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
+        {{ 0.5f, -0.5f,  0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+        {{-0.5f, -0.5f,  0.5f}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
     };
 
     mesh->indices = {
@@ -104,7 +226,13 @@ MeshHandle MeshManager::CreateSphere(u32 segments) {
             Vertex vertex{};
             vertex.position = Vec3(x, y, z);
             vertex.normal = Normalize(Vec3(x, y, z));
-            vertex.color = Vec3(1.0f, 1.0f, 1.0f);
+
+            // Calculate tangent: perpendicular to normal in the horizontal plane
+            // Tangent follows longitude lines (U direction)
+            f32 theta = 2 * pi * s * S;
+            Vec3 tangent = Normalize(Vec3(-std::sin(theta), 0.0f, std::cos(theta)));
+            vertex.tangent = Vec4(tangent, 1.0f);
+
             vertex.texCoord = Vec2(s * S, r * R);
             mesh->vertices.push_back(vertex);
         }
@@ -137,12 +265,12 @@ MeshHandle MeshManager::CreateSphere(u32 segments) {
 MeshHandle MeshManager::CreatePlane() {
     auto mesh = std::make_unique<MeshData>();
 
-    // Plane on XZ plane (Y = 0)
+    // Plane on XZ plane (Y = 0), normal points up, tangent points right
     mesh->vertices = {
-        {{-1.0f, 0.0f, -1.0f}, {0.0f, 1.0f, 0.0f}, {0.6f, 0.6f, 0.6f}, {0.0f, 0.0f}},
-        {{ 1.0f, 0.0f, -1.0f}, {0.0f, 1.0f, 0.0f}, {0.6f, 0.6f, 0.6f}, {1.0f, 0.0f}},
-        {{ 1.0f, 0.0f,  1.0f}, {0.0f, 1.0f, 0.0f}, {0.6f, 0.6f, 0.6f}, {1.0f, 1.0f}},
-        {{-1.0f, 0.0f,  1.0f}, {0.0f, 1.0f, 0.0f}, {0.6f, 0.6f, 0.6f}, {0.0f, 1.0f}},
+        {{-1.0f, 0.0f, -1.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
+        {{ 1.0f, 0.0f, -1.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
+        {{ 1.0f, 0.0f,  1.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+        {{-1.0f, 0.0f,  1.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
     };
 
     mesh->indices = {0, 1, 2,  2, 3, 0};
@@ -158,12 +286,12 @@ MeshHandle MeshManager::CreatePlane() {
 MeshHandle MeshManager::CreateQuad() {
     auto mesh = std::make_unique<MeshData>();
 
-    // Quad on XY plane (Z = 0), for UI/sprites
+    // Quad on XY plane (Z = 0), for UI/sprites, normal points toward camera, tangent points right
     mesh->vertices = {
-        {{-0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, -1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f}},
-        {{ 0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, -1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 0.0f}},
-        {{ 0.5f,  0.5f, 0.0f}, {0.0f, 0.0f, -1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
-        {{-0.5f,  0.5f, 0.0f}, {0.0f, 0.0f, -1.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
+        {{-0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
+        {{ 0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
+        {{ 0.5f,  0.5f, 0.0f}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+        {{-0.5f,  0.5f, 0.0f}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
     };
 
     mesh->indices = {0, 1, 2,  2, 3, 0};

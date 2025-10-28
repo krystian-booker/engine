@@ -11,65 +11,99 @@
 void CreateTestScene(ECSCoordinator& ecs) {
     std::cout << "Creating test scene..." << std::endl;
 
-    MeshHandle cubeMesh = MeshManager::Instance().CreateCube();
+    // Load the avocado model
+    MeshHandle avocadoMesh = MeshManager::Instance().Load(ENGINE_SOURCE_DIR "/assets/models/Avocado.fbx");
 
-    constexpr int minCoord = -2;
-    constexpr int maxCoord = 2;
-    constexpr f32 spacing = 2.5f;
+    // Check if it's a multi-mesh file
+    MeshData* avocadoData = MeshManager::Instance().Get(avocadoMesh);
+    if (avocadoData && avocadoData->HasSubMeshes()) {
+        std::cout << "Avocado has " << avocadoData->subMeshPaths.size() << " sub-meshes, loading all..." << std::endl;
 
-    int spawned = 0;
-    for (int x = minCoord; x <= maxCoord; ++x) {
-        for (int z = minCoord; z <= maxCoord; ++z) {
-            Entity entity = ecs.CreateEntity();
+        // Create a parent entity
+        Entity avocadoParent = ecs.CreateEntity();
+        Transform parentTransform;
+        parentTransform.localPosition = Vec3(0.0f, 0.0f, 0.0f);
+        parentTransform.localScale = Vec3(20.0f, 20.0f, 20.0f);  // Scale up the avocado
+        parentTransform.MarkDirty();
+        ecs.AddComponent(avocadoParent, parentTransform);
 
-            Transform transform;
-            transform.localPosition = Vec3(static_cast<f32>(x) * spacing, 0.0f, static_cast<f32>(z) * spacing);
-            transform.localScale = Vec3(1.0f, 1.0f, 1.0f);
-            transform.MarkDirty();
-            ecs.AddComponent(entity, transform);
+        // Add rotator to parent for nice spinning effect
+        Rotator rotator;
+        rotator.axis = Vec3(0.0f, 1.0f, 0.0f);
+        rotator.speed = 30.0f;
+        ecs.AddComponent(avocadoParent, rotator);
 
-            Renderable renderable;
-            renderable.mesh = cubeMesh;
-            renderable.visible = true;
-            ecs.AddComponent(entity, renderable);
+        // Load each sub-mesh
+        for (const auto& subPath : avocadoData->subMeshPaths) {
+            MeshHandle subMesh = MeshManager::Instance().Load(subPath);
 
-            ++spawned;
+            Entity subEntity = ecs.CreateEntity();
+            ecs.SetParent(subEntity, avocadoParent);
+
+            Transform subTransform;
+            subTransform.localPosition = Vec3(0.0f, 0.0f, 0.0f);
+            subTransform.localScale = Vec3(1.0f, 1.0f, 1.0f);
+            subTransform.MarkDirty();
+            ecs.AddComponent(subEntity, subTransform);
+
+            Renderable subRenderable;
+            subRenderable.mesh = subMesh;
+            subRenderable.visible = true;
+            ecs.AddComponent(subEntity, subRenderable);
         }
+    } else {
+        // Single mesh - display directly
+        Entity avocadoEntity = ecs.CreateEntity();
+
+        Transform avocadoTransform;
+        avocadoTransform.localPosition = Vec3(0.0f, 0.0f, 0.0f);
+        avocadoTransform.localScale = Vec3(20.0f, 20.0f, 20.0f);  // Scale up the avocado
+        avocadoTransform.MarkDirty();
+        ecs.AddComponent(avocadoEntity, avocadoTransform);
+
+        Renderable avocadoRenderable;
+        avocadoRenderable.mesh = avocadoMesh;
+        avocadoRenderable.visible = true;
+        ecs.AddComponent(avocadoEntity, avocadoRenderable);
+
+        // Add rotation for visual interest
+        Rotator rotator;
+        rotator.axis = Vec3(0.0f, 1.0f, 0.0f);
+        rotator.speed = 30.0f;
+        ecs.AddComponent(avocadoEntity, rotator);
     }
 
-    Entity floatingCube = ecs.CreateEntity();
+    // Add a ground plane for reference
+    MeshHandle planeMesh = MeshManager::Instance().CreatePlane();
+    Entity groundEntity = ecs.CreateEntity();
 
-    Transform floatTransform;
-    floatTransform.localPosition = Vec3(0.0f, 3.0f, 0.0f);
-    floatTransform.localScale = Vec3(0.5f, 0.5f, 0.5f);
-    floatTransform.MarkDirty();
-    ecs.AddComponent(floatingCube, floatTransform);
+    Transform groundTransform;
+    groundTransform.localPosition = Vec3(0.0f, -5.0f, 0.0f);
+    groundTransform.localScale = Vec3(10.0f, 1.0f, 10.0f);
+    groundTransform.MarkDirty();
+    ecs.AddComponent(groundEntity, groundTransform);
 
-    Renderable floatRenderable;
-    floatRenderable.mesh = cubeMesh;
-    floatRenderable.visible = true;
-    ecs.AddComponent(floatingCube, floatRenderable);
+    Renderable groundRenderable;
+    groundRenderable.mesh = planeMesh;
+    groundRenderable.visible = true;
+    ecs.AddComponent(groundEntity, groundRenderable);
 
-    Rotator rotator;
-    rotator.axis = Vec3(0.0f, 1.0f, 0.0f);
-    rotator.speed = 45.0f;
-    ecs.AddComponent(floatingCube, rotator);
-
+    // Setup camera to view the avocado
     Entity cameraEntity = ecs.CreateEntity();
 
     Transform cameraTransform;
-    cameraTransform.localPosition = Vec3(0.0f, 5.0f, 10.0f);
-    cameraTransform.localRotation = QuatFromAxisAngle(Vec3(1.0f, 0.0f, 0.0f), Radians(-25.0f));
+    cameraTransform.localPosition = Vec3(0.0f, 0.0f, 15.0f);  // Back away from the avocado
+    cameraTransform.localRotation = QuatFromAxisAngle(Vec3(1.0f, 0.0f, 0.0f), Radians(0.0f));
     cameraTransform.MarkDirty();
     ecs.AddComponent(cameraEntity, cameraTransform);
 
     Camera cameraComponent;
     cameraComponent.isActive = true;
-    cameraComponent.clearColor = Vec4(0.05f, 0.05f, 0.08f, 1.0f);
+    cameraComponent.clearColor = Vec4(0.1f, 0.1f, 0.15f, 1.0f);  // Slightly brighter background
     cameraComponent.fov = 60.0f;
     cameraComponent.nearPlane = 0.1f;
     cameraComponent.farPlane = 500.0f;
     ecs.AddComponent(cameraEntity, cameraComponent);
 
-    std::cout << "Created scene with " << (spawned + 1) << " cubes" << std::endl;
+    std::cout << "Created scene with avocado model!" << std::endl;
 }

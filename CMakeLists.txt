@@ -98,6 +98,23 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(stb)
 
+# Fetch Assimp (for mesh loading)
+FetchContent_Declare(
+        assimp
+        GIT_REPOSITORY https://github.com/assimp/assimp.git
+        GIT_TAG        v5.3.1
+        GIT_SHALLOW    TRUE
+)
+set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_ASSIMP_TOOLS OFF CACHE BOOL "" FORCE)
+set(ASSIMP_INSTALL OFF CACHE BOOL "" FORCE)
+set(ASSIMP_NO_EXPORT ON CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_ALL_IMPORTERS_BY_DEFAULT OFF CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_OBJ_IMPORTER ON CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_GLTF_IMPORTER ON CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_FBX_IMPORTER ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(assimp)
+
 # Vulkan
 find_package(Vulkan REQUIRED)
 
@@ -114,6 +131,15 @@ if(TARGET glfw)
         target_compile_options(glfw PRIVATE /W0)
     else()
         target_compile_options(glfw PRIVATE -w)
+    endif()
+endif()
+
+# Assimp is external code - disable warnings-as-errors for it
+if(TARGET assimp)
+    if(MSVC)
+        target_compile_options(assimp PRIVATE /W0)
+    else()
+        target_compile_options(assimp PRIVATE -w)
     endif()
 endif()
 
@@ -175,11 +201,12 @@ target_include_directories(engine PRIVATE
         ${stb_SOURCE_DIR}
 )
 
-# Link GLM, JSON, and GLFW
+# Link GLM, JSON, GLFW, and Assimp
 target_link_libraries(engine PRIVATE
         glm::glm
         nlohmann_json::nlohmann_json
         glfw
+        assimp
         Vulkan::Vulkan
 )
 
@@ -1018,3 +1045,33 @@ target_link_libraries(test_mipgen_compute PRIVATE
 target_compile_definitions(test_mipgen_compute PRIVATE ENGINE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
 add_test(NAME MipgenComputeTests COMMAND test_mipgen_compute)
+
+# Test executable for mesh loading
+add_executable(test_mesh_loading
+        tests/test_mesh_loading.cpp
+        src/resources/mesh_manager.cpp
+        src/renderer/vulkan_mesh.cpp
+        src/renderer/vulkan_buffer.cpp
+)
+
+if(WIN32)
+    target_sources(test_mesh_loading PRIVATE src/platform/win32_platform.cpp)
+endif()
+
+target_include_directories(test_mesh_loading PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_mesh_loading PRIVATE
+        glm::glm
+        assimp
+        Vulkan::Vulkan
+)
+
+if(WIN32)
+    target_link_libraries(test_mesh_loading PRIVATE User32 Gdi32)
+endif()
+
+target_compile_definitions(test_mesh_loading PRIVATE ENGINE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
+add_test(NAME MeshLoadingTests COMMAND test_mesh_loading)

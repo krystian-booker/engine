@@ -5,6 +5,10 @@
 #include "renderer/vulkan_mesh.h"
 #include <vector>
 
+// Forward declarations for Assimp types (avoid including assimp headers in header file)
+struct aiMesh;
+struct aiScene;
+
 // Simplified mesh data (will expand for GPU upload)
 struct MeshData {
     std::vector<Vertex> vertices;
@@ -19,6 +23,12 @@ struct MeshData {
     // Bounding box for culling
     Vec3 boundsMin{0, 0, 0};
     Vec3 boundsMax{0, 0, 0};
+
+    // Multi-mesh support: paths to sub-meshes (format: "path/to/file.obj#0", "path/to/file.obj#1", etc.)
+    std::vector<std::string> subMeshPaths;
+
+    // Helper to check if this is a multi-mesh placeholder
+    bool HasSubMeshes() const { return !subMeshPaths.empty(); }
 };
 
 class MeshManager : public ResourceManager<MeshData, MeshHandle> {
@@ -46,4 +56,7 @@ private:
     // Prevent copying
     MeshManager(const MeshManager&) = delete;
     MeshManager& operator=(const MeshManager&) = delete;
+
+    // Helper to process a single Assimp mesh
+    std::unique_ptr<MeshData> ProcessMesh(const aiMesh* mesh, const aiScene* scene);
 };
