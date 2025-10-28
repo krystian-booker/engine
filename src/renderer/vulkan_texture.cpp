@@ -2,6 +2,8 @@
 #include "renderer/vulkan_context.h"
 #include "renderer/vulkan_mipmap_compute.h"
 #include "renderer/vulkan_buffer.h"
+#include "renderer/vulkan_transfer_queue.h"
+#include "renderer/vulkan_staging_pool.h"
 #include "renderer/mipmap_policy.h"
 #include "core/texture_data.h"
 #include "core/sampler_settings.h"
@@ -149,6 +151,213 @@ void VulkanTexture::Destroy() {
     m_Format = VK_FORMAT_UNDEFINED;
     m_MipLevels = 1;
     m_Usage = TextureUsage::Generic;
+    m_AsyncUploadPending = false;
+}
+
+void VulkanTexture::CreateAsync(
+    VulkanContext* context,
+    VulkanTransferQueue* transferQueue,
+    VulkanStagingPool* stagingPool,
+    const TextureData* textureData,
+    std::function<void(bool)> callback) {
+
+    if (!context || !textureData || !transferQueue || !stagingPool) {
+        if (callback) callback(false);
+        throw std::invalid_argument("VulkanTexture::CreateAsync requires valid context, texture data, transfer queue, and staging pool");
+    }
+
+    if (!textureData->pixels || textureData->width == 0 || textureData->height == 0) {
+        if (callback) callback(false);
+        throw std::invalid_argument("VulkanTexture::CreateAsync requires valid pixel data");
+    }
+
+    // Clean up existing resources
+    Destroy();
+
+    m_Context = context;
+    m_Format = DetermineVulkanFormat(textureData);
+    m_Usage = textureData->usage;
+    m_Type = textureData->type;
+    m_MipmapPolicy = textureData->mipmapPolicy;
+    m_QualityHint = textureData->qualityHint;
+    m_ArrayLayers = textureData->arrayLayers;
+    m_Width = textureData->width;
+    m_Height = textureData->height;
+    m_SamplerSettings = textureData->samplerSettings;
+
+    // Calculate mip levels if requested
+    if (HasFlag(textureData->flags, TextureFlags::GenerateMipmaps)) {
+        m_MipLevels = static_cast<u32>(std::floor(std::log2(std::max(textureData->width, textureData->height)))) + 1;
+    } else {
+        m_MipLevels = 1;
+    }
+
+    const VkDevice device = m_Context->GetDevice();
+    const VkDeviceSize layerSize = textureData->width * textureData->height * textureData->channels;
+    const VkDeviceSize imageSize = layerSize * textureData->arrayLayers;
+
+    // Acquire staging buffer from pool
+    VulkanStagingPool::StagingAllocation stagingAlloc = stagingPool->AcquireStagingBuffer(imageSize, 16);
+
+    // Copy pixel data to staging buffer
+    memcpy(stagingAlloc.mappedPtr, textureData->pixels, static_cast<size_t>(imageSize));
+
+    // Create Vulkan image (synchronously)
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.extent.width = textureData->width;
+    imageInfo.extent.height = textureData->height;
+    imageInfo.extent.depth = 1;
+    imageInfo.mipLevels = m_MipLevels;
+    imageInfo.arrayLayers = textureData->arrayLayers;
+    imageInfo.format = m_Format;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    imageInfo.flags = 0;
+
+    // Add cube compatible flag for cubemaps
+    if (textureData->type == TextureType::Cubemap && textureData->arrayLayers == 6) {
+        imageInfo.flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+    }
+
+    const bool wantsMipmaps = m_MipLevels > 1;
+    if (wantsMipmaps) {
+        imageInfo.usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    }
+
+    if (wantsMipmaps) {
+        const VkFormat storageCandidate = GetLinearFormatFor(m_Format);
+        bool supportsStorage = m_Context->SupportsStorageImage(m_Format);
+        if (!supportsStorage && storageCandidate != m_Format) {
+            supportsStorage = m_Context->SupportsStorageImage(storageCandidate);
+        }
+
+        if (supportsStorage) {
+            imageInfo.usage |= VK_IMAGE_USAGE_STORAGE_BIT;
+            if (IsFormatSRGB(m_Format) && storageCandidate != m_Format) {
+                imageInfo.flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
+            }
+        }
+    }
+
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateImage(device, &imageInfo, nullptr, &m_Image) != VK_SUCCESS) {
+        if (callback) callback(false);
+        throw std::runtime_error("VulkanTexture::CreateAsync failed to create VkImage");
+    }
+
+    // Allocate image memory
+    VkMemoryRequirements memRequirements{};
+    vkGetImageMemoryRequirements(device, m_Image, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits,
+                                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    if (vkAllocateMemory(device, &allocInfo, nullptr, &m_ImageMemory) != VK_SUCCESS) {
+        if (callback) callback(false);
+        throw std::runtime_error("VulkanTexture::CreateAsync failed to allocate image memory");
+    }
+
+    if (vkBindImageMemory(device, m_Image, m_ImageMemory, 0) != VK_SUCCESS) {
+        if (callback) callback(false);
+        throw std::runtime_error("VulkanTexture::CreateAsync failed to bind image memory");
+    }
+
+    // Record transfer commands asynchronously
+    VkCommandBuffer cmd = transferQueue->BeginTransferCommands();
+
+    // Transition image layout: UNDEFINED -> TRANSFER_DST_OPTIMAL
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = m_Image;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = textureData->arrayLayers;
+    barrier.srcAccessMask = 0;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+    vkCmdPipelineBarrier(
+        cmd,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier
+    );
+
+    // Copy buffer to image
+    std::vector<VkBufferImageCopy> regions;
+    for (u32 layer = 0; layer < textureData->arrayLayers; ++layer) {
+        VkBufferImageCopy region{};
+        region.bufferOffset = stagingAlloc.offset + (layerSize * layer);
+        region.bufferRowLength = 0;
+        region.bufferImageHeight = 0;
+        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.imageSubresource.mipLevel = 0;
+        region.imageSubresource.baseArrayLayer = layer;
+        region.imageSubresource.layerCount = 1;
+        region.imageOffset = {0, 0, 0};
+        region.imageExtent = {textureData->width, textureData->height, 1};
+        regions.push_back(region);
+    }
+
+    vkCmdCopyBufferToImage(
+        cmd,
+        stagingAlloc.buffer,
+        m_Image,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        static_cast<u32>(regions.size()),
+        regions.data()
+    );
+
+    // Submit transfer commands and get timeline value
+    u64 timelineValue = transferQueue->SubmitTransferCommands(cmd);
+
+    // Mark staging allocation as pending
+    stagingPool->MarkAllocationPending(stagingAlloc, timelineValue);
+
+    // Mark as pending so FinishAsyncCreation knows to generate mipmaps/transition
+    m_AsyncUploadPending = true;
+
+    // Store callback (will be invoked by TextureManager after checking timeline)
+    if (callback) {
+        callback(true);
+    }
+}
+
+bool VulkanTexture::FinishAsyncCreation() {
+    if (!m_AsyncUploadPending) {
+        return false;
+    }
+
+    // Generate mipmaps or transition to shader read-only layout
+    if (m_MipLevels > 1) {
+        GenerateMipmaps(m_Image, m_Format, m_Width, m_Height, m_MipLevels, m_ArrayLayers);
+    } else {
+        TransitionImageLayout(m_Image, m_Format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, m_ArrayLayers);
+    }
+
+    // Create image view and sampler
+    CreateImageView();
+    CreateSampler(m_SamplerSettings);
+
+    m_AsyncUploadPending = false;
+    return true;
 }
 
 void VulkanTexture::CreateImage(const TextureData* data) {
@@ -286,6 +495,46 @@ void VulkanTexture::CreateSampler(const TextureData* data) {
     vkGetPhysicalDeviceProperties(physicalDevice, &properties);
 
     const SamplerSettings& settings = data->samplerSettings;
+
+    // Clamp anisotropy to device limits
+    f32 anisotropy = settings.maxAnisotropy;
+    if (settings.anisotropyEnable) {
+        anisotropy = std::min(settings.maxAnisotropy, properties.limits.maxSamplerAnisotropy);
+    }
+
+    // Clamp LOD to actual mip levels (override maxLod if needed)
+    f32 maxLod = std::min(settings.maxLod, static_cast<f32>(m_MipLevels));
+
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = ToVulkanFilter(settings.magFilter);
+    samplerInfo.minFilter = ToVulkanFilter(settings.minFilter);
+    samplerInfo.addressModeU = ToVulkanAddressMode(settings.addressModeU);
+    samplerInfo.addressModeV = ToVulkanAddressMode(settings.addressModeV);
+    samplerInfo.addressModeW = ToVulkanAddressMode(settings.addressModeW);
+    samplerInfo.anisotropyEnable = settings.anisotropyEnable ? VK_TRUE : VK_FALSE;
+    samplerInfo.maxAnisotropy = anisotropy;
+    samplerInfo.borderColor = ToVulkanBorderColor(settings.borderColor);
+    samplerInfo.unnormalizedCoordinates = settings.unnormalizedCoordinates ? VK_TRUE : VK_FALSE;
+    samplerInfo.compareEnable = settings.compareEnable ? VK_TRUE : VK_FALSE;
+    samplerInfo.compareOp = VK_COMPARE_OP_LESS;  // For shadow mapping
+    samplerInfo.mipmapMode = ToVulkanMipmapMode(settings.mipmapMode);
+    samplerInfo.mipLodBias = settings.mipLodBias;
+    samplerInfo.minLod = settings.minLod;
+    samplerInfo.maxLod = maxLod;
+
+    if (vkCreateSampler(device, &samplerInfo, nullptr, &m_Sampler) != VK_SUCCESS) {
+        throw std::runtime_error("VulkanTexture::CreateSampler failed to create sampler");
+    }
+}
+
+void VulkanTexture::CreateSampler(const SamplerSettings& settings) {
+    const VkDevice device = m_Context->GetDevice();
+    const VkPhysicalDevice physicalDevice = m_Context->GetPhysicalDevice();
+
+    // Query device properties for anisotropy support
+    VkPhysicalDeviceProperties properties{};
+    vkGetPhysicalDeviceProperties(physicalDevice, &properties);
 
     // Clamp anisotropy to device limits
     f32 anisotropy = settings.maxAnisotropy;

@@ -7,8 +7,12 @@
 #include "resources/texture_load_job.h"
 #include "platform/platform.h"
 #include <vector>
+#include <functional>
 
-// Forward declarations for mipmap policy enums
+// Forward declarations
+class VulkanContext;
+class VulkanTransferQueue;
+class VulkanStagingPool;
 enum class MipmapQuality : u8;
 
 // Global texture configuration
@@ -30,6 +34,12 @@ public:
         static TextureManager instance;
         return instance;
     }
+
+    // Initialize async upload pipeline (must be called after VulkanContext is created)
+    void InitAsyncPipeline(VulkanContext* context, VulkanTransferQueue* transferQueue, VulkanStagingPool* stagingPool);
+
+    // Shutdown async upload pipeline
+    void ShutdownAsyncPipeline();
 
     // Load texture from file with options
     TextureHandle Load(const std::string& filepath, const TextureLoadOptions& options);
@@ -138,7 +148,12 @@ public:
     }
 
     // Process pending GPU uploads (call once per frame from main thread)
+    // This checks for completed async uploads and processes pending CPU uploads
     void Update();
+
+    // Process pending GPU uploads with bandwidth limiting
+    // maxBytesPerFrame: Maximum number of bytes to upload this frame (default 16MB)
+    void ProcessUploads(u64 maxBytesPerFrame = 16 * 1024 * 1024);
 
     // Enqueue a completed load job for GPU upload (called by worker threads)
     void EnqueuePendingUpload(TextureLoadJob* job);
@@ -176,4 +191,22 @@ private:
     Platform::MutexPtr m_AsyncMutex;
     std::vector<TextureLoadJob*> m_PendingUploads;  // Jobs ready for GPU upload
     PoolAllocator<TextureLoadJob, 32> m_JobAllocator;
+
+    // ========================================================================
+    // Async GPU Upload Pipeline
+    // ========================================================================
+    VulkanContext* m_VulkanContext = nullptr;
+    VulkanTransferQueue* m_TransferQueue = nullptr;
+    VulkanStagingPool* m_StagingPool = nullptr;
+
+    // Track pending GPU uploads with timeline values
+    struct PendingGPUUpload {
+        TextureHandle handle;
+        u64 timelineValue;
+        AsyncLoadCallback callback;
+        void* userData;
+        u64 uploadSizeBytes;
+    };
+    std::vector<PendingGPUUpload> m_GPUUploadQueue;
+    Platform::MutexPtr m_GPUUploadMutex;
 };

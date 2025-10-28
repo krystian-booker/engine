@@ -10,6 +10,7 @@
 #include "renderer/uniform_buffers.h"
 #include "renderer/vertex.h"
 #include "resources/mesh_manager.h"
+#include "resources/texture_manager.h"
 
 #include <stdexcept>
 
@@ -48,6 +49,13 @@ void VulkanRenderer::Init(VulkanContext* context, Window* window, ECSCoordinator
     m_ECS = ecs;
     m_CameraSystem = (ecs != nullptr) ? ecs->GetCameraSystem() : nullptr;
 
+    // Initialize async upload pipeline
+    m_StagingPool.Init(m_Context);
+    m_TransferQueue.Init(m_Context, MAX_FRAMES_IN_FLIGHT);
+
+    // Initialize TextureManager async pipeline
+    TextureManager::Instance().InitAsyncPipeline(m_Context, &m_TransferQueue, &m_StagingPool);
+
     m_Swapchain.Init(m_Context, m_Window);
     m_Descriptors.Init(m_Context, MAX_FRAMES_IN_FLIGHT);
     InitSwapchainResources();
@@ -76,6 +84,11 @@ void VulkanRenderer::Shutdown() {
         m_RenderSystem->Shutdown();
         m_RenderSystem.reset();
     }
+
+    // Shutdown async upload pipeline
+    TextureManager::Instance().ShutdownAsyncPipeline();
+    m_TransferQueue.Shutdown();
+    m_StagingPool.Shutdown();
 
     DestroyMeshResources();
     DestroyFrameContexts();
@@ -191,6 +204,9 @@ bool VulkanRenderer::BeginFrame(FrameContext*& outFrame, u32& outImageIndex) {
     VkDevice device = m_Context->GetDevice();
     FrameContext& frame = m_Frames[m_CurrentFrame];
 
+    // Reset transfer queue for this frame
+    m_TransferQueue.ResetForFrame(m_CurrentFrame);
+
     vkWaitForFences(device, 1, &frame.inFlightFence, VK_TRUE, UINT64_MAX);
 
     u32 imageIndex = 0;
@@ -293,6 +309,10 @@ void VulkanRenderer::EndFrame(FrameContext& frame, u32 imageIndex) {
     } else if (presentResult != VK_SUCCESS) {
         throw std::runtime_error("Failed to present swapchain image");
     }
+
+    // Advance staging pool with current timeline value
+    u64 currentTimelineValue = m_Context->GetCurrentTransferTimelineValue();
+    m_StagingPool.AdvanceFrame(currentTimelineValue);
 
     m_CurrentFrame = (m_CurrentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }

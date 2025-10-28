@@ -5,6 +5,7 @@
 
 #include <vulkan/vulkan.h>
 
+#include <atomic>
 #include <memory>
 #include <string>
 #include <vector>
@@ -32,6 +33,11 @@ public:
     u32 GetGraphicsQueueFamily() const { return m_GraphicsQueueFamily; }
     u32 GetPresentQueueFamily() const { return m_PresentQueueFamily; }
 
+    // Timeline semaphore for async transfers
+    VkSemaphore GetTransferTimelineSemaphore() const { return m_TransferTimelineSemaphore; }
+    u64 GetNextTransferTimelineValue() { return ++m_TransferTimelineValue; }
+    u64 GetCurrentTransferTimelineValue() const { return m_TransferTimelineValue.load(); }
+
     // Format capability queries
     bool SupportsLinearBlit(VkFormat format) const;
     bool SupportsColorAttachment(VkFormat format) const;
@@ -57,6 +63,10 @@ private:
     VkCommandPool m_CommandPool = VK_NULL_HANDLE;
 
     VkSurfaceKHR m_Surface = VK_NULL_HANDLE;
+
+    // Timeline semaphore for async transfers
+    VkSemaphore m_TransferTimelineSemaphore = VK_NULL_HANDLE;
+    std::atomic<u64> m_TransferTimelineValue{0};
 
     // Format capabilities cache
     mutable std::unordered_map<VkFormat, VkFormatProperties> m_FormatCapabilities;

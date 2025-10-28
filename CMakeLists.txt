@@ -185,6 +185,8 @@ set(ENGINE_SOURCES
         src/renderer/vulkan_framebuffer.cpp
         src/renderer/vulkan_command_buffer.cpp
         src/renderer/vulkan_buffer.cpp
+        src/renderer/vulkan_staging_pool.cpp
+        src/renderer/vulkan_transfer_queue.cpp
 )
 
 # Platform-specific source files

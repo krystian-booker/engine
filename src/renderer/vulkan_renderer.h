@@ -11,6 +11,8 @@
 #include "renderer/vulkan_swapchain.h"
 #include "renderer/vulkan_descriptors.h"
 #include "renderer/vulkan_depth.h"
+#include "renderer/vulkan_staging_pool.h"
+#include "renderer/vulkan_transfer_queue.h"
 #include "ecs/systems/render_system.h"
 
 #include <vulkan/vulkan.h>
@@ -66,6 +68,10 @@ private:
     VulkanPipeline m_Pipeline;
     VulkanDescriptors m_Descriptors;
     VulkanDepthBuffer m_DepthBuffer;
+
+    // Async upload pipeline
+    VulkanStagingPool m_StagingPool;
+    VulkanTransferQueue m_TransferQueue;
 
     static constexpr u32 MAX_FRAMES_IN_FLIGHT = 2;
     std::vector<FrameContext> m_Frames;

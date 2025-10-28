@@ -1,9 +1,13 @@
 #pragma once
 #include "core/texture_data.h"
 #include "core/types.h"
+#include "core/sampler_settings.h"
 #include <vulkan/vulkan.h>
+#include <functional>
 
 class VulkanContext;
+class VulkanTransferQueue;
+class VulkanStagingPool;
 struct TextureData;
 enum class MipmapPolicy : u8;
 enum class MipmapQuality : u8;
@@ -14,8 +18,26 @@ public:
     VulkanTexture() = default;
     ~VulkanTexture();
 
-    // Create texture from TextureData (uploads to GPU)
+    // Create texture from TextureData (uploads to GPU synchronously)
     void Create(VulkanContext* context, const TextureData* textureData);
+
+    // Create texture with async upload
+    // Creates image synchronously, uploads pixel data asynchronously
+    // Callback is invoked when upload completes (on main thread during TextureManager::Update())
+    // Mipmaps are generated synchronously after upload completes
+    // callback: Function called with (success) when upload is complete
+    void CreateAsync(
+        VulkanContext* context,
+        VulkanTransferQueue* transferQueue,
+        VulkanStagingPool* stagingPool,
+        const TextureData* textureData,
+        std::function<void(bool)> callback
+    );
+
+    // Finish async texture creation by generating mipmaps and transitioning to final layout
+    // Called by TextureManager after async upload completes
+    // Returns true on success
+    bool FinishAsyncCreation();
 
     // Destroy all Vulkan resources
     void Destroy();
@@ -52,10 +74,17 @@ private:
     MipmapPolicy m_MipmapPolicy;      // Stored for debugging/logging
     MipmapQuality m_QualityHint;      // Stored for debugging/logging
 
+    // Async upload state
+    u32 m_Width = 0;
+    u32 m_Height = 0;
+    bool m_AsyncUploadPending = false;
+    SamplerSettings m_SamplerSettings;
+
     // Helper functions
     void CreateImage(const TextureData* data);
     void CreateImageView();
     void CreateSampler(const TextureData* data);
+    void CreateSampler(const SamplerSettings& settings);
     void GenerateMipmaps(VkImage image, VkFormat format, u32 width, u32 height, u32 mipLevels, u32 arrayLayers);
     void GenerateMipmapsBlit(VkImage image, VkFormat format, u32 width, u32 height, u32 mipLevels, u32 arrayLayers);
     void GenerateMipmapsCompute(VkImage image, VkFormat format, u32 width, u32 height, u32 mipLevels, u32 arrayLayers);

@@ -1,6 +1,10 @@
 #include "resources/texture_manager.h"
 #include "resources/image_loader.h"
 #include "renderer/mipmap_policy.h"
+#include "renderer/vulkan_context.h"
+#include "renderer/vulkan_transfer_queue.h"
+#include "renderer/vulkan_staging_pool.h"
+#include "renderer/vulkan_texture.h"
 #include "core/job_system.h"
 #include "platform/platform.h"
 #include <iostream>
@@ -44,6 +48,32 @@ TextureManager::TextureManager() {
 
     // Initialize async loading state
     m_AsyncMutex = Platform::CreateMutex();
+    m_GPUUploadMutex = Platform::CreateMutex();
+}
+
+void TextureManager::InitAsyncPipeline(VulkanContext* context, VulkanTransferQueue* transferQueue, VulkanStagingPool* stagingPool) {
+    m_VulkanContext = context;
+    m_TransferQueue = transferQueue;
+    m_StagingPool = stagingPool;
+    std::cout << "TextureManager async GPU upload pipeline initialized" << std::endl;
+}
+
+void TextureManager::ShutdownAsyncPipeline() {
+    // Wait for all pending GPU uploads to complete
+    if (m_TransferQueue && m_VulkanContext) {
+        // Wait for all timeline values to complete
+        if (m_VulkanContext) {
+            VkDevice device = m_VulkanContext->GetDevice();
+            vkDeviceWaitIdle(device);
+        }
+    }
+
+    m_GPUUploadQueue.clear();
+    m_VulkanContext = nullptr;
+    m_TransferQueue = nullptr;
+    m_StagingPool = nullptr;
+
+    std::cout << "TextureManager async GPU upload pipeline shut down" << std::endl;
 }
 
 TextureHandle TextureManager::Load(const std::string& filepath, const TextureLoadOptions& options) {
@@ -623,7 +653,12 @@ void TextureManager::EnqueuePendingUpload(TextureLoadJob* job) {
     Platform::Unlock(m_AsyncMutex.get());
 }
 
-void TextureManager::Update() {
+void TextureManager::ProcessUploads(u64 maxBytesPerFrame) {
+    // Only process if async pipeline is initialized
+    if (!m_VulkanContext || !m_TransferQueue || !m_StagingPool) {
+        return;
+    }
+
     // Swap pending queue to local vector (minimize lock time)
     std::vector<TextureLoadJob*> uploads;
     {
@@ -632,16 +667,184 @@ void TextureManager::Update() {
         Platform::Unlock(m_AsyncMutex.get());
     }
 
-    // Process each upload on main thread
+    u64 bytesUploadedThisFrame = 0;
+
+    // Process uploads with bandwidth limiting
     for (TextureLoadJob* job : uploads) {
         AsyncLoadState state = job->state.load();
 
-        if (state == AsyncLoadState::ReadyForUpload) {
-            ProcessUpload(job);
-        } else if (state == AsyncLoadState::Failed) {
+        if (state != AsyncLoadState::ReadyForUpload) {
+            if (state == AsyncLoadState::Failed) {
+                ProcessFailure(job);
+            }
+            continue;
+        }
+
+        // Calculate upload size
+        u64 uploadSize = 0;
+        if (job->isArrayTexture) {
+            for (const auto& layer : job->layerImageData) {
+                uploadSize += layer.width * layer.height * layer.channels;
+            }
+        } else {
+            uploadSize = job->imageData.width * job->imageData.height * job->imageData.channels;
+        }
+
+        // Check bandwidth limit
+        if (bytesUploadedThisFrame + uploadSize > maxBytesPerFrame && bytesUploadedThisFrame > 0) {
+            // Re-queue this job for next frame
+            Platform::Lock(m_AsyncMutex.get());
+            m_PendingUploads.push_back(job);
+            Platform::Unlock(m_AsyncMutex.get());
+            continue;
+        }
+
+        // Process the upload asynchronously
+        job->state.store(AsyncLoadState::Uploading);
+
+        // Create TextureData from ImageData
+        auto textureData = std::make_unique<TextureData>();
+
+        if (job->isArrayTexture) {
+            // Array texture setup
+            if (job->layerImageData.empty()) {
+                std::cerr << "TextureManager::ProcessUploads: array texture has no layer data" << std::endl;
+                job->state.store(AsyncLoadState::Failed);
+                ProcessFailure(job);
+                continue;
+            }
+
+            textureData->width = job->layerImageData[0].width;
+            textureData->height = job->layerImageData[0].height;
+            textureData->channels = job->layerImageData[0].channels;
+            textureData->arrayLayers = static_cast<u32>(job->layerImageData.size());
+            textureData->type = TextureType::TextureArray;
+
+            // Combine all layer data into a single buffer
+            u64 layerSize = textureData->width * textureData->height * textureData->channels;
+            u64 totalSize = layerSize * textureData->arrayLayers;
+            textureData->pixels = new u8[totalSize];
+
+            for (u32 i = 0; i < textureData->arrayLayers; ++i) {
+                memcpy(textureData->pixels + (i * layerSize), job->layerImageData[i].pixels, layerSize);
+            }
+        } else {
+            // Single texture
+            textureData->pixels = job->imageData.pixels;
+            textureData->width = job->imageData.width;
+            textureData->height = job->imageData.height;
+            textureData->channels = job->imageData.channels;
+            textureData->arrayLayers = 1;
+            textureData->type = TextureType::Texture2D;
+        }
+
+        // Copy texture options
+        textureData->usage = job->options.usage;
+        textureData->formatOverride = job->options.formatOverride;
+        textureData->flags = job->options.flags;
+        textureData->compressionHint = job->options.compressionHint;
+        textureData->samplerSettings = job->options.samplerSettings;
+        textureData->mipmapPolicy = job->options.mipmapPolicy;
+        textureData->qualityHint = job->options.qualityHint;
+
+        // Get the texture data
+        TextureData* texData = Get(job->handle);
+        if (!texData) {
+            std::cerr << "TextureManager::ProcessUploads: texture handle is invalid" << std::endl;
+            job->state.store(AsyncLoadState::Failed);
+            ProcessFailure(job);
+            if (job->isArrayTexture) {
+                delete[] textureData->pixels;
+            }
+            continue;
+        }
+
+        // Create VulkanTexture asynchronously
+        VulkanTexture* vulkanTex = static_cast<VulkanTexture*>(texData->gpuTexture);
+        if (!vulkanTex) {
+            vulkanTex = new VulkanTexture();
+            texData->gpuTexture = vulkanTex;
+        }
+
+        // Initiate async GPU upload
+        try {
+            vulkanTex->CreateAsync(
+                m_VulkanContext,
+                m_TransferQueue,
+                m_StagingPool,
+                textureData.get(),
+                [this, job, uploadSize](bool success) {
+                    if (!success) {
+                        std::cerr << "TextureManager: Async GPU upload failed" << std::endl;
+                        job->state.store(AsyncLoadState::Failed);
+                        ProcessFailure(job);
+                    }
+                }
+            );
+
+            // Get timeline value from the transfer queue (we'll need to track this)
+            u64 timelineValue = m_VulkanContext->GetCurrentTransferTimelineValue();
+
+            // Add to GPU upload queue
+            Platform::Lock(m_GPUUploadMutex.get());
+            m_GPUUploadQueue.push_back({
+                job->handle,
+                timelineValue,
+                job->callback,
+                job->userData,
+                uploadSize
+            });
+            Platform::Unlock(m_GPUUploadMutex.get());
+
+            bytesUploadedThisFrame += uploadSize;
+        } catch (const std::exception& e) {
+            std::cerr << "TextureManager::ProcessUploads exception: " << e.what() << std::endl;
+            job->state.store(AsyncLoadState::Failed);
             ProcessFailure(job);
         }
+
+        // Clean up temporary texture data
+        if (job->isArrayTexture) {
+            delete[] textureData->pixels;
+        }
     }
+}
+
+void TextureManager::Update() {
+    // First, check for completed GPU uploads
+    if (m_VulkanContext && m_TransferQueue) {
+        Platform::Lock(m_GPUUploadMutex.get());
+        auto it = m_GPUUploadQueue.begin();
+        while (it != m_GPUUploadQueue.end()) {
+            if (m_TransferQueue->IsTransferComplete(it->timelineValue)) {
+                // GPU upload is complete, finish the texture creation
+                TextureData* texData = Get(it->handle);
+                if (texData && texData->gpuTexture) {
+                    VulkanTexture* vulkanTex = static_cast<VulkanTexture*>(texData->gpuTexture);
+                    if (vulkanTex->FinishAsyncCreation()) {
+                        // Invoke callback on success
+                        if (it->callback) {
+                            it->callback(it->handle, true, it->userData);
+                        }
+                    } else {
+                        // Failed to finish creation
+                        if (it->callback) {
+                            it->callback(it->handle, false, it->userData);
+                        }
+                    }
+                }
+
+                // Remove from queue
+                it = m_GPUUploadQueue.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        Platform::Unlock(m_GPUUploadMutex.get());
+    }
+
+    // Then process new uploads with default bandwidth limit
+    ProcessUploads();
 }
 
 void TextureManager::ProcessUpload(TextureLoadJob* job) {

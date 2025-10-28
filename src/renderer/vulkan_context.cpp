@@ -40,6 +40,11 @@ void VulkanContext::Shutdown() {
             m_CommandPool = VK_NULL_HANDLE;
         }
 
+        if (m_TransferTimelineSemaphore != VK_NULL_HANDLE) {
+            vkDestroySemaphore(m_Device, m_TransferTimelineSemaphore, nullptr);
+            m_TransferTimelineSemaphore = VK_NULL_HANDLE;
+        }
+
         vkDestroyDevice(m_Device, nullptr);
         m_Device = VK_NULL_HANDLE;
     }
@@ -237,11 +242,18 @@ void VulkanContext::CreateLogicalDevice() {
 
     VkPhysicalDeviceFeatures deviceFeatures{};
 
+    // Enable timeline semaphore feature (Vulkan 1.2+)
+    VkPhysicalDeviceTimelineSemaphoreFeatures timelineSemaphoreFeatures{};
+    timelineSemaphoreFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES;
+    timelineSemaphoreFeatures.timelineSemaphore = VK_TRUE;
+    timelineSemaphoreFeatures.pNext = nullptr;
+
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     createInfo.queueCreateInfoCount = static_cast<u32>(queueCreateInfos.size());
     createInfo.pQueueCreateInfos = queueCreateInfos.data();
     createInfo.pEnabledFeatures = &deviceFeatures;
+    createInfo.pNext = &timelineSemaphoreFeatures;
 
     const std::vector<const char*> deviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME
@@ -271,6 +283,22 @@ void VulkanContext::CreateLogicalDevice() {
 
     if (vkCreateCommandPool(m_Device, &poolInfo, nullptr, &m_CommandPool) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create graphics command pool");
+    }
+
+    // Create timeline semaphore for async transfers
+    VkSemaphoreTypeCreateInfo timelineCreateInfo{};
+    timelineCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+    timelineCreateInfo.pNext = nullptr;
+    timelineCreateInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+    timelineCreateInfo.initialValue = 0;
+
+    VkSemaphoreCreateInfo semaphoreInfo{};
+    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    semaphoreInfo.pNext = &timelineCreateInfo;
+    semaphoreInfo.flags = 0;
+
+    if (vkCreateSemaphore(m_Device, &semaphoreInfo, nullptr, &m_TransferTimelineSemaphore) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create transfer timeline semaphore");
     }
 
     std::cout << "Logical device created" << std::endl;
