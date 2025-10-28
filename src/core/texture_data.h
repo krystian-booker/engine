@@ -2,8 +2,10 @@
 #include "core/types.h"
 #include <vulkan/vulkan.h>
 
-// Forward declaration
+// Forward declarations
 class VulkanTexture;
+enum class MipmapPolicy : u8;
+enum class MipmapQuality : u8;
 
 // Semantic usage hint for textures (affects sRGB auto-detection)
 enum class TextureUsage : u8 {
@@ -13,6 +15,7 @@ enum class TextureUsage : u8 {
     Metalness,     // Metallic property - linear, R channel
     AO,            // Ambient occlusion - linear or sRGB, R channel
     Height,        // Height/displacement map - linear, R channel
+    PackedPBR,     // Packed PBR map (R=Roughness, G=Metalness, B=AO) - linear, uses Roughness variant
     Generic        // No assumptions, manual configuration
 };
 
@@ -85,6 +88,10 @@ struct TextureData {
     TextureFlags flags = TextureFlags::None;
     u32 anisotropyLevel = 0;    // 0 = use global default
 
+    // Mipmap generation policy (requires forward declaration of enums)
+    MipmapPolicy mipmapPolicy;  // Default set in .cpp (requires enum definition)
+    MipmapQuality qualityHint;  // Default set in .cpp (requires enum definition)
+
     // Compression hint for future GPU compression (Phase 2+)
     VkFormat compressionHint = VK_FORMAT_UNDEFINED;
 
@@ -103,6 +110,6 @@ struct TextureData {
     TextureData(TextureData&& other) noexcept;
     TextureData& operator=(TextureData&& other) noexcept;
 
-    // Default constructor
-    TextureData() = default;
+    // Default constructor (implemented in .cpp to set MipmapPolicy defaults)
+    TextureData();
 };

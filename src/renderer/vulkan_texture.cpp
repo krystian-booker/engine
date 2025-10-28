@@ -2,6 +2,7 @@
 #include "renderer/vulkan_context.h"
 #include "renderer/vulkan_mipmap_compute.h"
 #include "renderer/vulkan_buffer.h"
+#include "renderer/mipmap_policy.h"
 #include "core/texture_data.h"
 #include <stdexcept>
 #include <algorithm>
@@ -54,6 +55,8 @@ void VulkanTexture::Create(VulkanContext* context, const TextureData* textureDat
     m_Context = context;
     m_Format = DetermineVulkanFormat(textureData);
     m_Usage = textureData->usage;
+    m_MipmapPolicy = textureData->mipmapPolicy;
+    m_QualityHint = textureData->qualityHint;
 
     // Calculate mip levels if requested
     if (HasFlag(textureData->flags, TextureFlags::GenerateMipmaps)) {
@@ -258,30 +261,35 @@ void VulkanTexture::CreateSampler(const TextureData* data) {
 }
 
 void VulkanTexture::GenerateMipmaps(VkImage image, VkFormat format, u32 width, u32 height, u32 mipLevels) {
-    // Multi-tier fallback system for mipmap generation
-    // Tier 1: GPU blit-based (fastest, requires linear blit support)
-    if (m_Context->SupportsLinearBlit(format)) {
-        std::cout << "Using GPU blit for mipmap generation" << std::endl;
-        GenerateMipmapsBlit(image, format, width, height, mipLevels);
-        return;
-    }
+    // Use policy system to determine mipmap generation method
+    MipmapGenerationParams params{};
+    params.usage = m_Usage;
+    params.format = format;
+    params.policy = m_MipmapPolicy;
+    params.quality = m_QualityHint;
+    params.width = width;
+    params.height = height;
+    params.context = m_Context;
 
-    // Tier 2: Compute shader-based (requires storage image support)
-    const VkFormat storageCandidate = GetLinearFormatFor(format);
-    bool supportsCompute = m_Context->SupportsStorageImage(format);
-    if (!supportsCompute && storageCandidate != format) {
-        supportsCompute = m_Context->SupportsStorageImage(storageCandidate);
-    }
+    MipmapMethod method = SelectMipGenerator(params);
 
-    if (supportsCompute) {
-        std::cout << "Linear blit unsupported, using compute shader for mipmap generation" << std::endl;
-        GenerateMipmapsCompute(image, format, width, height, mipLevels);
-        return;
-    }
+    // Route to appropriate generation method
+    switch (method) {
+        case MipmapMethod::Blit:
+            std::cout << "Using GPU blit for mipmap generation" << std::endl;
+            GenerateMipmapsBlit(image, format, width, height, mipLevels);
+            break;
 
-    // Tier 3: CPU-based (slow but always works)
-    std::cout << "WARNING: Compute shader unsupported, using CPU-based mipmap generation (slow)" << std::endl;
-    GenerateMipmapsCPU(image, format, width, height, mipLevels);
+        case MipmapMethod::Compute:
+            std::cout << "Using compute shader for mipmap generation" << std::endl;
+            GenerateMipmapsCompute(image, format, width, height, mipLevels);
+            break;
+
+        case MipmapMethod::CPU:
+            std::cout << "Using CPU-based mipmap generation" << std::endl;
+            GenerateMipmapsCPU(image, format, width, height, mipLevels);
+            break;
+    }
 }
 
 void VulkanTexture::GenerateMipmapsBlit(VkImage image, VkFormat /*format*/, u32 width, u32 height, u32 mipLevels) {
@@ -381,10 +389,28 @@ void VulkanTexture::GenerateMipmapsCompute(VkImage image, VkFormat format, u32 w
         case TextureUsage::Normal:
             variant = VulkanMipmapCompute::Variant::Normal;
             break;
+        case TextureUsage::Height:
+            // Height maps benefit from renormalization like normal maps
+            variant = VulkanMipmapCompute::Variant::Normal;
+            break;
         case TextureUsage::Roughness:
             variant = VulkanMipmapCompute::Variant::Roughness;
             break;
+        case TextureUsage::PackedPBR:
+            // Packed PBR maps (R=Roughness, G=Metalness, B=AO) use Roughness variant
+            // which handles per-channel filtering correctly
+            variant = VulkanMipmapCompute::Variant::Roughness;
+            break;
+        case TextureUsage::Albedo:
+        case TextureUsage::AO:
+            // For albedo and AO, use sRGB variant if format is sRGB (gamma-correct filtering)
+            variant = IsFormatSRGB(format) ? VulkanMipmapCompute::Variant::Srgb
+                                           : VulkanMipmapCompute::Variant::Color;
+            break;
+        case TextureUsage::Metalness:
+        case TextureUsage::Generic:
         default:
+            // Generic case: use sRGB variant for sRGB formats, Color for linear
             variant = IsFormatSRGB(format) ? VulkanMipmapCompute::Variant::Srgb
                                            : VulkanMipmapCompute::Variant::Color;
             break;

@@ -1,6 +1,10 @@
 #pragma once
 #include "core/texture_data.h"
 
+// Forward declarations for mipmap policy enums
+enum class MipmapPolicy : u8;
+enum class MipmapQuality : u8;
+
 // Load-time configuration for texture loading
 struct TextureLoadOptions {
     // Semantic usage hint (affects auto-detection logic)
@@ -23,6 +27,13 @@ struct TextureLoadOptions {
 
     // Anisotropic filtering level (0 = use global default, 1-16 = per-texture override)
     u32 anisotropyLevel = 0;
+
+    // Mipmap generation policy and quality preference
+    // Defaults are set when constructing TextureData (Auto policy, uses global quality default)
+    bool overrideMipmapPolicy = false;      // If true, use mipmapPolicy; if false, use Auto
+    MipmapPolicy mipmapPolicy;              // Only used if overrideMipmapPolicy is true
+    bool overrideQualityHint = false;       // If true, use qualityHint; if false, use global default
+    MipmapQuality qualityHint;              // Only used if overrideQualityHint is true
 
     // Compression hint for future GPU compression (Phase 2+)
     VkFormat compressionHint = VK_FORMAT_UNDEFINED;
@@ -81,6 +92,14 @@ struct TextureLoadOptions {
         TextureLoadOptions opts;
         opts.usage = TextureUsage::Height;
         opts.desiredChannels = 1;  // Single channel
+        opts.autoDetectSRGB = true;
+        return opts;
+    }
+
+    static TextureLoadOptions PackedPBR() {
+        TextureLoadOptions opts;
+        opts.usage = TextureUsage::PackedPBR;
+        opts.desiredChannels = 4;  // RGBA (R=Roughness, G=Metalness, B=AO, A=unused)
         opts.autoDetectSRGB = true;
         return opts;
     }

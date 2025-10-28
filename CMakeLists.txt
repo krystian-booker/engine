@@ -151,6 +151,7 @@ set(ENGINE_SOURCES
         src/renderer/vulkan_mesh.cpp
         src/renderer/vulkan_texture.cpp
         src/renderer/vulkan_mipmap_compute.cpp
+        src/renderer/mipmap_policy.cpp
         src/renderer/vulkan_pipeline.cpp
         src/renderer/vulkan_descriptors.cpp
         src/renderer/vulkan_render_pass.cpp
@@ -963,6 +964,35 @@ if(WIN32)
 endif()
 
 add_test(NAME FormatSupportTests COMMAND test_format_support)
+
+add_executable(test_mipmap_policy
+        tests/test_mipmap_policy.cpp
+        src/renderer/mipmap_policy.cpp
+        src/renderer/vulkan_context.cpp
+        src/renderer/vulkan_mipmap_compute.cpp
+        src/renderer/vulkan_buffer.cpp
+        src/core/texture_data.cpp
+        src/platform/window.cpp
+)
+
+if(WIN32)
+    target_sources(test_mipmap_policy PRIVATE src/platform/win32_platform.cpp)
+endif()
+
+target_include_directories(test_mipmap_policy PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_mipmap_policy PRIVATE
+        glfw
+        Vulkan::Vulkan
+)
+
+if(WIN32)
+    target_link_libraries(test_mipmap_policy PRIVATE User32 Gdi32)
+endif()
+
+add_test(NAME MipmapPolicyTests COMMAND test_mipmap_policy)
 
 add_executable(test_mipgen_compute
         tests/test_mipgen_compute.cpp

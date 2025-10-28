@@ -8,11 +8,18 @@
 #include "platform/platform.h"
 #include <vector>
 
+// Forward declarations for mipmap policy enums
+enum class MipmapQuality : u8;
+
 // Global texture configuration
 namespace TextureConfig {
     extern u32 g_DefaultAnisotropy;
     void SetDefaultAnisotropy(u32 level);
     u32 GetDefaultAnisotropy();
+
+    extern MipmapQuality g_DefaultMipmapQuality;
+    void SetDefaultMipmapQuality(MipmapQuality quality);
+    MipmapQuality GetDefaultMipmapQuality();
 }
 
 // Texture resource manager (singleton)

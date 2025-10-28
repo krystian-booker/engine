@@ -5,6 +5,8 @@
 
 class VulkanContext;
 struct TextureData;
+enum class MipmapPolicy : u8;
+enum class MipmapQuality : u8;
 
 // Vulkan texture abstraction (image, view, sampler)
 class VulkanTexture {
@@ -45,6 +47,8 @@ private:
     VkFormat m_Format = VK_FORMAT_UNDEFINED;
     u32 m_MipLevels = 1;
     TextureUsage m_Usage = TextureUsage::Generic;
+    MipmapPolicy m_MipmapPolicy;      // Stored for debugging/logging
+    MipmapQuality m_QualityHint;      // Stored for debugging/logging
 
     // Helper functions
     void CreateImage(const TextureData* data);

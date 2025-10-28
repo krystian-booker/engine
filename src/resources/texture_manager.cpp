@@ -1,5 +1,6 @@
 #include "resources/texture_manager.h"
 #include "resources/image_loader.h"
+#include "renderer/mipmap_policy.h"
 #include "core/job_system.h"
 #include "platform/platform.h"
 #include <iostream>
@@ -16,6 +17,16 @@ namespace TextureConfig {
 
     u32 GetDefaultAnisotropy() {
         return g_DefaultAnisotropy;
+    }
+
+    MipmapQuality g_DefaultMipmapQuality = MipmapQuality::Balanced;
+
+    void SetDefaultMipmapQuality(MipmapQuality quality) {
+        g_DefaultMipmapQuality = quality;
+    }
+
+    MipmapQuality GetDefaultMipmapQuality() {
+        return g_DefaultMipmapQuality;
     }
 }
 
@@ -67,6 +78,18 @@ TextureHandle TextureManager::Load(const std::string& filepath, const TextureLoa
         textureData->anisotropyLevel = 0;  // Will use global default
     }
 
+    // Set mipmap generation policy and quality
+    if (options.overrideMipmapPolicy) {
+        textureData->mipmapPolicy = options.mipmapPolicy;
+    }
+    // Note: mipmapPolicy already initialized to Auto in TextureData constructor
+
+    if (options.overrideQualityHint) {
+        textureData->qualityHint = options.qualityHint;
+    } else {
+        textureData->qualityHint = TextureConfig::GetDefaultMipmapQuality();
+    }
+
     // Calculate mip levels if GenerateMipmaps flag is set
     if (HasFlag(options.flags, TextureFlags::GenerateMipmaps)) {
         u32 maxDim = std::max(imageData.width, imageData.height);
@@ -98,6 +121,14 @@ std::unique_ptr<TextureData> TextureManager::LoadResource(const std::string& fil
     textureData->usage = m_DefaultOptions.usage;
     textureData->type = m_DefaultOptions.type;
     textureData->flags = m_DefaultOptions.flags;
+
+    // Set mipmap policy (use defaults for LoadResource)
+    if (m_DefaultOptions.overrideQualityHint) {
+        textureData->qualityHint = m_DefaultOptions.qualityHint;
+    } else {
+        textureData->qualityHint = TextureConfig::GetDefaultMipmapQuality();
+    }
+    // mipmapPolicy already initialized to Auto in TextureData constructor
 
     if (HasFlag(m_DefaultOptions.flags, TextureFlags::GenerateMipmaps)) {
         u32 maxDim = std::max(imageData.width, imageData.height);
@@ -332,6 +363,18 @@ void TextureManager::ProcessUpload(TextureLoadJob* job) {
         textureData->anisotropyLevel = job->options.anisotropyLevel;
     } else {
         textureData->anisotropyLevel = 0;  // Use global default
+    }
+
+    // Set mipmap generation policy and quality
+    if (job->options.overrideMipmapPolicy) {
+        textureData->mipmapPolicy = job->options.mipmapPolicy;
+    }
+    // Note: mipmapPolicy already initialized to Auto in TextureData constructor
+
+    if (job->options.overrideQualityHint) {
+        textureData->qualityHint = job->options.qualityHint;
+    } else {
+        textureData->qualityHint = TextureConfig::GetDefaultMipmapQuality();
     }
 
     // Calculate mip levels
