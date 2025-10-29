@@ -56,6 +56,9 @@ public:
     // Get the focused viewport ID (0 = none)
     u32 GetFocusedViewportID() const { return m_FocusedViewportID; }
 
+    // Check if project change was requested
+    bool ShouldChangeProject() const { return m_ShouldChangeProject; }
+
 private:
     // Helper methods for UI sections
     void RenderFileMenu();
@@ -80,6 +83,7 @@ private:
     bool m_ShowSceneHierarchyWindow = true;  // Show by default
     bool m_ShowInspectorWindow = true;       // Show by default
     bool m_ShowConsoleWindow = true;         // Show by default
+    bool m_ShowChangeProjectDialog = false;  // Show change project confirmation
 
     // Viewport state
     u32 m_FocusedViewportID = 0;  // ID of currently focused viewport (0 = none)
@@ -87,6 +91,9 @@ private:
 
     // Docking state
     bool m_DockspaceInitialized = false;  // Track if dockspace layout has been set up
+
+    // Project change state
+    bool m_ShouldChangeProject = false;  // Flag to signal project change request
 
     // Viewport texture descriptor management (separate from ImGui pool)
     VkDescriptorPool m_ViewportDescriptorPool = nullptr;

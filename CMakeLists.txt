@@ -123,7 +123,7 @@ set(ASSIMP_BUILD_GLTF_IMPORTER ON CACHE BOOL "" FORCE)
 set(ASSIMP_BUILD_FBX_IMPORTER ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(assimp)
 
-# Fetch Dear ImGui (docking branch)
+# Fetch Dear ImGui (docking branch) - needed for project picker and debug UI
 FetchContent_Declare(
         imgui
         GIT_REPOSITORY https://github.com/ocornut/imgui.git
@@ -146,6 +146,36 @@ endif()
 
 # Vulkan
 find_package(Vulkan REQUIRED)
+
+# OpenGL (for ImGui project picker with OpenGL backend)
+find_package(OpenGL REQUIRED)
+
+# Fetch GLEW (OpenGL extension wrangler for ImGui project picker)
+FetchContent_Declare(
+        glew
+        URL https://github.com/nigels-com/glew/releases/download/glew-2.2.0/glew-2.2.0.zip
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+FetchContent_GetProperties(glew)
+if(NOT glew_POPULATED)
+    FetchContent_Populate(glew)
+endif()
+
+# Create GLEW static library manually
+add_library(glew_static STATIC ${glew_SOURCE_DIR}/src/glew.c)
+target_include_directories(glew_static PUBLIC ${glew_SOURCE_DIR}/include)
+target_link_libraries(glew_static PUBLIC OpenGL::GL)
+target_compile_definitions(glew_static PUBLIC GLEW_STATIC)
+if(WIN32)
+    target_compile_definitions(glew_static PRIVATE GLEW_BUILD)
+endif()
+
+# Suppress warnings for GLEW (external code)
+if(MSVC)
+    target_compile_options(glew_static PRIVATE /W0)
+else()
+    target_compile_options(glew_static PRIVATE -w)
+endif()
 
 # GLFW is external code - disable warnings-as-errors for it
 if(TARGET glfw)
@@ -191,6 +221,8 @@ set(ENGINE_SOURCES
         src/core/file_watcher.cpp
         src/core/file_dialog.cpp
         src/core/scene_manager.cpp
+        src/core/project_manager.cpp
+        src/core/engine_settings.cpp
         src/core/texture_data.cpp
         src/ecs/ecs_coordinator.cpp
         src/ecs/entity_manager.cpp
@@ -229,7 +261,7 @@ set(ENGINE_SOURCES
         src/renderer/vulkan_material_buffer.cpp
         src/renderer/vulkan_staging_pool.cpp
         src/renderer/vulkan_transfer_queue.cpp
-        src/renderer/imgui_layer.cpp
+        src/ui/imgui_project_picker.cpp
 )
 
 # Platform-specific source files
@@ -237,7 +269,7 @@ if(WIN32)
     list(APPEND ENGINE_SOURCES src/platform/win32_platform.cpp)
 endif()
 
-# Dear ImGui source files (only in Debug builds, but always compile)
+# Dear ImGui source files - always needed for project picker
 FetchContent_GetProperties(imgui)
 if(NOT imgui_POPULATED)
     FetchContent_Populate(imgui)
@@ -250,8 +282,16 @@ list(APPEND ENGINE_SOURCES
         ${imgui_SOURCE_DIR}/imgui_tables.cpp
         ${imgui_SOURCE_DIR}/imgui_widgets.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
-        ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
 )
+
+# ImGuiLayer is only needed in Debug builds
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    list(APPEND ENGINE_SOURCES
+            src/renderer/imgui_layer.cpp
+            ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+    )
+endif()
 
 # Main executable
 add_executable(engine ${ENGINE_SOURCES})
@@ -260,18 +300,20 @@ add_executable(engine ${ENGINE_SOURCES})
 target_include_directories(engine PRIVATE
         ${CMAKE_SOURCE_DIR}/src
         ${stb_SOURCE_DIR}
+        ${portable_file_dialogs_SOURCE_DIR}
         ${imgui_SOURCE_DIR}
         ${imgui_SOURCE_DIR}/backends
-        ${portable_file_dialogs_SOURCE_DIR}
 )
 
-# Link GLM, JSON, GLFW, and Assimp
+# Link GLM, JSON, GLFW, Assimp, OpenGL, and GLEW
 target_link_libraries(engine PRIVATE
         glm::glm
         nlohmann_json::nlohmann_json
         glfw
         assimp
         Vulkan::Vulkan
+        OpenGL::GL
+        glew_static
 )
 
 target_compile_definitions(engine PRIVATE ENGINE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
@@ -287,9 +329,16 @@ if(MSVC)
             ${imgui_SOURCE_DIR}/imgui_tables.cpp
             ${imgui_SOURCE_DIR}/imgui_widgets.cpp
             ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
-            ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+            ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
             PROPERTIES COMPILE_FLAGS /W0
     )
+    # Suppress warnings for Vulkan backend only in Debug
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set_source_files_properties(
+                ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+                PROPERTIES COMPILE_FLAGS /W0
+        )
+    endif()
 else()
     set_source_files_properties(
             ${imgui_SOURCE_DIR}/imgui.cpp
@@ -298,15 +347,22 @@ else()
             ${imgui_SOURCE_DIR}/imgui_tables.cpp
             ${imgui_SOURCE_DIR}/imgui_widgets.cpp
             ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
-            ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+            ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
             PROPERTIES COMPILE_FLAGS -w
     )
+    # Suppress warnings for Vulkan backend only in Debug
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set_source_files_properties(
+                ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+                PROPERTIES COMPILE_FLAGS -w
+        )
+    endif()
 endif()
 
 # Platform-specific linking
 if(WIN32)
-    # Windows libraries for platform layer
-    target_link_libraries(engine PRIVATE User32 Gdi32)
+    # Windows libraries for platform layer and file dialogs (COM)
+    target_link_libraries(engine PRIVATE User32 Gdi32 Ole32 Shell32)
 endif()
 
 # Enable testing

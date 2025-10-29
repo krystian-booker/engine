@@ -6,6 +6,7 @@
 #include "platform/window.h"
 #include "core/scene_manager.h"
 #include "core/file_dialog.h"
+#include "core/engine_settings.h"
 #include "renderer/viewport.h"
 #include "renderer/viewport_manager.h"
 #include "ecs/ecs_coordinator.h"
@@ -195,6 +196,44 @@ void ImGuiLayer::Render(VkCommandBuffer commandBuffer)
         RenderConsoleWindow();
     }
 
+    // Show change project confirmation dialog
+    if (m_ShowChangeProjectDialog)
+    {
+        ImGui::OpenPopup("Change Project");
+        m_ShowChangeProjectDialog = false;  // Only open once
+    }
+
+    // Change Project confirmation popup
+    if (ImGui::BeginPopupModal("Change Project", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        ImGui::Text("This will close the current project and show the project picker.");
+        ImGui::Text("Any unsaved changes will be lost.");
+        ImGui::Separator();
+
+        if (ImGui::Button("OK", ImVec2(120, 0)))
+        {
+            // Clear the default project setting so picker shows on restart
+            EngineSettings settings = EngineSettings::Load();
+            settings.skipProjectPicker = false;
+            settings.defaultProjectPath = "";
+            settings.Save();
+
+            // Set flag to signal project change
+            m_ShouldChangeProject = true;
+
+            ImGui::CloseCurrentPopup();
+            // Close the application (main loop will detect the flag and restart)
+            glfwSetWindowShouldClose(m_Window->GetNativeWindow(), GLFW_TRUE);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(120, 0)))
+        {
+            ImGui::CloseCurrentPopup();
+        }
+
+        ImGui::EndPopup();
+    }
+
     // Render ImGui
     ImGui::Render();
     ImDrawData* drawData = ImGui::GetDrawData();
@@ -294,6 +333,15 @@ void ImGuiLayer::RenderFileMenu()
             }
 
             ImGui::EndMenu();
+        }
+
+        ImGui::Separator();
+
+        // Change Project
+        if (ImGui::MenuItem("Change Project..."))
+        {
+            // TODO: Prompt to save if dirty
+            m_ShowChangeProjectDialog = true;
         }
 
         ImGui::Separator();

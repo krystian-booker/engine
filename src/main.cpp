@@ -1,5 +1,7 @@
 #include "core/time.h"
 #include "core/scene_manager.h"
+#include "core/engine_settings.h"
+#include "core/project_manager.h"
 #include "ecs/components/renderable.h"
 #include "ecs/components/rotator.h"
 #include "ecs/components/transform.h"
@@ -15,93 +17,169 @@
 #include "resources/mesh_manager.h"
 #include "resources/texture_manager.h"
 #include "resources/material_manager.h"
+#include "ui/imgui_project_picker.h"
 
 #include <iostream>
 #include <string>
 #include <vector>
+#include <filesystem>
 
 int main() {
-    std::cout << "=== Vulkan Test Scene ===" << std::endl;
+    std::cout << "=== Engine Startup ===" << std::endl;
 
-    WindowProperties props;
-    props.title = "3D Scene";
-    props.width = 1280;
-    props.height = 720;
-    props.vsync = true;
-    props.resizable = true;
-    props.fullscreen = false;
+    bool shouldRestart = false;
+    do {
+        shouldRestart = false;  // Reset for this iteration
 
-    Window window(props);
+        // Load engine settings
+        EngineSettings engineSettings = EngineSettings::Load();
 
-    Input::Init(&window);
-    Time::Init();
+        // Initialize project manager
+        ProjectManager projectManager;
 
-    VulkanContext context;
-    context.Init(&window);
+        // Check if we should skip project picker
+        bool needsProjectPicker = true;
+        if (engineSettings.skipProjectPicker && !engineSettings.defaultProjectPath.empty()) {
+            std::cout << "Loading default project: " << engineSettings.defaultProjectPath << std::endl;
+            if (projectManager.LoadProject(engineSettings.defaultProjectPath)) {
+                needsProjectPicker = false;
+            } else {
+                std::cerr << "Failed to load default project, showing project picker" << std::endl;
+                // Clear invalid default
+                engineSettings.skipProjectPicker = false;
+                engineSettings.defaultProjectPath = "";
+                engineSettings.Save();
+            }
+        }
 
-    ECSCoordinator ecs;
-    ecs.Init();
+        // Show project picker if needed
+        if (needsProjectPicker) {
+            std::cout << "Showing project selection window..." << std::endl;
 
-    CameraSystem* cameraSystem = ecs.GetCameraSystem();
+            // Show project picker using Dear ImGui
+            ImGuiProjectPicker projectPicker(&projectManager);
+            ProjectPickerResult pickerResult = projectPicker.Show();
 
-    // Setup camera controller
-    ecs.SetupCameraController(&window);
-    CameraController* cameraController = ecs.GetCameraController();
+            // Handle picker result
+            if (pickerResult.cancelled || !pickerResult.success) {
+                std::cout << "Project selection cancelled. Exiting." << std::endl;
+                return 0;
+            }
 
-    // Create Scene Manager with camera system and controller references
-    SceneManager sceneManager(&ecs, cameraSystem, cameraController);
+            // Update engine settings if user requested default project
+            if (pickerResult.setAsDefault) {
+                engineSettings.skipProjectPicker = true;
+                engineSettings.defaultProjectPath = pickerResult.projectPath;
+                engineSettings.Save();
+                std::cout << "Set default project: " << pickerResult.projectPath << std::endl;
+            }
+        }
 
-    // Initialize renderer BEFORE creating scene so TextureManager has access to descriptors
-    VulkanRenderer renderer;
-    renderer.Init(&context, &window, &ecs, &sceneManager);
+        // At this point, we have a valid project loaded
+        if (!projectManager.HasActiveProject()) {
+            std::cerr << "No project loaded. Exiting." << std::endl;
+            return 1;
+        }
 
-    // Initialize viewport manager and editor camera controller
-    ViewportManager viewportManager;
-    viewportManager.Init(&context);
+        const ProjectConfig& project = projectManager.GetProject();
+        std::cout << "Loaded project: " << project.name << std::endl;
+        std::cout << "Project path: " << project.rootPath << std::endl;
 
-    EditorCameraController editorCameraController(&ecs, &window);
+        // Set working directory to project root
+        std::filesystem::current_path(project.rootPath);
 
-    // Create editor camera (persistent across scenes)
-    Entity editorCamera = sceneManager.EnsureEditorCamera();
-    editorCameraController.SetControlledCamera(editorCamera);
+        std::cout << "=== Starting Engine ===" << std::endl;
 
-    // Create default viewports (Scene and Game)
-    u32 sceneViewportID = viewportManager.CreateViewport(800, 600, editorCamera, ViewportType::Scene);
-    u32 gameViewportID = viewportManager.CreateViewport(800, 600, Entity::Invalid, ViewportType::Game);
+        WindowProperties props;
+        props.title = project.name;
+        props.width = project.windowWidth;
+        props.height = project.windowHeight;
+        props.vsync = project.windowVSync;
+        props.resizable = true;
+        props.fullscreen = project.windowFullscreen;
 
-    std::cout << "Created Scene viewport (ID: " << sceneViewportID << ") and Game viewport (ID: " << gameViewportID << ")" << std::endl;
+        Window window(props);
 
-    // Start with empty scene (user can load default.scene from File menu)
+        Input::Init(&window);
+        Time::Init();
 
-    MeshHandle cubeMeshHandle = MeshHandle::Invalid;
-    std::vector<Entity> renderableEntities = ecs.QueryEntities<Renderable>();
-    if (!renderableEntities.empty()) {
+        VulkanContext context;
+        context.Init(&window);
+
+        ECSCoordinator ecs;
+        ecs.Init();
+
+        CameraSystem* cameraSystem = ecs.GetCameraSystem();
+
+        // Setup camera controller
+        ecs.SetupCameraController(&window);
+        CameraController* cameraController = ecs.GetCameraController();
+
+        // Create Scene Manager with camera system and controller references
+        SceneManager sceneManager(&ecs, cameraSystem, cameraController);
+
+        // Initialize renderer BEFORE creating scene so TextureManager has access to descriptors
+        VulkanRenderer renderer;
+        renderer.Init(&context, &window, &ecs, &sceneManager);
+
+        // Initialize viewport manager and editor camera controller
+        ViewportManager viewportManager;
+        viewportManager.Init(&context);
+
+        EditorCameraController editorCameraController(&ecs, &window);
+
+        // Create editor camera (persistent across scenes)
+        Entity editorCamera = sceneManager.EnsureEditorCamera();
+        editorCameraController.SetControlledCamera(editorCamera);
+
+        // Create default viewports (Scene and Game)
+        u32 sceneViewportID = viewportManager.CreateViewport(800, 600, editorCamera, ViewportType::Scene);
+        u32 gameViewportID = viewportManager.CreateViewport(800, 600, Entity::Invalid, ViewportType::Game);
+
+        std::cout << "Created Scene viewport (ID: " << sceneViewportID << ") and Game viewport (ID: " << gameViewportID << ")" << std::endl;
+
+        // Load last opened scene from project (if available)
+        if (!project.lastOpenedScene.empty()) {
+            std::string scenePath = projectManager.GetAbsolutePath(project.lastOpenedScene);
+            std::cout << "Loading last opened scene: " << scenePath << std::endl;
+            if (!sceneManager.LoadScene(scenePath)) {
+                std::cerr << "Failed to load last opened scene, starting with empty scene" << std::endl;
+                sceneManager.NewScene();
+            }
+        } else {
+            std::cout << "No last opened scene, starting with empty scene" << std::endl;
+            sceneManager.NewScene();
+        }
+
+        MeshHandle cubeMeshHandle = MeshHandle::Invalid;
+        std::vector<Entity> renderableEntities = ecs.QueryEntities<Renderable>();
+        if (!renderableEntities.empty()) {
         cubeMeshHandle = ecs.GetComponent<Renderable>(renderableEntities.front()).mesh;
-    }
+        }
 
-    ecs.Update(0.0f);
-    if (cameraSystem) {
+        ecs.Update(0.0f);
+        if (cameraSystem) {
         cameraSystem->Update(window.GetWidth(), window.GetHeight());
-    }
+        }
 
-    // Set the active camera as the controlled camera (AFTER camera system has found it)
-    if (cameraController && cameraSystem) {
+        // Set the active camera as the controlled camera (AFTER camera system has found it)
+        if (cameraController && cameraSystem) {
         Entity activeCamera = cameraSystem->GetActiveCamera();
         if (activeCamera.IsValid()) {
             cameraController->SetControlledCamera(activeCamera);
         }
-    }
+        }
 
-    window.SetEventCallback([&renderer, cameraSystem](WindowEvent event, u32 width, u32 height) {
+        window.SetEventCallback([&renderer, cameraSystem](WindowEvent event, u32 width, u32 height) {
         if (event == WindowEvent::Resize) {
             renderer.OnWindowResized();
             if (cameraSystem) {
                 cameraSystem->Update(width, height);
             }
         }
-    });
+        });
 
-    while (!window.ShouldClose()) {
+        while (!window.ShouldClose()) {
         Time::Update();
         Input::Update();
         window.PollEvents();
@@ -202,18 +280,62 @@ int main() {
 
             window.SetTitle(title);
         }
-    }
+        }
 
-    renderer.Shutdown();
-    viewportManager.Shutdown();
+        // Check if user requested to change project
+#ifdef _DEBUG
+        bool shouldChangeProject = renderer.ShouldChangeProject();
+#else
+        bool shouldChangeProject = false;
+#endif
 
-    if (cubeMeshHandle.IsValid()) {
-        MeshManager::Instance().Destroy(cubeMeshHandle);
-    }
+        // Save current scene and update project before shutdown
+        if (sceneManager.HasCurrentFile() && sceneManager.IsDirty()) {
+            std::cout << "Saving current scene..." << std::endl;
+            sceneManager.SaveScene();
+        }
 
-    ecs.Shutdown();
-    context.Shutdown();
+        // Update project's last opened scene
+        if (sceneManager.HasCurrentFile()) {
+            std::string scenePath = sceneManager.GetCurrentFilePath();
+            // Convert to relative path if possible
+            std::filesystem::path sceneAbsPath(scenePath);
+            std::filesystem::path projectRoot(project.rootPath);
+            try {
+                std::filesystem::path relativePath = std::filesystem::relative(sceneAbsPath, projectRoot);
+                projectManager.SetLastOpenedScene(relativePath.string());
+            } catch (...) {
+                projectManager.SetLastOpenedScene(scenePath);
+            }
+        }
 
-    std::cout << "Engine shutdown complete." << std::endl;
+        // Save project configuration
+        if (projectManager.IsDirty()) {
+            std::cout << "Saving project configuration..." << std::endl;
+            projectManager.SaveProject();
+        }
+
+        renderer.Shutdown();
+        viewportManager.Shutdown();
+
+        if (cubeMeshHandle.IsValid()) {
+            MeshManager::Instance().Destroy(cubeMeshHandle);
+        }
+
+        ecs.Shutdown();
+        context.Shutdown();
+
+        std::cout << "Engine shutdown complete." << std::endl;
+
+        // If user requested project change, restart with project picker
+        if (shouldChangeProject) {
+            std::cout << "Restarting with project picker..." << std::endl;
+            // Note: Settings were already cleared when user clicked OK in the dialog
+
+            // Set flag to restart the main loop
+            shouldRestart = true;
+        }
+    } while (shouldRestart);
+
     return 0;
 }

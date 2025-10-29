@@ -155,20 +155,25 @@ void VulkanRenderer::DrawFrame(ViewportManager* viewportManager) {
 
     const u32 currentFrameIndex = m_CurrentFrame;
 
+    // Determine rendering path: viewport-based (Debug) or direct (Release)
+    bool useDirectRendering = (viewportManager == nullptr);
+
 #ifdef _DEBUG
     // Begin ImGui frame FIRST (debug builds only)
-    m_ImGuiLayer.BeginFrame();
+    if (!useDirectRendering) {
+        m_ImGuiLayer.BeginFrame();
 
-    // Setup dockspace and viewport windows to get their sizes
-    if (viewportManager) {
-        m_ImGuiLayer.SetupFrameLayout(viewportManager);
+        // Setup dockspace and viewport windows to get their sizes
+        if (viewportManager) {
+            m_ImGuiLayer.SetupFrameLayout(viewportManager);
+        }
     }
 #endif
 
     // NOW render viewports to offscreen targets after ImGui has processed them
     // This ensures viewports are at the correct size before rendering
     bool viewportsRendered = false;
-    if (viewportManager) {
+    if (!useDirectRendering && viewportManager) {
         VkDevice device = m_Context->GetDevice();
         VkCommandBuffer vpCmd = m_ViewportCommandBuffers[currentFrameIndex];
 
@@ -228,20 +233,42 @@ void VulkanRenderer::DrawFrame(ViewportManager* viewportManager) {
         }
     }
 
-    // Editor-style dark gray background
+    // Get clear color from active camera, or use default
     VkClearColorValue clearColor{};
-    clearColor.float32[0] = 0.15f;
-    clearColor.float32[1] = 0.15f;
-    clearColor.float32[2] = 0.15f;
-    clearColor.float32[3] = 1.0f;
+    if (useDirectRendering && m_CameraSystem) {
+        Entity activeCamera = m_CameraSystem->GetActiveCamera();
+        if (activeCamera.IsValid() && m_ECS && m_ECS->HasComponent<Camera>(activeCamera)) {
+            Vec4 clearColorVec = m_ECS->GetComponent<Camera>(activeCamera).clearColor;
+            clearColor.float32[0] = clearColorVec.x;
+            clearColor.float32[1] = clearColorVec.y;
+            clearColor.float32[2] = clearColorVec.z;
+            clearColor.float32[3] = clearColorVec.w;
+        } else {
+            // Default game clear color
+            clearColor.float32[0] = 0.2f;
+            clearColor.float32[1] = 0.2f;
+            clearColor.float32[2] = 0.2f;
+            clearColor.float32[3] = 1.0f;
+        }
+    } else {
+        // Editor-style dark gray background for ImGui
+        clearColor.float32[0] = 0.15f;
+        clearColor.float32[1] = 0.15f;
+        clearColor.float32[2] = 0.15f;
+        clearColor.float32[3] = 1.0f;
+    }
 
     BeginDefaultRenderPass(*frame, imageIndex, clearColor);
 
-    // Main window now only renders ImGui UI - 3D content is rendered to viewport render targets
-
+    if (useDirectRendering) {
+        // Release build: render scene directly to swapchain
+        RenderDirectToSwapchain(frame->commandBuffer, currentFrameIndex);
+    }
 #ifdef _DEBUG
-    // Render ImGui (debug builds only)
-    m_ImGuiLayer.Render(frame->commandBuffer);
+    else {
+        // Debug build: render ImGui UI - 3D content is rendered to viewport render targets
+        m_ImGuiLayer.Render(frame->commandBuffer);
+    }
 #endif
 
     EndDefaultRenderPass(*frame);
@@ -254,6 +281,12 @@ void VulkanRenderer::DrawFrame(ViewportManager* viewportManager) {
 void VulkanRenderer::OnWindowResized() {
     m_FramebufferResized = true;
 }
+
+#ifdef _DEBUG
+bool VulkanRenderer::ShouldChangeProject() const {
+    return m_ImGuiLayer.ShouldChangeProject();
+}
+#endif
 
 bool VulkanRenderer::BeginFrame(FrameContext*& outFrame, u32& outImageIndex) {
     if (!m_Initialized) {
@@ -589,6 +622,59 @@ void VulkanRenderer::BeginOffscreenRenderPass(VkCommandBuffer commandBuffer, Vie
 
 void VulkanRenderer::EndOffscreenRenderPass(VkCommandBuffer commandBuffer) {
     vkCmdEndRenderPass(commandBuffer);
+}
+
+void VulkanRenderer::RenderDirectToSwapchain(VkCommandBuffer commandBuffer, u32 frameIndex) {
+    // Get active game camera from camera system
+    Entity cameraEntity = Entity::Invalid;
+    if (m_CameraSystem) {
+        cameraEntity = m_CameraSystem->GetActiveCamera();
+    }
+
+    // If no active camera, we can't render
+    if (!cameraEntity.IsValid()) {
+        return;
+    }
+
+    // Bind pipeline
+    VkPipeline pipeline = m_Pipeline.GetPipeline();
+    if (pipeline == VK_NULL_HANDLE) {
+        return;
+    }
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+
+    // Bind descriptor sets
+    VkDescriptorSet descriptorSets[2] = {
+        m_Descriptors.GetTransientSet(frameIndex),
+        m_Descriptors.GetPersistentSet()
+    };
+    vkCmdBindDescriptorSets(
+        commandBuffer,
+        VK_PIPELINE_BIND_POINT_GRAPHICS,
+        m_Pipeline.GetLayout(),
+        0, 2, descriptorSets, 0, nullptr);
+
+    // Update camera UBO with window dimensions
+    UpdateGlobalUniformsWithCamera(frameIndex, cameraEntity, m_Window->GetWidth(), m_Window->GetHeight());
+
+    // Set viewport and scissor to match window size
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<f32>(m_Window->GetWidth());
+    viewport.height = static_cast<f32>(m_Window->GetHeight());
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = {m_Window->GetWidth(), m_Window->GetHeight()};
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+    // Render scene
+    RenderScene(commandBuffer, frameIndex);
 }
 
 void VulkanRenderer::InitSwapchainResources() {

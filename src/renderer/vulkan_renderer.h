@@ -45,6 +45,11 @@ public:
     void DrawFrame(ViewportManager* viewportManager = nullptr);
     void OnWindowResized();
 
+#ifdef _DEBUG
+    // Check if user requested to change project via ImGui
+    bool ShouldChangeProject() const;
+#endif
+
     bool BeginFrame(FrameContext*& outFrame, u32& outImageIndex);
     void BeginDefaultRenderPass(FrameContext& frame, u32 imageIndex, const VkClearColorValue& clearColor);
     void EndDefaultRenderPass(FrameContext& frame);
@@ -55,6 +60,9 @@ public:
     void RenderViewport(VkCommandBuffer commandBuffer, Viewport& viewport, Entity cameraEntity, u32 frameIndex);
     void BeginOffscreenRenderPass(VkCommandBuffer commandBuffer, Viewport& viewport, const VkClearColorValue& clearColor);
     void EndOffscreenRenderPass(VkCommandBuffer commandBuffer);
+
+    // Direct swapchain rendering (for Release builds without viewport system)
+    void RenderDirectToSwapchain(VkCommandBuffer commandBuffer, u32 frameIndex);
 
 private:
     void InitSwapchainResources();

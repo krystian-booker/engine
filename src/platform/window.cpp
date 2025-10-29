@@ -17,6 +17,7 @@ Window::Window(const WindowProperties& props)
     // Initialize GLFW once (refcounted by window count)
     if (!s_GLFWInitialized) {
         int success = glfwInit();
+        (void)success;  // Suppress unused variable warning in Release builds
         assert(success && "Failed to initialize GLFW");
         glfwSetErrorCallback(GLFWErrorCallback);
         s_GLFWInitialized = true;

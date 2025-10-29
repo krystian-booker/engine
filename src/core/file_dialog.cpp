@@ -5,6 +5,7 @@
     #define WIN32_LEAN_AND_MEAN
     #include <windows.h>
     #include <commdlg.h>
+    #include <shobjidl.h>
     #include <vector>
     #include <algorithm>
 #else
@@ -131,14 +132,75 @@ std::optional<std::string> FileDialog::SaveFile(
 }
 
 std::optional<std::string> FileDialog::SelectFolder(
-    [[maybe_unused]] const std::string& title,
-    [[maybe_unused]] const std::string& defaultPath
+    const std::string& title,
+    const std::string& defaultPath
 ) {
 #ifdef PLATFORM_WINDOWS
-    // Windows folder browser (simplified - full implementation would use IFileDialog)
-    // For now, just return nullopt as folder selection is not critical for scene management
-    std::cerr << "SelectFolder not implemented on Windows yet" << std::endl;
-    return std::nullopt;
+    // Initialize COM
+    HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) {
+        std::cerr << "Failed to initialize COM" << std::endl;
+        return std::nullopt;
+    }
+
+    std::optional<std::string> result = std::nullopt;
+    IFileDialog* pFileDialog = NULL;
+
+    // Create the folder picker dialog
+    hr = CoCreateInstance(CLSID_FileOpenDialog, NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pFileDialog));
+    if (SUCCEEDED(hr)) {
+        // Set options for folder picking
+        DWORD dwOptions;
+        hr = pFileDialog->GetOptions(&dwOptions);
+        if (SUCCEEDED(hr)) {
+            pFileDialog->SetOptions(dwOptions | FOS_PICKFOLDERS | FOS_PATHMUSTEXIST | FOS_FORCEFILESYSTEM);
+        }
+
+        // Set title
+        if (!title.empty()) {
+            std::wstring wideTitle(title.begin(), title.end());
+            pFileDialog->SetTitle(wideTitle.c_str());
+        }
+
+        // Set default folder
+        if (!defaultPath.empty()) {
+            IShellItem* pDefaultFolder = NULL;
+            std::wstring widePath(defaultPath.begin(), defaultPath.end());
+            hr = SHCreateItemFromParsingName(widePath.c_str(), NULL, IID_PPV_ARGS(&pDefaultFolder));
+            if (SUCCEEDED(hr)) {
+                pFileDialog->SetFolder(pDefaultFolder);
+                pDefaultFolder->Release();
+            }
+        }
+
+        // Show the dialog
+        hr = pFileDialog->Show(NULL);
+        if (SUCCEEDED(hr)) {
+            IShellItem* pItem = NULL;
+            hr = pFileDialog->GetResult(&pItem);
+            if (SUCCEEDED(hr)) {
+                PWSTR pszFilePath = NULL;
+                hr = pItem->GetDisplayName(SIGDN_FILESYSPATH, &pszFilePath);
+                if (SUCCEEDED(hr)) {
+                    // Convert wide string to narrow string
+                    int sizeNeeded = WideCharToMultiByte(CP_UTF8, 0, pszFilePath, -1, NULL, 0, NULL, NULL);
+                    if (sizeNeeded > 0) {
+                        std::vector<char> buffer(sizeNeeded);
+                        WideCharToMultiByte(CP_UTF8, 0, pszFilePath, -1, buffer.data(), sizeNeeded, NULL, NULL);
+                        result = std::string(buffer.data());
+                    }
+                    CoTaskMemFree(pszFilePath);
+                }
+                pItem->Release();
+            }
+        }
+        pFileDialog->Release();
+    }
+
+    // Don't uninitialize COM as it may have been initialized elsewhere
+    // CoUninitialize();
+
+    return result;
 #else
     // Unix/Linux implementation using portable-file-dialogs
     try {
