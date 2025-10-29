@@ -181,6 +181,9 @@ public:
     TextureHandle GetPlaceholderTexture() const { return m_PlaceholderTexture; }
     TextureHandle GetErrorTexture() const { return m_ErrorTexture; }
 
+    // Get descriptor index for a texture (for bindless array access)
+    u32 GetDescriptorIndex(TextureHandle handle) const;
+
 protected:
     // Override ResourceManager::LoadResource to use default options
     std::unique_ptr<TextureData> LoadResource(const std::string& filepath) override;

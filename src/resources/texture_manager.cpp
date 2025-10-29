@@ -1432,3 +1432,13 @@ void TextureManager::PerformReload(TextureHandle handle, const std::string& file
         }
     }
 }
+
+u32 TextureManager::GetDescriptorIndex(TextureHandle handle) const {
+    const TextureData* texData = Get(handle);
+    if (!texData || !texData->gpuTexture) {
+        return 0;  // Return index 0 (default white texture) for invalid handles
+    }
+
+    const VulkanTexture* vulkanTex = static_cast<const VulkanTexture*>(texData->gpuTexture);
+    return vulkanTex->GetDescriptorIndex();
+}

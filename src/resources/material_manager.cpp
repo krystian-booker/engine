@@ -219,18 +219,76 @@ TextureLoadOptions MaterialManager::InferTextureOptions(const std::string& slotN
     return TextureLoadOptions();
 }
 
-u32 MaterialManager::UploadMaterialToGPU(const MaterialData& /*material*/) {
-    // For now, just assign a sequential index
-    // Actual GPU buffer upload will be implemented with VulkanMaterialBuffer
-    u32 index = m_NextGPUMaterialIndex++;
+u32 MaterialManager::GetTextureDescriptorIndex(TextureHandle handle) {
+    // Invalid handle returns index 0 (default white texture)
+    if (!handle.IsValid()) {
+        return 0;
+    }
 
-    // TODO: Upload to GPU buffer once VulkanMaterialBuffer is implemented
+    // Get descriptor index from texture manager
+    TextureManager& texMgr = TextureManager::Instance();
+    return texMgr.GetDescriptorIndex(handle);
+}
+
+GPUMaterial MaterialManager::ConvertToGPUMaterial(const MaterialData& material) {
+    GPUMaterial gpuMat = {};
+
+    // Convert texture handles to descriptor indices
+    gpuMat.albedoIndex = GetTextureDescriptorIndex(material.albedo);
+    gpuMat.normalIndex = GetTextureDescriptorIndex(material.normal);
+    gpuMat.metalRoughIndex = GetTextureDescriptorIndex(material.metalRough);
+    gpuMat.aoIndex = GetTextureDescriptorIndex(material.ao);
+    gpuMat.emissiveIndex = GetTextureDescriptorIndex(material.emissive);
+
+    // Convert material flags to u32
+    gpuMat.flags = static_cast<u32>(material.flags);
+
+    // Copy PBR parameters (already matching types)
+    gpuMat.albedoTint = material.albedoTint;
+    gpuMat.emissiveFactor = material.emissiveFactor;
+    gpuMat.metallicFactor = material.metallicFactor;
+    gpuMat.roughnessFactor = material.roughnessFactor;
+    gpuMat.normalScale = material.normalScale;
+    gpuMat.aoStrength = material.aoStrength;
+
+    return gpuMat;
+}
+
+u32 MaterialManager::UploadMaterialToGPU(const MaterialData& material) {
+    // Check if VulkanContext is initialized
+    if (!m_VulkanContext) {
+        std::cerr << "MaterialManager::UploadMaterialToGPU: VulkanContext not initialized" << std::endl;
+        return 0xFFFFFFFF;  // Return invalid index
+    }
+
+    // Lazy-initialize GPU buffer on first upload
+    if (!m_GPUBuffer) {
+        m_GPUBuffer = std::make_unique<VulkanMaterialBuffer>();
+        m_GPUBuffer->Init(m_VulkanContext, 256);  // Initial capacity of 256 materials
+        std::cout << "MaterialManager: Initialized GPU material buffer (capacity: 256)" << std::endl;
+    }
+
+    // Convert MaterialData to GPUMaterial
+    GPUMaterial gpuMat = ConvertToGPUMaterial(material);
+
+    // Upload to GPU buffer
+    u32 index = m_GPUBuffer->UploadMaterial(gpuMat);
 
     return index;
 }
 
-void MaterialManager::UpdateMaterialOnGPU(u32 /*gpuIndex*/, const MaterialData& /*material*/) {
-    // TODO: Update GPU buffer once VulkanMaterialBuffer is implemented
+void MaterialManager::UpdateMaterialOnGPU(u32 gpuIndex, const MaterialData& material) {
+    // Check if GPU buffer is initialized
+    if (!m_GPUBuffer) {
+        std::cerr << "MaterialManager::UpdateMaterialOnGPU: GPU buffer not initialized" << std::endl;
+        return;
+    }
+
+    // Convert MaterialData to GPUMaterial
+    GPUMaterial gpuMat = ConvertToGPUMaterial(material);
+
+    // Update GPU buffer at index
+    m_GPUBuffer->UpdateMaterial(gpuIndex, gpuMat);
 }
 
 // Descriptor caching implementation

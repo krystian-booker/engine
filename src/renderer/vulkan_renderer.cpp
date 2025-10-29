@@ -13,6 +13,7 @@
 #include "renderer/material_buffer.h"
 #include "resources/mesh_manager.h"
 #include "resources/texture_manager.h"
+#include "resources/material_manager.h"
 #include "core/texture_data.h"
 
 #include <stdexcept>
@@ -59,6 +60,9 @@ void VulkanRenderer::Init(VulkanContext* context, Window* window, ECSCoordinator
 
     // Initialize TextureManager async pipeline
     TextureManager::Instance().InitAsyncPipeline(m_Context, &m_TransferQueue, &m_StagingPool);
+
+    // Initialize MaterialManager GPU buffer
+    MaterialManager::Instance().InitGPUBuffer(m_Context);
 
     m_Swapchain.Init(m_Context, m_Window);
     m_Descriptors.Init(m_Context, MAX_FRAMES_IN_FLIGHT);
@@ -117,6 +121,7 @@ void VulkanRenderer::Shutdown() {
 
     // Shutdown async upload pipeline
     TextureManager::Instance().ShutdownAsyncPipeline();
+    MaterialManager::Instance().ShutdownGPUBuffer();
     m_TransferQueue.Shutdown();
     m_StagingPool.Shutdown();
 

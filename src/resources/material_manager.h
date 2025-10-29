@@ -8,6 +8,7 @@
 // Forward declarations
 class VulkanContext;
 class VulkanMaterialBuffer;
+struct GPUMaterial;
 
 // Material resource manager (singleton)
 class MaterialManager : public ResourceManager<MaterialData, MaterialHandle> {
@@ -70,6 +71,12 @@ private:
 
     // Infer TextureLoadOptions from slot name
     struct TextureLoadOptions InferTextureOptions(const std::string& slotName) const;
+
+    // Helper: Convert MaterialData to GPUMaterial structure
+    GPUMaterial ConvertToGPUMaterial(const MaterialData& material);
+
+    // Helper: Get descriptor index for a texture handle (with fallback to index 0)
+    u32 GetTextureDescriptorIndex(TextureHandle handle);
 
     // Cache for default material
     MaterialHandle m_DefaultMaterial;
