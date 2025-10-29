@@ -22,13 +22,15 @@ struct GPUMaterial
     float aoStrength;
 };
 
-[[vk::binding(1, 0)]]
+// Set 1, Binding 0: Material SSBO (persistent)
+[[vk::binding(0, 1)]]
 StructuredBuffer<GPUMaterial> materials : register(t0);
 
-[[vk::binding(2, 0)]]
+// Set 1, Binding 1: Bindless texture array (persistent)
+[[vk::binding(1, 1)]]
 Texture2D textures[] : register(t1);
 
-[[vk::binding(2, 0)]]
+[[vk::binding(1, 1)]]
 SamplerState samplers[] : register(s1);
 
 struct PSIn {

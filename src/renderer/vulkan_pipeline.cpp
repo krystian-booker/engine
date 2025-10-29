@@ -53,13 +53,14 @@ VulkanPipeline::~VulkanPipeline() {
     Shutdown();
 }
 
-void VulkanPipeline::Init(VulkanContext* context, VulkanRenderPass* renderPass, VulkanSwapchain* swapchain, VkDescriptorSetLayout descriptorSetLayout) {
+void VulkanPipeline::Init(VulkanContext* context, VulkanRenderPass* renderPass, VulkanSwapchain* swapchain,
+                          const VkDescriptorSetLayout* descriptorSetLayouts, u32 layoutCount) {
     if (!context || !renderPass || !swapchain) {
         throw std::invalid_argument("VulkanPipeline::Init requires valid context, render pass, and swapchain");
     }
 
-    if (descriptorSetLayout == VK_NULL_HANDLE) {
-        throw std::invalid_argument("VulkanPipeline::Init requires a valid descriptor set layout");
+    if (!descriptorSetLayouts || layoutCount == 0) {
+        throw std::invalid_argument("VulkanPipeline::Init requires valid descriptor set layouts");
     }
 
     Shutdown();
@@ -76,8 +77,8 @@ void VulkanPipeline::Init(VulkanContext* context, VulkanRenderPass* renderPass, 
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
+    pipelineLayoutInfo.setLayoutCount = layoutCount;
+    pipelineLayoutInfo.pSetLayouts = descriptorSetLayouts;
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
@@ -90,7 +91,8 @@ void VulkanPipeline::Init(VulkanContext* context, VulkanRenderPass* renderPass, 
 
     for (u32 i = 0; i < static_cast<u32>(PipelineVariant::Count); ++i) {
         PipelineVariant variant = static_cast<PipelineVariant>(i);
-        VkPipeline pipeline = CreatePipelineVariant(variant, descriptorSetLayout, extent);
+        // CreatePipelineVariant doesn't actually use the descriptorSetLayout parameter
+        VkPipeline pipeline = CreatePipelineVariant(variant, VK_NULL_HANDLE, extent);
 
         if (pipeline == VK_NULL_HANDLE) {
             std::cerr << "ERROR: Failed to create pipeline variant " << i << std::endl;

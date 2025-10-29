@@ -18,7 +18,8 @@ public:
     VulkanPipeline() = default;
     ~VulkanPipeline();
 
-    void Init(VulkanContext* context, VulkanRenderPass* renderPass, VulkanSwapchain* swapchain, VkDescriptorSetLayout descriptorSetLayout);
+    void Init(VulkanContext* context, VulkanRenderPass* renderPass, VulkanSwapchain* swapchain,
+              const VkDescriptorSetLayout* descriptorSetLayouts, u32 layoutCount);
     void Shutdown();
 
     // Get pipeline for specific variant

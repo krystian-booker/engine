@@ -149,6 +149,16 @@ protected:
         return nullptr;  // Base implementation
     }
 
+    // Iterate over all active resources (for invalidation, etc.)
+    template<typename Func>
+    void ForEachResource(Func func) {
+        for (size_t i = 0; i < m_Resources.size(); ++i) {
+            if (m_Resources[i]) {
+                func(*m_Resources[i]);
+            }
+        }
+    }
+
 private:
     std::vector<std::unique_ptr<T>> m_Resources;
     std::vector<u32> m_Generations;

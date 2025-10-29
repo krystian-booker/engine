@@ -2,6 +2,7 @@
 
 #include "core/types.h"
 #include "renderer/vulkan_mipmap_compute.h"
+#include "renderer/vulkan_descriptor_pools.h"
 
 #include <vulkan/vulkan.h>
 
@@ -29,6 +30,7 @@ public:
     VkSurfaceKHR GetSurface() const { return m_Surface; }
     VkCommandPool GetCommandPool() const { return m_CommandPool; }
     VulkanMipmapCompute* GetMipmapCompute();
+    VulkanDescriptorPools* GetDescriptorPools();
 
     u32 GetGraphicsQueueFamily() const { return m_GraphicsQueueFamily; }
     u32 GetPresentQueueFamily() const { return m_PresentQueueFamily; }
@@ -72,6 +74,7 @@ private:
     mutable std::unordered_map<VkFormat, VkFormatProperties> m_FormatCapabilities;
 
     std::unique_ptr<VulkanMipmapCompute> m_MipmapCompute;
+    std::unique_ptr<VulkanDescriptorPools> m_DescriptorPools;
 
     const std::vector<const char*> m_ValidationLayers = {
         "VK_LAYER_KHRONOS_validation"

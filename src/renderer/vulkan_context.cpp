@@ -30,6 +30,11 @@ void VulkanContext::Shutdown() {
     if (m_Device != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(m_Device);
 
+        if (m_DescriptorPools) {
+            m_DescriptorPools->Cleanup();
+            m_DescriptorPools.reset();
+        }
+
         if (m_MipmapCompute) {
             m_MipmapCompute->Shutdown();
             m_MipmapCompute.reset();
@@ -77,6 +82,14 @@ VulkanMipmapCompute* VulkanContext::GetMipmapCompute() {
         m_MipmapCompute->Initialize(this);
     }
     return m_MipmapCompute.get();
+}
+
+VulkanDescriptorPools* VulkanContext::GetDescriptorPools() {
+    if (!m_DescriptorPools) {
+        m_DescriptorPools = std::make_unique<VulkanDescriptorPools>();
+        // Note: Init() must be called explicitly from VulkanRenderer with framesInFlight count
+    }
+    return m_DescriptorPools.get();
 }
 
 void VulkanContext::CreateInstance() {

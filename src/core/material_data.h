@@ -3,6 +3,8 @@
 #include "types.h"
 #include "math.h"
 #include "resource_handle.h"
+#include <vulkan/vulkan.h>
+#include <functional>
 
 // Material flags for rendering behavior
 enum class MaterialFlags : u32 {
@@ -72,8 +74,40 @@ struct MaterialData {
     // Material index in GPU SSBO (assigned by MaterialManager)
     u32 gpuMaterialIndex = 0xFFFFFFFF;
 
+    // Descriptor caching for optimization (Phase 6.4)
+    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;  // Cached descriptor set (persistent pool)
+    u64 descriptorHash = 0;                          // Hash of texture handles for change detection
+    bool descriptorDirty = true;                     // Needs rebuild flag
+
     // Default constructor with sensible defaults
     MaterialData() = default;
+
+    // Compute hash of all texture handles for cache invalidation
+    u64 ComputeDescriptorHash() const {
+        u64 hash = 0;
+
+        // Hash texture indices
+        hash ^= (static_cast<u64>(albedo.index) << 0);
+        hash ^= (static_cast<u64>(normal.index) << 8);
+        hash ^= (static_cast<u64>(metalRough.index) << 16);
+        hash ^= (static_cast<u64>(ao.index) << 24);
+        hash ^= (static_cast<u64>(emissive.index) << 32);
+
+        // Hash generations for invalidation on texture destroy/reload
+        hash ^= (static_cast<u64>(albedo.generation) << 40);
+        hash ^= (static_cast<u64>(normal.generation) << 42);
+        hash ^= (static_cast<u64>(metalRough.generation) << 44);
+        hash ^= (static_cast<u64>(ao.generation) << 46);
+        hash ^= (static_cast<u64>(emissive.generation) << 48);
+
+        // Also hash material parameters (in case we switch to UBOs in the future)
+        hash ^= std::hash<f32>{}(metallicFactor);
+        hash ^= std::hash<f32>{}(roughnessFactor);
+        hash ^= std::hash<f32>{}(normalScale);
+        hash ^= std::hash<f32>{}(aoStrength);
+
+        return hash;
+    }
 
     // Check if material uses alpha
     bool UsesAlpha() const {

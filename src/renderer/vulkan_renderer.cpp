@@ -172,14 +172,19 @@ void VulkanRenderer::DrawFrame() {
     }
 
     vkCmdBindPipeline(frame->commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-    VkDescriptorSet descriptorSet = m_Descriptors.GetDescriptorSet(currentFrameIndex);
+
+    // Bind both descriptor sets: Set 0 (transient) and Set 1 (persistent)
+    VkDescriptorSet descriptorSets[2] = {
+        m_Descriptors.GetTransientSet(currentFrameIndex),  // Set 0: Camera UBO
+        m_Descriptors.GetPersistentSet()                   // Set 1: Materials + Textures
+    };
     vkCmdBindDescriptorSets(
         frame->commandBuffer,
         VK_PIPELINE_BIND_POINT_GRAPHICS,
         m_Pipeline.GetLayout(),
-        0,
-        1,
-        &descriptorSet,
+        0,      // First set = 0
+        2,      // Bind 2 sets
+        descriptorSets,
         0,
         nullptr);
 
@@ -400,7 +405,14 @@ void VulkanRenderer::PushModelMatrix(VkCommandBuffer commandBuffer, const Mat4& 
 void VulkanRenderer::InitSwapchainResources() {
     m_DepthBuffer.Init(m_Context, &m_Swapchain);
     m_RenderPass.Init(m_Context, &m_Swapchain, m_DepthBuffer.GetFormat());
-    m_Pipeline.Init(m_Context, &m_RenderPass, &m_Swapchain, m_Descriptors.GetLayout());
+
+    // Pass both descriptor set layouts to pipeline
+    VkDescriptorSetLayout layouts[2] = {
+        m_Descriptors.GetTransientLayout(),   // Set 0: Per-frame camera UBO
+        m_Descriptors.GetPersistentLayout()   // Set 1: Materials + bindless textures
+    };
+    m_Pipeline.Init(m_Context, &m_RenderPass, &m_Swapchain, layouts, 2);
+
     m_Framebuffers.Init(m_Context, &m_Swapchain, &m_RenderPass, m_DepthBuffer.GetImageView());
     ResizeImagesInFlight();
 }

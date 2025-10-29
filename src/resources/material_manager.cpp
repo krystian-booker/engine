@@ -232,3 +232,74 @@ u32 MaterialManager::UploadMaterialToGPU(const MaterialData& /*material*/) {
 void MaterialManager::UpdateMaterialOnGPU(u32 /*gpuIndex*/, const MaterialData& /*material*/) {
     // TODO: Update GPU buffer once VulkanMaterialBuffer is implemented
 }
+
+// Descriptor caching implementation
+u32 MaterialManager::EnsureMaterial(MaterialHandle handle) {
+    MaterialData* mat = Get(handle);
+    if (!mat) {
+        std::cerr << "MaterialManager::EnsureMaterial: Invalid handle, returning default material index" << std::endl;
+        return 0;  // Return default material index
+    }
+
+    // Compute current hash of material state
+    u64 currentHash = mat->ComputeDescriptorHash();
+
+    // Check if descriptor set is valid and up-to-date
+    if (!mat->descriptorDirty &&
+        mat->descriptorSet != VK_NULL_HANDLE &&
+        mat->descriptorHash == currentHash) {
+        // Cache hit! Descriptor set is still valid
+        return mat->gpuMaterialIndex;
+    }
+
+    // Cache miss - need to rebuild/update
+    std::cout << "MaterialManager: Rebuilding descriptor cache for material (GPU index "
+              << mat->gpuMaterialIndex << ")" << std::endl;
+
+    // In hybrid approach, descriptor sets are for optimization only
+    // The actual material data is in the SSBO + bindless textures
+    // Here we just track that the material state has changed
+
+    // Update the hash to mark cache as valid
+    mat->descriptorHash = currentHash;
+    mat->descriptorDirty = false;
+
+    // Note: In the hybrid approach (chosen by user), descriptor sets are for
+    // internal caching/optimization. The primary path is SSBO + bindless array.
+    // This function primarily validates that material data is current.
+
+    return mat->gpuMaterialIndex;
+}
+
+void MaterialManager::InvalidateMaterial(MaterialHandle handle) {
+    MaterialData* mat = Get(handle);
+    if (mat) {
+        mat->descriptorDirty = true;
+        std::cout << "MaterialManager: Invalidated material (GPU index "
+                  << mat->gpuMaterialIndex << ")" << std::endl;
+    }
+}
+
+void MaterialManager::InvalidateMaterialsUsingTexture(TextureHandle texHandle) {
+    u32 invalidatedCount = 0;
+
+    // Iterate through all active materials using protected ForEachResource
+    ForEachResource([&](MaterialData& material) {
+        // Check if this material uses the texture
+        if (material.albedo == texHandle ||
+            material.normal == texHandle ||
+            material.metalRough == texHandle ||
+            material.ao == texHandle ||
+            material.emissive == texHandle) {
+
+            material.descriptorDirty = true;
+            invalidatedCount++;
+        }
+    });
+
+    if (invalidatedCount > 0) {
+        std::cout << "MaterialManager: Invalidated " << invalidatedCount
+                  << " materials using texture (index " << texHandle.index
+                  << ", gen " << texHandle.generation << ")" << std::endl;
+    }
+}

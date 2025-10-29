@@ -181,6 +181,7 @@ set(ENGINE_SOURCES
         src/renderer/mipmap_policy.cpp
         src/renderer/vulkan_pipeline.cpp
         src/renderer/vulkan_descriptors.cpp
+        src/renderer/vulkan_descriptor_pools.cpp
         src/renderer/vulkan_render_pass.cpp
         src/renderer/vulkan_depth.cpp
         src/renderer/vulkan_framebuffer.cpp
@@ -241,6 +242,7 @@ add_executable(test_vulkan
         src/renderer/vulkan_mesh.cpp
         src/renderer/vulkan_pipeline.cpp
         src/renderer/vulkan_descriptors.cpp
+        src/renderer/vulkan_descriptor_pools.cpp
         src/renderer/vulkan_render_pass.cpp
         src/renderer/vulkan_depth.cpp
         src/renderer/vulkan_framebuffer.cpp
@@ -1092,6 +1094,7 @@ add_test(NAME TextureArrayAsyncTests COMMAND test_texture_array_async)
 add_executable(test_texture_descriptors
         tests/test_texture_descriptors.cpp
         src/renderer/vulkan_descriptors.cpp
+        src/renderer/vulkan_descriptor_pools.cpp
         src/renderer/vulkan_texture.cpp
         src/renderer/vulkan_context.cpp
         src/renderer/vulkan_mipmap_compute.cpp

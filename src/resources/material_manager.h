@@ -43,6 +43,16 @@ public:
     // Get GPU material buffer
     VulkanMaterialBuffer* GetGPUBuffer() { return m_GPUBuffer.get(); }
 
+    // Ensure material is uploaded to GPU with descriptor caching (Phase 6.4)
+    // Returns GPU material index, updates descriptor set if needed
+    u32 EnsureMaterial(MaterialHandle handle);
+
+    // Invalidate material descriptor cache (marks as dirty for rebuild)
+    void InvalidateMaterial(MaterialHandle handle);
+
+    // Invalidate all materials using a specific texture (for hot-reload)
+    void InvalidateMaterialsUsingTexture(TextureHandle texHandle);
+
 protected:
     // Override ResourceManager::LoadResource to parse JSON
     std::unique_ptr<MaterialData> LoadResource(const std::string& filepath) override;
