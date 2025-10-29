@@ -31,6 +31,8 @@ class Window;
 class ECSCoordinator;
 class CameraSystem;
 class SceneManager;
+class Viewport;
+class ViewportManager;
 
 class VulkanRenderer {
 public:
@@ -40,14 +42,19 @@ public:
     void Init(VulkanContext* context, Window* window, ECSCoordinator* ecs, SceneManager* sceneManager);
     void Shutdown();
 
-    void DrawFrame();
+    void DrawFrame(ViewportManager* viewportManager = nullptr);
     void OnWindowResized();
 
     bool BeginFrame(FrameContext*& outFrame, u32& outImageIndex);
     void BeginDefaultRenderPass(FrameContext& frame, u32 imageIndex, const VkClearColorValue& clearColor);
     void EndDefaultRenderPass(FrameContext& frame);
-    void EndFrame(FrameContext& frame, u32 imageIndex);
+    void EndFrame(FrameContext& frame, u32 imageIndex, VkSemaphore* waitSemaphore = nullptr);
     VkCommandBuffer GetCommandBuffer(const FrameContext& frame) const { return frame.commandBuffer; }
+
+    // Multi-viewport rendering
+    void RenderViewport(VkCommandBuffer commandBuffer, Viewport& viewport, Entity cameraEntity, u32 frameIndex);
+    void BeginOffscreenRenderPass(VkCommandBuffer commandBuffer, Viewport& viewport, const VkClearColorValue& clearColor);
+    void EndOffscreenRenderPass(VkCommandBuffer commandBuffer);
 
 private:
     void InitSwapchainResources();
@@ -60,7 +67,9 @@ private:
     void InitMeshResources();
     void DestroyMeshResources();
     void UpdateGlobalUniforms(u32 frameIndex);
+    void UpdateGlobalUniformsWithCamera(u32 frameIndex, Entity cameraEntity, u32 viewportWidth, u32 viewportHeight);
     void PushModelMatrix(VkCommandBuffer commandBuffer, const Mat4& modelMatrix, u32 materialIndex);
+    void RenderScene(VkCommandBuffer commandBuffer, u32 frameIndex);
 
     // Default texture initialization for bindless array
     void CreateDefaultTexture();
@@ -101,6 +110,12 @@ private:
     std::vector<VkSemaphore> m_ImageAvailableSemaphores;
     std::vector<VkSemaphore> m_RenderFinishedSemaphores;
     u32 m_CurrentSemaphoreIndex = 0;  // Round-robin semaphore selection
+
+    // Viewport rendering command buffers (one per frame in flight)
+    VkCommandPool m_ViewportCommandPool = VK_NULL_HANDLE;
+    std::vector<VkCommandBuffer> m_ViewportCommandBuffers;  // One per frame
+    std::vector<VkSemaphore> m_ViewportFinishedSemaphores;  // Signal when viewport rendering done
+    std::vector<VkFence> m_ViewportFences;  // One per frame to track completion
 
     u32 m_CurrentFrame = 0;
     bool m_FramebufferResized = false;

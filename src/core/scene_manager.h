@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/types.h"
+#include "ecs/entity.h"
 #include <string>
 #include <vector>
 #include <optional>
@@ -8,6 +9,8 @@
 // Forward declarations
 class ECSCoordinator;
 class SceneSerializer;
+class CameraSystem;
+class CameraController;
 
 /**
  * SceneManager
@@ -18,7 +21,7 @@ class SceneSerializer;
  */
 class SceneManager {
 public:
-    SceneManager(ECSCoordinator* ecs);
+    SceneManager(ECSCoordinator* ecs, CameraSystem* cameraSystem = nullptr, CameraController* cameraController = nullptr);
     ~SceneManager();
 
     // Scene operations
@@ -42,9 +45,15 @@ public:
     void LoadRecentScenesList();
     void SaveRecentScenesList();
 
+    // Editor camera management
+    Entity GetEditorCamera() const { return m_EditorCamera; }
+    Entity EnsureEditorCamera();  // Creates editor camera if it doesn't exist
+
 private:
     ECSCoordinator* m_ECS;
     SceneSerializer* m_Serializer;
+    CameraSystem* m_CameraSystem;
+    CameraController* m_CameraController;
 
     std::string m_CurrentFilePath;
     bool m_IsDirty = false;
@@ -53,6 +62,10 @@ private:
     std::vector<std::string> m_RecentScenes;
     static constexpr u32 MAX_RECENT_SCENES = 10;
 
+    // Editor camera entity (persistent across scenes, not serialized)
+    Entity m_EditorCamera = Entity::Invalid;
+
     // Helper: Clear all entities from the scene
     void ClearScene();
+    void CreateEditorCamera();
 };

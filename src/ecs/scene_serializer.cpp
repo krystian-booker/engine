@@ -183,6 +183,14 @@ bool SceneSerializer::SaveScene(const std::string& filepath) {
         Entity entity = transforms->GetEntity(i);
         const Transform& transform = transforms->Get(entity);
 
+        // Skip editor camera entities (they are not part of the scene)
+        if (m_ECS->HasComponent<Camera>(entity)) {
+            const Camera& camera = m_ECS->GetComponent<Camera>(entity);
+            if (camera.isEditorCamera) {
+                continue;  // Don't serialize editor cameras
+            }
+        }
+
         json entityJson;
         entityJson["id"] = entity.index;
         entityJson["generation"] = entity.generation;

@@ -5,12 +5,16 @@
 #include "ecs/ecs_coordinator.h"
 #include "ecs/systems/camera_system.h"
 #include "ecs/systems/render_system.h"
+#include "ecs/components/camera.h"
+#include "ecs/components/transform.h"
 #include "platform/window.h"
 #include "renderer/vulkan_context.h"
 #include "renderer/uniform_buffers.h"
 #include "renderer/vertex.h"
 #include "renderer/push_constants.h"
 #include "renderer/material_buffer.h"
+#include "renderer/viewport.h"
+#include "renderer/viewport_manager.h"
 #include "resources/mesh_manager.h"
 #include "resources/texture_manager.h"
 #include "resources/material_manager.h"
@@ -137,7 +141,7 @@ void VulkanRenderer::Shutdown() {
     m_Initialized = false;
 }
 
-void VulkanRenderer::DrawFrame() {
+void VulkanRenderer::DrawFrame(ViewportManager* viewportManager) {
     if (m_RenderSystem) {
         m_RenderSystem->Update();
     }
@@ -150,90 +154,90 @@ void VulkanRenderer::DrawFrame() {
     }
 
     const u32 currentFrameIndex = m_CurrentFrame;
-    Vec4 clearColorVec = Vec4(0.1f, 0.1f, 0.1f, 1.0f);
-    if (m_CameraSystem != nullptr) {
-        clearColorVec = m_CameraSystem->GetClearColor();
+
+#ifdef _DEBUG
+    // Begin ImGui frame FIRST (debug builds only)
+    m_ImGuiLayer.BeginFrame();
+
+    // Setup dockspace and viewport windows to get their sizes
+    if (viewportManager) {
+        m_ImGuiLayer.SetupFrameLayout(viewportManager);
+    }
+#endif
+
+    // NOW render viewports to offscreen targets after ImGui has processed them
+    // This ensures viewports are at the correct size before rendering
+    bool viewportsRendered = false;
+    if (viewportManager) {
+        VkDevice device = m_Context->GetDevice();
+        VkCommandBuffer vpCmd = m_ViewportCommandBuffers[currentFrameIndex];
+
+        // Wait for previous frame's viewport rendering to complete
+        // IMPORTANT: Also mark viewports from PREVIOUS frame as rendered NOW,
+        // after we know the GPU has finished with them
+        vkWaitForFences(device, 1, &m_ViewportFences[currentFrameIndex], VK_TRUE, UINT64_MAX);
+
+        // Mark viewports as rendered AFTER fence wait (previous frame's viewports are now safe to sample)
+        auto viewports = viewportManager->GetAllViewports();
+        for (Viewport* viewport : viewports) {
+            if (viewport && viewport->IsReadyToRender()) {
+                viewport->MarkAsRendered();
+            }
+        }
+
+        vkResetFences(device, 1, &m_ViewportFences[currentFrameIndex]);
+
+        // Begin recording viewport command buffer
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = 0;
+        beginInfo.pInheritanceInfo = nullptr;
+
+        if (vkBeginCommandBuffer(vpCmd, &beginInfo) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to begin viewport command buffer");
+        }
+
+        // Render all viewports for THIS frame
+        for (Viewport* viewport : viewports) {
+            if (viewport && viewport->IsReadyToRender()) {
+                RenderViewport(vpCmd, *viewport, viewport->GetCamera(), currentFrameIndex);
+                viewportsRendered = true;
+            }
+        }
+
+        if (vkEndCommandBuffer(vpCmd) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to end viewport command buffer");
+        }
+
+        // Only submit if we actually rendered something
+        if (viewportsRendered) {
+            // Submit viewport command buffer
+            VkSubmitInfo submitInfo{};
+            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            submitInfo.commandBufferCount = 1;
+            submitInfo.pCommandBuffers = &vpCmd;
+            submitInfo.signalSemaphoreCount = 1;
+            submitInfo.pSignalSemaphores = &m_ViewportFinishedSemaphores[currentFrameIndex];
+
+            if (vkQueueSubmit(m_Context->GetGraphicsQueue(), 1, &submitInfo, m_ViewportFences[currentFrameIndex]) != VK_SUCCESS) {
+                throw std::runtime_error("Failed to submit viewport command buffer");
+            }
+
+            // Don't wait here - let the semaphore handle synchronization
+            // The main render pass will wait on viewport finished semaphore
+        }
     }
 
+    // Editor-style dark gray background
     VkClearColorValue clearColor{};
-    clearColor.float32[0] = clearColorVec.x;
-    clearColor.float32[1] = clearColorVec.y;
-    clearColor.float32[2] = clearColorVec.z;
-    clearColor.float32[3] = clearColorVec.w;
+    clearColor.float32[0] = 0.15f;
+    clearColor.float32[1] = 0.15f;
+    clearColor.float32[2] = 0.15f;
+    clearColor.float32[3] = 1.0f;
 
     BeginDefaultRenderPass(*frame, imageIndex, clearColor);
 
-#ifdef _DEBUG
-    // Begin ImGui frame (debug builds only)
-    m_ImGuiLayer.BeginFrame();
-#endif
-
-    // Validate pipeline before binding
-    VkPipeline pipeline = m_Pipeline.GetPipeline();
-    if (pipeline == VK_NULL_HANDLE) {
-        std::cerr << "ERROR: GetPipeline() returned VK_NULL_HANDLE! Skipping frame." << std::endl;
-        EndDefaultRenderPass(*frame);
-        vkEndCommandBuffer(frame->commandBuffer);
-        vkResetFences(m_Context->GetDevice(), 1, &frame->inFlightFence);
-        return;
-    }
-
-    vkCmdBindPipeline(frame->commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-
-    // Bind both descriptor sets: Set 0 (transient) and Set 1 (persistent)
-    VkDescriptorSet descriptorSets[2] = {
-        m_Descriptors.GetTransientSet(currentFrameIndex),  // Set 0: Camera UBO
-        m_Descriptors.GetPersistentSet()                   // Set 1: Materials + Textures
-    };
-    vkCmdBindDescriptorSets(
-        frame->commandBuffer,
-        VK_PIPELINE_BIND_POINT_GRAPHICS,
-        m_Pipeline.GetLayout(),
-        0,      // First set = 0
-        2,      // Bind 2 sets
-        descriptorSets,
-        0,
-        nullptr);
-
-    UpdateGlobalUniforms(currentFrameIndex);
-
-    bool rendered = false;
-
-    if (m_RenderSystem) {
-        const auto& renderList = m_RenderSystem->GetRenderData();
-        for (const RenderData& renderData : renderList) {
-            VulkanMesh* mesh = m_RenderSystem->GetVulkanMesh(renderData.meshHandle);
-            if (!mesh || !mesh->IsValid()) {
-                continue;
-            }
-
-            PushModelMatrix(frame->commandBuffer, renderData.modelMatrix, renderData.materialIndex);
-            mesh->Bind(frame->commandBuffer);
-            mesh->Draw(frame->commandBuffer);
-            rendered = true;
-        }
-    }
-
-    if (!rendered) {
-        MeshManager& meshManager = MeshManager::Instance();
-        MeshData* meshData = meshManager.Get(m_ActiveMesh);
-        if (meshData == nullptr || !meshData->gpuUploaded) {
-            throw std::runtime_error("VulkanRenderer::DrawFrame missing uploaded mesh data");
-        }
-
-        const f32 rotationSpeed = Radians(45.0f);
-        const f32 fullRotation = Radians(360.0f);
-        m_Rotation += rotationSpeed * Time::DeltaTime();
-        while (m_Rotation > fullRotation) {
-            m_Rotation -= fullRotation;
-        }
-
-        const Mat4 fallbackModel = Rotate(Mat4(1.0f), m_Rotation, Vec3(0.0f, 1.0f, 0.0f));
-        PushModelMatrix(frame->commandBuffer, fallbackModel, 0); // Use default material index
-
-        meshData->gpuMesh.Bind(frame->commandBuffer);
-        meshData->gpuMesh.Draw(frame->commandBuffer);
-    }
+    // Main window now only renders ImGui UI - 3D content is rendered to viewport render targets
 
 #ifdef _DEBUG
     // Render ImGui (debug builds only)
@@ -241,7 +245,10 @@ void VulkanRenderer::DrawFrame() {
 #endif
 
     EndDefaultRenderPass(*frame);
-    EndFrame(*frame, imageIndex);
+
+    // Only pass viewport finished semaphore if viewports were actually rendered
+    VkSemaphore* viewportSemaphore = viewportsRendered ? &m_ViewportFinishedSemaphores[currentFrameIndex] : nullptr;
+    EndFrame(*frame, imageIndex, viewportSemaphore);
 }
 
 void VulkanRenderer::OnWindowResized() {
@@ -342,18 +349,26 @@ void VulkanRenderer::EndDefaultRenderPass(FrameContext& frame) {
     vkCmdEndRenderPass(frame.commandBuffer);
 }
 
-void VulkanRenderer::EndFrame(FrameContext& frame, u32 imageIndex) {
+void VulkanRenderer::EndFrame(FrameContext& frame, u32 imageIndex, VkSemaphore* waitSemaphore) {
     if (vkEndCommandBuffer(frame.commandBuffer) != VK_SUCCESS) {
         throw std::runtime_error("Failed to record command buffer");
     }
 
-    VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    // Setup wait semaphores and stages
+    std::vector<VkSemaphore> waitSemaphores = { frame.imageAvailableSemaphore };
+    std::vector<VkPipelineStageFlags> waitStages = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT };
+
+    // If viewport rendering occurred, also wait on viewport finished semaphore
+    if (waitSemaphore != nullptr) {
+        waitSemaphores.push_back(*waitSemaphore);
+        waitStages.push_back(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+    }
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.waitSemaphoreCount = 1;
-    submitInfo.pWaitSemaphores = &frame.imageAvailableSemaphore;
-    submitInfo.pWaitDstStageMask = &waitStage;
+    submitInfo.waitSemaphoreCount = static_cast<u32>(waitSemaphores.size());
+    submitInfo.pWaitSemaphores = waitSemaphores.data();
+    submitInfo.pWaitDstStageMask = waitStages.data();
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &frame.commandBuffer;
     submitInfo.signalSemaphoreCount = 1;
@@ -426,6 +441,156 @@ void VulkanRenderer::PushModelMatrix(VkCommandBuffer commandBuffer, const Mat4& 
         0, sizeof(PushConstants), &pushConstants);
 }
 
+void VulkanRenderer::UpdateGlobalUniformsWithCamera(u32 frameIndex, Entity cameraEntity, u32 viewportWidth, u32 viewportHeight) {
+    UniformBufferObject ubo{};
+
+    if (m_ECS && cameraEntity.IsValid() && m_ECS->HasComponent<Camera>(cameraEntity) && m_ECS->HasComponent<Transform>(cameraEntity)) {
+        const Camera& camera = m_ECS->GetComponent<Camera>(cameraEntity);
+        const Transform& transform = m_ECS->GetComponent<Transform>(cameraEntity);
+
+        // Compute view matrix from transform
+        Vec3 position = transform.worldMatrix[3];
+        Vec3 forward = -Vec3(transform.worldMatrix[2]);
+        Vec3 up = Vec3(transform.worldMatrix[1]);
+        ubo.view = LookAt(position, position + forward, up);
+
+        // Compute projection matrix from camera
+        f32 aspect = (viewportHeight > 0) ? static_cast<f32>(viewportWidth) / static_cast<f32>(viewportHeight) : 1.0f;
+        if (camera.projection == CameraProjection::Perspective) {
+            ubo.projection = Perspective(Radians(camera.fov), aspect, camera.nearPlane, camera.farPlane);
+            ubo.projection[1][1] *= -1.0f;  // Vulkan Y-flip
+        } else {
+            f32 halfWidth = camera.orthoSize * aspect * 0.5f;
+            f32 halfHeight = camera.orthoSize * 0.5f;
+            ubo.projection = Ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, camera.nearPlane, camera.farPlane);
+            ubo.projection[1][1] *= -1.0f;  // Vulkan Y-flip
+        }
+    } else {
+        // Fallback camera
+        const Vec3 eye(3.0f, 3.0f, 3.0f);
+        const Vec3 center(0.0f, 0.0f, 0.0f);
+        const Vec3 up(0.0f, 1.0f, 0.0f);
+        ubo.view = LookAt(eye, center, up);
+
+        f32 aspect = (viewportHeight > 0) ? static_cast<f32>(viewportWidth) / static_cast<f32>(viewportHeight) : 1.0f;
+        ubo.projection = Perspective(Radians(45.0f), aspect, 0.1f, 100.0f);
+        ubo.projection[1][1] *= -1.0f;
+    }
+
+    m_Descriptors.UpdateUniformBuffer(frameIndex, &ubo, sizeof(ubo));
+}
+
+void VulkanRenderer::RenderScene(VkCommandBuffer commandBuffer, u32 frameIndex) {
+    (void)frameIndex;  // Currently unused
+
+    if (!m_RenderSystem) {
+        return;
+    }
+
+    const auto& renderList = m_RenderSystem->GetRenderData();
+    for (const RenderData& renderData : renderList) {
+        VulkanMesh* mesh = m_RenderSystem->GetVulkanMesh(renderData.meshHandle);
+        if (!mesh || !mesh->IsValid()) {
+            continue;
+        }
+
+        PushModelMatrix(commandBuffer, renderData.modelMatrix, renderData.materialIndex);
+        mesh->Bind(commandBuffer);
+        mesh->Draw(commandBuffer);
+    }
+}
+
+void VulkanRenderer::RenderViewport(VkCommandBuffer commandBuffer, Viewport& viewport, Entity cameraEntity, u32 frameIndex) {
+    if (!viewport.IsReadyToRender() || !cameraEntity.IsValid()) {
+        return;
+    }
+
+    // Get camera clear color
+    Vec4 clearColorVec = Vec4(0.2f, 0.2f, 0.2f, 1.0f);
+    if (m_ECS && m_ECS->HasComponent<Camera>(cameraEntity)) {
+        clearColorVec = m_ECS->GetComponent<Camera>(cameraEntity).clearColor;
+    }
+
+    VkClearColorValue clearColor{};
+    clearColor.float32[0] = clearColorVec.x;
+    clearColor.float32[1] = clearColorVec.y;
+    clearColor.float32[2] = clearColorVec.z;
+    clearColor.float32[3] = clearColorVec.w;
+
+    // Use the provided command buffer for offscreen rendering
+    VkCommandBuffer cmd = commandBuffer;
+
+    // Begin offscreen render pass
+    BeginOffscreenRenderPass(cmd, viewport, clearColor);
+
+    // Bind pipeline
+    VkPipeline pipeline = m_Pipeline.GetPipeline();
+    if (pipeline == VK_NULL_HANDLE) {
+        EndOffscreenRenderPass(cmd);
+        return;
+    }
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+
+    // Bind descriptor sets
+    VkDescriptorSet descriptorSets[2] = {
+        m_Descriptors.GetTransientSet(frameIndex),
+        m_Descriptors.GetPersistentSet()
+    };
+    vkCmdBindDescriptorSets(
+        cmd,
+        VK_PIPELINE_BIND_POINT_GRAPHICS,
+        m_Pipeline.GetLayout(),
+        0, 2, descriptorSets, 0, nullptr);
+
+    // Update camera UBO for this viewport
+    UpdateGlobalUniformsWithCamera(frameIndex, cameraEntity, viewport.GetWidth(), viewport.GetHeight());
+
+    // Set viewport and scissor
+    VkViewport vkViewport{};
+    vkViewport.x = 0.0f;
+    vkViewport.y = 0.0f;
+    vkViewport.width = static_cast<f32>(viewport.GetWidth());
+    vkViewport.height = static_cast<f32>(viewport.GetHeight());
+    vkViewport.minDepth = 0.0f;
+    vkViewport.maxDepth = 1.0f;
+    vkCmdSetViewport(cmd, 0, 1, &vkViewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = {viewport.GetWidth(), viewport.GetHeight()};
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+    // Render scene
+    RenderScene(cmd, frameIndex);
+
+    // End offscreen render pass
+    EndOffscreenRenderPass(cmd);
+}
+
+void VulkanRenderer::BeginOffscreenRenderPass(VkCommandBuffer commandBuffer, Viewport& viewport, const VkClearColorValue& clearColor) {
+    VulkanRenderTarget& renderTarget = viewport.GetRenderTarget();
+
+    std::array<VkClearValue, 2> clearValues{};
+    clearValues[0].color = clearColor;
+    clearValues[1].depthStencil = {1.0f, 0};
+
+    VkRenderPassBeginInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassInfo.renderPass = renderTarget.GetRenderPass();
+    renderPassInfo.framebuffer = renderTarget.GetFramebuffer();
+    renderPassInfo.renderArea.offset = {0, 0};
+    renderPassInfo.renderArea.extent = {viewport.GetWidth(), viewport.GetHeight()};
+    renderPassInfo.clearValueCount = static_cast<u32>(clearValues.size());
+    renderPassInfo.pClearValues = clearValues.data();
+
+    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+}
+
+void VulkanRenderer::EndOffscreenRenderPass(VkCommandBuffer commandBuffer) {
+    vkCmdEndRenderPass(commandBuffer);
+}
+
 void VulkanRenderer::InitSwapchainResources() {
     m_DepthBuffer.Init(m_Context, &m_Swapchain);
     m_RenderPass.Init(m_Context, &m_Swapchain, m_DepthBuffer.GetFormat());
@@ -491,6 +656,44 @@ void VulkanRenderer::CreateFrameContexts() {
             }
         }
     }
+
+    // Create viewport command pool and buffers
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.queueFamilyIndex = m_Context->GetGraphicsQueueFamily();
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+
+    if (vkCreateCommandPool(device, &poolInfo, nullptr, &m_ViewportCommandPool) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create viewport command pool");
+    }
+
+    // Allocate viewport command buffers (one per frame in flight)
+    m_ViewportCommandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandPool = m_ViewportCommandPool;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
+
+    if (vkAllocateCommandBuffers(device, &allocInfo, m_ViewportCommandBuffers.data()) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to allocate viewport command buffers");
+    }
+
+    // Create viewport semaphores and fences
+    m_ViewportFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+    m_ViewportFences.resize(MAX_FRAMES_IN_FLIGHT);
+
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        VkSemaphoreCreateInfo semInfo = CreateSemaphoreInfo();
+        if (vkCreateSemaphore(device, &semInfo, nullptr, &m_ViewportFinishedSemaphores[i]) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create viewport finished semaphore");
+        }
+
+        VkFenceCreateInfo fenceInfo = CreateFenceInfo();
+        if (vkCreateFence(device, &fenceInfo, nullptr, &m_ViewportFences[i]) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create viewport fence");
+        }
+    }
 }
 
 void VulkanRenderer::DestroyFrameContexts() {
@@ -527,10 +730,32 @@ void VulkanRenderer::DestroyFrameContexts() {
         }
     }
 
+    // Destroy viewport synchronization objects
+    for (VkSemaphore semaphore : m_ViewportFinishedSemaphores) {
+        if (semaphore != VK_NULL_HANDLE) {
+            vkDestroySemaphore(device, semaphore, nullptr);
+        }
+    }
+
+    for (VkFence fence : m_ViewportFences) {
+        if (fence != VK_NULL_HANDLE) {
+            vkDestroyFence(device, fence, nullptr);
+        }
+    }
+
+    // Destroy viewport command pool (this also frees command buffers)
+    if (m_ViewportCommandPool != VK_NULL_HANDLE) {
+        vkDestroyCommandPool(device, m_ViewportCommandPool, nullptr);
+        m_ViewportCommandPool = VK_NULL_HANDLE;
+    }
+
     m_CommandBuffers.Shutdown();
     m_Frames.clear();
     m_ImageAvailableSemaphores.clear();
     m_RenderFinishedSemaphores.clear();
+    m_ViewportCommandBuffers.clear();
+    m_ViewportFinishedSemaphores.clear();
+    m_ViewportFences.clear();
 }
 
 void VulkanRenderer::RecreateSwapchain() {

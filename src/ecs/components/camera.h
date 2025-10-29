@@ -20,10 +20,13 @@ struct Camera {
     f32 orthoSize = 10.0f;
 
     // Clear color
-    Vec4 clearColor{0.1f, 0.1f, 0.1f, 1.0f};
+    Vec4 clearColor{0.15f, 0.15f, 0.15f, 1.0f};
 
     // Is this the active camera?
     bool isActive = false;
+
+    // Is this an editor camera? (not serialized, for scene view only)
+    bool isEditorCamera = false;
 
     // Computed matrices (updated by camera system)
     Mat4 viewMatrix{1.0f};

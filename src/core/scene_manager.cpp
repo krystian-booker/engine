@@ -1,7 +1,10 @@
 #include "core/scene_manager.h"
 #include "ecs/ecs_coordinator.h"
 #include "ecs/scene_serializer.h"
+#include "ecs/systems/camera_system.h"
+#include "ecs/systems/camera_controller.h"
 #include "ecs/components/transform.h"
+#include "ecs/components/camera.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <iostream>
@@ -9,9 +12,11 @@
 
 using json = nlohmann::json;
 
-SceneManager::SceneManager(ECSCoordinator* ecs)
+SceneManager::SceneManager(ECSCoordinator* ecs, CameraSystem* cameraSystem, CameraController* cameraController)
     : m_ECS(ecs)
     , m_Serializer(new SceneSerializer(ecs))
+    , m_CameraSystem(cameraSystem)
+    , m_CameraController(cameraController)
     , m_IsDirty(false)
 {
     LoadRecentScenesList();
@@ -38,6 +43,19 @@ bool SceneManager::LoadScene(const std::string& filepath) {
         m_CurrentFilePath = filepath;
         m_IsDirty = false;
         AddRecentScene(filepath);
+
+        // Update camera controller to use the newly loaded active camera
+        if (m_CameraSystem && m_CameraController) {
+            // Update camera system to find the active camera
+            m_CameraSystem->Update(800, 600);  // Dimensions don't matter here, just finding active camera
+
+            Entity activeCamera = m_CameraSystem->GetActiveCamera();
+            if (activeCamera.IsValid()) {
+                m_CameraController->SetControlledCamera(activeCamera);
+                std::cout << "Camera controller connected to loaded scene camera" << std::endl;
+            }
+        }
+
         return true;
     }
 
@@ -157,11 +175,54 @@ void SceneManager::ClearScene() {
 
     std::vector<Entity> entitiesToDestroy;
     for (size_t i = 0; i < transforms->Size(); ++i) {
-        entitiesToDestroy.push_back(transforms->GetEntity(i));
+        Entity entity = transforms->GetEntity(i);
+
+        // Don't destroy the editor camera
+        if (entity == m_EditorCamera) {
+            continue;
+        }
+
+        entitiesToDestroy.push_back(entity);
     }
 
     // Destroy all collected entities
     for (Entity entity : entitiesToDestroy) {
         m_ECS->DestroyEntity(entity);
     }
+}
+
+Entity SceneManager::EnsureEditorCamera() {
+    // If editor camera already exists and is valid, return it
+    if (m_EditorCamera.IsValid() && m_ECS->IsEntityAlive(m_EditorCamera)) {
+        return m_EditorCamera;
+    }
+
+    // Create new editor camera
+    CreateEditorCamera();
+    return m_EditorCamera;
+}
+
+void SceneManager::CreateEditorCamera() {
+    m_EditorCamera = m_ECS->CreateEntity();
+
+    // Add Transform component
+    Transform transform;
+    transform.localPosition = Vec3(0, 2, 5);  // Position slightly above and back from origin
+    transform.localRotation = Quat(1, 0, 0, 0);  // Identity rotation
+    transform.localScale = Vec3(1, 1, 1);
+    m_ECS->AddComponent<Transform>(m_EditorCamera, transform);
+
+    // Add Camera component
+    Camera camera;
+    camera.projection = CameraProjection::Perspective;
+    camera.fov = 60.0f;
+    camera.aspectRatio = 16.0f / 9.0f;
+    camera.nearPlane = 0.1f;
+    camera.farPlane = 1000.0f;
+    camera.clearColor = Vec4(0.15f, 0.15f, 0.15f, 1.0f);  // Match main window background
+    camera.isActive = false;  // Not the active game camera
+    camera.isEditorCamera = true;  // Mark as editor camera
+    m_ECS->AddComponent<Camera>(m_EditorCamera, camera);
+
+    std::cout << "Created editor camera entity" << std::endl;
 }

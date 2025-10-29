@@ -6,10 +6,12 @@
 #include "ecs/ecs_coordinator.h"
 #include "ecs/systems/camera_system.h"
 #include "ecs/systems/camera_controller.h"
+#include "ecs/systems/editor_camera_controller.h"
 #include "platform/input.h"
 #include "platform/window.h"
 #include "renderer/vulkan_context.h"
 #include "renderer/vulkan_renderer.h"
+#include "renderer/viewport_manager.h"
 #include "resources/mesh_manager.h"
 #include "resources/texture_manager.h"
 #include "resources/material_manager.h"
@@ -40,18 +42,34 @@ int main() {
     ECSCoordinator ecs;
     ecs.Init();
 
-    // Create Scene Manager
-    SceneManager sceneManager(&ecs);
-
     CameraSystem* cameraSystem = ecs.GetCameraSystem();
 
     // Setup camera controller
     ecs.SetupCameraController(&window);
     CameraController* cameraController = ecs.GetCameraController();
 
+    // Create Scene Manager with camera system and controller references
+    SceneManager sceneManager(&ecs, cameraSystem, cameraController);
+
     // Initialize renderer BEFORE creating scene so TextureManager has access to descriptors
     VulkanRenderer renderer;
     renderer.Init(&context, &window, &ecs, &sceneManager);
+
+    // Initialize viewport manager and editor camera controller
+    ViewportManager viewportManager;
+    viewportManager.Init(&context);
+
+    EditorCameraController editorCameraController(&ecs, &window);
+
+    // Create editor camera (persistent across scenes)
+    Entity editorCamera = sceneManager.EnsureEditorCamera();
+    editorCameraController.SetControlledCamera(editorCamera);
+
+    // Create default viewports (Scene and Game)
+    u32 sceneViewportID = viewportManager.CreateViewport(800, 600, editorCamera, ViewportType::Scene);
+    u32 gameViewportID = viewportManager.CreateViewport(800, 600, Entity::Invalid, ViewportType::Game);
+
+    std::cout << "Created Scene viewport (ID: " << sceneViewportID << ") and Game viewport (ID: " << gameViewportID << ")" << std::endl;
 
     // Start with empty scene (user can load default.scene from File menu)
 
@@ -94,9 +112,35 @@ int main() {
 
         const f32 deltaTime = Time::DeltaTime();
 
-        // Update camera controller
+        // Get focused viewport ID from ImGui (0 = none focused)
+        u32 focusedViewportID = 0;
+#ifdef _DEBUG
+        // In debug builds, we can get this from ImGuiLayer (accessed via renderer)
+        // For now, we'll need to expose this through renderer or pass it differently
+        // Simplified: assume scene viewport is focused by default for editor camera
+        focusedViewportID = sceneViewportID;  // TODO: Get actual focused viewport from ImGuiLayer
+#endif
+
+        // Update editor camera controller (only when scene viewport is focused)
+        editorCameraController.SetEnabled(focusedViewportID == sceneViewportID);
+        editorCameraController.Update(deltaTime);
+
+        // Update game camera controller (only when game viewport is focused)
         if (cameraController) {
-            cameraController->Update(deltaTime);
+            // Simple approach: disable game camera control when scene viewport is focused
+            // In the future, enable only when game viewport is focused
+            if (focusedViewportID != sceneViewportID) {
+                cameraController->Update(deltaTime);
+            }
+        }
+
+        // Update game viewport to use active game camera
+        Viewport* gameViewport = viewportManager.GetViewport(gameViewportID);
+        if (gameViewport && cameraSystem) {
+            Entity activeGameCamera = cameraSystem->GetActiveCamera();
+            if (activeGameCamera.IsValid() && activeGameCamera != editorCamera) {
+                gameViewport->SetCamera(activeGameCamera);
+            }
         }
 
         ecs.ForEach<Rotator, Transform>([deltaTime](Entity, Rotator& rotator, Transform& transform) {
@@ -130,7 +174,8 @@ int main() {
         // Process async texture uploads
         TextureManager::Instance().Update();
 
-        renderer.DrawFrame();
+        // Render with viewport manager
+        renderer.DrawFrame(&viewportManager);
 
         if (Time::FrameCount() % 60 == 0) {
             std::string title = "Game Engine";
@@ -160,6 +205,7 @@ int main() {
     }
 
     renderer.Shutdown();
+    viewportManager.Shutdown();
 
     if (cubeMeshHandle.IsValid()) {
         MeshManager::Instance().Destroy(cubeMeshHandle);
