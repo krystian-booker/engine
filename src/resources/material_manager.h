@@ -43,7 +43,7 @@ public:
     // Get GPU material buffer
     VulkanMaterialBuffer* GetGPUBuffer() { return m_GPUBuffer.get(); }
 
-    // Ensure material is uploaded to GPU with descriptor caching (Phase 6.4)
+    // Ensure material is uploaded to GPU with descriptor caching
     // Returns GPU material index, updates descriptor set if needed
     u32 EnsureMaterial(MaterialHandle handle);
 

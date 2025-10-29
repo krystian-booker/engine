@@ -74,7 +74,7 @@ struct MaterialData {
     // Material index in GPU SSBO (assigned by MaterialManager)
     u32 gpuMaterialIndex = 0xFFFFFFFF;
 
-    // Descriptor caching for optimization (Phase 6.4)
+    // Descriptor caching for optimization
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;  // Cached descriptor set (persistent pool)
     u64 descriptorHash = 0;                          // Hash of texture handles for change detection
     bool descriptorDirty = true;                     // Needs rebuild flag

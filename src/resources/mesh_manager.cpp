@@ -32,9 +32,6 @@ std::unique_ptr<MeshData> MeshManager::LoadResource(const std::string& filepath)
         aiProcess_GenSmoothNormals |      // Generate smooth normals if missing
         aiProcess_JoinIdenticalVertices | // Optimize vertex buffer
         aiProcess_ImproveCacheLocality |  // Optimize for GPU cache
-
-        // TODO: Validate, I think this is a bug since we're using GLFW LeftHanded
-        // TODO: How will this be handled when we add DirectX support
         aiProcess_FlipUVs);               // Flip Y coordinate for Vulkan
 
     // Error handling

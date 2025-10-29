@@ -4,10 +4,12 @@
 #include "core/texture_load_options.h"
 #include "core/math.h"
 #include "core/memory.h"
+#include "core/file_watcher.h"
 #include "resources/texture_load_job.h"
 #include "platform/platform.h"
 #include <vector>
 #include <functional>
+#include <unordered_set>
 
 // Forward declarations
 class VulkanContext;
@@ -103,6 +105,7 @@ public:
     TextureHandle CreateBlack();       // 1x1 black
     TextureHandle CreateNormalMap();   // 1x1 (0.5, 0.5, 1.0) - neutral normal in tangent space
     TextureHandle CreateMetalRough();  // 1x1 (rough=1.0, metal=0.5) - default PBR packed texture
+    TextureHandle CreateCheckerboard(u32 size, const Vec4& color1, const Vec4& color2);  // Checkerboard pattern
 
     // ========================================================================
     // Asynchronous Loading API
@@ -159,6 +162,25 @@ public:
     // Enqueue a completed load job for GPU upload (called by worker threads)
     void EnqueuePendingUpload(TextureLoadJob* job);
 
+    // ========================================================================
+    // Hot Reload API
+    // ========================================================================
+
+    // Enable/disable hot reload (starts/stops file watching)
+    void EnableHotReload(bool enable);
+
+    // Add directory to watch for texture changes
+    void WatchDirectory(const std::string& directory, bool recursive = true);
+
+    // Reload texture from disk (by handle or filepath)
+    // Returns true if reload was initiated, false on error
+    bool ReloadTexture(TextureHandle handle);
+    bool ReloadTexture(const std::string& filepath);
+
+    // Get placeholder and error textures
+    TextureHandle GetPlaceholderTexture() const { return m_PlaceholderTexture; }
+    TextureHandle GetErrorTexture() const { return m_ErrorTexture; }
+
 protected:
     // Override ResourceManager::LoadResource to use default options
     std::unique_ptr<TextureData> LoadResource(const std::string& filepath) override;
@@ -186,6 +208,8 @@ private:
     TextureHandle m_BlackTexture;
     TextureHandle m_NormalMapTexture;
     TextureHandle m_MetalRoughTexture;
+    TextureHandle m_PlaceholderTexture;  // Gray/white checkerboard (for hot reload)
+    TextureHandle m_ErrorTexture;        // Magenta/black checkerboard (for failed reloads)
 
     // ========================================================================
     // Async Loading State
@@ -211,4 +235,15 @@ private:
     };
     std::vector<PendingGPUUpload> m_GPUUploadQueue;
     Platform::MutexPtr m_GPUUploadMutex;
+
+    // ========================================================================
+    // Hot Reload State
+    // ========================================================================
+    FileWatcher m_FileWatcher;
+    bool m_HotReloadEnabled = false;
+    std::unordered_set<std::string> m_WatchedDirectories;
+
+    // Hot reload helpers
+    void OnTextureFileModified(const std::string& filepath, FileAction action);
+    void PerformReload(TextureHandle handle, const std::string& filepath);
 };

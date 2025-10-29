@@ -159,6 +159,31 @@ protected:
         }
     }
 
+    // Increment generation (for hot reload - triggers handle invalidation)
+    void IncrementGeneration(Handle handle) {
+        if (handle.index < m_Generations.size()) {
+            Platform::Lock(m_Mutex.get());
+            ++m_Generations[handle.index];
+
+            // Update handle in path maps
+            auto pathIt = m_HandleToPath.find(handle);
+            if (pathIt != m_HandleToPath.end()) {
+                std::string path = pathIt->second;
+
+                // Create new handle with incremented generation
+                Handle newHandle = handle;
+                newHandle.generation = m_Generations[handle.index];
+
+                // Update maps
+                m_HandleToPath.erase(pathIt);
+                m_HandleToPath[newHandle] = path;
+                m_PathToHandle[path] = newHandle;
+            }
+
+            Platform::Unlock(m_Mutex.get());
+        }
+    }
+
 private:
     std::vector<std::unique_ptr<T>> m_Resources;
     std::vector<u32> m_Generations;

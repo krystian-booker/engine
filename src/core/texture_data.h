@@ -3,6 +3,7 @@
 #include "core/sampler_settings.h"
 #include <vulkan/vulkan.h>
 #include <vector>
+#include <string>
 
 // Forward declarations
 class VulkanTexture;
@@ -26,7 +27,7 @@ enum class TextureFlags : u32 {
     None = 0,
     SRGB = 1 << 0,              // Override: force sRGB color space
     GenerateMipmaps = 1 << 1,   // Auto-generate mipmaps on GPU
-    PrebakedMipmaps = 1 << 2,   // File contains mipmaps (DDS/KTX support - Phase 2)
+    PrebakedMipmaps = 1 << 2,   // File contains mipmaps (DDS/KTX support)
     AnisotropyOverride = 1 << 3 // Use per-texture anisotropy level
 };
 
@@ -89,6 +90,12 @@ struct TextureData {
     // After packing, this vector is cleared and data is in 'pixels'
     std::vector<u8*> layerPixels;
 
+    // Source file paths (for hot reload support)
+    // Single 2D texture: one path (e.g., "texture.png")
+    // Array texture: multiple paths (e.g., ["layer0.png", "layer1.png", ...])
+    // Cubemap: 6 paths (e.g., ["px.png", "nx.png", "py.png", "ny.png", "pz.png", "nz.png"])
+    std::vector<std::string> sourcePaths;
+
     // Format metadata
     TextureUsage usage = TextureUsage::Generic;
     TextureType type = TextureType::Texture2D;
@@ -103,7 +110,7 @@ struct TextureData {
     MipmapPolicy mipmapPolicy;  // Default set in .cpp (requires enum definition)
     MipmapQuality qualityHint;  // Default set in .cpp (requires enum definition)
 
-    // Compression hint for future GPU compression (Phase 2+)
+    // Compression hint for future GPU compression
     VkFormat compressionHint = VK_FORMAT_UNDEFINED;
 
     // GPU resources (populated by VulkanTexture)

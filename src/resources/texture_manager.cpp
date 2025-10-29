@@ -1,5 +1,6 @@
 #include "resources/texture_manager.h"
 #include "resources/image_loader.h"
+#include "resources/material_manager.h"
 #include "renderer/mipmap_policy.h"
 #include "renderer/vulkan_context.h"
 #include "renderer/vulkan_transfer_queue.h"
@@ -46,10 +47,19 @@ TextureManager::TextureManager() {
     m_BlackTexture = TextureHandle::Invalid;
     m_NormalMapTexture = TextureHandle::Invalid;
     m_MetalRoughTexture = TextureHandle::Invalid;
+    m_PlaceholderTexture = TextureHandle::Invalid;
+    m_ErrorTexture = TextureHandle::Invalid;
 
     // Initialize async loading state
     m_AsyncMutex = Platform::CreateMutex();
     m_GPUUploadMutex = Platform::CreateMutex();
+
+    // Create placeholder and error textures (8x8 checkerboards)
+    // Placeholder: Gray and white (neutral, indicates loading)
+    m_PlaceholderTexture = CreateCheckerboard(8, Vec4(0.7f, 0.7f, 0.7f, 1.0f), Vec4(0.9f, 0.9f, 0.9f, 1.0f));
+
+    // Error: Magenta and black (highly visible, indicates error)
+    m_ErrorTexture = CreateCheckerboard(8, Vec4(1.0f, 0.0f, 1.0f, 1.0f), Vec4(0.0f, 0.0f, 0.0f, 1.0f));
 }
 
 void TextureManager::InitAsyncPipeline(VulkanContext* context, VulkanTransferQueue* transferQueue, VulkanStagingPool* stagingPool) {
@@ -103,6 +113,9 @@ TextureHandle TextureManager::Load(const std::string& filepath, const TextureLoa
     textureData->flags = options.flags;
     textureData->compressionHint = options.compressionHint;
     textureData->samplerSettings = options.samplerSettings;
+
+    // Store source path for hot reload
+    textureData->sourcePaths.push_back(filepath);
 
     // Set anisotropy level (0 means use global default, DEPRECATED)
     if (HasFlag(options.flags, TextureFlags::AnisotropyOverride)) {
@@ -171,6 +184,9 @@ TextureHandle TextureManager::LoadArray(
     textureData->flags = options.flags;
     textureData->compressionHint = options.compressionHint;
     textureData->samplerSettings = options.samplerSettings;
+
+    // Store source paths for hot reload
+    textureData->sourcePaths = layerPaths;
 
     // Set anisotropy level (DEPRECATED)
     if (HasFlag(options.flags, TextureFlags::AnisotropyOverride)) {
@@ -272,6 +288,9 @@ TextureHandle TextureManager::LoadCubemap(
     textureData->flags = options.flags;
     textureData->compressionHint = options.compressionHint;
     textureData->samplerSettings = options.samplerSettings;
+
+    // Store source paths for hot reload
+    textureData->sourcePaths = facePaths;
 
     // Set anisotropy level (DEPRECATED)
     if (HasFlag(options.flags, TextureFlags::AnisotropyOverride)) {
@@ -462,6 +481,58 @@ TextureHandle TextureManager::CreateMetalRough() {
         m_MetalRoughTexture = CreateSinglePixel(255, 128, 0, 255, TextureUsage::PackedPBR);
     }
     return m_MetalRoughTexture;
+}
+
+TextureHandle TextureManager::CreateCheckerboard(u32 size, const Vec4& color1, const Vec4& color2) {
+    auto textureData = std::make_unique<TextureData>();
+    textureData->width = size;
+    textureData->height = size;
+    textureData->channels = 4;  // RGBA
+    textureData->usage = TextureUsage::Generic;
+    textureData->type = TextureType::Texture2D;
+    textureData->flags = TextureFlags::None;  // No mipmaps for debug textures
+    textureData->mipLevels = 1;
+
+    // Allocate pixel data
+    const u32 pixelCount = size * size;
+    const u32 dataSize = pixelCount * 4;
+    textureData->pixels = static_cast<u8*>(malloc(dataSize));
+
+    // Convert colors from [0,1] to [0,255]
+    u8 r1 = static_cast<u8>(color1.r * 255.0f);
+    u8 g1 = static_cast<u8>(color1.g * 255.0f);
+    u8 b1 = static_cast<u8>(color1.b * 255.0f);
+    u8 a1 = static_cast<u8>(color1.a * 255.0f);
+
+    u8 r2 = static_cast<u8>(color2.r * 255.0f);
+    u8 g2 = static_cast<u8>(color2.g * 255.0f);
+    u8 b2 = static_cast<u8>(color2.b * 255.0f);
+    u8 a2 = static_cast<u8>(color2.a * 255.0f);
+
+    // Create 2x2 checkerboard pattern
+    const u32 checkerSize = size / 2;
+    for (u32 y = 0; y < size; ++y) {
+        for (u32 x = 0; x < size; ++x) {
+            u32 idx = (y * size + x) * 4;
+
+            // Determine which checker we're in (alternates every checkerSize pixels)
+            bool useColor1 = ((x / checkerSize) + (y / checkerSize)) % 2 == 0;
+
+            if (useColor1) {
+                textureData->pixels[idx + 0] = r1;
+                textureData->pixels[idx + 1] = g1;
+                textureData->pixels[idx + 2] = b1;
+                textureData->pixels[idx + 3] = a1;
+            } else {
+                textureData->pixels[idx + 0] = r2;
+                textureData->pixels[idx + 1] = g2;
+                textureData->pixels[idx + 2] = b2;
+                textureData->pixels[idx + 3] = a2;
+            }
+        }
+    }
+
+    return Create(std::move(textureData));
 }
 
 // ============================================================================
@@ -821,6 +892,11 @@ void TextureManager::ProcessUploads(u64 maxBytesPerFrame) {
 }
 
 void TextureManager::Update() {
+    // Update file watcher for hot reload
+    if (m_HotReloadEnabled) {
+        m_FileWatcher.Update();
+    }
+
     // First, check for completed GPU uploads
     if (m_VulkanContext && m_TransferQueue) {
         Platform::Lock(m_GPUUploadMutex.get());
@@ -1019,4 +1095,340 @@ static void TextureLoadWorkerArray(void* data) {
     // Successfully loaded - ready for GPU upload
     job->state.store(AsyncLoadState::ReadyForUpload);
     TextureManager::Instance().EnqueuePendingUpload(job);
+}
+
+// ============================================================================
+// Hot Reload Implementation
+// ============================================================================
+
+void TextureManager::EnableHotReload(bool enable) {
+    m_HotReloadEnabled = enable;
+
+    if (enable) {
+        // Register callbacks for all supported image extensions
+        const std::vector<std::string> extensions = {
+            ".png", ".jpg", ".jpeg", ".tga", ".bmp", ".hdr", ".exr"
+        };
+
+        for (const auto& ext : extensions) {
+            m_FileWatcher.RegisterCallback(ext, [this](const std::string& filepath, FileAction action) {
+                this->OnTextureFileModified(filepath, action);
+            });
+        }
+
+        std::cout << "TextureManager: Hot reload enabled" << std::endl;
+    } else {
+        std::cout << "TextureManager: Hot reload disabled" << std::endl;
+    }
+}
+
+void TextureManager::WatchDirectory(const std::string& directory, bool recursive) {
+    if (!m_HotReloadEnabled) {
+        std::cerr << "TextureManager::WatchDirectory: hot reload is not enabled, call EnableHotReload(true) first" << std::endl;
+        return;
+    }
+
+    m_FileWatcher.WatchDirectory(directory, recursive);
+    m_WatchedDirectories.insert(directory);
+
+    std::cout << "TextureManager: Watching directory for texture changes: " << directory << std::endl;
+}
+
+void TextureManager::OnTextureFileModified(const std::string& filepath, FileAction action) {
+    if (action == FileAction::Modified) {
+        std::cout << "TextureManager: Detected modification of " << filepath << ", reloading..." << std::endl;
+        ReloadTexture(filepath);
+    } else if (action == FileAction::Deleted) {
+        std::cout << "TextureManager: Texture file deleted: " << filepath << std::endl;
+        // Optionally replace with error texture
+        TextureHandle handle = GetHandle(filepath);
+        if (IsValid(handle)) {
+            TextureData* texData = Get(handle);
+            if (texData && texData->gpuTexture) {
+                // Replace with error texture's GPU data
+                TextureData* errorTex = Get(m_ErrorTexture);
+                if (errorTex && errorTex->gpuTexture) {
+                    texData->gpuTexture = errorTex->gpuTexture;
+                }
+            }
+        }
+    }
+}
+
+bool TextureManager::ReloadTexture(const std::string& filepath) {
+    // Get handle from filepath
+    TextureHandle handle = GetHandle(filepath);
+    if (!IsValid(handle)) {
+        std::cerr << "TextureManager::ReloadTexture: no texture loaded from " << filepath << std::endl;
+        return false;
+    }
+
+    return ReloadTexture(handle);
+}
+
+bool TextureManager::ReloadTexture(TextureHandle handle) {
+    TextureData* texData = Get(handle);
+    if (!texData) {
+        std::cerr << "TextureManager::ReloadTexture: invalid handle" << std::endl;
+        return false;
+    }
+
+    // Get filepath from handle (reverse lookup)
+    std::string filepath = GetPath(handle);
+    if (filepath.empty()) {
+        std::cerr << "TextureManager::ReloadTexture: cannot find filepath for handle" << std::endl;
+        return false;
+    }
+
+    std::cout << "TextureManager: Reloading texture from " << filepath << std::endl;
+
+    // Perform async reload
+    PerformReload(handle, filepath);
+
+    return true;
+}
+
+void TextureManager::PerformReload(TextureHandle handle, const std::string& filepath) {
+    TextureData* texData = Get(handle);
+    if (!texData) {
+        return;
+    }
+
+    // Store original descriptor index (critical for preserving descriptor bindings)
+    u32 oldDescriptorIndex = 0xFFFFFFFF;
+    if (texData->gpuTexture) {
+        VulkanTexture* vulkanTex = static_cast<VulkanTexture*>(texData->gpuTexture);
+        oldDescriptorIndex = vulkanTex->GetDescriptorIndex();
+    }
+
+    // Store original texture type and layer info for reload
+    TextureType originalType = texData->type;
+
+    // Replace GPU texture with placeholder temporarily
+    TextureData* placeholderData = Get(m_PlaceholderTexture);
+    if (placeholderData && placeholderData->gpuTexture) {
+        // NOTE: We don't actually destroy the old texture yet,
+        // we'll do that after successful reload
+        texData->gpuTexture = placeholderData->gpuTexture;
+    }
+
+    // Build load options from existing texture data
+    TextureLoadOptions loadOptions;
+    loadOptions.usage = texData->usage;
+    loadOptions.type = texData->type;
+    loadOptions.formatOverride = texData->formatOverride;
+    loadOptions.flags = texData->flags;
+    loadOptions.compressionHint = texData->compressionHint;
+    loadOptions.samplerSettings = texData->samplerSettings;
+    loadOptions.mipmapPolicy = texData->mipmapPolicy;
+    loadOptions.qualityHint = texData->qualityHint;
+    loadOptions.overrideMipmapPolicy = true;
+    loadOptions.overrideQualityHint = true;
+
+    // Reload based on texture type
+    if (originalType == TextureType::TextureArray) {
+        // Check if we have source paths stored
+        if (texData->sourcePaths.empty()) {
+            std::cerr << "TextureManager::PerformReload: array texture has no source paths stored" << std::endl;
+
+            // Replace with error texture
+            TextureData* errorData = Get(m_ErrorTexture);
+            if (errorData && errorData->gpuTexture) {
+                texData->gpuTexture = errorData->gpuTexture;
+            }
+            return;
+        }
+
+        // Reload all array layers
+        std::vector<ImageData> layers = ImageLoader::LoadImageArray(texData->sourcePaths, loadOptions);
+        if (layers.empty()) {
+            std::cerr << "TextureManager::PerformReload: failed to reload array texture" << std::endl;
+
+            // Replace with error texture
+            TextureData* errorData = Get(m_ErrorTexture);
+            if (errorData && errorData->gpuTexture) {
+                texData->gpuTexture = errorData->gpuTexture;
+            }
+            return;
+        }
+
+        // Update texture data
+        if (texData->pixels) {
+            free(texData->pixels);
+        }
+
+        // Clear old layer pixels
+        for (auto* layerPtr : texData->layerPixels) {
+            free(layerPtr);
+        }
+        texData->layerPixels.clear();
+
+        // Transfer new layer pixel data
+        texData->width = layers[0].width;
+        texData->height = layers[0].height;
+        texData->channels = layers[0].channels;
+        texData->arrayLayers = static_cast<u32>(layers.size());
+
+        texData->layerPixels.reserve(layers.size());
+        for (auto& layer : layers) {
+            texData->layerPixels.push_back(layer.pixels);
+            layer.pixels = nullptr;  // Transfer ownership
+        }
+
+        // Pack layers into contiguous buffer
+        if (!texData->PackLayersIntoStagingBuffer()) {
+            std::cerr << "TextureManager::PerformReload: failed to pack array texture layers" << std::endl;
+
+            // Replace with error texture
+            TextureData* errorData = Get(m_ErrorTexture);
+            if (errorData && errorData->gpuTexture) {
+                texData->gpuTexture = errorData->gpuTexture;
+            }
+            return;
+        }
+
+    } else if (originalType == TextureType::Cubemap) {
+        // Check if we have source paths stored
+        if (texData->sourcePaths.size() != 6) {
+            std::cerr << "TextureManager::PerformReload: cubemap doesn't have 6 face paths stored" << std::endl;
+
+            // Replace with error texture
+            TextureData* errorData = Get(m_ErrorTexture);
+            if (errorData && errorData->gpuTexture) {
+                texData->gpuTexture = errorData->gpuTexture;
+            }
+            return;
+        }
+
+        // Reload all 6 cubemap faces
+        std::vector<ImageData> faces = ImageLoader::LoadCubemap(texData->sourcePaths, loadOptions);
+        if (faces.empty()) {
+            std::cerr << "TextureManager::PerformReload: failed to reload cubemap" << std::endl;
+
+            // Replace with error texture
+            TextureData* errorData = Get(m_ErrorTexture);
+            if (errorData && errorData->gpuTexture) {
+                texData->gpuTexture = errorData->gpuTexture;
+            }
+            return;
+        }
+
+        // Update texture data
+        if (texData->pixels) {
+            free(texData->pixels);
+        }
+
+        // Clear old layer pixels
+        for (auto* layerPtr : texData->layerPixels) {
+            free(layerPtr);
+        }
+        texData->layerPixels.clear();
+
+        // Transfer new face pixel data
+        texData->width = faces[0].width;
+        texData->height = faces[0].height;
+        texData->channels = faces[0].channels;
+        texData->arrayLayers = 6;
+
+        texData->layerPixels.reserve(6);
+        for (auto& face : faces) {
+            texData->layerPixels.push_back(face.pixels);
+            face.pixels = nullptr;  // Transfer ownership
+        }
+
+        // Pack layers into contiguous buffer
+        if (!texData->PackLayersIntoStagingBuffer()) {
+            std::cerr << "TextureManager::PerformReload: failed to pack cubemap faces" << std::endl;
+
+            // Replace with error texture
+            TextureData* errorData = Get(m_ErrorTexture);
+            if (errorData && errorData->gpuTexture) {
+                texData->gpuTexture = errorData->gpuTexture;
+            }
+            return;
+        }
+
+        // Validate cubemap structure
+        if (!texData->ValidateCubemap()) {
+            std::cerr << "TextureManager::PerformReload: cubemap validation failed" << std::endl;
+
+            // Replace with error texture
+            TextureData* errorData = Get(m_ErrorTexture);
+            if (errorData && errorData->gpuTexture) {
+                texData->gpuTexture = errorData->gpuTexture;
+            }
+            return;
+        }
+
+    } else {
+        // Single 2D texture reload
+        ImageData imageData = ImageLoader::LoadImage(filepath, loadOptions);
+        if (!imageData.IsValid()) {
+            std::cerr << "TextureManager::PerformReload: failed to load image from " << filepath << std::endl;
+
+            // Replace with error texture
+            TextureData* errorData = Get(m_ErrorTexture);
+            if (errorData && errorData->gpuTexture) {
+                texData->gpuTexture = errorData->gpuTexture;
+            }
+            return;
+        }
+
+        // Update texture data
+        if (texData->pixels) {
+            free(texData->pixels);
+        }
+        texData->pixels = imageData.pixels;
+        texData->width = imageData.width;
+        texData->height = imageData.height;
+        texData->channels = imageData.channels;
+
+        // Recalculate mip levels if needed
+        if (HasFlag(texData->flags, TextureFlags::GenerateMipmaps)) {
+            u32 maxDim = std::max(imageData.width, imageData.height);
+            texData->mipLevels = static_cast<u32>(std::floor(std::log2(maxDim))) + 1;
+        }
+    }
+
+    // Destroy old GPU texture if it exists and isn't a shared placeholder/error texture
+    VulkanTexture* oldVulkanTex = static_cast<VulkanTexture*>(texData->gpuTexture);
+    if (oldVulkanTex && oldDescriptorIndex != 0xFFFFFFFF) {
+        // Only destroy if it's not the placeholder/error texture
+        TextureData* placeholderCheck = Get(m_PlaceholderTexture);
+        TextureData* errorCheck = Get(m_ErrorTexture);
+        if (oldVulkanTex != placeholderCheck->gpuTexture && oldVulkanTex != errorCheck->gpuTexture) {
+            oldVulkanTex->Destroy();
+            delete oldVulkanTex;
+        }
+    }
+
+    // Create new GPU texture with preserved descriptor index
+    VulkanTexture* newVulkanTex = new VulkanTexture();
+    if (oldDescriptorIndex != 0xFFFFFFFF) {
+        newVulkanTex->SetDescriptorIndex(oldDescriptorIndex);
+    }
+
+    // Upload to GPU (synchronous for now, TODO: make async)
+    if (m_VulkanContext) {
+        newVulkanTex->Create(m_VulkanContext, texData);
+        texData->gpuTexture = newVulkanTex;
+        texData->gpuUploaded = true;
+
+        // Increment generation to invalidate old references (triggers material rebuild)
+        IncrementGeneration(handle);
+
+        // Invalidate materials using this texture (triggers descriptor rebuild)
+        MaterialManager::Instance().InvalidateMaterialsUsingTexture(handle);
+
+        std::cout << "TextureManager: Successfully reloaded " << filepath << std::endl;
+    } else {
+        std::cerr << "TextureManager::PerformReload: VulkanContext not initialized" << std::endl;
+        delete newVulkanTex;
+
+        // Replace with error texture
+        TextureData* errorData = Get(m_ErrorTexture);
+        if (errorData && errorData->gpuTexture) {
+            texData->gpuTexture = errorData->gpuTexture;
+        }
+    }
 }

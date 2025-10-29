@@ -40,7 +40,7 @@ struct TextureLoadOptions {
     bool overrideQualityHint = false;       // If true, use qualityHint; if false, use global default
     MipmapQuality qualityHint;              // Only used if overrideQualityHint is true
 
-    // Compression hint for future GPU compression (Phase 2+)
+    // Compression hint for future GPU compression
     VkFormat compressionHint = VK_FORMAT_UNDEFINED;
 
     // Auto-detect sRGB from usage?

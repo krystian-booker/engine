@@ -56,7 +56,7 @@ static bool IsFormatSRGB(VkFormat format) {
 }
 
 MipmapMethod SelectMipGenerator(const MipmapGenerationParams& params) {
-    // Phase 1: Handle forced policies
+    // Handle forced policies
     if (params.policy == MipmapPolicy::ForceCPU) {
         return MipmapMethod::CPU;
     }
@@ -101,7 +101,7 @@ MipmapMethod SelectMipGenerator(const MipmapGenerationParams& params) {
         }
     }
 
-    // Phase 2: Auto policy - usage-based rules
+    // Auto policy - usage-based rules
     MipmapMethod preferredMethod = MipmapMethod::Blit;  // Default preference
 
     switch (params.usage) {
@@ -155,7 +155,7 @@ MipmapMethod SelectMipGenerator(const MipmapGenerationParams& params) {
             break;
     }
 
-    // Phase 3: Capability-based fallback
+    // Capability-based fallback
     // Try preferred method first, fall back to alternatives if unsupported
 
     if (preferredMethod == MipmapMethod::Compute) {
