@@ -55,6 +55,11 @@ elseif(APPLE)
     add_compile_definitions(PLATFORM_MACOS)
 endif()
 
+# Define _DEBUG for debug builds (for ImGui and other debug-only code)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_compile_definitions(_DEBUG)
+endif()
+
 # Fetch GLM
 include(FetchContent)
 FetchContent_Declare(
@@ -115,6 +120,15 @@ set(ASSIMP_BUILD_GLTF_IMPORTER ON CACHE BOOL "" FORCE)
 set(ASSIMP_BUILD_FBX_IMPORTER ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(assimp)
 
+# Fetch Dear ImGui (docking branch)
+FetchContent_Declare(
+        imgui
+        GIT_REPOSITORY https://github.com/ocornut/imgui.git
+        GIT_TAG        v1.92.4-docking
+        GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(imgui)
+
 # Vulkan
 find_package(Vulkan REQUIRED)
 
@@ -142,6 +156,9 @@ if(TARGET assimp)
         target_compile_options(assimp PRIVATE -w)
     endif()
 endif()
+
+# ImGui is external code - we'll disable warnings for its source files after target creation
+# (handled below after add_executable)
 
 # stb is header-only, so we just need the include directory
 FetchContent_GetProperties(stb)
@@ -191,12 +208,29 @@ set(ENGINE_SOURCES
         src/renderer/vulkan_material_buffer.cpp
         src/renderer/vulkan_staging_pool.cpp
         src/renderer/vulkan_transfer_queue.cpp
+        src/renderer/imgui_layer.cpp
 )
 
 # Platform-specific source files
 if(WIN32)
     list(APPEND ENGINE_SOURCES src/platform/win32_platform.cpp)
 endif()
+
+# Dear ImGui source files (only in Debug builds, but always compile)
+FetchContent_GetProperties(imgui)
+if(NOT imgui_POPULATED)
+    FetchContent_Populate(imgui)
+endif()
+
+list(APPEND ENGINE_SOURCES
+        ${imgui_SOURCE_DIR}/imgui.cpp
+        ${imgui_SOURCE_DIR}/imgui_demo.cpp
+        ${imgui_SOURCE_DIR}/imgui_draw.cpp
+        ${imgui_SOURCE_DIR}/imgui_tables.cpp
+        ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+)
 
 # Main executable
 add_executable(engine ${ENGINE_SOURCES})
@@ -205,6 +239,8 @@ add_executable(engine ${ENGINE_SOURCES})
 target_include_directories(engine PRIVATE
         ${CMAKE_SOURCE_DIR}/src
         ${stb_SOURCE_DIR}
+        ${imgui_SOURCE_DIR}
+        ${imgui_SOURCE_DIR}/backends
 )
 
 # Link GLM, JSON, GLFW, and Assimp
@@ -219,6 +255,31 @@ target_link_libraries(engine PRIVATE
 target_compile_definitions(engine PRIVATE ENGINE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
 target_compile_features(engine PRIVATE cxx_std_20)
+
+# Suppress warnings for ImGui source files (external code)
+if(MSVC)
+    set_source_files_properties(
+            ${imgui_SOURCE_DIR}/imgui.cpp
+            ${imgui_SOURCE_DIR}/imgui_demo.cpp
+            ${imgui_SOURCE_DIR}/imgui_draw.cpp
+            ${imgui_SOURCE_DIR}/imgui_tables.cpp
+            ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+            ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
+            ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+            PROPERTIES COMPILE_FLAGS /W0
+    )
+else()
+    set_source_files_properties(
+            ${imgui_SOURCE_DIR}/imgui.cpp
+            ${imgui_SOURCE_DIR}/imgui_demo.cpp
+            ${imgui_SOURCE_DIR}/imgui_draw.cpp
+            ${imgui_SOURCE_DIR}/imgui_tables.cpp
+            ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+            ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
+            ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+            PROPERTIES COMPILE_FLAGS -w
+    )
+endif()
 
 # Platform-specific linking
 if(WIN32)

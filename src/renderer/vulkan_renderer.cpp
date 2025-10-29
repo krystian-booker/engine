@@ -90,6 +90,11 @@ void VulkanRenderer::Init(VulkanContext* context, Window* window, ECSCoordinator
         m_RenderSystem.reset();
     }
 
+#ifdef _DEBUG
+    // Initialize ImGui (debug builds only)
+    m_ImGuiLayer.Init(m_Context, m_Window, m_RenderPass.Get());
+#endif
+
     m_Initialized = true;
 }
 
@@ -100,6 +105,11 @@ void VulkanRenderer::Shutdown() {
 
     VkDevice device = m_Context->GetDevice();
     vkDeviceWaitIdle(device);
+
+#ifdef _DEBUG
+    // Shutdown ImGui (debug builds only)
+    m_ImGuiLayer.Shutdown();
+#endif
 
     if (m_RenderSystem) {
         m_RenderSystem->Shutdown();
@@ -151,6 +161,11 @@ void VulkanRenderer::DrawFrame() {
     clearColor.float32[3] = clearColorVec.w;
 
     BeginDefaultRenderPass(*frame, imageIndex, clearColor);
+
+#ifdef _DEBUG
+    // Begin ImGui frame (debug builds only)
+    m_ImGuiLayer.BeginFrame();
+#endif
 
     // Validate pipeline before binding
     VkPipeline pipeline = m_Pipeline.GetPipeline();
@@ -218,6 +233,11 @@ void VulkanRenderer::DrawFrame() {
         meshData->gpuMesh.Bind(frame->commandBuffer);
         meshData->gpuMesh.Draw(frame->commandBuffer);
     }
+
+#ifdef _DEBUG
+    // Render ImGui (debug builds only)
+    m_ImGuiLayer.Render(frame->commandBuffer);
+#endif
 
     EndDefaultRenderPass(*frame);
     EndFrame(*frame, imageIndex);

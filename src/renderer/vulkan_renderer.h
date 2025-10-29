@@ -17,6 +17,10 @@
 #include "renderer/vulkan_texture.h"
 #include "ecs/systems/render_system.h"
 
+#ifdef _DEBUG
+#include "renderer/imgui_layer.h"
+#endif
+
 #include <vulkan/vulkan.h>
 
 #include <memory>
@@ -81,6 +85,11 @@ private:
 
     // Default texture for bindless array (index 0)
     std::unique_ptr<VulkanTexture> m_DefaultTexture;
+
+#ifdef _DEBUG
+    // ImGui layer for debug UI (only in debug builds)
+    ImGuiLayer m_ImGuiLayer;
+#endif
 
     static constexpr u32 MAX_FRAMES_IN_FLIGHT = 2;
     std::vector<FrameContext> m_Frames;

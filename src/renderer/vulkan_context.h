@@ -50,6 +50,10 @@ public:
     bool SupportsStorageImage(VkFormat format) const;
     const VkFormatProperties* GetFormatProperties(VkFormat format) const;
 
+    // One-time command buffer helpers
+    VkCommandBuffer BeginSingleTimeCommands();
+    void EndSingleTimeCommands(VkCommandBuffer commandBuffer);
+
 private:
     VkInstance m_Instance = VK_NULL_HANDLE;
     VkDebugUtilsMessengerEXT m_DebugMessenger = VK_NULL_HANDLE;
