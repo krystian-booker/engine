@@ -11,13 +11,12 @@
 void CreateTestScene(ECSCoordinator& ecs) {
     std::cout << "Creating test scene..." << std::endl;
 
-    // Load the avocado model
-    MeshHandle avocadoMesh = MeshManager::Instance().Load(ENGINE_SOURCE_DIR "/assets/models/Avocado.fbx");
+    // Load the avocado model WITH embedded textures and material
+    MeshLoadResult avocadoResult = MeshManager::Instance().LoadWithMaterial(ENGINE_SOURCE_DIR "/assets/models/Avocado.fbx");
 
     // Check if it's a multi-mesh file
-    MeshData* avocadoData = MeshManager::Instance().Get(avocadoMesh);
-    if (avocadoData && avocadoData->HasSubMeshes()) {
-        std::cout << "Avocado has " << avocadoData->subMeshPaths.size() << " sub-meshes, loading all..." << std::endl;
+    if (avocadoResult.HasSubMeshes()) {
+        std::cout << "Avocado has " << avocadoResult.subMeshes.size() << " sub-meshes, loading all..." << std::endl;
 
         // Create a parent entity
         Entity avocadoParent = ecs.CreateEntity();
@@ -33,10 +32,8 @@ void CreateTestScene(ECSCoordinator& ecs) {
         rotator.speed = 30.0f;
         ecs.AddComponent(avocadoParent, rotator);
 
-        // Load each sub-mesh
-        for (const auto& subPath : avocadoData->subMeshPaths) {
-            MeshHandle subMesh = MeshManager::Instance().Load(subPath);
-
+        // Create entities for each sub-mesh with their materials
+        for (const auto& subResult : avocadoResult.subMeshes) {
             Entity subEntity = ecs.CreateEntity();
             ecs.SetParent(subEntity, avocadoParent);
 
@@ -47,11 +44,12 @@ void CreateTestScene(ECSCoordinator& ecs) {
             ecs.AddComponent(subEntity, subTransform);
 
             Renderable subRenderable;
-            subRenderable.mesh = subMesh;
+            subRenderable.mesh = subResult.mesh;
+            subRenderable.material = subResult.material;  // Assign loaded material with embedded textures!
             subRenderable.visible = true;
             ecs.AddComponent(subEntity, subRenderable);
         }
-    } else {
+    } else if (avocadoResult.IsValid()) {
         // Single mesh - display directly
         Entity avocadoEntity = ecs.CreateEntity();
 
@@ -62,7 +60,8 @@ void CreateTestScene(ECSCoordinator& ecs) {
         ecs.AddComponent(avocadoEntity, avocadoTransform);
 
         Renderable avocadoRenderable;
-        avocadoRenderable.mesh = avocadoMesh;
+        avocadoRenderable.mesh = avocadoResult.mesh;
+        avocadoRenderable.material = avocadoResult.material;  // Assign loaded material with embedded textures!
         avocadoRenderable.visible = true;
         ecs.AddComponent(avocadoEntity, avocadoRenderable);
 
@@ -71,6 +70,8 @@ void CreateTestScene(ECSCoordinator& ecs) {
         rotator.axis = Vec3(0.0f, 1.0f, 0.0f);
         rotator.speed = 30.0f;
         ecs.AddComponent(avocadoEntity, rotator);
+    } else {
+        std::cerr << "Failed to load Avocado.fbx!" << std::endl;
     }
 
     // Add a ground plane for reference

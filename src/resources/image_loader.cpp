@@ -69,6 +69,118 @@ ImageData LoadImage(const std::string& filepath, const TextureLoadOptions& optio
     return result;
 }
 
+ImageData LoadImageFromMemory(
+    const u8* buffer,
+    size_t bufferSize,
+    const TextureLoadOptions& options)
+{
+    ImageData result;
+
+    if (!buffer || bufferSize == 0) {
+        std::cerr << "ImageLoader::LoadImageFromMemory: invalid buffer" << std::endl;
+        return result;
+    }
+
+    // Configure stb_image flip
+    stbi_set_flip_vertically_on_load(options.flipVertical);
+
+    // Load image data from memory
+    i32 width, height, channels;
+    i32 desiredChannels = static_cast<i32>(options.desiredChannels);
+
+    u8* pixels = stbi_load_from_memory(
+        buffer,
+        static_cast<i32>(bufferSize),
+        &width,
+        &height,
+        &channels,
+        desiredChannels);
+
+    if (!pixels) {
+        std::cerr << "ImageLoader::LoadImageFromMemory failed to decode image: "
+                  << stbi_failure_reason() << std::endl;
+        return result;
+    }
+
+    // If desiredChannels was specified, stb_image converted the format
+    if (desiredChannels > 0) {
+        channels = desiredChannels;
+    }
+
+    // Validate channel count
+    if (channels < 1 || channels > 4) {
+        std::cerr << "ImageLoader::LoadImageFromMemory unsupported channel count (" << channels << ")" << std::endl;
+        stbi_image_free(pixels);
+        return result;
+    }
+
+    // Populate result
+    result.pixels = pixels;
+    result.width = static_cast<u32>(width);
+    result.height = static_cast<u32>(height);
+    result.channels = static_cast<u32>(channels);
+
+    return result;
+}
+
+ImageData CreateImageFromRawData(
+    const u8* pixelData,
+    u32 width,
+    u32 height,
+    u32 channels,
+    bool isBGRA)
+{
+    ImageData result;
+
+    if (!pixelData || width == 0 || height == 0 || channels == 0) {
+        std::cerr << "ImageLoader::CreateImageFromRawData: invalid parameters" << std::endl;
+        return result;
+    }
+
+    if (channels < 1 || channels > 4) {
+        std::cerr << "ImageLoader::CreateImageFromRawData: unsupported channel count (" << channels << ")" << std::endl;
+        return result;
+    }
+
+    // Calculate buffer size
+    size_t dataSize = static_cast<size_t>(width) * height * channels;
+
+    // Allocate new buffer (use malloc to match stbi_image_free)
+    u8* pixels = static_cast<u8*>(malloc(dataSize));
+    if (!pixels) {
+        std::cerr << "ImageLoader::CreateImageFromRawData: failed to allocate buffer" << std::endl;
+        return result;
+    }
+
+    // Copy and optionally convert BGRA → RGBA
+    if (isBGRA && channels >= 3) {
+        for (size_t i = 0; i < width * height; ++i) {
+            size_t srcIdx = i * channels;
+            size_t dstIdx = i * channels;
+
+            // BGRA → RGBA swap
+            pixels[dstIdx + 0] = pixelData[srcIdx + 2];  // B → R
+            pixels[dstIdx + 1] = pixelData[srcIdx + 1];  // G → G
+            pixels[dstIdx + 2] = pixelData[srcIdx + 0];  // R → B
+
+            if (channels == 4) {
+                pixels[dstIdx + 3] = pixelData[srcIdx + 3];  // A → A
+            }
+        }
+    } else {
+        // Direct copy (no conversion needed)
+        std::memcpy(pixels, pixelData, dataSize);
+    }
+
+    // Populate result
+    result.pixels = pixels;
+    result.width = width;
+    result.height = height;
+    result.channels = channels;
+
+    return result;
+}
+
 void FreeImage(ImageData& data) {
     if (data.pixels) {
         stbi_image_free(data.pixels);

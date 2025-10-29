@@ -170,6 +170,7 @@ set(ENGINE_SOURCES
         src/platform/input.cpp
         src/resources/mesh_manager.cpp
         src/resources/material_manager.cpp
+        src/resources/material_converter.cpp
         src/resources/image_loader.cpp
         src/resources/texture_manager.cpp
         src/renderer/vulkan_context.cpp

@@ -51,6 +51,21 @@ public:
         return ResourceManager::Load(filepath);
     }
 
+    // Load texture from memory buffer (compressed format: PNG, JPG, etc.)
+    // debugName: used for caching and debugging (e.g., "Avocado.fbx:embedded_0_diffuse")
+    TextureHandle LoadFromMemory(
+        const u8* buffer,
+        size_t bufferSize,
+        const std::string& debugName,
+        const TextureLoadOptions& options);
+
+    TextureHandle LoadFromMemory(
+        const u8* buffer,
+        size_t bufferSize,
+        const std::string& debugName) {
+        return LoadFromMemory(buffer, bufferSize, debugName, m_DefaultOptions);
+    }
+
     // ========================================================================
     // Array Texture Loading
     // ========================================================================

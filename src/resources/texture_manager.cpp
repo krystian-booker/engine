@@ -152,6 +152,74 @@ TextureHandle TextureManager::Load(const std::string& filepath, const TextureLoa
     return handle;
 }
 
+TextureHandle TextureManager::LoadFromMemory(
+    const u8* buffer,
+    size_t bufferSize,
+    const std::string& debugName,
+    const TextureLoadOptions& options)
+{
+    // Check cache first (using debugName as key)
+    TextureHandle existing = GetHandle(debugName);
+    if (IsValid(existing)) {
+        return existing;
+    }
+
+    // Load image data from memory using ImageLoader
+    ImageData imageData = ImageLoader::LoadImageFromMemory(buffer, bufferSize, options);
+    if (!imageData.IsValid()) {
+        std::cerr << "TextureManager::LoadFromMemory failed to load image from memory: " << debugName << std::endl;
+        return TextureHandle::Invalid;
+    }
+
+    // Create TextureData
+    auto textureData = std::make_unique<TextureData>();
+    textureData->pixels = imageData.pixels;
+    textureData->width = imageData.width;
+    textureData->height = imageData.height;
+    textureData->channels = imageData.channels;
+    textureData->usage = options.usage;
+    textureData->type = options.type;
+    textureData->formatOverride = options.formatOverride;
+    textureData->flags = options.flags;
+    textureData->compressionHint = options.compressionHint;
+    textureData->samplerSettings = options.samplerSettings;
+
+    // No source path for memory-based textures (can't hot reload)
+    // But store debugName for identification
+    textureData->sourcePaths.push_back(debugName);
+
+    // Set anisotropy level
+    if (HasFlag(options.flags, TextureFlags::AnisotropyOverride)) {
+        textureData->anisotropyLevel = options.anisotropyLevel;
+    } else {
+        textureData->anisotropyLevel = 0;  // Will use global default
+    }
+
+    // Set mipmap generation policy and quality
+    if (options.overrideMipmapPolicy) {
+        textureData->mipmapPolicy = options.mipmapPolicy;
+    }
+
+    if (options.overrideQualityHint) {
+        textureData->qualityHint = options.qualityHint;
+    } else {
+        textureData->qualityHint = TextureConfig::GetDefaultMipmapQuality();
+    }
+
+    // Calculate mip levels if GenerateMipmaps flag is set
+    if (HasFlag(options.flags, TextureFlags::GenerateMipmaps)) {
+        u32 maxDim = std::max(imageData.width, imageData.height);
+        textureData->mipLevels = static_cast<u32>(std::floor(std::log2(maxDim))) + 1;
+    } else {
+        textureData->mipLevels = 1;
+    }
+
+    // Add to resource manager (cannot use path-based caching for memory-loaded textures)
+    TextureHandle handle = Create(std::move(textureData));
+
+    return handle;
+}
+
 TextureHandle TextureManager::LoadArray(
     const std::vector<std::string>& layerPaths,
     const TextureLoadOptions& options)

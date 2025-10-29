@@ -4,6 +4,7 @@
 #include "core/material_data.h"
 #include "core/resource_handle.h"
 #include <vector>
+#include <unordered_map>
 
 // Forward declarations
 class VulkanContext;
@@ -33,6 +34,11 @@ public:
 
     // Get default fallback material
     MaterialHandle GetDefaultMaterial() const { return m_DefaultMaterial; }
+
+    // Get or create material by content hash (for deduplication)
+    // If a material with matching properties and textures exists, returns existing handle
+    // Otherwise creates and caches a new material
+    MaterialHandle GetOrCreate(const MaterialData& materialData, const std::string& debugName = "");
 
     // Upload material data to GPU SSBO
     // Returns GPU material index (slot in SSBO)
@@ -87,4 +93,7 @@ private:
 
     // Material index allocator (sequential assignment)
     u32 m_NextGPUMaterialIndex = 0;
+
+    // Content hash -> material handle cache for deduplication
+    std::unordered_map<u64, MaterialHandle> m_MaterialHashCache;
 };

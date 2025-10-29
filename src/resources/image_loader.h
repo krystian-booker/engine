@@ -58,6 +58,25 @@ namespace ImageLoader {
         const std::string& filepathPattern,
         const TextureLoadOptions& options);
 
+    // Load image from memory buffer (compressed format: PNG, JPG, etc.)
+    // Buffer must contain valid compressed image data
+    // Returns ImageData with allocated pixel buffer (must call FreeImage)
+    ImageData LoadImageFromMemory(
+        const u8* buffer,
+        size_t bufferSize,
+        const TextureLoadOptions& options);
+
+    // Create image from raw pixel data (RGBA or BGRA format)
+    // Copies the provided pixel data into a new buffer
+    // Returns ImageData with allocated pixel buffer (must call FreeImage)
+    // isBGRA: if true, converts BGRA to RGBA
+    ImageData CreateImageFromRawData(
+        const u8* pixelData,
+        u32 width,
+        u32 height,
+        u32 channels,
+        bool isBGRA = false);
+
     // Free image data allocated by LoadImage
     void FreeImage(ImageData& data);
 

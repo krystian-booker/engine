@@ -1,7 +1,12 @@
 #include "mesh_manager.h"
+#include "core/material_data.h"
+#include "resources/texture_manager.h"
+#include "resources/material_manager.h"
+#include "resources/material_converter.h"
 #include <iostream>
 #include <cmath>
 #include <cfloat>
+#include <filesystem>
 
 // Use GLM's pi constant
 #include <glm/gtc/constants.hpp>
@@ -10,6 +15,7 @@
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
+#include <assimp/material.h>
 
 std::unique_ptr<MeshData> MeshManager::LoadResource(const std::string& filepath) {
     std::cout << "Loading mesh: " << filepath << std::endl;
@@ -299,4 +305,351 @@ MeshHandle MeshManager::CreateQuad() {
     mesh->boundsMax = Vec3(0.5f, 0.5f, 0);
 
     return Create(std::move(mesh));
+}
+
+TextureHandle MeshManager::LoadTextureFromAssimp(
+    const aiScene* scene,
+    const aiString& texturePath,
+    const std::string& basePath,
+    const std::string& debugNamePrefix,
+    const TextureLoadOptions& options)
+{
+    if (texturePath.length == 0) {
+        return TextureHandle::Invalid;
+    }
+
+    std::string pathStr(texturePath.C_Str());
+
+    // Check if this is an embedded texture (path starts with '*')
+    if (pathStr[0] == '*') {
+        // Parse embedded texture index
+        u32 texIndex = std::atoi(pathStr.c_str() + 1);  // Skip '*' and parse index
+
+        if (texIndex >= scene->mNumTextures) {
+            std::cerr << "Embedded texture index " << texIndex << " out of range (max: "
+                      << scene->mNumTextures << ")" << std::endl;
+            return TextureHandle::Invalid;
+        }
+
+        const aiTexture* aiTex = scene->mTextures[texIndex];
+
+        // Generate unique debug name for this embedded texture
+        std::string debugName = debugNamePrefix + std::to_string(texIndex);
+
+        // Check if this is compressed (PNG/JPG) or raw (RGBA8888)
+        if (aiTex->mHeight == 0) {
+            // Compressed format: mWidth contains byte size, pcData contains compressed data
+            size_t bufferSize = aiTex->mWidth;
+            const u8* buffer = reinterpret_cast<const u8*>(aiTex->pcData);
+
+            std::cout << "Loading embedded texture (compressed) #" << texIndex
+                      << ", size: " << bufferSize << " bytes" << std::endl;
+
+            return TextureManager::Instance().LoadFromMemory(buffer, bufferSize, debugName, options);
+        } else {
+            // Raw RGBA8888 format: mWidth x mHeight, pcData is aiTexel array (BGRA)
+            u32 width = aiTex->mWidth;
+            u32 height = aiTex->mHeight;
+
+            std::cout << "Loading embedded texture (raw) #" << texIndex
+                      << ", dimensions: " << width << "x" << height << std::endl;
+
+            // aiTexel is BGRA format, need to convert to RGBA
+            // Use ImageLoader::CreateImageFromRawData with isBGRA=true
+            const u8* rawData = reinterpret_cast<const u8*>(aiTex->pcData);
+            ImageData imageData = ImageLoader::CreateImageFromRawData(rawData, width, height, 4, true);
+
+            if (!imageData.IsValid()) {
+                std::cerr << "Failed to convert raw embedded texture data" << std::endl;
+                return TextureHandle::Invalid;
+            }
+
+            // Create TextureData from ImageData
+            auto textureData = std::make_unique<TextureData>();
+            textureData->pixels = imageData.pixels;
+            textureData->width = imageData.width;
+            textureData->height = imageData.height;
+            textureData->channels = imageData.channels;
+            textureData->usage = options.usage;
+            textureData->type = options.type;
+            textureData->formatOverride = options.formatOverride;
+            textureData->flags = options.flags;
+            textureData->compressionHint = options.compressionHint;
+            textureData->samplerSettings = options.samplerSettings;
+            textureData->sourcePaths.push_back(debugName);
+
+            // Calculate mip levels if needed
+            if (HasFlag(options.flags, TextureFlags::GenerateMipmaps)) {
+                u32 maxDim = std::max(width, height);
+                textureData->mipLevels = static_cast<u32>(std::floor(std::log2(maxDim))) + 1;
+            } else {
+                textureData->mipLevels = 1;
+            }
+
+            textureData->mipmapPolicy = options.mipmapPolicy;
+            textureData->qualityHint = options.qualityHint;
+
+            return TextureManager::Instance().Create(std::move(textureData));
+        }
+    } else {
+        // External texture: resolve path relative to model file
+        std::filesystem::path fullPath = std::filesystem::path(basePath) / pathStr;
+
+        std::cout << "Loading external texture: " << fullPath.string() << std::endl;
+
+        return TextureManager::Instance().Load(fullPath.string(), options);
+    }
+}
+
+MaterialData MeshManager::ExtractMaterialFromAssimp(
+    const aiMaterial* aiMat,
+    const aiScene* scene,
+    const std::string& basePath,
+    const std::string& debugNamePrefix)
+{
+    MaterialData material;
+
+    // Extract base color / diffuse
+    aiColor3D diffuseColor(1.0f, 1.0f, 1.0f);
+    aiMat->Get(AI_MATKEY_COLOR_DIFFUSE, diffuseColor);
+    material.albedoTint = Vec4(diffuseColor.r, diffuseColor.g, diffuseColor.b, 1.0f);
+
+    // Check for opacity/transparency
+    f32 opacity = 1.0f;
+    if (aiMat->Get(AI_MATKEY_OPACITY, opacity) == AI_SUCCESS) {
+        material.albedoTint.a = opacity;
+        if (opacity < 1.0f) {
+            material.flags |= MaterialFlags::AlphaBlend;
+        }
+    }
+
+    // Extract emissive
+    aiColor3D emissiveColor(0.0f, 0.0f, 0.0f);
+    if (aiMat->Get(AI_MATKEY_COLOR_EMISSIVE, emissiveColor) == AI_SUCCESS) {
+        material.emissiveFactor = Vec4(emissiveColor.r, emissiveColor.g, emissiveColor.b, 1.0f);
+    }
+
+    // Try to extract PBR properties (Metallic/Roughness workflow)
+    f32 metallic = 0.0f;
+    f32 roughness = 0.5f;
+    bool hasPBRWorkflow = false;
+
+    if (aiMat->Get(AI_MATKEY_METALLIC_FACTOR, metallic) == AI_SUCCESS) {
+        material.metallicFactor = metallic;
+        hasPBRWorkflow = true;
+    }
+
+    if (aiMat->Get(AI_MATKEY_ROUGHNESS_FACTOR, roughness) == AI_SUCCESS) {
+        material.roughnessFactor = roughness;
+        hasPBRWorkflow = true;
+    }
+
+    // If PBR workflow not found, try Specular/Glossiness workflow and convert
+    if (!hasPBRWorkflow) {
+        aiColor3D specularColor(0.0f, 0.0f, 0.0f);
+        f32 glossiness = 0.5f;
+        bool hasSpecGloss = false;
+
+        if (aiMat->Get(AI_MATKEY_COLOR_SPECULAR, specularColor) == AI_SUCCESS) {
+            hasSpecGloss = true;
+        }
+
+        if (aiMat->Get(AI_MATKEY_GLOSSINESS_FACTOR, glossiness) == AI_SUCCESS ||
+            aiMat->Get(AI_MATKEY_SHININESS, glossiness) == AI_SUCCESS) {
+            // Normalize shininess to [0, 1] if needed (some exporters use [0, 100])
+            if (glossiness > 1.0f) {
+                glossiness = glossiness / 100.0f;
+            }
+            hasSpecGloss = true;
+        }
+
+        if (hasSpecGloss) {
+            Vec3 diffuse(diffuseColor.r, diffuseColor.g, diffuseColor.b);
+            Vec3 specular(specularColor.r, specularColor.g, specularColor.b);
+
+            // Convert using MaterialConverter
+            MaterialConverter::ConversionResult conversion;
+            if (specular.r > 0.0f || specular.g > 0.0f || specular.b > 0.0f) {
+                conversion = MaterialConverter::ConvertSpecGlossToMetalRough(diffuse, specular, glossiness);
+            } else {
+                conversion = MaterialConverter::ConvertGlossinessOnly(diffuse, glossiness);
+            }
+
+            // Apply converted values
+            material.albedoTint = Vec4(conversion.baseColor, material.albedoTint.a);
+            material.metallicFactor = conversion.metallic;
+            material.roughnessFactor = conversion.roughness;
+
+            std::cout << "Converted Spec/Gloss to Metal/Rough: "
+                      << "metallic=" << material.metallicFactor << ", roughness=" << material.roughnessFactor << std::endl;
+        }
+    }
+
+    // Extract two-sided flag
+    i32 twoSided = 0;
+    if (aiMat->Get(AI_MATKEY_TWOSIDED, twoSided) == AI_SUCCESS && twoSided != 0) {
+        material.flags |= MaterialFlags::DoubleSided;
+    }
+
+    // Load textures with appropriate options
+    aiString texPath;
+
+    // Albedo/Diffuse texture
+    if (aiMat->GetTexture(aiTextureType_DIFFUSE, 0, &texPath) == AI_SUCCESS ||
+        aiMat->GetTexture(aiTextureType_BASE_COLOR, 0, &texPath) == AI_SUCCESS) {
+        material.albedo = LoadTextureFromAssimp(scene, texPath, basePath, debugNamePrefix + "_diffuse", TextureLoadOptions::Albedo());
+    }
+
+    // Normal map
+    if (aiMat->GetTexture(aiTextureType_NORMALS, 0, &texPath) == AI_SUCCESS) {
+        material.normal = LoadTextureFromAssimp(scene, texPath, basePath, debugNamePrefix + "_normal", TextureLoadOptions::Normal());
+    }
+
+    // Metallic/Roughness textures
+    // Try packed texture first (glTF/FBX may pack them)
+    if (aiMat->GetTexture(aiTextureType_UNKNOWN, 0, &texPath) == AI_SUCCESS) {
+        // Assume packed format (R=roughness, G=metalness, B=AO)
+        material.metalRough = LoadTextureFromAssimp(scene, texPath, basePath, debugNamePrefix + "_metalrough", TextureLoadOptions::PackedPBR());
+    } else {
+        // Try separate textures
+        if (aiMat->GetTexture(aiTextureType_METALNESS, 0, &texPath) == AI_SUCCESS ||
+            aiMat->GetTexture(aiTextureType_DIFFUSE_ROUGHNESS, 0, &texPath) == AI_SUCCESS) {
+            // If we have either metalness or roughness, assume they're packed or we'll create a packed texture
+            material.metalRough = LoadTextureFromAssimp(scene, texPath, basePath, debugNamePrefix + "_metalrough", TextureLoadOptions::PackedPBR());
+        } else if (aiMat->GetTexture(aiTextureType_SPECULAR, 0, &texPath) == AI_SUCCESS) {
+            // Specular/Glossiness texture - treat as packed PBR after conversion
+            material.metalRough = LoadTextureFromAssimp(scene, texPath, basePath, debugNamePrefix + "_specgloss", TextureLoadOptions::PackedPBR());
+        }
+    }
+
+    // Ambient Occlusion
+    if (aiMat->GetTexture(aiTextureType_AMBIENT_OCCLUSION, 0, &texPath) == AI_SUCCESS ||
+        aiMat->GetTexture(aiTextureType_LIGHTMAP, 0, &texPath) == AI_SUCCESS) {
+        // AO is linear, single channel
+        TextureLoadOptions aoOptions;
+        aoOptions.usage = TextureUsage::Generic;
+        aoOptions.flags = TextureFlags::GenerateMipmaps;
+        material.ao = LoadTextureFromAssimp(scene, texPath, basePath, debugNamePrefix + "_ao", aoOptions);
+    }
+
+    // Emissive
+    if (aiMat->GetTexture(aiTextureType_EMISSIVE, 0, &texPath) == AI_SUCCESS) {
+        material.emissive = LoadTextureFromAssimp(scene, texPath, basePath, debugNamePrefix + "_emissive", TextureLoadOptions::Albedo());
+    }
+
+    return material;
+}
+
+MeshLoadResult MeshManager::ProcessMeshWithMaterial(
+    const aiMesh* mesh,
+    const aiScene* scene,
+    const std::string& basePath,
+    const std::string& debugNamePrefix)
+{
+    MeshLoadResult result;
+
+    // Process mesh geometry
+    std::unique_ptr<MeshData> meshData = ProcessMesh(mesh, scene);
+    if (!meshData) {
+        std::cerr << "Failed to process mesh geometry" << std::endl;
+        return result;
+    }
+
+    // Create mesh handle
+    result.mesh = Create(std::move(meshData));
+
+    // Extract and create material if mesh has one
+    if (mesh->mMaterialIndex < scene->mNumMaterials) {
+        const aiMaterial* aiMat = scene->mMaterials[mesh->mMaterialIndex];
+
+        // Extract material data from Assimp
+        MaterialData materialData = ExtractMaterialFromAssimp(aiMat, scene, basePath, debugNamePrefix);
+
+        // Get material name from Assimp for debugging
+        aiString matName;
+        std::string materialDebugName = debugNamePrefix;
+        if (aiMat->Get(AI_MATKEY_NAME, matName) == AI_SUCCESS && matName.length > 0) {
+            materialDebugName = std::string(matName.C_Str());
+        }
+
+        // Get or create material (with caching by content hash)
+        result.material = MaterialManager::Instance().GetOrCreate(materialData, materialDebugName);
+    } else {
+        // No material, use default
+        result.material = MaterialManager::Instance().GetDefaultMaterial();
+    }
+
+    return result;
+}
+
+MeshLoadResult MeshManager::LoadWithMaterial(const std::string& filepath) {
+    std::cout << "Loading mesh with material: " << filepath << std::endl;
+
+    MeshLoadResult result;
+
+    // Check if this is a sub-mesh request (format: "path/to/file.obj#0")
+    size_t hashPos = filepath.find('#');
+    std::string actualPath = filepath;
+    int subMeshIndex = -1;
+
+    if (hashPos != std::string::npos) {
+        actualPath = filepath.substr(0, hashPos);
+        subMeshIndex = std::stoi(filepath.substr(hashPos + 1));
+    }
+
+    // Extract base path for texture resolution
+    std::filesystem::path fsPath(actualPath);
+    std::string basePath = fsPath.parent_path().string();
+    std::string fileName = fsPath.filename().string();
+
+    // Load scene with Assimp
+    Assimp::Importer importer;
+    const aiScene* scene = importer.ReadFile(actualPath,
+        aiProcess_Triangulate |           // Convert all primitives to triangles
+        aiProcess_CalcTangentSpace |      // Generate tangents and bitangents
+        aiProcess_GenSmoothNormals |      // Generate smooth normals if missing
+        aiProcess_JoinIdenticalVertices | // Optimize vertex buffer
+        aiProcess_ImproveCacheLocality |  // Optimize for GPU cache
+        aiProcess_FlipUVs);               // Flip Y coordinate for Vulkan
+
+    // Error handling
+    if (!scene || !scene->mRootNode || (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE)) {
+        std::cerr << "Assimp error loading '" << actualPath << "': " << importer.GetErrorString() << std::endl;
+        return result;
+    }
+
+    // If loading a specific sub-mesh, process it directly
+    if (subMeshIndex >= 0) {
+        if (subMeshIndex < static_cast<int>(scene->mNumMeshes)) {
+            std::string debugPrefix = fileName + "#" + std::to_string(subMeshIndex);
+            result = ProcessMeshWithMaterial(scene->mMeshes[subMeshIndex], scene, basePath, debugPrefix);
+        } else {
+            std::cerr << "Sub-mesh index " << subMeshIndex << " out of range (max: " << scene->mNumMeshes << ")" << std::endl;
+        }
+        return result;
+    }
+
+    // Single mesh: load directly with material
+    if (scene->mNumMeshes == 1) {
+        result = ProcessMeshWithMaterial(scene->mMeshes[0], scene, basePath, fileName);
+        return result;
+    }
+
+    // Multiple meshes: create parent placeholder and populate submeshes
+    auto parentMesh = std::make_unique<MeshData>();
+    for (unsigned int i = 0; i < scene->mNumMeshes; ++i) {
+        std::string subMeshPath = actualPath + "#" + std::to_string(i);
+        parentMesh->subMeshPaths.push_back(subMeshPath);
+
+        // Also process each submesh and add to result
+        std::string debugPrefix = fileName + "#" + std::to_string(i);
+        MeshLoadResult subResult = ProcessMeshWithMaterial(scene->mMeshes[i], scene, basePath, debugPrefix);
+        result.subMeshes.push_back(subResult);
+    }
+
+    // Create placeholder parent mesh handle
+    result.mesh = Create(std::move(parentMesh));
+
+    std::cout << "Multi-mesh file detected with " << scene->mNumMeshes << " meshes" << std::endl;
+    return result;
 }

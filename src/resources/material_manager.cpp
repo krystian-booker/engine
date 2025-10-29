@@ -74,6 +74,41 @@ MaterialHandle MaterialManager::CreateDefaultMaterial() {
     return m_DefaultMaterial;
 }
 
+MaterialHandle MaterialManager::GetOrCreate(const MaterialData& materialData, const std::string& debugName) {
+    // Compute content hash using MaterialData::ComputeDescriptorHash()
+    u64 hash = materialData.ComputeDescriptorHash();
+
+    // Check if material with this hash already exists
+    auto it = m_MaterialHashCache.find(hash);
+    if (it != m_MaterialHashCache.end()) {
+        MaterialHandle existingHandle = it->second;
+        if (IsValid(existingHandle)) {
+            std::cout << "Material cache hit (hash: " << hash << ")" << std::endl;
+            return existingHandle;
+        } else {
+            // Handle was invalidated, remove from cache
+            m_MaterialHashCache.erase(it);
+        }
+    }
+
+    // Create new material
+    std::cout << "Creating new material (hash: " << hash << ")";
+    if (!debugName.empty()) {
+        std::cout << " - " << debugName;
+    }
+    std::cout << std::endl;
+
+    auto material = std::make_unique<MaterialData>(materialData);
+
+    // Create material handle
+    MaterialHandle handle = Create(std::move(material));
+
+    // Cache by hash
+    m_MaterialHashCache[hash] = handle;
+
+    return handle;
+}
+
 std::unique_ptr<MaterialData> MaterialManager::LoadResource(const std::string& filepath) {
     return LoadMaterialFromJSON(filepath);
 }
