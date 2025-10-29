@@ -58,36 +58,23 @@ void VulkanRenderer::Init(VulkanContext* context, Window* window, ECSCoordinator
     m_StagingPool.Init(m_Context);
     m_TransferQueue.Init(m_Context, MAX_FRAMES_IN_FLIGHT);
 
-    // Initialize TextureManager async pipeline
-    TextureManager::Instance().InitAsyncPipeline(m_Context, &m_TransferQueue, &m_StagingPool);
-
-    // Initialize MaterialManager GPU buffer
-    MaterialManager::Instance().InitGPUBuffer(m_Context);
-
     m_Swapchain.Init(m_Context, m_Window);
     m_Descriptors.Init(m_Context, MAX_FRAMES_IN_FLIGHT);
 
-    // Initialize material buffer with one default material
-    m_MaterialBuffer.Init(m_Context, 256);  // Start with capacity for 256 materials
+    // Initialize TextureManager async pipeline (needs m_Descriptors to be initialized first)
+    TextureManager::Instance().InitAsyncPipeline(m_Context, &m_TransferQueue, &m_StagingPool, &m_Descriptors);
 
-    // Create a default material
-    GPUMaterial defaultMaterial{};
-    defaultMaterial.albedoIndex = 0;
-    defaultMaterial.normalIndex = 0;
-    defaultMaterial.metalRoughIndex = 0;
-    defaultMaterial.aoIndex = 0;
-    defaultMaterial.emissiveIndex = 0;
-    defaultMaterial.flags = 0;
-    defaultMaterial.albedoTint = Vec4(1.0f, 1.0f, 1.0f, 1.0f);
-    defaultMaterial.emissiveFactor = Vec4(0.0f, 0.0f, 0.0f, 0.0f);
-    defaultMaterial.metallicFactor = 0.0f;
-    defaultMaterial.roughnessFactor = 0.5f;
-    defaultMaterial.normalScale = 1.0f;
-    defaultMaterial.aoStrength = 1.0f;
-    m_MaterialBuffer.UploadMaterial(defaultMaterial);
+    // Initialize MaterialManager GPU buffer (creates buffer with default material at index 0)
+    MaterialManager::Instance().InitGPUBuffer(m_Context);
 
-    // Bind material buffer to descriptor sets
-    m_Descriptors.BindMaterialBuffer(m_MaterialBuffer.GetBuffer(), 0, m_MaterialBuffer.GetBufferSize());
+    // Bind MaterialManager's material buffer to descriptor sets
+    VulkanMaterialBuffer* materialBuffer = MaterialManager::Instance().GetGPUBuffer();
+    if (materialBuffer) {
+        m_Descriptors.BindMaterialBuffer(materialBuffer->GetBuffer(), 0, materialBuffer->GetBufferSize());
+        std::cout << "Bound MaterialManager's buffer to descriptor set" << std::endl;
+    } else {
+        std::cerr << "Failed to get MaterialManager's GPU buffer!" << std::endl;
+    }
 
     // Create default texture for bindless array (MUST be done before any rendering)
     CreateDefaultTexture();
@@ -130,7 +117,6 @@ void VulkanRenderer::Shutdown() {
     DestroyFrameContexts();
     DestroySwapchainResources();
     m_Descriptors.Shutdown();
-    m_MaterialBuffer.Shutdown();
     m_Swapchain.Shutdown();
 
     m_Context = nullptr;

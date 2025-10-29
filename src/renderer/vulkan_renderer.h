@@ -79,9 +79,6 @@ private:
     VulkanStagingPool m_StagingPool;
     VulkanTransferQueue m_TransferQueue;
 
-    // Material system
-    VulkanMaterialBuffer m_MaterialBuffer;
-
     // Default texture for bindless array (index 0)
     std::unique_ptr<VulkanTexture> m_DefaultTexture;
 

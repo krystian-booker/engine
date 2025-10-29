@@ -6,6 +6,7 @@
 #include "renderer/vulkan_transfer_queue.h"
 #include "renderer/vulkan_staging_pool.h"
 #include "renderer/vulkan_texture.h"
+#include "renderer/vulkan_descriptors.h"
 #include "core/job_system.h"
 #include "platform/platform.h"
 #include <iostream>
@@ -62,10 +63,11 @@ TextureManager::TextureManager() {
     m_ErrorTexture = CreateCheckerboard(8, Vec4(1.0f, 0.0f, 1.0f, 1.0f), Vec4(0.0f, 0.0f, 0.0f, 1.0f));
 }
 
-void TextureManager::InitAsyncPipeline(VulkanContext* context, VulkanTransferQueue* transferQueue, VulkanStagingPool* stagingPool) {
+void TextureManager::InitAsyncPipeline(VulkanContext* context, VulkanTransferQueue* transferQueue, VulkanStagingPool* stagingPool, VulkanDescriptors* descriptors) {
     m_VulkanContext = context;
     m_TransferQueue = transferQueue;
     m_StagingPool = stagingPool;
+    m_Descriptors = descriptors;
     std::cout << "TextureManager async GPU upload pipeline initialized" << std::endl;
 }
 
@@ -216,6 +218,31 @@ TextureHandle TextureManager::LoadFromMemory(
 
     // Add to resource manager (cannot use path-based caching for memory-loaded textures)
     TextureHandle handle = Create(std::move(textureData));
+
+    // Upload to GPU immediately if context is available
+    if (m_VulkanContext && m_Descriptors && IsValid(handle)) {
+        TextureData* texture = Get(handle);
+        if (texture && !texture->gpuTexture) {
+            std::cout << "Uploading embedded texture to GPU: " << debugName << std::endl;
+
+            // Create VulkanTexture and upload
+            texture->gpuTexture = new VulkanTexture();
+            texture->gpuTexture->Create(m_VulkanContext, texture);
+
+            // Register with bindless descriptor array
+            u32 descriptorIndex = m_Descriptors->RegisterTexture(
+                texture->gpuTexture->GetImageView(),
+                texture->gpuTexture->GetSampler()
+            );
+
+            texture->gpuTexture->SetDescriptorIndex(descriptorIndex);
+            texture->gpuUploaded = true;
+
+            std::cout << "Embedded texture uploaded and registered at bindless index " << descriptorIndex << std::endl;
+        }
+    } else if (!m_VulkanContext || !m_Descriptors) {
+        std::cout << "Deferring texture upload (Vulkan context not ready): " << debugName << std::endl;
+    }
 
     return handle;
 }
@@ -963,6 +990,26 @@ void TextureManager::Update() {
     // Update file watcher for hot reload
     if (m_HotReloadEnabled) {
         m_FileWatcher.Update();
+    }
+
+    // Upload any pending textures that haven't been uploaded yet (lazy upload)
+    if (m_VulkanContext && m_Descriptors) {
+        ForEachResource([this](TextureData& texture) {
+            if (!texture.gpuTexture && texture.pixels) {
+                // Create VulkanTexture and upload
+                texture.gpuTexture = new VulkanTexture();
+                texture.gpuTexture->Create(m_VulkanContext, &texture);
+
+                // Register with bindless descriptor array
+                u32 descriptorIndex = m_Descriptors->RegisterTexture(
+                    texture.gpuTexture->GetImageView(),
+                    texture.gpuTexture->GetSampler()
+                );
+
+                texture.gpuTexture->SetDescriptorIndex(descriptorIndex);
+                texture.gpuUploaded = true;
+            }
+        });
     }
 
     // First, check for completed GPU uploads

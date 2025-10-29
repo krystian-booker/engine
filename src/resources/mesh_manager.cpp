@@ -395,9 +395,118 @@ TextureHandle MeshManager::LoadTextureFromAssimp(
         // External texture: resolve path relative to model file
         std::filesystem::path fullPath = std::filesystem::path(basePath) / pathStr;
 
-        std::cout << "Loading external texture: " << fullPath.string() << std::endl;
+        // Check if external file exists on disk
+        if (std::filesystem::exists(fullPath)) {
+            std::cout << "Loading external texture: " << fullPath.string() << std::endl;
+            return TextureManager::Instance().Load(fullPath.string(), options);
+        }
 
-        return TextureManager::Instance().Load(fullPath.string(), options);
+        // File doesn't exist - check if it's embedded with a filename reference
+        // Some FBX exporters embed textures but reference them by original filename
+        std::cout << "External texture not found: " << fullPath.string() << std::endl;
+
+        // Debug: List all embedded textures
+        std::cout << "FBX contains " << scene->mNumTextures << " embedded texture(s):" << std::endl;
+        for (u32 j = 0; j < scene->mNumTextures; ++j) {
+            std::string hint(scene->mTextures[j]->mFilename.C_Str());
+            std::cout << "  [" << j << "] hint: '" << hint << "'" << std::endl;
+        }
+
+        std::cout << "Searching for embedded texture with matching filename..." << std::endl;
+
+        // Extract filename from requested path (e.g., "2256_Avocado_d.tga")
+        std::filesystem::path requestedPath(pathStr);
+        std::string requestedFilename = requestedPath.filename().string();
+
+        // Search scene->mTextures for a match by filename
+        for (u32 i = 0; i < scene->mNumTextures; ++i) {
+            const aiTexture* aiTex = scene->mTextures[i];
+
+            // aiTexture::mFilename contains the original filename or format hint
+            std::string embeddedHint(aiTex->mFilename.C_Str());
+
+            // Extract just the filename from the embedded hint (it might be a path)
+            std::filesystem::path embeddedPath(embeddedHint);
+            std::string embeddedFilename = embeddedPath.filename().string();
+
+            // Match by exact filename comparison
+            bool filenameMatch = (embeddedFilename == requestedFilename || embeddedHint == requestedFilename);
+
+            if (filenameMatch) {
+                std::cout << "Found embedded texture #" << i << " matching '"
+                          << requestedFilename << "' (hint: '" << embeddedHint << "')" << std::endl;
+
+                // Use embedded texture loading logic
+                std::string debugName = debugNamePrefix + std::to_string(i);
+
+                if (aiTex->mHeight == 0) {
+                    // Compressed format: mWidth contains byte size, pcData contains compressed data
+                    size_t bufferSize = aiTex->mWidth;
+                    const u8* buffer = reinterpret_cast<const u8*>(aiTex->pcData);
+
+                    std::cout << "Loading embedded texture (compressed) #" << i
+                              << ", size: " << bufferSize << " bytes" << std::endl;
+
+                    TextureHandle handle = TextureManager::Instance().LoadFromMemory(buffer, bufferSize, debugName, options);
+
+                    if (!TextureManager::Instance().IsValid(handle)) {
+                        std::cerr << "FAILED to create texture from embedded data #" << i << std::endl;
+                    } else {
+                        std::cout << "Successfully created texture from embedded data #" << i << std::endl;
+                    }
+
+                    return handle;
+                } else {
+                    // Raw RGBA8888 format: mWidth x mHeight, pcData is aiTexel array (BGRA)
+                    u32 width = aiTex->mWidth;
+                    u32 height = aiTex->mHeight;
+
+                    std::cout << "Loading embedded texture (raw) #" << i
+                              << ", dimensions: " << width << "x" << height << std::endl;
+
+                    // aiTexel is BGRA format, need to convert to RGBA
+                    const u8* rawData = reinterpret_cast<const u8*>(aiTex->pcData);
+                    ImageData imageData = ImageLoader::CreateImageFromRawData(rawData, width, height, 4, true);
+
+                    if (!imageData.IsValid()) {
+                        std::cerr << "Failed to convert raw embedded texture data" << std::endl;
+                        return TextureHandle::Invalid;
+                    }
+
+                    // Create TextureData from ImageData
+                    auto textureData = std::make_unique<TextureData>();
+                    textureData->pixels = imageData.pixels;
+                    textureData->width = imageData.width;
+                    textureData->height = imageData.height;
+                    textureData->channels = imageData.channels;
+                    textureData->usage = options.usage;
+                    textureData->type = options.type;
+                    textureData->formatOverride = options.formatOverride;
+                    textureData->flags = options.flags;
+                    textureData->compressionHint = options.compressionHint;
+                    textureData->samplerSettings = options.samplerSettings;
+                    textureData->sourcePaths.push_back(debugName);
+
+                    // Calculate mip levels if needed
+                    if (HasFlag(options.flags, TextureFlags::GenerateMipmaps)) {
+                        u32 maxDim = std::max(width, height);
+                        textureData->mipLevels = static_cast<u32>(std::floor(std::log2(maxDim))) + 1;
+                    } else {
+                        textureData->mipLevels = 1;
+                    }
+
+                    textureData->mipmapPolicy = options.mipmapPolicy;
+                    textureData->qualityHint = options.qualityHint;
+
+                    return TextureManager::Instance().Create(std::move(textureData));
+                }
+            }
+        }
+
+        // Not found in embedded textures either
+        std::cerr << "Failed to load texture: " << pathStr
+                  << " (not found as external file or embedded texture)" << std::endl;
+        return TextureHandle::Invalid;
     }
 }
 
@@ -536,6 +645,15 @@ MaterialData MeshManager::ExtractMaterialFromAssimp(
     if (aiMat->GetTexture(aiTextureType_EMISSIVE, 0, &texPath) == AI_SUCCESS) {
         material.emissive = LoadTextureFromAssimp(scene, texPath, basePath, debugNamePrefix + "_emissive", TextureLoadOptions::Albedo());
     }
+
+    // Debug: Print material texture handles
+    std::cout << "Material texture handles:" << std::endl;
+    std::cout << "  Albedo: " << (TextureManager::Instance().IsValid(material.albedo) ? "VALID" : "INVALID")
+              << " (index: " << material.albedo.index << ", gen: " << material.albedo.generation << ")" << std::endl;
+    std::cout << "  Normal: " << (TextureManager::Instance().IsValid(material.normal) ? "VALID" : "INVALID")
+              << " (index: " << material.normal.index << ", gen: " << material.normal.generation << ")" << std::endl;
+    std::cout << "  MetalRough: " << (TextureManager::Instance().IsValid(material.metalRough) ? "VALID" : "INVALID")
+              << " (index: " << material.metalRough.index << ", gen: " << material.metalRough.generation << ")" << std::endl;
 
     return material;
 }

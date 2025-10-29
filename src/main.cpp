@@ -11,6 +11,8 @@
 #include "renderer/vulkan_context.h"
 #include "renderer/vulkan_renderer.h"
 #include "resources/mesh_manager.h"
+#include "resources/texture_manager.h"
+#include "resources/material_manager.h"
 
 #include <iostream>
 #include <string>
@@ -36,6 +38,9 @@ int main() {
     context.Init(&window);
 
     ECSCoordinator ecs;
+
+    // Initialize material manager with Vulkan context
+    MaterialManager::Instance().InitGPUBuffer(&context);
     ecs.Init();
 
     CameraSystem* cameraSystem = ecs.GetCameraSystem();
@@ -43,6 +48,10 @@ int main() {
     // Setup camera controller
     ecs.SetupCameraController(&window);
     CameraController* cameraController = ecs.GetCameraController();
+
+    // Initialize renderer BEFORE creating scene so TextureManager has access to descriptors
+    VulkanRenderer renderer;
+    renderer.Init(&context, &window, &ecs);
 
     CreateTestScene(ecs);
 
@@ -64,9 +73,6 @@ int main() {
             cameraController->SetControlledCamera(activeCamera);
         }
     }
-
-    VulkanRenderer renderer;
-    renderer.Init(&context, &window, &ecs);
 
     window.SetEventCallback([&renderer, cameraSystem](WindowEvent event, u32 width, u32 height) {
         if (event == WindowEvent::Resize) {
@@ -120,6 +126,9 @@ int main() {
         if (cameraSystem) {
             cameraSystem->Update(window.GetWidth(), window.GetHeight());
         }
+
+        // Process async texture uploads
+        TextureManager::Instance().Update();
 
         renderer.DrawFrame();
 

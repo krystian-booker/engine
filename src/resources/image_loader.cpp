@@ -1,6 +1,7 @@
 #include "resources/image_loader.h"
 #include <iostream>
 #include <cstring>
+#include <cstdlib>
 
 // Define STB_IMAGE_IMPLEMENTATION in exactly one .cpp file
 #define STB_IMAGE_IMPLEMENTATION
@@ -114,11 +115,40 @@ ImageData LoadImageFromMemory(
         return result;
     }
 
+    // Convert RGB to RGBA (3-channel formats have poor GPU support)
+    if (channels == 3) {
+        const size_t pixelCount = static_cast<size_t>(width) * height;
+        const size_t rgba_size = pixelCount * 4;
+        u8* rgba_pixels = static_cast<u8*>(malloc(rgba_size));
+
+        if (!rgba_pixels) {
+            std::cerr << "ImageLoader: Failed to allocate memory for RGBA conversion" << std::endl;
+            stbi_image_free(pixels);
+            return result;
+        }
+
+        for (size_t i = 0; i < pixelCount; ++i) {
+            rgba_pixels[i * 4 + 0] = pixels[i * 3 + 0];  // R
+            rgba_pixels[i * 4 + 1] = pixels[i * 3 + 1];  // G
+            rgba_pixels[i * 4 + 2] = pixels[i * 3 + 2];  // B
+            rgba_pixels[i * 4 + 3] = 255;                // A (fully opaque)
+        }
+
+        stbi_image_free(pixels);
+        pixels = rgba_pixels;
+        channels = 4;
+
+        std::cout << "ImageLoader: Converted RGB to RGBA for better GPU compatibility" << std::endl;
+    }
+
     // Populate result
     result.pixels = pixels;
     result.width = static_cast<u32>(width);
     result.height = static_cast<u32>(height);
     result.channels = static_cast<u32>(channels);
+
+    std::cout << "ImageLoader: Decoded image from memory - " << width << "x" << height
+              << " (" << channels << " channels)" << std::endl;
 
     return result;
 }

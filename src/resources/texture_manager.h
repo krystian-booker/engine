@@ -15,6 +15,7 @@
 class VulkanContext;
 class VulkanTransferQueue;
 class VulkanStagingPool;
+class VulkanDescriptors;
 enum class MipmapQuality : u8;
 
 // Global texture configuration
@@ -38,7 +39,7 @@ public:
     }
 
     // Initialize async upload pipeline (must be called after VulkanContext is created)
-    void InitAsyncPipeline(VulkanContext* context, VulkanTransferQueue* transferQueue, VulkanStagingPool* stagingPool);
+    void InitAsyncPipeline(VulkanContext* context, VulkanTransferQueue* transferQueue, VulkanStagingPool* stagingPool, VulkanDescriptors* descriptors = nullptr);
 
     // Shutdown async upload pipeline
     void ShutdownAsyncPipeline();
@@ -242,6 +243,7 @@ private:
     VulkanContext* m_VulkanContext = nullptr;
     VulkanTransferQueue* m_TransferQueue = nullptr;
     VulkanStagingPool* m_StagingPool = nullptr;
+    VulkanDescriptors* m_Descriptors = nullptr;
 
     // Track pending GPU uploads with timeline values
     struct PendingGPUUpload {
