@@ -194,10 +194,12 @@ void VulkanDescriptors::CreateDescriptorSets(u32 framesInFlight) {
     }
 
     // Allocate persistent descriptor set (single, shared across all frames)
+    // Pass MAX_BINDLESS_TEXTURES as the variable descriptor count for binding 1
     m_PersistentSet = pools->AllocateDescriptorSet(
         m_PersistentLayout,
         VulkanDescriptorPools::PoolType::Persistent,
-        0
+        0,  // frameIndex (not used for persistent)
+        MAX_BINDLESS_TEXTURES  // Variable descriptor count for bindless texture array
     );
 
     if (m_PersistentSet == VK_NULL_HANDLE) {

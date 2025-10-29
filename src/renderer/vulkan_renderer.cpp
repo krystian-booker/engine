@@ -265,16 +265,29 @@ bool VulkanRenderer::BeginFrame(FrameContext*& outFrame, u32& outImageIndex) {
     // Reset transfer queue for this frame
     m_TransferQueue.ResetForFrame(m_CurrentFrame);
 
+    // Wait for this frame's fence and reset it immediately
     vkWaitForFences(device, 1, &frame.inFlightFence, VK_TRUE, UINT64_MAX);
+    vkResetFences(device, 1, &frame.inFlightFence);
 
+    // Acquire next swapchain image using round-robin semaphore selection
+    // We cycle through semaphores to ensure each swapchain image gets its own set
     u32 imageIndex = 0;
+    u32 semaphoreIndex = m_CurrentSemaphoreIndex;
+
     VkResult acquireResult = vkAcquireNextImageKHR(
         device,
         m_Swapchain.GetSwapchain(),
         UINT64_MAX,
-        frame.imageAvailableSemaphore,
+        m_ImageAvailableSemaphores[semaphoreIndex],
         VK_NULL_HANDLE,
         &imageIndex);
+
+    // Store the semaphores in frame context for use in submit/present
+    frame.imageAvailableSemaphore = m_ImageAvailableSemaphores[semaphoreIndex];
+    frame.renderFinishedSemaphore = m_RenderFinishedSemaphores[semaphoreIndex];
+
+    // Advance semaphore index for next frame
+    m_CurrentSemaphoreIndex = (m_CurrentSemaphoreIndex + 1) % m_ImageAvailableSemaphores.size();
 
     if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR) {
         RecreateSwapchain();
@@ -285,13 +298,12 @@ bool VulkanRenderer::BeginFrame(FrameContext*& outFrame, u32& outImageIndex) {
         throw std::runtime_error("Failed to acquire swapchain image");
     }
 
+    // Wait for the image to be available if it's still being used by another frame
     if (m_ImagesInFlight[imageIndex] != VK_NULL_HANDLE) {
         vkWaitForFences(device, 1, &m_ImagesInFlight[imageIndex], VK_TRUE, UINT64_MAX);
     }
 
     m_ImagesInFlight[imageIndex] = frame.inFlightFence;
-
-    vkResetFences(device, 1, &frame.inFlightFence);
     m_CommandBuffers.Reset(m_CurrentFrame);
 
     VkCommandBufferBeginInfo beginInfo{};
@@ -449,6 +461,7 @@ void VulkanRenderer::CreateFrameContexts() {
         throw std::runtime_error("VulkanRenderer::CreateFrameContexts insufficient command buffers allocated");
     }
 
+    // Create per-frame fences only (semaphores are per-swapchain-image)
     for (size_t i = 0; i < m_Frames.size(); ++i) {
         FrameContext& frame = m_Frames[i];
         frame.commandBuffer = commandBuffers[i];
@@ -458,10 +471,23 @@ void VulkanRenderer::CreateFrameContexts() {
             throw std::runtime_error("Failed to create in-flight fence");
         }
 
+        // Semaphores are now per-swapchain-image, not per-frame
+        frame.imageAvailableSemaphore = VK_NULL_HANDLE;
+        frame.renderFinishedSemaphore = VK_NULL_HANDLE;
+    }
+
+    // Create per-swapchain-image semaphores (will be properly sized in InitSwapchainResources)
+    u32 imageCount = m_Swapchain.GetImageCount();
+    if (imageCount > 0) {
+        m_ImageAvailableSemaphores.resize(imageCount);
+        m_RenderFinishedSemaphores.resize(imageCount);
+
         VkSemaphoreCreateInfo semaphoreInfo = CreateSemaphoreInfo();
-        if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &frame.imageAvailableSemaphore) != VK_SUCCESS ||
-            vkCreateSemaphore(device, &semaphoreInfo, nullptr, &frame.renderFinishedSemaphore) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create synchronization semaphores");
+        for (u32 i = 0; i < imageCount; ++i) {
+            if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &m_ImageAvailableSemaphores[i]) != VK_SUCCESS ||
+                vkCreateSemaphore(device, &semaphoreInfo, nullptr, &m_RenderFinishedSemaphores[i]) != VK_SUCCESS) {
+                throw std::runtime_error("Failed to create per-swapchain-image semaphores");
+            }
         }
     }
 }
@@ -470,29 +496,40 @@ void VulkanRenderer::DestroyFrameContexts() {
     if (!m_Context) {
         m_CommandBuffers.Shutdown();
         m_Frames.clear();
+        m_ImageAvailableSemaphores.clear();
+        m_RenderFinishedSemaphores.clear();
         return;
     }
 
     VkDevice device = m_Context->GetDevice();
 
+    // Destroy per-frame fences
     for (FrameContext& frame : m_Frames) {
         if (frame.inFlightFence != VK_NULL_HANDLE) {
             vkDestroyFence(device, frame.inFlightFence, nullptr);
         }
 
-        if (frame.imageAvailableSemaphore != VK_NULL_HANDLE) {
-            vkDestroySemaphore(device, frame.imageAvailableSemaphore, nullptr);
-        }
-
-        if (frame.renderFinishedSemaphore != VK_NULL_HANDLE) {
-            vkDestroySemaphore(device, frame.renderFinishedSemaphore, nullptr);
-        }
-
+        // Semaphores are no longer stored in FrameContext
         frame = FrameContext{};
+    }
+
+    // Destroy per-swapchain-image semaphores
+    for (VkSemaphore semaphore : m_ImageAvailableSemaphores) {
+        if (semaphore != VK_NULL_HANDLE) {
+            vkDestroySemaphore(device, semaphore, nullptr);
+        }
+    }
+
+    for (VkSemaphore semaphore : m_RenderFinishedSemaphores) {
+        if (semaphore != VK_NULL_HANDLE) {
+            vkDestroySemaphore(device, semaphore, nullptr);
+        }
     }
 
     m_CommandBuffers.Shutdown();
     m_Frames.clear();
+    m_ImageAvailableSemaphores.clear();
+    m_RenderFinishedSemaphores.clear();
 }
 
 void VulkanRenderer::RecreateSwapchain() {

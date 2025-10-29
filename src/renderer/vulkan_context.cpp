@@ -254,27 +254,29 @@ void VulkanContext::CreateLogicalDevice() {
     }
 
     VkPhysicalDeviceFeatures deviceFeatures{};
+    deviceFeatures.samplerAnisotropy = VK_TRUE;  // Enable anisotropic filtering
 
-    // Enable descriptor indexing features (for bindless textures)
-    VkPhysicalDeviceDescriptorIndexingFeatures descriptorIndexingFeatures{};
-    descriptorIndexingFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
-    descriptorIndexingFeatures.descriptorBindingPartiallyBound = VK_TRUE;
-    descriptorIndexingFeatures.runtimeDescriptorArray = VK_TRUE;
-    descriptorIndexingFeatures.descriptorBindingVariableDescriptorCount = VK_TRUE;
-    descriptorIndexingFeatures.pNext = nullptr;
+    // Enable Vulkan 1.2 features (for shader capabilities)
+    VkPhysicalDeviceVulkan12Features vulkan12Features{};
+    vulkan12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    vulkan12Features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;  // For bindless textures
+    vulkan12Features.runtimeDescriptorArray = VK_TRUE;
+    vulkan12Features.descriptorBindingPartiallyBound = VK_TRUE;
+    vulkan12Features.descriptorBindingVariableDescriptorCount = VK_TRUE;
+    vulkan12Features.descriptorIndexing = VK_TRUE;  // Required when using VK_EXT_descriptor_indexing
+    vulkan12Features.timelineSemaphore = VK_TRUE;  // Timeline semaphores for async operations
+    vulkan12Features.pNext = nullptr;
 
-    // Enable timeline semaphore feature (Vulkan 1.2+)
-    VkPhysicalDeviceTimelineSemaphoreFeatures timelineSemaphoreFeatures{};
-    timelineSemaphoreFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES;
-    timelineSemaphoreFeatures.timelineSemaphore = VK_TRUE;
-    timelineSemaphoreFeatures.pNext = &descriptorIndexingFeatures;  // Chain descriptor indexing
+
+    // Note: Timeline semaphore features are enabled via VkPhysicalDeviceVulkan12Features above
+    // Removed VkPhysicalDeviceTimelineSemaphoreFeatures to avoid duplicate feature enablement
 
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     createInfo.queueCreateInfoCount = static_cast<u32>(queueCreateInfos.size());
     createInfo.pQueueCreateInfos = queueCreateInfos.data();
     createInfo.pEnabledFeatures = &deviceFeatures;
-    createInfo.pNext = &timelineSemaphoreFeatures;
+    createInfo.pNext = &vulkan12Features;  // Start pNext chain with descriptor indexing
 
     const std::vector<const char*> deviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,

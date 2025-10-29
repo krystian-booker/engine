@@ -65,18 +65,6 @@ bool IsFormatSRGB(VkFormat format) {
             return false;
     }
 }
-
-VkFormat GetLinearFormatFor(VkFormat format) {
-    switch (format) {
-        case VK_FORMAT_R8_SRGB: return VK_FORMAT_R8_UNORM;
-        case VK_FORMAT_R8G8_SRGB: return VK_FORMAT_R8G8_UNORM;
-        case VK_FORMAT_R8G8B8_SRGB: return VK_FORMAT_R8G8B8_UNORM;
-        case VK_FORMAT_R8G8B8A8_SRGB: return VK_FORMAT_R8G8B8A8_UNORM;
-        case VK_FORMAT_B8G8R8A8_SRGB: return VK_FORMAT_B8G8R8A8_UNORM;
-        default:
-            return format;
-    }
-}
 } // namespace
 
 VulkanTexture::~VulkanTexture() {
@@ -227,18 +215,15 @@ void VulkanTexture::CreateAsync(
         imageInfo.usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     }
 
+    // Only add storage bit for compute mipmaps if the format supports it
+    // IMPORTANT: We don't use mutable format trick here because creating an image view
+    // with sRGB format on a storage image requires sRGB to support storage, which it doesn't.
+    // So we only enable storage if the primary format itself supports it.
     if (wantsMipmaps) {
-        const VkFormat storageCandidate = GetLinearFormatFor(m_Format);
         bool supportsStorage = m_Context->SupportsStorageImage(m_Format);
-        if (!supportsStorage && storageCandidate != m_Format) {
-            supportsStorage = m_Context->SupportsStorageImage(storageCandidate);
-        }
 
         if (supportsStorage) {
             imageInfo.usage |= VK_IMAGE_USAGE_STORAGE_BIT;
-            if (IsFormatSRGB(m_Format) && storageCandidate != m_Format) {
-                imageInfo.flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
-            }
         }
     }
 
@@ -400,18 +385,15 @@ void VulkanTexture::CreateImage(const TextureData* data) {
         imageInfo.usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     }
 
+    // Only add storage bit for compute mipmaps if the format supports it
+    // IMPORTANT: We don't use mutable format trick here because creating an image view
+    // with sRGB format on a storage image requires sRGB to support storage, which it doesn't.
+    // So we only enable storage if the primary format itself supports it.
     if (wantsMipmaps) {
-        const VkFormat storageCandidate = GetLinearFormatFor(m_Format);
         bool supportsStorage = m_Context->SupportsStorageImage(m_Format);
-        if (!supportsStorage && storageCandidate != m_Format) {
-            supportsStorage = m_Context->SupportsStorageImage(storageCandidate);
-        }
 
         if (supportsStorage) {
             imageInfo.usage |= VK_IMAGE_USAGE_STORAGE_BIT;
-            if (IsFormatSRGB(m_Format) && storageCandidate != m_Format) {
-                imageInfo.flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
-            }
         }
     }
 
@@ -603,6 +585,7 @@ void VulkanTexture::GenerateMipmaps(VkImage image, VkFormat format, u32 width, u
 void VulkanTexture::GenerateMipmapsBlit(VkImage image, VkFormat /*format*/, u32 width, u32 height, u32 mipLevels, u32 arrayLayers) {
     VkCommandBuffer commandBuffer = BeginSingleTimeCommands();
 
+    // First, transition all mip levels 1+ from UNDEFINED to TRANSFER_DST_OPTIMAL
     VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barrier.image = image;
@@ -611,6 +594,20 @@ void VulkanTexture::GenerateMipmapsBlit(VkImage image, VkFormat /*format*/, u32 
     barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     barrier.subresourceRange.baseArrayLayer = 0;
     barrier.subresourceRange.layerCount = arrayLayers;
+    barrier.subresourceRange.baseMipLevel = 1;
+    barrier.subresourceRange.levelCount = mipLevels - 1;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.srcAccessMask = 0;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+    vkCmdPipelineBarrier(commandBuffer,
+                        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+                        0, nullptr,
+                        0, nullptr,
+                        1, &barrier);
+
+    // Reset barrier for per-mip-level transitions
     barrier.subresourceRange.levelCount = 1;
 
     i32 mipWidth = static_cast<i32>(width);

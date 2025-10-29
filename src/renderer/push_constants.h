@@ -7,7 +7,7 @@
 struct PushConstants {
     Mat4 model;           // 64 bytes
     u32 materialIndex;    // 4 bytes
-    u32 padding[1];       // 4 bytes padding (total 72 bytes)
+    u32 padding[2];       // 8 bytes padding to 16-byte alignment (total 76 bytes)
 };
 
-static_assert(sizeof(PushConstants) == 72, "PushConstants must be 72 bytes");
+static_assert(sizeof(PushConstants) == 76, "PushConstants must be 76 bytes");

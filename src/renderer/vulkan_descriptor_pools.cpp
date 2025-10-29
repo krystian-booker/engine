@@ -109,7 +109,8 @@ VkDescriptorPool VulkanDescriptorPools::CreateNewPool(PoolType type, u32 setsPer
 VkDescriptorSet VulkanDescriptorPools::AllocateDescriptorSet(
     VkDescriptorSetLayout layout,
     PoolType type,
-    u32 frameIndex
+    u32 frameIndex,
+    u32 variableDescriptorCount
 ) {
     std::lock_guard<std::mutex> lock(m_AllocationMutex);
 
@@ -135,7 +136,7 @@ VkDescriptorSet VulkanDescriptorPools::AllocateDescriptorSet(
     }
 
     // Step 2: Try allocating from existing pools
-    VkDescriptorSet set = TryAllocateFromExistingPools(*poolList, layout);
+    VkDescriptorSet set = TryAllocateFromExistingPools(*poolList, layout, variableDescriptorCount);
     if (set != VK_NULL_HANDLE) {
         return set;
     }
@@ -160,7 +161,7 @@ VkDescriptorSet VulkanDescriptorPools::AllocateDescriptorSet(
     });
 
     // Retry allocation with new pool
-    set = TryAllocateFromExistingPools(*poolList, layout);
+    set = TryAllocateFromExistingPools(*poolList, layout, variableDescriptorCount);
     if (set == VK_NULL_HANDLE) {
         std::cerr << "Failed to allocate from newly created pool!" << std::endl;
     }
@@ -170,7 +171,8 @@ VkDescriptorSet VulkanDescriptorPools::AllocateDescriptorSet(
 
 VkDescriptorSet VulkanDescriptorPools::TryAllocateFromExistingPools(
     std::vector<PoolInfo>& pools,
-    VkDescriptorSetLayout layout
+    VkDescriptorSetLayout layout,
+    u32 variableDescriptorCount
 ) {
     VkDevice device = m_Context->GetDevice();
 
@@ -185,6 +187,15 @@ VkDescriptorSet VulkanDescriptorPools::TryAllocateFromExistingPools(
         allocInfo.descriptorPool = poolInfo.pool;
         allocInfo.descriptorSetCount = 1;
         allocInfo.pSetLayouts = &layout;
+
+        // If variable descriptor count is specified, add the count info
+        VkDescriptorSetVariableDescriptorCountAllocateInfo variableCountInfo{};
+        if (variableDescriptorCount > 0) {
+            variableCountInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO;
+            variableCountInfo.descriptorSetCount = 1;
+            variableCountInfo.pDescriptorCounts = &variableDescriptorCount;
+            allocInfo.pNext = &variableCountInfo;
+        }
 
         VkDescriptorSet set;
         VkResult result = vkAllocateDescriptorSets(device, &allocInfo, &set);

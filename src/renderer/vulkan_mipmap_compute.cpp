@@ -307,9 +307,10 @@ void VulkanMipmapCompute::Generate(const Params& params) {
             barriers[1].subresourceRange.layerCount = 1;
             barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barriers[1].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            // Mip levels 1+ are in UNDEFINED layout after image creation (only mip 0 is uploaded)
+            barriers[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
             barriers[1].newLayout = VK_IMAGE_LAYOUT_GENERAL;
-            barriers[1].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            barriers[1].srcAccessMask = 0;
             barriers[1].dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
 
             VkPipelineStageFlags srcStage = VK_PIPELINE_STAGE_TRANSFER_BIT;

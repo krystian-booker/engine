@@ -36,10 +36,12 @@ public:
 
     // Allocate a descriptor set from appropriate pool
     // Returns VK_NULL_HANDLE on failure
+    // variableDescriptorCount: optional descriptor count for variable descriptor count bindings
     VkDescriptorSet AllocateDescriptorSet(
         VkDescriptorSetLayout layout,
         PoolType type,
-        u32 frameIndex = 0
+        u32 frameIndex = 0,
+        u32 variableDescriptorCount = 0
     );
 
     // Free a descriptor set (adds to freelist for recycling)
@@ -72,7 +74,8 @@ private:
     // Attempt to allocate from an existing pool (returns VK_NULL_HANDLE if all exhausted)
     VkDescriptorSet TryAllocateFromExistingPools(
         std::vector<PoolInfo>& pools,
-        VkDescriptorSetLayout layout
+        VkDescriptorSetLayout layout,
+        u32 variableDescriptorCount = 0
     );
 
     // Find which pool owns a descriptor set

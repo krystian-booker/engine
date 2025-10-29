@@ -14,20 +14,9 @@ static bool CanUseCompute(VulkanContext* context, VkFormat format) {
         return true;
     }
 
-    // For sRGB formats, check if the linear equivalent supports storage
-    // (we can convert via image view or manually in shader)
-    switch (format) {
-        case VK_FORMAT_R8G8B8A8_SRGB:
-            return context->SupportsStorageImage(VK_FORMAT_R8G8B8A8_UNORM);
-        case VK_FORMAT_B8G8R8A8_SRGB:
-            return context->SupportsStorageImage(VK_FORMAT_B8G8R8A8_UNORM);
-        case VK_FORMAT_R8_SRGB:
-            return context->SupportsStorageImage(VK_FORMAT_R8_UNORM);
-        case VK_FORMAT_R8G8_SRGB:
-            return context->SupportsStorageImage(VK_FORMAT_R8G8_UNORM);
-        default:
-            return false;
-    }
+    // sRGB formats dont support storage images, so we cannot use compute shaders
+    // They will fall back to blit or CPU mipmap generation
+    return false;
 }
 
 // Helper function to check if a format supports blit filtering

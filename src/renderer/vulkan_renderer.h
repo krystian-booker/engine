@@ -95,6 +95,11 @@ private:
     std::vector<FrameContext> m_Frames;
     std::vector<VkFence> m_ImagesInFlight;
 
+    // Per-swapchain-image semaphores to avoid reuse issues
+    std::vector<VkSemaphore> m_ImageAvailableSemaphores;
+    std::vector<VkSemaphore> m_RenderFinishedSemaphores;
+    u32 m_CurrentSemaphoreIndex = 0;  // Round-robin semaphore selection
+
     u32 m_CurrentFrame = 0;
     bool m_FramebufferResized = false;
     bool m_Initialized = false;
