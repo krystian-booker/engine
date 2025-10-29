@@ -91,7 +91,14 @@ void VulkanPipeline::Init(VulkanContext* context, VulkanRenderPass* renderPass, 
     for (u32 i = 0; i < static_cast<u32>(PipelineVariant::Count); ++i) {
         PipelineVariant variant = static_cast<PipelineVariant>(i);
         VkPipeline pipeline = CreatePipelineVariant(variant, descriptorSetLayout, extent);
+
+        if (pipeline == VK_NULL_HANDLE) {
+            std::cerr << "ERROR: Failed to create pipeline variant " << i << std::endl;
+            throw std::runtime_error("Failed to create pipeline variant");
+        }
+
         m_PipelineVariants[variant] = pipeline;
+        std::cout << "Created pipeline variant " << i << ": " << (void*)pipeline << std::endl;
     }
 
     std::cout << "VulkanPipeline created " << static_cast<u32>(PipelineVariant::Count) << " pipeline variants" << std::endl;

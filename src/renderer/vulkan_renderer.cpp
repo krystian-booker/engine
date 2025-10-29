@@ -13,8 +13,10 @@
 #include "renderer/material_buffer.h"
 #include "resources/mesh_manager.h"
 #include "resources/texture_manager.h"
+#include "core/texture_data.h"
 
 #include <stdexcept>
+#include <iostream>
 
 namespace {
 
@@ -83,6 +85,9 @@ void VulkanRenderer::Init(VulkanContext* context, Window* window, ECSCoordinator
     // Bind material buffer to descriptor sets
     m_Descriptors.BindMaterialBuffer(m_MaterialBuffer.GetBuffer(), 0, m_MaterialBuffer.GetBufferSize());
 
+    // Create default texture for bindless array (MUST be done before any rendering)
+    CreateDefaultTexture();
+
     InitSwapchainResources();
     CreateFrameContexts();
     InitMeshResources();
@@ -115,6 +120,7 @@ void VulkanRenderer::Shutdown() {
     m_TransferQueue.Shutdown();
     m_StagingPool.Shutdown();
 
+    DestroyDefaultTexture();
     DestroyMeshResources();
     DestroyFrameContexts();
     DestroySwapchainResources();
@@ -155,7 +161,17 @@ void VulkanRenderer::DrawFrame() {
 
     BeginDefaultRenderPass(*frame, imageIndex, clearColor);
 
-    vkCmdBindPipeline(frame->commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_Pipeline.GetPipeline());
+    // Validate pipeline before binding
+    VkPipeline pipeline = m_Pipeline.GetPipeline();
+    if (pipeline == VK_NULL_HANDLE) {
+        std::cerr << "ERROR: GetPipeline() returned VK_NULL_HANDLE! Skipping frame." << std::endl;
+        EndDefaultRenderPass(*frame);
+        vkEndCommandBuffer(frame->commandBuffer);
+        vkResetFences(m_Context->GetDevice(), 1, &frame->inFlightFence);
+        return;
+    }
+
+    vkCmdBindPipeline(frame->commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
     VkDescriptorSet descriptorSet = m_Descriptors.GetDescriptorSet(currentFrameIndex);
     vkCmdBindDescriptorSets(
         frame->commandBuffer,
@@ -314,7 +330,9 @@ void VulkanRenderer::EndFrame(FrameContext& frame, u32 imageIndex) {
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = &frame.renderFinishedSemaphore;
 
-    if (vkQueueSubmit(m_Context->GetGraphicsQueue(), 1, &submitInfo, frame.inFlightFence) != VK_SUCCESS) {
+    VkResult result = vkQueueSubmit(m_Context->GetGraphicsQueue(), 1, &submitInfo, frame.inFlightFence);
+    if (result != VK_SUCCESS) {
+        std::cerr << "ERROR: vkQueueSubmit failed with error code: " << result << std::endl;
         throw std::runtime_error("Failed to submit draw command buffer");
     }
 
@@ -474,6 +492,13 @@ void VulkanRenderer::RecreateSwapchain() {
     DestroySwapchainResources();
     m_Swapchain.Recreate(m_Window);
     InitSwapchainResources();
+
+    // Validate that pipeline was successfully recreated
+    if (m_Pipeline.GetPipeline() == VK_NULL_HANDLE) {
+        std::cerr << "ERROR: Pipeline is NULL after swapchain recreation!" << std::endl;
+        throw std::runtime_error("Failed to recreate pipeline after swapchain recreation");
+    }
+
     m_FramebufferResized = false;
 }
 
@@ -520,4 +545,54 @@ void VulkanRenderer::DestroyMeshResources() {
 
     meshManager.Destroy(m_ActiveMesh);
     m_ActiveMesh = MeshHandle::Invalid;
+}
+
+void VulkanRenderer::CreateDefaultTexture() {
+    // Create a 1x1 white texture to use as default for all unbound texture indices
+    std::cout << "Creating default texture for bindless array..." << std::endl;
+
+    // Allocate texture data
+    TextureData* textureData = new TextureData();
+    textureData->width = 1;
+    textureData->height = 1;
+    textureData->channels = 4;  // RGBA
+    textureData->mipLevels = 1;
+    textureData->arrayLayers = 1;
+    textureData->usage = TextureUsage::Generic;
+    textureData->type = TextureType::Texture2D;
+
+    // Allocate pixel data (1x1 RGBA white)
+    textureData->pixels = new u8[4];
+    textureData->pixels[0] = 255;  // R
+    textureData->pixels[1] = 255;  // G
+    textureData->pixels[2] = 255;  // B
+    textureData->pixels[3] = 255;  // A
+
+    // Create VulkanTexture
+    m_DefaultTexture = std::make_unique<VulkanTexture>();
+    m_DefaultTexture->Create(m_Context, textureData);
+
+    // Register with bindless descriptor array (should get index 0)
+    u32 descriptorIndex = m_Descriptors.RegisterTexture(
+        m_DefaultTexture->GetImageView(),
+        m_DefaultTexture->GetSampler()
+    );
+
+    m_DefaultTexture->SetDescriptorIndex(descriptorIndex);
+
+    std::cout << "Default texture created and registered at bindless index " << descriptorIndex << std::endl;
+
+    // Clean up TextureData (pixels are copied to GPU)
+    delete textureData;
+}
+
+void VulkanRenderer::DestroyDefaultTexture() {
+    if (m_DefaultTexture) {
+        u32 descriptorIndex = m_DefaultTexture->GetDescriptorIndex();
+        if (descriptorIndex != 0xFFFFFFFF) {
+            m_Descriptors.UnregisterTexture(descriptorIndex);
+        }
+        m_DefaultTexture->Destroy();
+        m_DefaultTexture.reset();
+    }
 }
