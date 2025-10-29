@@ -7,6 +7,8 @@
 // Forward declarations
 class VulkanContext;
 class Window;
+class SceneManager;
+class ECSCoordinator;
 struct VkRenderPass_T;
 typedef VkRenderPass_T* VkRenderPass;
 struct VkDescriptorPool_T;
@@ -23,7 +25,7 @@ public:
     ~ImGuiLayer() = default;
 
     // Initialize ImGui with Vulkan and GLFW backends
-    void Init(VulkanContext* context, Window* window, VkRenderPass renderPass);
+    void Init(VulkanContext* context, Window* window, VkRenderPass renderPass, SceneManager* sceneManager, ECSCoordinator* ecs);
 
     // Cleanup ImGui resources
     void Shutdown();
@@ -35,11 +37,22 @@ public:
     void Render(VkCommandBuffer commandBuffer);
 
 private:
+    // Helper methods for UI sections
+    void RenderFileMenu();
+    void RenderSceneMenu();
+    void RenderHelpMenu();
+    void RenderSceneHierarchyWindow();
+
     VulkanContext* m_Context = nullptr;
     Window* m_Window = nullptr;
+    SceneManager* m_SceneManager = nullptr;
+    ECSCoordinator* m_ECS = nullptr;
     VkDescriptorPool m_DescriptorPool = nullptr;
-    bool m_ShowDemoWindow = false;  // Hidden by default, toggle via Help menu
+
+    // UI state
+    bool m_ShowDemoWindow = false;
     bool m_ShowAboutWindow = false;
+    bool m_ShowSceneHierarchyWindow = false;
 };
 
 #endif // _DEBUG

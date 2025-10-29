@@ -40,7 +40,7 @@ VulkanRenderer::~VulkanRenderer() {
     Shutdown();
 }
 
-void VulkanRenderer::Init(VulkanContext* context, Window* window, ECSCoordinator* ecs) {
+void VulkanRenderer::Init(VulkanContext* context, Window* window, ECSCoordinator* ecs, SceneManager* sceneManager) {
     if (m_Initialized) {
         return;
     }
@@ -52,6 +52,7 @@ void VulkanRenderer::Init(VulkanContext* context, Window* window, ECSCoordinator
     m_Context = context;
     m_Window = window;
     m_ECS = ecs;
+    m_SceneManager = sceneManager;
     m_CameraSystem = (ecs != nullptr) ? ecs->GetCameraSystem() : nullptr;
 
     // Initialize async upload pipeline
@@ -92,7 +93,7 @@ void VulkanRenderer::Init(VulkanContext* context, Window* window, ECSCoordinator
 
 #ifdef _DEBUG
     // Initialize ImGui (debug builds only)
-    m_ImGuiLayer.Init(m_Context, m_Window, m_RenderPass.Get());
+    m_ImGuiLayer.Init(m_Context, m_Window, m_RenderPass.Get(), m_SceneManager, m_ECS);
 #endif
 
     m_Initialized = true;

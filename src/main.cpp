@@ -1,11 +1,11 @@
 #include "core/time.h"
+#include "core/scene_manager.h"
 #include "ecs/components/renderable.h"
 #include "ecs/components/rotator.h"
 #include "ecs/components/transform.h"
 #include "ecs/ecs_coordinator.h"
 #include "ecs/systems/camera_system.h"
 #include "ecs/systems/camera_controller.h"
-#include "examples/test_scene.h"
 #include "platform/input.h"
 #include "platform/window.h"
 #include "renderer/vulkan_context.h"
@@ -38,10 +38,10 @@ int main() {
     context.Init(&window);
 
     ECSCoordinator ecs;
-
-    // Initialize material manager with Vulkan context
-    MaterialManager::Instance().InitGPUBuffer(&context);
     ecs.Init();
+
+    // Create Scene Manager
+    SceneManager sceneManager(&ecs);
 
     CameraSystem* cameraSystem = ecs.GetCameraSystem();
 
@@ -51,9 +51,9 @@ int main() {
 
     // Initialize renderer BEFORE creating scene so TextureManager has access to descriptors
     VulkanRenderer renderer;
-    renderer.Init(&context, &window, &ecs);
+    renderer.Init(&context, &window, &ecs, &sceneManager);
 
-    CreateTestScene(ecs);
+    // Start with empty scene (user can load default.scene from File menu)
 
     MeshHandle cubeMeshHandle = MeshHandle::Invalid;
     std::vector<Entity> renderableEntities = ecs.QueryEntities<Renderable>();
@@ -133,8 +133,28 @@ int main() {
         renderer.DrawFrame();
 
         if (Time::FrameCount() % 60 == 0) {
-            const std::string title = "3D Scene - FPS: " + std::to_string(static_cast<int>(Time::FPS())) +
+            std::string title = "Game Engine";
+
+            // Show current scene file name if available
+            if (sceneManager.HasCurrentFile()) {
+                std::string scenePath = sceneManager.GetCurrentFilePath();
+                // Extract filename from path
+                size_t lastSlash = scenePath.find_last_of("/\\");
+                std::string filename = (lastSlash != std::string::npos) ? scenePath.substr(lastSlash + 1) : scenePath;
+                title += " - " + filename;
+            } else {
+                title += " - Untitled";
+            }
+
+            // Show dirty indicator
+            if (sceneManager.IsDirty()) {
+                title += "*";
+            }
+
+            // Show FPS and object count
+            title += " - FPS: " + std::to_string(static_cast<int>(Time::FPS())) +
                 " - Objects: " + std::to_string(ecs.QueryEntities<Renderable>().size());
+
             window.SetTitle(title);
         }
     }

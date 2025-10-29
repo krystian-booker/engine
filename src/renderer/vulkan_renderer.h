@@ -30,13 +30,14 @@ class VulkanContext;
 class Window;
 class ECSCoordinator;
 class CameraSystem;
+class SceneManager;
 
 class VulkanRenderer {
 public:
     VulkanRenderer() = default;
     ~VulkanRenderer();
 
-    void Init(VulkanContext* context, Window* window, ECSCoordinator* ecs);
+    void Init(VulkanContext* context, Window* window, ECSCoordinator* ecs, SceneManager* sceneManager);
     void Shutdown();
 
     void DrawFrame();
@@ -68,6 +69,7 @@ private:
     VulkanContext* m_Context = nullptr;
     Window* m_Window = nullptr;
     ECSCoordinator* m_ECS = nullptr;
+    SceneManager* m_SceneManager = nullptr;
     CameraSystem* m_CameraSystem = nullptr;
     std::unique_ptr<RenderSystem> m_RenderSystem;
 

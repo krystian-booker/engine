@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 4.0)
 project(engine)
 
+# Allow FetchContent_Populate for header-only libraries
+cmake_policy(SET CMP0169 OLD)
+
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -129,6 +132,18 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(imgui)
 
+# Fetch portable-file-dialogs (single-header file dialog library)
+# Use URL download to avoid CMake compatibility issues with their CMakeLists.txt
+FetchContent_Declare(
+        portable_file_dialogs
+        URL https://github.com/samhocevar/portable-file-dialogs/archive/refs/heads/main.zip
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+FetchContent_GetProperties(portable_file_dialogs)
+if(NOT portable_file_dialogs_POPULATED)
+    FetchContent_Populate(portable_file_dialogs)
+endif()
+
 # Vulkan
 find_package(Vulkan REQUIRED)
 
@@ -174,6 +189,8 @@ set(ENGINE_SOURCES
         src/core/job_system.cpp
         src/core/time.cpp
         src/core/file_watcher.cpp
+        src/core/file_dialog.cpp
+        src/core/scene_manager.cpp
         src/core/texture_data.cpp
         src/ecs/ecs_coordinator.cpp
         src/ecs/entity_manager.cpp
@@ -241,6 +258,7 @@ target_include_directories(engine PRIVATE
         ${stb_SOURCE_DIR}
         ${imgui_SOURCE_DIR}
         ${imgui_SOURCE_DIR}/backends
+        ${portable_file_dialogs_SOURCE_DIR}
 )
 
 # Link GLM, JSON, GLFW, and Assimp
