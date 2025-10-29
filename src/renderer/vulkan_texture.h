@@ -48,6 +48,10 @@ public:
     VkSampler GetSampler() const { return m_Sampler; }
     VkFormat GetFormat() const { return m_Format; }
     u32 GetMipLevels() const { return m_MipLevels; }
+    u32 GetDescriptorIndex() const { return m_DescriptorIndex; }
+
+    // Set descriptor index (called by TextureManager after registering with VulkanDescriptors)
+    void SetDescriptorIndex(u32 index) { m_DescriptorIndex = index; }
 
     bool IsValid() const {
         return m_Image != VK_NULL_HANDLE &&
@@ -73,6 +77,9 @@ private:
     TextureType m_Type = TextureType::Texture2D;
     MipmapPolicy m_MipmapPolicy;      // Stored for debugging/logging
     MipmapQuality m_QualityHint;      // Stored for debugging/logging
+
+    // Bindless descriptor index (set by TextureManager)
+    u32 m_DescriptorIndex = 0xFFFFFFFF;  // Invalid index by default
 
     // Async upload state
     u32 m_Width = 0;

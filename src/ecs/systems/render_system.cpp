@@ -2,10 +2,13 @@
 
 #include "renderer/vulkan_context.h"
 #include "resources/mesh_manager.h"
+#include "resources/material_manager.h"
+#include "core/material_data.h"
 
 #include <exception>
 #include <iostream>
 #include <unordered_set>
+#include <algorithm>
 
 RenderSystem::RenderSystem(ECSCoordinator* ecs, VulkanContext* context)
     : m_ECS(ecs)
@@ -23,12 +26,15 @@ void RenderSystem::Update() {
         return;
     }
 
+    MaterialManager& materialMgr = MaterialManager::Instance();
+
     m_ECS->ForEach<Transform, Renderable>(
-        [this](Entity /*entity*/, Transform& transform, Renderable& renderable) {
+        [this, &materialMgr](Entity /*entity*/, Transform& transform, Renderable& renderable) {
             if (!renderable.visible || !renderable.mesh.IsValid()) {
                 return;
             }
 
+            // Load mesh if needed
             auto it = m_VulkanMeshes.find(renderable.mesh);
             if (it == m_VulkanMeshes.end()) {
                 LoadMesh(renderable.mesh);
@@ -38,10 +44,43 @@ void RenderSystem::Update() {
                 }
             }
 
+            // Get material (use default if invalid)
+            MaterialHandle materialHandle = renderable.material;
+            if (!materialHandle.IsValid()) {
+                materialHandle = materialMgr.GetDefaultMaterial();
+                if (!materialHandle.IsValid()) {
+                    // Create default material on first use
+                    materialHandle = materialMgr.CreateDefaultMaterial();
+                }
+            }
+
+            MaterialData* material = materialMgr.Get(materialHandle);
+            if (!material) {
+                return;  // Invalid material
+            }
+
+            // Determine pipeline variant from material flags
+            PipelineVariant variant = GetPipelineVariant(material->flags);
+
             RenderData data{};
             data.modelMatrix = transform.worldMatrix;
             data.meshHandle = renderable.mesh;
+            data.materialHandle = materialHandle;
+            data.pipelineVariant = variant;
+            data.materialIndex = material->gpuMaterialIndex;
             m_RenderData.push_back(data);
+        });
+
+    // Sort render data by pipeline variant (opaque first, then masked, then blended)
+    std::sort(m_RenderData.begin(), m_RenderData.end(),
+        [](const RenderData& a, const RenderData& b) {
+            u32 orderA = GetPipelineVariantSortOrder(a.pipelineVariant);
+            u32 orderB = GetPipelineVariantSortOrder(b.pipelineVariant);
+            if (orderA != orderB) {
+                return orderA < orderB;
+            }
+            // Secondary sort by material to minimize state changes
+            return a.materialIndex < b.materialIndex;
         });
 }
 

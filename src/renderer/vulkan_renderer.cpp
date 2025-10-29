@@ -9,6 +9,8 @@
 #include "renderer/vulkan_context.h"
 #include "renderer/uniform_buffers.h"
 #include "renderer/vertex.h"
+#include "renderer/push_constants.h"
+#include "renderer/material_buffer.h"
 #include "resources/mesh_manager.h"
 #include "resources/texture_manager.h"
 
@@ -58,6 +60,29 @@ void VulkanRenderer::Init(VulkanContext* context, Window* window, ECSCoordinator
 
     m_Swapchain.Init(m_Context, m_Window);
     m_Descriptors.Init(m_Context, MAX_FRAMES_IN_FLIGHT);
+
+    // Initialize material buffer with one default material
+    m_MaterialBuffer.Init(m_Context, 256);  // Start with capacity for 256 materials
+
+    // Create a default material
+    GPUMaterial defaultMaterial{};
+    defaultMaterial.albedoIndex = 0;
+    defaultMaterial.normalIndex = 0;
+    defaultMaterial.metalRoughIndex = 0;
+    defaultMaterial.aoIndex = 0;
+    defaultMaterial.emissiveIndex = 0;
+    defaultMaterial.flags = 0;
+    defaultMaterial.albedoTint = Vec4(1.0f, 1.0f, 1.0f, 1.0f);
+    defaultMaterial.emissiveFactor = Vec4(0.0f, 0.0f, 0.0f, 0.0f);
+    defaultMaterial.metallicFactor = 0.0f;
+    defaultMaterial.roughnessFactor = 0.5f;
+    defaultMaterial.normalScale = 1.0f;
+    defaultMaterial.aoStrength = 1.0f;
+    m_MaterialBuffer.UploadMaterial(defaultMaterial);
+
+    // Bind material buffer to descriptor sets
+    m_Descriptors.BindMaterialBuffer(m_MaterialBuffer.GetBuffer(), 0, m_MaterialBuffer.GetBufferSize());
+
     InitSwapchainResources();
     CreateFrameContexts();
     InitMeshResources();
@@ -94,6 +119,7 @@ void VulkanRenderer::Shutdown() {
     DestroyFrameContexts();
     DestroySwapchainResources();
     m_Descriptors.Shutdown();
+    m_MaterialBuffer.Shutdown();
     m_Swapchain.Shutdown();
 
     m_Context = nullptr;
@@ -153,7 +179,7 @@ void VulkanRenderer::DrawFrame() {
                 continue;
             }
 
-            PushModelMatrix(frame->commandBuffer, renderData.modelMatrix);
+            PushModelMatrix(frame->commandBuffer, renderData.modelMatrix, renderData.materialIndex);
             mesh->Bind(frame->commandBuffer);
             mesh->Draw(frame->commandBuffer);
             rendered = true;
@@ -175,7 +201,7 @@ void VulkanRenderer::DrawFrame() {
         }
 
         const Mat4 fallbackModel = Rotate(Mat4(1.0f), m_Rotation, Vec3(0.0f, 1.0f, 0.0f));
-        PushModelMatrix(frame->commandBuffer, fallbackModel);
+        PushModelMatrix(frame->commandBuffer, fallbackModel, 0); // Use default material index
 
         meshData->gpuMesh.Bind(frame->commandBuffer);
         meshData->gpuMesh.Draw(frame->commandBuffer);
@@ -342,8 +368,15 @@ void VulkanRenderer::UpdateGlobalUniforms(u32 frameIndex) {
     m_Descriptors.UpdateUniformBuffer(frameIndex, &ubo, sizeof(ubo));
 }
 
-void VulkanRenderer::PushModelMatrix(VkCommandBuffer commandBuffer, const Mat4& modelMatrix) {
-    vkCmdPushConstants(commandBuffer, m_Pipeline.GetLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Mat4), &modelMatrix);
+void VulkanRenderer::PushModelMatrix(VkCommandBuffer commandBuffer, const Mat4& modelMatrix, u32 materialIndex) {
+    PushConstants pushConstants;
+    pushConstants.model = modelMatrix;
+    pushConstants.materialIndex = materialIndex;
+    pushConstants.padding[0] = 0;
+
+    vkCmdPushConstants(commandBuffer, m_Pipeline.GetLayout(),
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+        0, sizeof(PushConstants), &pushConstants);
 }
 
 void VulkanRenderer::InitSwapchainResources() {

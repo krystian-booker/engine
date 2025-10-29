@@ -169,6 +169,7 @@ set(ENGINE_SOURCES
         src/platform/window.cpp
         src/platform/input.cpp
         src/resources/mesh_manager.cpp
+        src/resources/material_manager.cpp
         src/resources/image_loader.cpp
         src/resources/texture_manager.cpp
         src/renderer/vulkan_context.cpp
@@ -185,6 +186,7 @@ set(ENGINE_SOURCES
         src/renderer/vulkan_framebuffer.cpp
         src/renderer/vulkan_command_buffer.cpp
         src/renderer/vulkan_buffer.cpp
+        src/renderer/vulkan_material_buffer.cpp
         src/renderer/vulkan_staging_pool.cpp
         src/renderer/vulkan_transfer_queue.cpp
 )
@@ -1281,3 +1283,18 @@ endif()
 target_compile_definitions(test_mesh_loading PRIVATE ENGINE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
 add_test(NAME MeshLoadingTests COMMAND test_mesh_loading)
+
+# Material System Test (core data structures only, no Vulkan required)
+add_executable(test_material
+        tests/test_material.cpp
+)
+
+target_include_directories(test_material PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(test_material PRIVATE
+        glm::glm
+)
+
+add_test(NAME MaterialSystemTests COMMAND test_material)

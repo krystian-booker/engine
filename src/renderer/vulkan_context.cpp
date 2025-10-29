@@ -242,11 +242,19 @@ void VulkanContext::CreateLogicalDevice() {
 
     VkPhysicalDeviceFeatures deviceFeatures{};
 
+    // Enable descriptor indexing features (for bindless textures)
+    VkPhysicalDeviceDescriptorIndexingFeatures descriptorIndexingFeatures{};
+    descriptorIndexingFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+    descriptorIndexingFeatures.descriptorBindingPartiallyBound = VK_TRUE;
+    descriptorIndexingFeatures.runtimeDescriptorArray = VK_TRUE;
+    descriptorIndexingFeatures.descriptorBindingVariableDescriptorCount = VK_TRUE;
+    descriptorIndexingFeatures.pNext = nullptr;
+
     // Enable timeline semaphore feature (Vulkan 1.2+)
     VkPhysicalDeviceTimelineSemaphoreFeatures timelineSemaphoreFeatures{};
     timelineSemaphoreFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES;
     timelineSemaphoreFeatures.timelineSemaphore = VK_TRUE;
-    timelineSemaphoreFeatures.pNext = nullptr;
+    timelineSemaphoreFeatures.pNext = &descriptorIndexingFeatures;  // Chain descriptor indexing
 
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -256,7 +264,8 @@ void VulkanContext::CreateLogicalDevice() {
     createInfo.pNext = &timelineSemaphoreFeatures;
 
     const std::vector<const char*> deviceExtensions = {
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+        VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME
     };
 
     createInfo.enabledExtensionCount = static_cast<u32>(deviceExtensions.size());

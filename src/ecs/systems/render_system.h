@@ -4,6 +4,7 @@
 #include "ecs/components/transform.h"
 #include "ecs/components/renderable.h"
 #include "renderer/vulkan_mesh.h"
+#include "renderer/pipeline_variant.h"
 
 #include <memory>
 #include <unordered_map>
@@ -11,10 +12,14 @@
 
 class VulkanContext;
 struct MeshData;
+struct MaterialData;
 
 struct RenderData {
     Mat4 modelMatrix;
     MeshHandle meshHandle;
+    MaterialHandle materialHandle;
+    PipelineVariant pipelineVariant;
+    u32 materialIndex;  // GPU material buffer index
 };
 
 class RenderSystem {

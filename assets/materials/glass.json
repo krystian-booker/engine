@@ -1,0 +1,9 @@
+{
+  "albedoTint": [0.9, 0.95, 1.0, 0.3],
+  "emissiveFactor": [0.0, 0.0, 0.0, 0.0],
+  "metallicFactor": 0.0,
+  "roughnessFactor": 0.05,
+  "normalScale": 1.0,
+  "aoStrength": 1.0,
+  "flags": ["alphaBlend", "doubleSided"]
+}

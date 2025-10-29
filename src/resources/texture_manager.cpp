@@ -45,6 +45,7 @@ TextureManager::TextureManager() {
     m_WhiteTexture = TextureHandle::Invalid;
     m_BlackTexture = TextureHandle::Invalid;
     m_NormalMapTexture = TextureHandle::Invalid;
+    m_MetalRoughTexture = TextureHandle::Invalid;
 
     // Initialize async loading state
     m_AsyncMutex = Platform::CreateMutex();
@@ -452,6 +453,15 @@ TextureHandle TextureManager::CreateNormalMap() {
         m_NormalMapTexture = CreateSinglePixel(127, 127, 255, 255, TextureUsage::Normal);
     }
     return m_NormalMapTexture;
+}
+
+TextureHandle TextureManager::CreateMetalRough() {
+    if (!IsValid(m_MetalRoughTexture)) {
+        // Default metal-roughness texture: R=roughness (1.0), G=metalness (0.5), B=unused (0)
+        // R=255 (fully rough), G=128 (mid metallic), B=0, A=255
+        m_MetalRoughTexture = CreateSinglePixel(255, 128, 0, 255, TextureUsage::PackedPBR);
+    }
+    return m_MetalRoughTexture;
 }
 
 // ============================================================================

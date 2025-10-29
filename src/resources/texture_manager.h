@@ -102,6 +102,7 @@ public:
     TextureHandle CreateWhite();       // 1x1 white (for default albedo)
     TextureHandle CreateBlack();       // 1x1 black
     TextureHandle CreateNormalMap();   // 1x1 (0.5, 0.5, 1.0) - neutral normal in tangent space
+    TextureHandle CreateMetalRough();  // 1x1 (rough=1.0, metal=0.5) - default PBR packed texture
 
     // ========================================================================
     // Asynchronous Loading API
@@ -184,6 +185,7 @@ private:
     TextureHandle m_WhiteTexture;
     TextureHandle m_BlackTexture;
     TextureHandle m_NormalMapTexture;
+    TextureHandle m_MetalRoughTexture;
 
     // ========================================================================
     // Async Loading State

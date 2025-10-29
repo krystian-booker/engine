@@ -13,6 +13,7 @@
 #include "renderer/vulkan_depth.h"
 #include "renderer/vulkan_staging_pool.h"
 #include "renderer/vulkan_transfer_queue.h"
+#include "renderer/vulkan_material_buffer.h"
 #include "ecs/systems/render_system.h"
 
 #include <vulkan/vulkan.h>
@@ -53,7 +54,7 @@ private:
     void InitMeshResources();
     void DestroyMeshResources();
     void UpdateGlobalUniforms(u32 frameIndex);
-    void PushModelMatrix(VkCommandBuffer commandBuffer, const Mat4& modelMatrix);
+    void PushModelMatrix(VkCommandBuffer commandBuffer, const Mat4& modelMatrix, u32 materialIndex);
 
     VulkanContext* m_Context = nullptr;
     Window* m_Window = nullptr;
@@ -72,6 +73,9 @@ private:
     // Async upload pipeline
     VulkanStagingPool m_StagingPool;
     VulkanTransferQueue m_TransferQueue;
+
+    // Material system
+    VulkanMaterialBuffer m_MaterialBuffer;
 
     static constexpr u32 MAX_FRAMES_IN_FLIGHT = 2;
     std::vector<FrameContext> m_Frames;

@@ -1,5 +1,8 @@
 #include "scene_serializer.h"
 #include "components/transform.h"
+#include "components/renderable.h"
+#include "resources/material_manager.h"
+#include "resources/mesh_manager.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <iostream>
@@ -42,6 +45,33 @@ bool SceneSerializer::SaveScene(const std::string& filepath) {
         };
 
         entityJson["transform"] = transformJson;
+
+        // Serialize Renderable component
+        if (m_ECS->HasComponent<Renderable>(entity)) {
+            const Renderable& renderable = m_ECS->GetComponent<Renderable>(entity);
+            json renderableJson;
+
+            // Store mesh path (retrieve from MeshManager)
+            if (renderable.mesh.IsValid()) {
+                std::string meshPath = MeshManager::Instance().GetPath(renderable.mesh);
+                if (!meshPath.empty()) {
+                    renderableJson["mesh"] = meshPath;
+                }
+            }
+
+            // Store material path (retrieve from MaterialManager)
+            if (renderable.material.IsValid()) {
+                std::string materialPath = MaterialManager::Instance().GetPath(renderable.material);
+                if (!materialPath.empty()) {
+                    renderableJson["material"] = materialPath;
+                }
+            }
+
+            renderableJson["visible"] = renderable.visible;
+            renderableJson["castsShadows"] = renderable.castsShadows;
+
+            entityJson["renderable"] = renderableJson;
+        }
 
         // Serialize hierarchy
         Entity parent = m_ECS->GetParent(entity);
@@ -116,6 +146,35 @@ bool SceneSerializer::LoadScene(const std::string& filepath) {
             );
 
             m_ECS->AddComponent(entity, transform);
+        }
+
+        // Load Renderable component
+        if (entityJson.contains("renderable")) {
+            const auto& rJson = entityJson["renderable"];
+
+            Renderable renderable;
+
+            // Load mesh
+            if (rJson.contains("mesh") && rJson["mesh"].is_string()) {
+                std::string meshPath = rJson["mesh"].get<std::string>();
+                renderable.mesh = MeshManager::Instance().Load(meshPath);
+            }
+
+            // Load material
+            if (rJson.contains("material") && rJson["material"].is_string()) {
+                std::string materialPath = rJson["material"].get<std::string>();
+                renderable.material = MaterialManager::Instance().Load(materialPath);
+            }
+
+            if (rJson.contains("visible")) {
+                renderable.visible = rJson["visible"].get<bool>();
+            }
+
+            if (rJson.contains("castsShadows")) {
+                renderable.castsShadows = rJson["castsShadows"].get<bool>();
+            }
+
+            m_ECS->AddComponent(entity, renderable);
         }
     }
 

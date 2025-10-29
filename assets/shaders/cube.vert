@@ -9,6 +9,8 @@ cbuffer ViewProjection : register(b0)
 struct PushConstants
 {
     float4x4 model;
+    uint materialIndex;
+    uint padding[2];  // Pad to 16-byte alignment
 };
 
 [[vk::push_constant]]
@@ -28,6 +30,7 @@ struct VSOut {
     [[vk::location(2)]] float3 fragBitangent: TEXCOORD2;
     [[vk::location(3)]] float2 fragTexCoord : TEXCOORD3;
     [[vk::location(4)]] float3 fragWorldPos : TEXCOORD4;
+    [[vk::location(5)]] nointerpolation uint materialIndex : TEXCOORD5;
 };
 
 VSOut main(VSIn i)
@@ -47,5 +50,6 @@ VSOut main(VSIn i)
     o.fragBitangent = cross(o.fragNormal, o.fragTangent) * i.inTangent.w;
 
     o.fragTexCoord = i.inTexCoord;
+    o.materialIndex = pc.materialIndex;
     return o;
 }
