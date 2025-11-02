@@ -14,7 +14,7 @@ struct GLFWwindow;
  */
 struct ProjectPickerResult {
     bool success = false;               // Whether a project was selected/created
-    std::string projectPath;             // Path to the selected/created project.json
+    std::string projectPath;             // Path to the selected/created .engineproject file
     bool setAsDefault = false;           // Whether to set this as the default project
     bool cancelled = false;              // Whether the user cancelled
 };

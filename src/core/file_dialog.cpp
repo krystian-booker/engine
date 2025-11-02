@@ -15,7 +15,7 @@
 std::optional<std::string> FileDialog::OpenFile(
     const std::string& title,
     const std::string& defaultPath,
-    [[maybe_unused]] const std::vector<std::string>& filters
+    const std::vector<std::string>& filters
 ) {
 #ifdef PLATFORM_WINDOWS
     // Windows-specific implementation using native dialogs
@@ -34,11 +34,23 @@ std::optional<std::string> FileDialog::OpenFile(
         ofn.lpstrInitialDir = NULL;
     }
 
+    // Build filter string from filters vector
+    std::string filterStr;
+    if (!filters.empty() && filters.size() % 2 == 0) {
+        for (size_t i = 0; i < filters.size(); i += 2) {
+            filterStr += filters[i] + '\0' + filters[i + 1] + '\0';
+        }
+        filterStr += '\0';
+    } else {
+        // Default filter
+        filterStr = "All Files\0*.*\0\0";
+    }
+
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = NULL;
     ofn.lpstrFile = szFile;
     ofn.nMaxFile = sizeof(szFile);
-    ofn.lpstrFilter = "Scene Files\0*.scene\0All Files\0*.*\0";
+    ofn.lpstrFilter = filterStr.c_str();
     ofn.nFilterIndex = 1;
     ofn.lpstrFileTitle = NULL;
     ofn.nMaxFileTitle = 0;
@@ -70,7 +82,7 @@ std::optional<std::string> FileDialog::OpenFile(
 std::optional<std::string> FileDialog::SaveFile(
     const std::string& title,
     const std::string& defaultPath,
-    [[maybe_unused]] const std::vector<std::string>& filters
+    const std::vector<std::string>& filters
 ) {
 #ifdef PLATFORM_WINDOWS
     // Windows-specific implementation using native dialogs
@@ -96,18 +108,39 @@ std::optional<std::string> FileDialog::SaveFile(
         }
     }
 
+    // Build filter string from filters vector
+    std::string filterStr;
+    std::string defaultExt;
+    if (!filters.empty() && filters.size() % 2 == 0) {
+        for (size_t i = 0; i < filters.size(); i += 2) {
+            filterStr += filters[i] + '\0' + filters[i + 1] + '\0';
+            // Extract default extension from first filter pattern (e.g., "*.scene" -> "scene")
+            if (i == 0 && defaultExt.empty()) {
+                std::string pattern = filters[i + 1];
+                size_t dotPos = pattern.find('.');
+                if (dotPos != std::string::npos && dotPos + 1 < pattern.length()) {
+                    defaultExt = pattern.substr(dotPos + 1);
+                }
+            }
+        }
+        filterStr += '\0';
+    } else {
+        // Default filter
+        filterStr = "All Files\0*.*\0\0";
+    }
+
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = NULL;
     ofn.lpstrFile = szFile;
     ofn.nMaxFile = sizeof(szFile);
-    ofn.lpstrFilter = "Scene Files\0*.scene\0All Files\0*.*\0";
+    ofn.lpstrFilter = filterStr.c_str();
     ofn.nFilterIndex = 1;
     ofn.lpstrFileTitle = NULL;
     ofn.nMaxFileTitle = 0;
     ofn.lpstrInitialDir = initialDir;
     ofn.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR;
     ofn.lpstrTitle = title.c_str();
-    ofn.lpstrDefExt = "scene";
+    ofn.lpstrDefExt = defaultExt.empty() ? NULL : defaultExt.c_str();
 
     if (GetSaveFileNameA(&ofn) == TRUE) {
         return std::string(ofn.lpstrFile);

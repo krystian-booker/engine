@@ -15,6 +15,7 @@
     <mapping directory="$PROJECT_DIR$/cmake-build-release/_deps/assimp-src" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/cmake-build-release/_deps/glfw-src" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/cmake-build-release/_deps/glm-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/cmake-build-release/_deps/imgui-src" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/cmake-build-release/_deps/json-src" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/cmake-build-release/_deps/stb-src" vcs="Git" />
   </component>

@@ -180,7 +180,7 @@ std::string ProjectManager::GetProjectFilePath() const {
     if (!HasActiveProject()) {
         return "";
     }
-    return m_CurrentProject.rootPath + "/project.json";
+    return m_CurrentProject.rootPath + "/" + m_CurrentProject.name + ".engineproject";
 }
 
 std::string ProjectManager::GetAbsolutePath(const std::string& relativePath) const {
@@ -228,10 +228,10 @@ bool ProjectManager::ValidateProjectFolder(const std::string& folderPath) {
             return false;
         }
 
-        // Check if directory is empty (or only contains project.json)
+        // Check if directory is empty (or only contains .engineproject files)
         u32 fileCount = 0;
         for (const auto& entry : fs::directory_iterator(folderPath)) {
-            if (entry.path().filename() != "project.json") {
+            if (entry.path().extension() != ".engineproject") {
                 fileCount++;
             }
         }
@@ -307,14 +307,32 @@ bool ProjectManager::CreateDefaultScene(const std::string& scenePath) {
 
 void ProjectManager::LoadRecentProjects() {
     try {
+        // Get absolute path to current working directory for debugging
+        std::string cwd = fs::current_path().string();
+        std::cout << "[LoadRecentProjects] Current working directory: " << cwd << std::endl;
+
         std::string configPath = "config/recent_projects.json";
+        std::string absolutePath = fs::absolute(configPath).string();
+        std::cout << "[LoadRecentProjects] Looking for file: " << absolutePath << std::endl;
 
         if (!fs::exists(configPath)) {
+            std::cout << "[LoadRecentProjects] File does not exist" << std::endl;
             return;
         }
 
         std::ifstream file(configPath);
         if (!file.is_open()) {
+            return;
+        }
+
+        // Check if file is empty before trying to parse
+        file.seekg(0, std::ios::end);
+        std::streamsize fileSize = file.tellg();
+        file.seekg(0, std::ios::beg);
+
+        if (fileSize == 0) {
+            std::cout << "Recent projects file is empty, starting fresh" << std::endl;
+            file.close();
             return;
         }
 
@@ -327,35 +345,70 @@ void ProjectManager::LoadRecentProjects() {
             for (const auto& path : j["recentProjects"]) {
                 if (path.is_string()) {
                     std::string projectPath = path.get<std::string>();
+                    std::cout << "[LoadRecentProjects] Found project: " << projectPath;
                     // Only add if the project file still exists
                     if (fs::exists(projectPath)) {
                         m_RecentProjects.push_back(projectPath);
+                        std::cout << " (exists, added)" << std::endl;
+                    } else {
+                        std::cout << " (does not exist, skipped)" << std::endl;
                     }
                 }
             }
+            std::cout << "[LoadRecentProjects] Loaded " << m_RecentProjects.size() << " recent projects" << std::endl;
         }
     }
     catch (const std::exception& e) {
         std::cerr << "Failed to load recent projects: " << e.what() << std::endl;
+        // Clear the list on error to ensure we start fresh
+        m_RecentProjects.clear();
     }
 }
 
 void ProjectManager::SaveRecentProjects() {
     try {
+        // Get absolute path to current working directory for debugging
+        std::string cwd = fs::current_path().string();
+        std::cout << "[SaveRecentProjects] Current working directory: " << cwd << std::endl;
+        std::cout << "[SaveRecentProjects] Saving " << m_RecentProjects.size() << " recent projects" << std::endl;
+
         // Ensure config directory exists
         fs::create_directories("config");
 
+        // Serialize JSON to string first (so we don't truncate file if serialization fails)
         json j;
         j["recentProjects"] = m_RecentProjects;
+        std::string jsonStr = j.dump(4);
 
-        std::ofstream file("config/recent_projects.json");
-        if (!file.is_open()) {
-            std::cerr << "Failed to save recent projects" << std::endl;
+        std::cout << "[SaveRecentProjects] JSON content:\n" << jsonStr << std::endl;
+
+        // Write to temporary file first
+        std::string tempPath = "config/recent_projects.json.tmp";
+        std::ofstream tempFile(tempPath);
+        if (!tempFile.is_open()) {
+            std::cerr << "Failed to open temporary file for recent projects" << std::endl;
             return;
         }
 
-        file << j.dump(4);
-        file.close();
+        tempFile << jsonStr;
+        tempFile.flush();  // Ensure data is written to disk
+
+        // Check for write errors before closing
+        if (!tempFile.good()) {
+            std::cerr << "Failed to write recent projects to temporary file" << std::endl;
+            tempFile.close();
+            fs::remove(tempPath);
+            return;
+        }
+
+        tempFile.close();
+
+        // Replace the original file with the temporary file
+        std::string finalPath = "config/recent_projects.json";
+        if (fs::exists(finalPath)) {
+            fs::remove(finalPath);
+        }
+        fs::rename(tempPath, finalPath);
     }
     catch (const std::exception& e) {
         std::cerr << "Failed to save recent projects: " << e.what() << std::endl;

@@ -38,7 +38,7 @@ struct ProjectConfig {
  * ProjectManager
  *
  * Manages project creation, loading, and configuration.
- * Handles project directory structure and project.json serialization.
+ * Handles project directory structure and .engineproject serialization.
  */
 class ProjectManager {
 public:

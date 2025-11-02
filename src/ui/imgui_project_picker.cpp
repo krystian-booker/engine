@@ -361,7 +361,7 @@ void ImGuiProjectPicker::OnCreateProject() {
 }
 
 void ImGuiProjectPicker::OnOpenProject() {
-    auto projectFile = FileDialog::OpenFile("Open Project", "", {"Project Files", "*.json"});
+    auto projectFile = FileDialog::OpenFile("Open Project", "", {"Engine Project Files", "*.engineproject"});
     if (projectFile.has_value()) {
         if (!m_ProjectManager->LoadProject(projectFile.value())) {
             ShowError("Failed to load project file");
