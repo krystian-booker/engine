@@ -1,4 +1,5 @@
 #include "project_manager.h"
+#include "engine_settings.h"
 
 #include <nlohmann/json.hpp>
 #include <fstream>
@@ -196,14 +197,17 @@ void ProjectManager::SetLastOpenedScene(const std::string& scenePath) {
 }
 
 void ProjectManager::AddRecentProject(const std::string& projectPath) {
+    // Convert to absolute path and normalize (this ensures consistent path format)
+    std::string absolutePath = fs::absolute(projectPath).string();
+
     // Remove if already exists
-    auto it = std::find(m_RecentProjects.begin(), m_RecentProjects.end(), projectPath);
+    auto it = std::find(m_RecentProjects.begin(), m_RecentProjects.end(), absolutePath);
     if (it != m_RecentProjects.end()) {
         m_RecentProjects.erase(it);
     }
 
     // Add to front
-    m_RecentProjects.insert(m_RecentProjects.begin(), projectPath);
+    m_RecentProjects.insert(m_RecentProjects.begin(), absolutePath);
 
     // Trim to max size
     if (m_RecentProjects.size() > MAX_RECENT_PROJECTS) {
@@ -307,13 +311,14 @@ bool ProjectManager::CreateDefaultScene(const std::string& scenePath) {
 
 void ProjectManager::LoadRecentProjects() {
     try {
-        // Get absolute path to current working directory for debugging
-        std::string cwd = fs::current_path().string();
-        std::cout << "[LoadRecentProjects] Current working directory: " << cwd << std::endl;
+        std::string configDir = EngineSettings::GetEngineConfigDirectory();
+        if (configDir.empty()) {
+            std::cerr << "[LoadRecentProjects] Failed to get engine config directory" << std::endl;
+            return;
+        }
 
-        std::string configPath = "config/recent_projects.json";
-        std::string absolutePath = fs::absolute(configPath).string();
-        std::cout << "[LoadRecentProjects] Looking for file: " << absolutePath << std::endl;
+        std::string configPath = configDir + "/recent_projects.json";
+        std::cout << "[LoadRecentProjects] Looking for file: " << configPath << std::endl;
 
         if (!fs::exists(configPath)) {
             std::cout << "[LoadRecentProjects] File does not exist" << std::endl;
@@ -367,13 +372,16 @@ void ProjectManager::LoadRecentProjects() {
 
 void ProjectManager::SaveRecentProjects() {
     try {
-        // Get absolute path to current working directory for debugging
-        std::string cwd = fs::current_path().string();
-        std::cout << "[SaveRecentProjects] Current working directory: " << cwd << std::endl;
+        std::string configDir = EngineSettings::GetEngineConfigDirectory();
+        if (configDir.empty()) {
+            std::cerr << "[SaveRecentProjects] Failed to get engine config directory" << std::endl;
+            return;
+        }
+
         std::cout << "[SaveRecentProjects] Saving " << m_RecentProjects.size() << " recent projects" << std::endl;
 
-        // Ensure config directory exists
-        fs::create_directories("config");
+        // Ensure config directory exists (GetAppDataDirectory should create it, but double-check)
+        fs::create_directories(configDir);
 
         // Serialize JSON to string first (so we don't truncate file if serialization fails)
         json j;
@@ -383,7 +391,7 @@ void ProjectManager::SaveRecentProjects() {
         std::cout << "[SaveRecentProjects] JSON content:\n" << jsonStr << std::endl;
 
         // Write to temporary file first
-        std::string tempPath = "config/recent_projects.json.tmp";
+        std::string tempPath = configDir + "/recent_projects.json.tmp";
         std::ofstream tempFile(tempPath);
         if (!tempFile.is_open()) {
             std::cerr << "Failed to open temporary file for recent projects" << std::endl;
@@ -404,11 +412,13 @@ void ProjectManager::SaveRecentProjects() {
         tempFile.close();
 
         // Replace the original file with the temporary file
-        std::string finalPath = "config/recent_projects.json";
+        std::string finalPath = configDir + "/recent_projects.json";
         if (fs::exists(finalPath)) {
             fs::remove(finalPath);
         }
         fs::rename(tempPath, finalPath);
+
+        std::cout << "[SaveRecentProjects] Saved to: " << finalPath << std::endl;
     }
     catch (const std::exception& e) {
         std::cerr << "Failed to save recent projects: " << e.what() << std::endl;

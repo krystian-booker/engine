@@ -899,10 +899,10 @@ void TextureManager::ProcessUploads(u64 maxBytesPerFrame) {
             // Combine all layer data into a single buffer
             u64 layerSize = textureData->width * textureData->height * textureData->channels;
             u64 totalSize = layerSize * textureData->arrayLayers;
-            textureData->pixels = new u8[totalSize];
+            textureData->pixels = new u8[static_cast<size_t>(totalSize)];
 
             for (u32 i = 0; i < textureData->arrayLayers; ++i) {
-                memcpy(textureData->pixels + (i * layerSize), job->layerImageData[i].pixels, layerSize);
+                memcpy(textureData->pixels + (i * layerSize), job->layerImageData[i].pixels, static_cast<size_t>(layerSize));
             }
         } else {
             // Single texture

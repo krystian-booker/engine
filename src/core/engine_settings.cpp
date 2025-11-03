@@ -1,4 +1,5 @@
 #include "engine_settings.h"
+#include "platform/platform.h"
 
 #include <nlohmann/json.hpp>
 #include <fstream>
@@ -8,14 +9,24 @@
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
+std::string EngineSettings::GetEngineConfigDirectory() {
+    return Platform::GetAppDataDirectory("CustomEngine");
+}
+
 EngineSettings EngineSettings::Load() {
     EngineSettings settings;
 
     try {
-        std::string configPath = "config/engine_settings.json";
+        std::string configDir = GetEngineConfigDirectory();
+        if (configDir.empty()) {
+            std::cerr << "Failed to get engine config directory" << std::endl;
+            return settings;
+        }
+
+        std::string configPath = configDir + "/engine_settings.json";
 
         if (!fs::exists(configPath)) {
-            std::cout << "Engine settings file not found, using defaults" << std::endl;
+            std::cout << "Engine settings file not found at " << configPath << ", using defaults" << std::endl;
             return settings;
         }
 
@@ -54,8 +65,14 @@ EngineSettings EngineSettings::Load() {
 
 bool EngineSettings::Save() const {
     try {
-        // Ensure config directory exists
-        fs::create_directories("config");
+        std::string configDir = GetEngineConfigDirectory();
+        if (configDir.empty()) {
+            std::cerr << "Failed to get engine config directory" << std::endl;
+            return false;
+        }
+
+        // Ensure config directory exists (GetAppDataDirectory should create it, but double-check)
+        fs::create_directories(configDir);
 
         // Create JSON object
         json j;
@@ -73,10 +90,10 @@ bool EngineSettings::Save() const {
         };
 
         // Write to file
-        std::string configPath = "config/engine_settings.json";
+        std::string configPath = configDir + "/engine_settings.json";
         std::ofstream file(configPath);
         if (!file.is_open()) {
-            std::cerr << "Failed to open engine settings file for writing" << std::endl;
+            std::cerr << "Failed to open engine settings file for writing at " << configPath << std::endl;
             return false;
         }
 

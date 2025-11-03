@@ -7,6 +7,7 @@
 #endif
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <shlobj.h>  // For SHGetFolderPathW
 // Undefine Windows macros that conflict with our function names
 #undef CreateWindow
 #undef DestroyWindow
@@ -306,6 +307,54 @@ void WaitSemaphore(Semaphore* semaphore, u32 timeout_ms) {
 void SignalSemaphore(Semaphore* semaphore, u32 count) {
     if (!semaphore || !semaphore->handle) return;
     ::ReleaseSemaphore(semaphore->handle, static_cast<LONG>(count), nullptr);
+}
+
+// ============================================================================
+// Application Data Directory Implementation
+// ============================================================================
+
+std::string GetAppDataDirectory(const char* appName) {
+    if (!appName || !appName[0]) {
+        return "";
+    }
+
+    // Get the APPDATA path using SHGetFolderPathW
+    wchar_t appDataPath[MAX_PATH];
+    HRESULT hr = SHGetFolderPathW(nullptr, CSIDL_APPDATA, nullptr, 0, appDataPath);
+
+    if (FAILED(hr)) {
+        return "";
+    }
+
+    // Convert wide string to UTF-8
+    int utf8Size = WideCharToMultiByte(CP_UTF8, 0, appDataPath, -1, nullptr, 0, nullptr, nullptr);
+    if (utf8Size == 0) {
+        return "";
+    }
+
+    std::string result;
+    result.resize(utf8Size - 1); // -1 to exclude null terminator
+    WideCharToMultiByte(CP_UTF8, 0, appDataPath, -1, &result[0], utf8Size, nullptr, nullptr);
+
+    // Append application subdirectory
+    result += "\\";
+    result += appName;
+
+    // Create the directory if it doesn't exist
+    // Convert back to wide string for CreateDirectoryW
+    int wideSize = MultiByteToWideChar(CP_UTF8, 0, result.c_str(), -1, nullptr, 0);
+    if (wideSize == 0) {
+        return "";
+    }
+
+    std::wstring widePath;
+    widePath.resize(wideSize - 1);
+    MultiByteToWideChar(CP_UTF8, 0, result.c_str(), -1, &widePath[0], wideSize);
+
+    // Create directory (this will succeed if it already exists)
+    ::CreateDirectoryW(widePath.c_str(), nullptr);
+
+    return result;
 }
 
 } // namespace Platform

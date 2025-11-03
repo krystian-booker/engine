@@ -20,9 +20,15 @@ struct EngineSettings {
     f32 editorCameraMoveSpeed = 5.0f;
     f32 editorCameraRotateSpeed = 0.1f;
 
-    // Load from config/engine_settings.json
+    // Get the global engine configuration directory
+    // Windows: %APPDATA%\CustomEngine
+    // Linux: ~/.config/CustomEngine
+    // macOS: ~/Library/Application Support/CustomEngine
+    static std::string GetEngineConfigDirectory();
+
+    // Load from engine config directory/engine_settings.json
     static EngineSettings Load();
 
-    // Save to config/engine_settings.json
+    // Save to engine config directory/engine_settings.json
     bool Save() const;
 };

@@ -119,10 +119,10 @@ void ImGuiLayer::Shutdown()
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
 
-    if (m_DescriptorPool != nullptr)
+    if (m_DescriptorPool != VK_NULL_HANDLE)
     {
         vkDestroyDescriptorPool(m_Context->GetDevice(), m_DescriptorPool, nullptr);
-        m_DescriptorPool = nullptr;
+        m_DescriptorPool = VK_NULL_HANDLE;
     }
 }
 

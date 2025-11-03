@@ -288,8 +288,10 @@ void ImGuiProjectPicker::RenderCreateDialog() {
         if (ImGui::Button("Browse...")) {
             auto folderPath = FileDialog::SelectFolder("Select Project Folder", "");
             if (folderPath.has_value()) {
-                strncpy(m_NewProjectPath, folderPath.value().c_str(), sizeof(m_NewProjectPath) - 1);
-                m_NewProjectPath[sizeof(m_NewProjectPath) - 1] = '\0';
+                const std::string& path = folderPath.value();
+                size_t copyLen = (std::min)(path.length(), sizeof(m_NewProjectPath) - 1);
+                path.copy(m_NewProjectPath, copyLen);
+                m_NewProjectPath[copyLen] = '\0';
             }
         }
 

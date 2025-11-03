@@ -59,9 +59,8 @@ elseif(APPLE)
 endif()
 
 # Define _DEBUG for debug builds (for ImGui and other debug-only code)
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    add_compile_definitions(_DEBUG)
-endif()
+# Use generator expression to support multi-config generators (Visual Studio, Xcode)
+add_compile_definitions($<$<CONFIG:Debug>:_DEBUG>)
 
 # Fetch GLM
 include(FetchContent)
@@ -286,12 +285,11 @@ list(APPEND ENGINE_SOURCES
 )
 
 # ImGuiLayer is only needed in Debug builds
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    list(APPEND ENGINE_SOURCES
-            src/renderer/imgui_layer.cpp
-            ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
-    )
-endif()
+# Always include source files - the #ifdef _DEBUG in the source handles conditional compilation
+list(APPEND ENGINE_SOURCES
+        src/renderer/imgui_layer.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+)
 
 # Main executable
 add_executable(engine ${ENGINE_SOURCES})
@@ -429,7 +427,23 @@ set(MIPGEN_ROUGHNESS_SPV ${CMAKE_SOURCE_DIR}/assets/shaders/mipgen_roughness.com
 set(MIPGEN_SRGB_HLSL ${CMAKE_SOURCE_DIR}/assets/shaders/mipgen_srgb.comp)
 set(MIPGEN_SRGB_SPV ${CMAKE_SOURCE_DIR}/assets/shaders/mipgen_srgb.comp.spv)
 
-find_program(DXC_EXECUTABLE dxc)
+# Find DXC compiler - prefer Vulkan SDK version with SPIR-V support
+# Check Vulkan SDK locations first (VULKAN_SDK, VK_SDK_PATH environment variables)
+find_program(DXC_EXECUTABLE
+    NAMES dxc dxc.exe
+    PATHS
+        ENV VULKAN_SDK
+        ENV VK_SDK_PATH
+    PATH_SUFFIXES
+        Bin
+        bin
+    NO_DEFAULT_PATH
+)
+
+# If not found in Vulkan SDK, fall back to system PATH (but warn if SPIR-V is unsupported)
+if(NOT DXC_EXECUTABLE)
+    find_program(DXC_EXECUTABLE dxc)
+endif()
 
 if(DXC_EXECUTABLE)
     add_custom_command(

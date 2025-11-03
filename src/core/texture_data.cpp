@@ -143,7 +143,7 @@ bool TextureData::PackLayersIntoStagingBuffer() {
     const u64 totalSize = layerSize * arrayLayers;
 
     // Allocate contiguous buffer for all layers
-    pixels = static_cast<u8*>(malloc(totalSize));
+    pixels = static_cast<u8*>(malloc(static_cast<size_t>(totalSize)));
     if (!pixels) {
         return false;
     }
@@ -151,7 +151,7 @@ bool TextureData::PackLayersIntoStagingBuffer() {
     // Copy each layer into the contiguous buffer
     for (u32 i = 0; i < arrayLayers; ++i) {
         u8* destOffset = pixels + (i * layerSize);
-        memcpy(destOffset, layerPixels[i], layerSize);
+        memcpy(destOffset, layerPixels[i], static_cast<size_t>(layerSize));
     }
 
     // Free individual layer buffers and clear vector

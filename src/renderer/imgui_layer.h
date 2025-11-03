@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/types.h"
+#include <vulkan/vulkan.h>
 #include <unordered_map>
 
 #ifdef _DEBUG
@@ -12,20 +13,6 @@ class SceneManager;
 class ECSCoordinator;
 class ViewportManager;
 class Viewport;
-struct VkRenderPass_T;
-typedef VkRenderPass_T* VkRenderPass;
-struct VkDescriptorPool_T;
-typedef VkDescriptorPool_T* VkDescriptorPool;
-struct VkCommandBuffer_T;
-typedef VkCommandBuffer_T* VkCommandBuffer;
-struct VkDescriptorSetLayout_T;
-typedef VkDescriptorSetLayout_T* VkDescriptorSetLayout;
-struct VkDescriptorSet_T;
-typedef VkDescriptorSet_T* VkDescriptorSet;
-struct VkSampler_T;
-typedef VkSampler_T* VkSampler;
-struct VkImageView_T;
-typedef VkImageView_T* VkImageView;
 
 // ImGuiLayer - Manages Dear ImGui integration
 // Only available in debug builds
@@ -75,7 +62,7 @@ private:
     Window* m_Window = nullptr;
     SceneManager* m_SceneManager = nullptr;
     ECSCoordinator* m_ECS = nullptr;
-    VkDescriptorPool m_DescriptorPool = nullptr;
+    VkDescriptorPool m_DescriptorPool = VK_NULL_HANDLE;
 
     // UI state
     bool m_ShowDemoWindow = false;
@@ -96,8 +83,8 @@ private:
     bool m_ShouldChangeProject = false;  // Flag to signal project change request
 
     // Viewport texture descriptor management (separate from ImGui pool)
-    VkDescriptorPool m_ViewportDescriptorPool = nullptr;
-    VkDescriptorSetLayout m_ViewportDescriptorSetLayout = nullptr;
+    VkDescriptorPool m_ViewportDescriptorPool = VK_NULL_HANDLE;
+    VkDescriptorSetLayout m_ViewportDescriptorSetLayout = VK_NULL_HANDLE;
     std::unordered_map<u32, VkDescriptorSet> m_ViewportDescriptorSets;  // viewport ID -> descriptor set
 
     void CreateViewportDescriptorResources();

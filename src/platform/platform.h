@@ -3,6 +3,7 @@
 #include "core/types.h"
 #include <cstddef>
 #include <memory>
+#include <string>
 
 namespace Platform {
 
@@ -120,5 +121,18 @@ void WaitSemaphore(Semaphore* semaphore, u32 timeout_ms = 0xFFFFFFFF);
 /// @param semaphore Semaphore to signal
 /// @param count Number of permits to release
 void SignalSemaphore(Semaphore* semaphore, u32 count = 1);
+
+// ============================================================================
+// Application Data Directory
+// ============================================================================
+
+/// Gets the platform-specific application data directory path
+/// Windows: %APPDATA%\appName (e.g., C:\Users\Username\AppData\Roaming\appName)
+/// Linux: ~/.config/appName
+/// macOS: ~/Library/Application Support/appName
+/// Creates the directory if it doesn't exist
+/// @param appName Name of the application subdirectory
+/// @return Full path to the application data directory, or empty string on failure
+std::string GetAppDataDirectory(const char* appName);
 
 } // namespace Platform

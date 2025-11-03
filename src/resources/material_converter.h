@@ -1,6 +1,7 @@
 #pragma once
 #include "core/types.h"
 #include "core/math.h"
+#include <algorithm>
 
 // Material workflow conversion utilities
 // Converts between Specular/Glossiness and Metallic/Roughness PBR workflows

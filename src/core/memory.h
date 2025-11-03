@@ -66,7 +66,7 @@ class PoolAllocator {
             static_assert(BlockSize <= 64, "BlockSize must be <= 64 for u64 bitmask");
 
             // Set only the bits corresponding to actual slots
-            if (BlockSize == 64) {
+            if constexpr (BlockSize == 64) {
                 freelist_bitmask = ~0ULL;
             } else {
                 freelist_bitmask = (1ULL << BlockSize) - 1;
