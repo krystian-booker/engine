@@ -79,6 +79,9 @@ private:
     void PushModelMatrix(VkCommandBuffer commandBuffer, const Mat4& modelMatrix, u32 materialIndex);
     void RenderScene(VkCommandBuffer commandBuffer, u32 frameIndex);
 
+    // Lazy initialization of offscreen pipelines when first viewport is rendered
+    void EnsureOffscreenPipelinesInitialized(VkRenderPass offscreenRenderPass, VkExtent2D extent);
+
     // Default texture initialization for bindless array
     void CreateDefaultTexture();
     void DestroyDefaultTexture();
@@ -128,6 +131,7 @@ private:
     u32 m_CurrentFrame = 0;
     bool m_FramebufferResized = false;
     bool m_Initialized = false;
+    bool m_OffscreenPipelinesInitialized = false;
 
     f32 m_Rotation = 0.0f;
 

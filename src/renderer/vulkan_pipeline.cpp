@@ -86,42 +86,85 @@ void VulkanPipeline::Init(VulkanContext* context, VulkanRenderPass* renderPass, 
         throw std::runtime_error("Failed to create Vulkan pipeline layout");
     }
 
-    // Create all pipeline variants
+    // Create all swapchain pipeline variants
     VkExtent2D extent = swapchain->GetExtent();
 
     for (u32 i = 0; i < static_cast<u32>(PipelineVariant::Count); ++i) {
         PipelineVariant variant = static_cast<PipelineVariant>(i);
-        // CreatePipelineVariant doesn't actually use the descriptorSetLayout parameter
-        VkPipeline pipeline = CreatePipelineVariant(variant, VK_NULL_HANDLE, extent);
+        VkPipeline pipeline = CreatePipelineVariant(variant, VK_NULL_HANDLE, extent, m_RenderPass->Get());
 
         if (pipeline == VK_NULL_HANDLE) {
-            std::cerr << "ERROR: Failed to create pipeline variant " << i << std::endl;
-            throw std::runtime_error("Failed to create pipeline variant");
+            std::cerr << "ERROR: Failed to create swapchain pipeline variant " << i << std::endl;
+            throw std::runtime_error("Failed to create swapchain pipeline variant");
         }
 
         m_PipelineVariants[variant] = pipeline;
-        std::cout << "Created pipeline variant " << i << ": " << (void*)pipeline << std::endl;
+        std::cout << "Created swapchain pipeline variant " << i << ": " << (void*)pipeline << std::endl;
     }
 
-    std::cout << "VulkanPipeline created " << static_cast<u32>(PipelineVariant::Count) << " pipeline variants" << std::endl;
+    std::cout << "VulkanPipeline created " << static_cast<u32>(PipelineVariant::Count) << " swapchain pipeline variants" << std::endl;
+}
+
+void VulkanPipeline::InitOffscreenPipelines(VkRenderPass offscreenRenderPass, VkExtent2D extent) {
+    if (!m_Context) {
+        throw std::runtime_error("VulkanPipeline::InitOffscreenPipelines called before Init()");
+    }
+
+    if (offscreenRenderPass == VK_NULL_HANDLE) {
+        throw std::invalid_argument("VulkanPipeline::InitOffscreenPipelines requires valid render pass");
+    }
+
+    // Destroy existing offscreen pipelines if any
+    VkDevice device = m_Context->GetDevice();
+    for (auto& [variant, pipeline] : m_OffscreenPipelineVariants) {
+        if (pipeline != VK_NULL_HANDLE) {
+            vkDestroyPipeline(device, pipeline, nullptr);
+        }
+    }
+    m_OffscreenPipelineVariants.clear();
+
+    // Create all offscreen pipeline variants
+    for (u32 i = 0; i < static_cast<u32>(PipelineVariant::Count); ++i) {
+        PipelineVariant variant = static_cast<PipelineVariant>(i);
+        VkPipeline pipeline = CreatePipelineVariant(variant, VK_NULL_HANDLE, extent, offscreenRenderPass);
+
+        if (pipeline == VK_NULL_HANDLE) {
+            std::cerr << "ERROR: Failed to create offscreen pipeline variant " << i << std::endl;
+            throw std::runtime_error("Failed to create offscreen pipeline variant");
+        }
+
+        m_OffscreenPipelineVariants[variant] = pipeline;
+        std::cout << "Created offscreen pipeline variant " << i << ": " << (void*)pipeline << std::endl;
+    }
+
+    std::cout << "VulkanPipeline created " << static_cast<u32>(PipelineVariant::Count) << " offscreen pipeline variants" << std::endl;
 }
 
 void VulkanPipeline::Shutdown() {
     if (!m_Context) {
         m_PipelineVariants.clear();
+        m_OffscreenPipelineVariants.clear();
         m_PipelineLayout = VK_NULL_HANDLE;
         return;
     }
 
     VkDevice device = m_Context->GetDevice();
 
-    // Destroy all pipeline variants
+    // Destroy all swapchain pipeline variants
     for (auto& [variant, pipeline] : m_PipelineVariants) {
         if (pipeline != VK_NULL_HANDLE) {
             vkDestroyPipeline(device, pipeline, nullptr);
         }
     }
     m_PipelineVariants.clear();
+
+    // Destroy all offscreen pipeline variants
+    for (auto& [variant, pipeline] : m_OffscreenPipelineVariants) {
+        if (pipeline != VK_NULL_HANDLE) {
+            vkDestroyPipeline(device, pipeline, nullptr);
+        }
+    }
+    m_OffscreenPipelineVariants.clear();
 
     if (m_PipelineLayout != VK_NULL_HANDLE) {
         vkDestroyPipelineLayout(device, m_PipelineLayout, nullptr);
@@ -140,7 +183,15 @@ VkPipeline VulkanPipeline::GetPipeline(PipelineVariant variant) const {
     return VK_NULL_HANDLE;
 }
 
-VkPipeline VulkanPipeline::CreatePipelineVariant(PipelineVariant variant, VkDescriptorSetLayout /*descriptorSetLayout*/, VkExtent2D extent) {
+VkPipeline VulkanPipeline::GetOffscreenPipeline(PipelineVariant variant) const {
+    auto it = m_OffscreenPipelineVariants.find(variant);
+    if (it != m_OffscreenPipelineVariants.end()) {
+        return it->second;
+    }
+    return VK_NULL_HANDLE;
+}
+
+VkPipeline VulkanPipeline::CreatePipelineVariant(PipelineVariant variant, VkDescriptorSetLayout /*descriptorSetLayout*/, VkExtent2D extent, VkRenderPass renderPass) {
     const auto vertShaderCode = ReadFile("assets/shaders/cube.vert.spv");
     const auto fragShaderCode = ReadFile("assets/shaders/cube.frag.spv");
 
@@ -191,9 +242,20 @@ VkPipeline VulkanPipeline::CreatePipelineVariant(PipelineVariant variant, VkDesc
     VkPipelineViewportStateCreateInfo viewportState{};
     viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
     viewportState.viewportCount = 1;
-    viewportState.pViewports = &viewport;
+    viewportState.pViewports = nullptr;  // Will be set dynamically
     viewportState.scissorCount = 1;
-    viewportState.pScissors = &scissor;
+    viewportState.pScissors = nullptr;   // Will be set dynamically
+
+    // Enable dynamic states for viewport and scissor
+    std::array<VkDynamicState, 2> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+
+    VkPipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = static_cast<u32>(dynamicStates.size());
+    dynamicState.pDynamicStates = dynamicStates.data();
 
     // Determine cull mode based on variant
     VkCullModeFlags cullMode = VK_CULL_MODE_BACK_BIT;
@@ -285,8 +347,9 @@ VkPipeline VulkanPipeline::CreatePipelineVariant(PipelineVariant variant, VkDesc
     pipelineInfo.pMultisampleState = &multisampling;
     pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.pDepthStencilState = &depthStencil;
+    pipelineInfo.pDynamicState = &dynamicState;
     pipelineInfo.layout = m_PipelineLayout;
-    pipelineInfo.renderPass = m_RenderPass->Get();
+    pipelineInfo.renderPass = renderPass;
     pipelineInfo.subpass = 0;
 
     VkPipeline pipeline = VK_NULL_HANDLE;

@@ -538,6 +538,11 @@ void VulkanRenderer::RenderViewport(VkCommandBuffer commandBuffer, Viewport& vie
         return;
     }
 
+    // Ensure offscreen pipelines are initialized
+    VulkanRenderTarget& renderTarget = viewport.GetRenderTarget();
+    VkExtent2D extent = { viewport.GetWidth(), viewport.GetHeight() };
+    EnsureOffscreenPipelinesInitialized(renderTarget.GetRenderPass(), extent);
+
     // Get camera clear color
     Vec4 clearColorVec = Vec4(0.2f, 0.2f, 0.2f, 1.0f);
     if (m_ECS && m_ECS->HasComponent<Camera>(cameraEntity)) {
@@ -556,8 +561,8 @@ void VulkanRenderer::RenderViewport(VkCommandBuffer commandBuffer, Viewport& vie
     // Begin offscreen render pass
     BeginOffscreenRenderPass(cmd, viewport, clearColor);
 
-    // Bind pipeline
-    VkPipeline pipeline = m_Pipeline.GetPipeline();
+    // Bind offscreen pipeline (HDR-compatible)
+    VkPipeline pipeline = m_Pipeline.GetOffscreenPipeline(PipelineVariant::Opaque);
     if (pipeline == VK_NULL_HANDLE) {
         EndOffscreenRenderPass(cmd);
         return;
@@ -694,10 +699,11 @@ void VulkanRenderer::InitSwapchainResources() {
 
 void VulkanRenderer::DestroySwapchainResources() {
     m_Framebuffers.Shutdown();
-    m_Pipeline.Shutdown();
+    m_Pipeline.Shutdown();  // This destroys both swapchain and offscreen pipelines
     m_RenderPass.Shutdown();
     m_DepthBuffer.Shutdown();
     m_ImagesInFlight.clear();
+    m_OffscreenPipelinesInitialized = false;  // Will be re-initialized on next viewport render
 }
 
 void VulkanRenderer::CreateFrameContexts() {
@@ -917,6 +923,22 @@ void VulkanRenderer::DestroyMeshResources() {
 
     meshManager.Destroy(m_ActiveMesh);
     m_ActiveMesh = MeshHandle::Invalid;
+}
+
+void VulkanRenderer::EnsureOffscreenPipelinesInitialized(VkRenderPass offscreenRenderPass, VkExtent2D extent) {
+    if (m_OffscreenPipelinesInitialized) {
+        return;
+    }
+
+    if (offscreenRenderPass == VK_NULL_HANDLE) {
+        std::cerr << "ERROR: Cannot initialize offscreen pipelines without valid render pass" << std::endl;
+        return;
+    }
+
+    std::cout << "Initializing offscreen pipelines for HDR render targets..." << std::endl;
+    m_Pipeline.InitOffscreenPipelines(offscreenRenderPass, extent);
+    m_OffscreenPipelinesInitialized = true;
+    std::cout << "Offscreen pipelines initialized successfully" << std::endl;
 }
 
 void VulkanRenderer::CreateDefaultTexture() {

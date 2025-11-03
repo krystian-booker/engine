@@ -22,8 +22,14 @@ public:
               const VkDescriptorSetLayout* descriptorSetLayouts, u32 layoutCount);
     void Shutdown();
 
+    // Create offscreen pipeline variants compatible with HDR render targets
+    void InitOffscreenPipelines(VkRenderPass offscreenRenderPass, VkExtent2D extent);
+
     // Get pipeline for specific variant
     VkPipeline GetPipeline(PipelineVariant variant) const;
+
+    // Get offscreen pipeline for specific variant
+    VkPipeline GetOffscreenPipeline(PipelineVariant variant) const;
 
     // Get default opaque pipeline
     VkPipeline GetPipeline() const { return GetPipeline(PipelineVariant::Opaque); }
@@ -35,7 +41,7 @@ private:
     std::vector<char> ReadFile(const std::string& filename);
 
     // Create pipeline variant with specific blend/cull settings
-    VkPipeline CreatePipelineVariant(PipelineVariant variant, VkDescriptorSetLayout descriptorSetLayout, VkExtent2D extent);
+    VkPipeline CreatePipelineVariant(PipelineVariant variant, VkDescriptorSetLayout descriptorSetLayout, VkExtent2D extent, VkRenderPass renderPass);
 
     VulkanContext* m_Context = nullptr;
     VulkanRenderPass* m_RenderPass = nullptr;
@@ -44,5 +50,9 @@ private:
     VkPipelineLayout m_PipelineLayout = VK_NULL_HANDLE;
 
     // Pipeline variants (different blend/cull states)
+    // Swapchain pipelines (B8G8R8A8_SRGB format)
     std::unordered_map<PipelineVariant, VkPipeline> m_PipelineVariants;
+
+    // Offscreen pipelines (R16G16B16A16_SFLOAT HDR format)
+    std::unordered_map<PipelineVariant, VkPipeline> m_OffscreenPipelineVariants;
 };

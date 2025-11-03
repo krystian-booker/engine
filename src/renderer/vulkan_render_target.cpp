@@ -245,7 +245,7 @@ void VulkanRenderTarget::CreateRenderPass() {
     subpass.pDepthStencilAttachment = &depthAttachmentRef;
 
     // Subpass dependencies for layout transitions
-    std::array<VkSubpassDependency, 2> dependencies;
+    std::array<VkSubpassDependency, 2> dependencies{};
 
     // External -> Subpass 0 (for color and depth writes)
     dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
