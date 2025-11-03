@@ -70,3 +70,30 @@ struct LightingUniformBuffer {
     u32 padding3;
     GPULight lights[kMaxLights];  // Array of lights
 };
+
+// Forward+ GPU Light structure for SSBO (std430 layout, tightly packed)
+// NOTE: This is a separate structure from GPULight above for Forward+ rendering
+struct GPULightForwardPlus {
+    Vec4 positionAndRange;       // xyz = position, w = range
+    Vec4 directionAndType;       // xyz = direction, w = type (0=Directional, 1=Point, 2=Spot)
+    Vec4 colorAndIntensity;      // xyz = color, w = intensity
+    Vec4 spotAngles;             // x = inner cone cos, y = outer cone cos, z/w = padding
+
+    // Shadow data
+    u32 shadowIndex;             // Index into shadow atlas region array
+    u32 castsShadows;            // Boolean (0 or 1)
+    f32 shadowBias;
+    f32 shadowPCFRadius;
+
+    // Shadow atlas UV parameters
+    Vec4 shadowAtlasUV;          // x/y = offset, z/w = scale
+};
+
+// Light culling tile data (for Forward+ tiled light culling)
+static constexpr u32 kTileSize = 16;
+static constexpr u32 kMaxLightsPerTile = 256;
+
+struct TileLightData {
+    u32 lightCount;
+    u32 lightIndices[kMaxLightsPerTile];
+};

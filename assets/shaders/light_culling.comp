@@ -1,0 +1,182 @@
+// HLSL compute shader for Forward+ tiled light culling (compiled to SPIR-V via DXC)
+
+#define TILE_SIZE 16
+#define MAX_LIGHTS_PER_TILE 256
+
+// Inputs
+[[vk::binding(0, 0)]]
+Texture2D<float> depthBuffer;
+
+[[vk::binding(0, 0)]]
+SamplerState depthSampler;
+
+struct CullingParams {
+    float4x4 invProjection;
+    float4x4 viewMatrix;
+    float2 screenSize;
+    uint numLights;
+    uint padding;
+};
+
+[[vk::binding(1, 0)]]
+ConstantBuffer<CullingParams> params;
+
+// Light data (SSBO)
+struct GPULight {
+    float4 positionAndRange;
+    float4 directionAndType;
+    float4 colorAndIntensity;
+    float4 spotAngles;
+    uint shadowIndex;
+    uint castsShadows;
+    float shadowBias;
+    float shadowPCFRadius;
+    float4 shadowAtlasUV;
+};
+
+[[vk::binding(2, 0)]]
+StructuredBuffer<GPULight> lightBuffer;
+
+// Output: Tile light indices (SSBO)
+struct TileLightData {
+    uint lightCount;
+    uint lightIndices[MAX_LIGHTS_PER_TILE];
+};
+
+[[vk::binding(3, 0)]]
+RWStructuredBuffer<TileLightData> tileLightIndices;
+
+// Shared memory for tile min/max depth
+groupshared uint minDepthInt;
+groupshared uint maxDepthInt;
+groupshared uint tileLightCount;
+groupshared uint tileLightIndices_shared[MAX_LIGHTS_PER_TILE];
+
+// Convert depth to view-space Z
+float DepthToViewZ(float depth) {
+    float4 clipSpace = float4(0.0, 0.0, depth * 2.0 - 1.0, 1.0);
+    float4 viewSpace = mul(params.invProjection, clipSpace);
+    return viewSpace.z / viewSpace.w;
+}
+
+// Test if sphere intersects tile frustum
+bool SphereIntersectsTile(float3 sphereCenter, float sphereRadius,
+                          float2 tileMin, float2 tileMax,
+                          float minDepth, float maxDepth) {
+    // Simplified frustum test (box in screen space)
+    // For full accuracy, use plane-based frustum tests
+
+    // Transform sphere to view space
+    float4 viewSpaceCenter = mul(params.viewMatrix, float4(sphereCenter, 1.0));
+
+    // Check Z bounds
+    if (viewSpaceCenter.z + sphereRadius < minDepth ||
+        viewSpaceCenter.z - sphereRadius > maxDepth) {
+        return false;
+    }
+
+    // Project sphere to screen space
+    // (Simplified - should use proper frustum planes)
+    float2 screenCenter = (viewSpaceCenter.xy / -viewSpaceCenter.z) * 0.5 + 0.5;
+    screenCenter *= params.screenSize;
+
+    float screenRadius = (sphereRadius / -viewSpaceCenter.z) * params.screenSize.x * 0.5;
+
+    // AABB test
+    if (screenCenter.x + screenRadius < tileMin.x || screenCenter.x - screenRadius > tileMax.x ||
+        screenCenter.y + screenRadius < tileMin.y || screenCenter.y - screenRadius > tileMax.y) {
+        return false;
+    }
+
+    return true;
+}
+
+[numthreads(TILE_SIZE, TILE_SIZE, 1)]
+void main(uint3 dispatchThreadID : SV_DispatchThreadID,
+          uint3 groupThreadID : SV_GroupThreadID,
+          uint3 groupID : SV_GroupID)
+{
+    uint2 tileID = groupID.xy;
+    uint2 localID = groupThreadID.xy;
+    uint localIndex = localID.y * TILE_SIZE + localID.x;
+
+    // Initialize shared memory
+    if (localIndex == 0) {
+        minDepthInt = 0xFFFFFFFF;
+        maxDepthInt = 0;
+        tileLightCount = 0;
+    }
+
+    GroupMemoryBarrierWithGroupSync();
+
+    // Calculate tile bounds in screen space
+    float2 tileMin = float2(tileID) * float(TILE_SIZE);
+    float2 tileMax = tileMin + float2(TILE_SIZE, TILE_SIZE);
+
+    // Sample depth at this thread's pixel
+    float2 pixelCoord = tileMin + float2(localID);
+    float2 uv = pixelCoord / params.screenSize;
+
+    float depth = depthBuffer.SampleLevel(depthSampler, uv, 0);
+    float viewZ = DepthToViewZ(depth);
+
+    // Convert to uint for atomic operations
+    uint depthInt = asuint(viewZ);
+
+    // Update tile min/max depth
+    InterlockedMin(minDepthInt, depthInt);
+    InterlockedMax(maxDepthInt, depthInt);
+
+    GroupMemoryBarrierWithGroupSync();
+
+    // Now all threads have min/max depth
+    float minDepth = asfloat(minDepthInt);
+    float maxDepth = asfloat(maxDepthInt);
+
+    // Cull lights (each thread tests a subset)
+    uint numLights = params.numLights;
+    uint lightsPerThread = (numLights + (TILE_SIZE * TILE_SIZE) - 1) / (TILE_SIZE * TILE_SIZE);
+    uint startLight = localIndex * lightsPerThread;
+    uint endLight = min(startLight + lightsPerThread, numLights);
+
+    for (uint i = startLight; i < endLight; ++i) {
+        GPULight light = lightBuffer[i];
+
+        float3 lightPos = light.positionAndRange.xyz;
+        float lightRange = light.positionAndRange.w;
+        uint lightType = uint(light.directionAndType.w);
+
+        bool intersects = false;
+
+        if (lightType == 1) {  // Point light
+            intersects = SphereIntersectsTile(lightPos, lightRange, tileMin, tileMax, minDepth, maxDepth);
+        } else if (lightType == 2) {  // Spot light
+            // Simplified: treat as sphere (should be cone test)
+            intersects = SphereIntersectsTile(lightPos, lightRange, tileMin, tileMax, minDepth, maxDepth);
+        } else if (lightType == 0) {  // Directional
+            intersects = true;  // Always affects all tiles
+        }
+
+        if (intersects) {
+            uint index;
+            InterlockedAdd(tileLightCount, 1, index);
+            if (index < MAX_LIGHTS_PER_TILE) {
+                tileLightIndices_shared[index] = i;
+            }
+        }
+    }
+
+    GroupMemoryBarrierWithGroupSync();
+
+    // Write results to global memory (only first thread)
+    if (localIndex == 0) {
+        uint tileIndex = tileID.y * uint(params.screenSize.x / float(TILE_SIZE)) + tileID.x;
+
+        uint count = min(tileLightCount, MAX_LIGHTS_PER_TILE);
+        tileLightIndices[tileIndex].lightCount = count;
+
+        for (uint j = 0; j < count; ++j) {
+            tileLightIndices[tileIndex].lightIndices[j] = tileLightIndices_shared[j];
+        }
+    }
+}

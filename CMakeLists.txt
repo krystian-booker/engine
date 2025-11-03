@@ -263,6 +263,7 @@ set(ENGINE_SOURCES
         src/renderer/vulkan_transfer_queue.cpp
         src/renderer/vulkan_shadow_map.cpp
         src/renderer/vulkan_shadow_atlas.cpp
+        src/renderer/vulkan_light_culling.cpp
         src/renderer/ltc_tables.cpp
         src/ui/imgui_project_picker.cpp
 )
