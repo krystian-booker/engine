@@ -232,6 +232,7 @@ set(ENGINE_SOURCES
         src/ecs/systems/camera_controller.cpp
         src/ecs/systems/editor_camera_controller.cpp
         src/ecs/systems/render_system.cpp
+        src/ecs/systems/shadow_system.cpp
         src/platform/window.cpp
         src/platform/input.cpp
         src/resources/mesh_manager.cpp
@@ -260,6 +261,8 @@ set(ENGINE_SOURCES
         src/renderer/vulkan_material_buffer.cpp
         src/renderer/vulkan_staging_pool.cpp
         src/renderer/vulkan_transfer_queue.cpp
+        src/renderer/vulkan_shadow_map.cpp
+        src/renderer/vulkan_shadow_atlas.cpp
         src/renderer/ltc_tables.cpp
         src/ui/imgui_project_picker.cpp
 )

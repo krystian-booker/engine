@@ -20,7 +20,7 @@ void ShadowSystem::Update(Entity cameraEntity, f32 nearPlane, f32 farPlane) {
     // Find main directional light (first one with castsShadows)
     m_MainDirectionalLight = Entity::Invalid;
 
-    m_ECS->ForEach<Transform, Light>([this](Entity entity, Transform& transform, Light& light) {
+    m_ECS->ForEach<Transform, Light>([this](Entity entity, Transform& /* transform */, Light& light) {
         if (light.type == LightType::Directional && light.castsShadows) {
             if (!m_MainDirectionalLight.IsValid()) {
                 m_MainDirectionalLight = entity;
@@ -39,10 +39,10 @@ void ShadowSystem::Update(Entity cameraEntity, f32 nearPlane, f32 farPlane) {
     }
 
     Camera& camera = m_ECS->GetComponent<Camera>(cameraEntity);
-    Transform& cameraTransform = m_ECS->GetComponent<Transform>(cameraEntity);
+    //Transform& cameraTransform = m_ECS->GetComponent<Transform>(cameraEntity);  // Not currently used
 
-    Mat4 cameraView = camera.GetViewMatrix();
-    Mat4 cameraProj = camera.GetProjectionMatrix();
+    Mat4 cameraView = camera.viewMatrix;
+    Mat4 cameraProj = camera.projectionMatrix;
 
     // Get light direction
     Transform& lightTransform = m_ECS->GetComponent<Transform>(m_MainDirectionalLight);

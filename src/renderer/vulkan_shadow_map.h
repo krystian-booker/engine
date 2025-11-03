@@ -2,6 +2,7 @@
 
 #include "core/types.h"
 #include <vulkan/vulkan.h>
+#include <vector>
 
 class VulkanContext;
 
