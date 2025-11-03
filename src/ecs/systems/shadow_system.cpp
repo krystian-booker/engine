@@ -6,6 +6,8 @@ ShadowSystem::ShadowSystem(ECSCoordinator* ecs)
     : m_ECS(ecs) {
     // Set default shadow parameters
     m_ShadowUniforms.shadowParams = Vec4(0.005f, 2.0f, 0.0f, 0.0f);  // bias, PCF radius
+    m_ShadowUniforms.numPointLightShadows = 0;
+    m_ShadowUniforms.numSpotLightShadows = 0;
 }
 
 ShadowSystem::~ShadowSystem() = default;
@@ -55,6 +57,10 @@ void ShadowSystem::Update(Entity cameraEntity, f32 nearPlane, f32 farPlane) {
     CalculateCascadeMatrices(cameraView, cameraProj, lightDir);
 
     m_ShadowUniforms.cascadeSplits.w = static_cast<f32>(m_CascadeConfig.numCascades);
+
+    // Calculate point and spot light shadows
+    CalculatePointLightShadows();
+    CalculateSpotLightShadows();
 }
 
 void ShadowSystem::CalculateCascadeSplits(f32 nearPlane, f32 farPlane) {
@@ -175,4 +181,126 @@ Mat4 ShadowSystem::CalculateLightProjMatrix(const std::vector<Vec4>& frustumCorn
     return glm::ortho(minExtents.x, maxExtents.x,
                       minExtents.y, maxExtents.y,
                       minExtents.z, maxExtents.z);
+}
+
+void ShadowSystem::CalculatePointLightShadows() {
+    m_PointLightShadows.clear();
+    m_ShadowUniforms.numPointLightShadows = 0;
+
+    u32 shadowIndex = 0;
+
+    // Find all point lights with castsShadows enabled
+    m_ECS->ForEach<Transform, Light>([this, &shadowIndex](Entity entity, Transform& transform, Light& light) {
+        if (light.type == LightType::Point && light.castsShadows && shadowIndex < kMaxPointLightShadows) {
+            m_PointLightShadows.push_back(entity);
+
+            // Get light position from world matrix
+            Vec3 lightPos(transform.worldMatrix[3][0], transform.worldMatrix[3][1], transform.worldMatrix[3][2]);
+
+            // Create 6 view-projection matrices for each cube face
+            // Use 90 degree FOV and aspect ratio of 1.0 for cubemap faces
+            f32 nearPlane = 0.1f;
+            f32 farPlane = light.range > 0.0f ? light.range : 25.0f;
+            Mat4 projection = glm::perspective(Radians(90.0f), 1.0f, nearPlane, farPlane);
+
+            // Store light position and far plane
+            m_ShadowUniforms.pointLightShadows[shadowIndex].lightPosAndFar = Vec4(lightPos, farPlane);
+
+            // Calculate view matrix for each cube face
+            // Order: +X, -X, +Y, -Y, +Z, -Z
+            for (u32 face = 0; face < 6; ++face) {
+                Mat4 view = CalculateCubeFaceViewMatrix(lightPos, face);
+                m_ShadowUniforms.pointLightShadows[shadowIndex].viewProj[face] = projection * view;
+            }
+
+            shadowIndex++;
+        }
+    });
+
+    m_ShadowUniforms.numPointLightShadows = shadowIndex;
+}
+
+void ShadowSystem::CalculateSpotLightShadows() {
+    m_SpotLightShadows.clear();
+    m_ShadowUniforms.numSpotLightShadows = 0;
+
+    u32 shadowIndex = 0;
+
+    // Find all spot lights with castsShadows enabled
+    m_ECS->ForEach<Transform, Light>([this, &shadowIndex](Entity entity, Transform& transform, Light& light) {
+        if (light.type == LightType::Spot && light.castsShadows && shadowIndex < kMaxSpotLightShadows) {
+            m_SpotLightShadows.push_back(entity);
+
+            // Get light position from world matrix
+            Vec3 lightPos(transform.worldMatrix[3][0], transform.worldMatrix[3][1], transform.worldMatrix[3][2]);
+
+            // Get light direction
+            Vec4 forwardLocal(0.0f, 0.0f, -1.0f, 0.0f);
+            Vec4 forwardWorld = transform.worldMatrix * forwardLocal;
+            Vec3 lightDir = Normalize(Vec3(forwardWorld.x, forwardWorld.y, forwardWorld.z));
+
+            // Create perspective projection based on outer cone angle
+            // Add some margin to the FOV to ensure coverage
+            f32 fov = light.outerConeAngle * 2.0f * 1.2f;  // Double the cone angle + 20% margin
+            f32 nearPlane = 0.1f;
+            f32 farPlane = light.range > 0.0f ? light.range : 25.0f;
+
+            Mat4 projection = glm::perspective(Radians(fov), 1.0f, nearPlane, farPlane);
+
+            // Create view matrix looking along light direction
+            Vec3 up(0.0f, 1.0f, 0.0f);
+            if (std::abs(Dot(lightDir, up)) > 0.99f) {
+                up = Vec3(1.0f, 0.0f, 0.0f);
+            }
+
+            Mat4 view = glm::lookAt(lightPos, lightPos + lightDir, up);
+
+            // Store view-projection matrix
+            m_ShadowUniforms.spotLightShadows[shadowIndex].viewProj = projection * view;
+            m_ShadowUniforms.spotLightShadows[shadowIndex].params = Vec4(0.005f, 0.0f, 0.0f, 0.0f);  // shadow bias
+
+            shadowIndex++;
+        }
+    });
+
+    m_ShadowUniforms.numSpotLightShadows = shadowIndex;
+}
+
+Mat4 ShadowSystem::CalculateCubeFaceViewMatrix(const Vec3& lightPos, u32 faceIndex) {
+    // Define target and up vectors for each cube face
+    // Face order: +X, -X, +Y, -Y, +Z, -Z
+    Vec3 target, up;
+
+    switch (faceIndex) {
+        case 0: // +X
+            target = lightPos + Vec3(1.0f, 0.0f, 0.0f);
+            up = Vec3(0.0f, -1.0f, 0.0f);
+            break;
+        case 1: // -X
+            target = lightPos + Vec3(-1.0f, 0.0f, 0.0f);
+            up = Vec3(0.0f, -1.0f, 0.0f);
+            break;
+        case 2: // +Y
+            target = lightPos + Vec3(0.0f, 1.0f, 0.0f);
+            up = Vec3(0.0f, 0.0f, 1.0f);
+            break;
+        case 3: // -Y
+            target = lightPos + Vec3(0.0f, -1.0f, 0.0f);
+            up = Vec3(0.0f, 0.0f, -1.0f);
+            break;
+        case 4: // +Z
+            target = lightPos + Vec3(0.0f, 0.0f, 1.0f);
+            up = Vec3(0.0f, -1.0f, 0.0f);
+            break;
+        case 5: // -Z
+            target = lightPos + Vec3(0.0f, 0.0f, -1.0f);
+            up = Vec3(0.0f, -1.0f, 0.0f);
+            break;
+        default:
+            target = lightPos + Vec3(0.0f, 0.0f, 1.0f);
+            up = Vec3(0.0f, 1.0f, 0.0f);
+            break;
+    }
+
+    return glm::lookAt(lightPos, target, up);
 }

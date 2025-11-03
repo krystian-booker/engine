@@ -25,6 +25,9 @@ public:
     // Create cascaded shadow map array (for directional lights)
     void CreateCascaded(VulkanContext* context, u32 resolution, u32 numCascades);
 
+    // Create cubemap shadow map (for point lights)
+    void CreateCubemap(VulkanContext* context, u32 resolution);
+
     // Destroy all Vulkan resources
     void Destroy();
 
@@ -45,6 +48,7 @@ public:
     }
 
     bool IsCascaded() const { return m_NumCascades > 1; }
+    bool IsCubemap() const { return m_IsCubemap; }
 
     // Prevent copying
     VulkanShadowMap(const VulkanShadowMap&) = delete;
@@ -64,8 +68,9 @@ private:
 
     u32 m_Resolution = 0;
     u32 m_NumCascades = 1;  // 1 for single shadow map, 4+ for CSM
+    bool m_IsCubemap = false;  // True for cubemap shadow maps (point lights)
 
-    // Depth image (2D for single, 2D array for cascaded)
+    // Depth image (2D for single, 2D array for cascaded, cube for point lights)
     VkImage m_DepthImage = VK_NULL_HANDLE;
     VkDeviceMemory m_DepthImageMemory = VK_NULL_HANDLE;
     VkImageView m_DepthImageView = VK_NULL_HANDLE;  // Full array view for sampling

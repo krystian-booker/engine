@@ -36,21 +36,64 @@ cbuffer LightingData : register(b1)
     GPULight lights[16];       // Max 16 lights
 };
 
+// Point light shadow data (6 view-proj matrices for cubemap faces)
+struct PointLightShadow
+{
+    float4x4 viewProj[6];      // View-projection for each cube face (+X, -X, +Y, -Y, +Z, -Z)
+    float4 lightPosAndFar;     // xyz = light position, w = far plane distance
+};
+
+// Spot light shadow data (single perspective projection)
+struct SpotLightShadow
+{
+    float4x4 viewProj;         // View-projection matrix for spot light
+    float4 params;             // x = shadow bias, y/z/w = padding
+};
+
 // Shadow uniform buffer (Set 0, Binding 2)
 [[vk::binding(2, 0)]]
 cbuffer ShadowData : register(b2)
 {
+    // Directional light shadows (CSM)
     float4x4 cascadeViewProj[4];  // View-projection matrix for each cascade
     float4 cascadeSplits;          // xyz = cascade split distances, w = numCascades
     float4 shadowParams;           // x = shadow bias, y = PCF radius, z/w = padding
+
+    // Point light shadows
+    uint numPointLightShadows;
+    uint pointPadding1;
+    uint pointPadding2;
+    uint pointPadding3;
+    PointLightShadow pointLightShadows[4];
+
+    // Spot light shadows
+    uint numSpotLightShadows;
+    uint spotPadding1;
+    uint spotPadding2;
+    uint spotPadding3;
+    SpotLightShadow spotLightShadows[8];
 };
 
-// Shadow map array (Set 0, Binding 3)
+// Shadow map array (Set 0, Binding 3 - directional/CSM)
 [[vk::binding(3, 0)]]
 Texture2DArray shadowMap : register(t2);
 
 [[vk::binding(3, 0)]]
 SamplerComparisonState shadowSampler : register(s2);
+
+// Point light shadow cubemap array (Set 0, Binding 7)
+[[vk::binding(7, 0)]]
+TextureCubeArray pointShadowMaps : register(t6);
+
+[[vk::binding(7, 0)]]
+SamplerComparisonState pointShadowSampler : register(s6);
+
+// Spot light shadow map array (Set 0, Binding 8)
+[[vk::binding(8, 0)]]
+Texture2DArray spotShadowMaps : register(t7);
+
+[[vk::binding(8, 0)]]
+SamplerComparisonState spotShadowSampler : register(s7);
 
 // IBL textures (Set 0, Bindings 4-6)
 [[vk::binding(4, 0)]]
@@ -252,6 +295,103 @@ float CalculateDirectionalLightShadow(float3 worldPos, float3 normal, float3 lig
     uint cascadeIndex = SelectCascade(viewDepth);
 
     return CalculateShadowPCF(worldPos, normal, lightDir, cascadeIndex);
+}
+
+// Calculate shadow factor for point light (cubemap omnidirectional)
+float CalculatePointLightShadow(float3 worldPos, float3 normal, uint shadowIndex)
+{
+    if (shadowIndex >= numPointLightShadows) {
+        return 1.0;  // No shadow
+    }
+
+    PointLightShadow shadowData = pointLightShadows[shadowIndex];
+    float3 lightPos = shadowData.lightPosAndFar.xyz;
+    float farPlane = shadowData.lightPosAndFar.w;
+
+    // Get direction from light to fragment
+    float3 lightToFrag = worldPos - lightPos;
+    float distance = length(lightToFrag);
+    float3 direction = lightToFrag / distance;
+
+    // Normal bias to reduce shadow acne
+    float bias = max(shadowParams.x * (1.0 - abs(dot(normal, -direction))), shadowParams.x * 0.1);
+
+    // Normalize depth to [0, 1] range
+    float currentDepth = (distance - bias) / farPlane;
+
+    // PCF with cubemap sampling (simplified 3x3 kernel on cube face)
+    float shadow = 0.0;
+    float samples = 0.0;
+    float pcfRadius = shadowParams.y * 0.01;  // Scale down for cubemap
+
+    // Sample offsets for PCF
+    float3 sampleOffsets[9] = {
+        float3(0.0, 0.0, 0.0),
+        float3(pcfRadius, 0.0, 0.0), float3(-pcfRadius, 0.0, 0.0),
+        float3(0.0, pcfRadius, 0.0), float3(0.0, -pcfRadius, 0.0),
+        float3(pcfRadius, pcfRadius, 0.0), float3(pcfRadius, -pcfRadius, 0.0),
+        float3(-pcfRadius, pcfRadius, 0.0), float3(-pcfRadius, -pcfRadius, 0.0)
+    };
+
+    for (int i = 0; i < 9; ++i) {
+        float3 sampleDir = normalize(direction + sampleOffsets[i]);
+        float4 sampleCoords = float4(sampleDir, float(shadowIndex));
+        shadow += pointShadowMaps.SampleCmpLevelZero(pointShadowSampler, sampleCoords, currentDepth);
+        samples += 1.0;
+    }
+
+    return shadow / samples;
+}
+
+// Calculate shadow factor for spot light (perspective projection)
+float CalculateSpotLightShadow(float3 worldPos, float3 normal, float3 lightDir, uint shadowIndex)
+{
+    if (shadowIndex >= numSpotLightShadows) {
+        return 1.0;  // No shadow
+    }
+
+    SpotLightShadow shadowData = spotLightShadows[shadowIndex];
+
+    // Transform position to light clip space
+    float4 lightSpacePos = mul(shadowData.viewProj, float4(worldPos, 1.0));
+
+    // Perspective divide
+    float3 projCoords = lightSpacePos.xyz / lightSpacePos.w;
+
+    // Convert to texture coordinates [0,1]
+    projCoords.xy = projCoords.xy * 0.5 + 0.5;
+    projCoords.y = 1.0 - projCoords.y;  // Flip Y for Vulkan
+
+    // Check if outside shadow map bounds
+    if (projCoords.x < 0.0 || projCoords.x > 1.0 ||
+        projCoords.y < 0.0 || projCoords.y > 1.0 ||
+        projCoords.z < 0.0 || projCoords.z > 1.0) {
+        return 1.0;  // No shadow
+    }
+
+    // Normal-based bias
+    float bias = max(shadowData.params.x * (1.0 - dot(normal, lightDir)), shadowData.params.x * 0.1);
+    float currentDepth = projCoords.z - bias;
+
+    // PCF with 3x3 kernel
+    float shadow = 0.0;
+    float2 texelSize = 1.0 / float2(1024.0, 1024.0);  // Spot shadow map resolution
+    float pcfRadius = shadowParams.y;
+
+    for (float x = -pcfRadius; x <= pcfRadius; x += 1.0) {
+        for (float y = -pcfRadius; y <= pcfRadius; y += 1.0) {
+            float2 offset = float2(x, y) * texelSize;
+            float3 sampleCoords = float3(projCoords.xy + offset, float(shadowIndex));
+
+            // Hardware PCF comparison
+            shadow += spotShadowMaps.SampleCmpLevelZero(spotShadowSampler, sampleCoords, currentDepth);
+        }
+    }
+
+    float kernelSize = (pcfRadius * 2.0 + 1.0);
+    shadow /= (kernelSize * kernelSize);
+
+    return shadow;
 }
 
 // ============================================================================
@@ -529,6 +669,14 @@ float4 main(PSIn i) : SV_Target
             float range = light.directionAndRange.w;
             float distanceRatio = saturate(1.0 - pow(distance / range, 4.0));
             attenuation = distanceRatio * distanceRatio / (distance * distance + 1.0);
+
+            // Apply shadows if enabled
+            bool castsShadows = light.spotAngles.z > 0.5;
+            uint shadowMapIndex = (uint)light.spotAngles.w;
+            if (castsShadows && shadowMapIndex < numPointLightShadows) {
+                float shadowFactor = CalculatePointLightShadow(i.fragWorldPos, N, shadowMapIndex);
+                attenuation *= shadowFactor;
+            }
         }
         else if (lightType == 2) // Spot light
         {
@@ -551,6 +699,14 @@ float4 main(PSIn i) : SV_Target
             float coneAttenuation = saturate((cosTheta - outerCone) / epsilon);
 
             attenuation = distAttenuation * coneAttenuation;
+
+            // Apply shadows if enabled
+            bool castsShadows = light.spotAngles.z > 0.5;
+            uint shadowMapIndex = (uint)light.spotAngles.w;
+            if (castsShadows && shadowMapIndex < numSpotLightShadows) {
+                float shadowFactor = CalculateSpotLightShadow(i.fragWorldPos, N, L, shadowMapIndex);
+                attenuation *= shadowFactor;
+            }
         }
         else if (lightType == 3) // Area light
         {

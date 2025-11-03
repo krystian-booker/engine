@@ -26,11 +26,36 @@ struct GPULight {
 
 // Cascade split distances and shadow matrices
 static constexpr u32 kMaxCascades = 4;
+static constexpr u32 kMaxPointLightShadows = 4;  // Maximum point lights with shadows
+static constexpr u32 kMaxSpotLightShadows = 8;   // Maximum spot lights with shadows
+
+// Point light shadow data (6 view-proj matrices for cubemap faces)
+struct PointLightShadow {
+    Mat4 viewProj[6];      // View-projection for each cube face (+X, -X, +Y, -Y, +Z, -Z)
+    Vec4 lightPosAndFar;   // xyz = light position, w = far plane distance
+};
+
+// Spot light shadow data (single perspective projection)
+struct SpotLightShadow {
+    Mat4 viewProj;         // View-projection matrix for spot light
+    Vec4 params;           // x = shadow bias, y/z/w = padding
+};
 
 struct ShadowUniforms {
+    // Directional light shadows (CSM)
     Mat4 cascadeViewProj[kMaxCascades];  // View-projection matrix for each cascade
     Vec4 cascadeSplits;                   // xyz = cascade split distances, w = numCascades
     Vec4 shadowParams;                    // x = shadow bias, y = PCF radius, z/w = padding
+
+    // Point light shadows
+    u32 numPointLightShadows;             // Number of active point light shadows
+    u32 padding1[3];
+    PointLightShadow pointLightShadows[kMaxPointLightShadows];
+
+    // Spot light shadows
+    u32 numSpotLightShadows;              // Number of active spot light shadows
+    u32 padding2[3];
+    SpotLightShadow spotLightShadows[kMaxSpotLightShadows];
 };
 
 // Maximum lights supported per frame

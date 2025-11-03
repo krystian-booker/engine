@@ -31,6 +31,10 @@ public:
     // Get main directional light (first light with castsShadows)
     Entity GetMainDirectionalLight() const { return m_MainDirectionalLight; }
 
+    // Get point/spot light shadow entities
+    const std::vector<Entity>& GetPointLightShadows() const { return m_PointLightShadows; }
+    const std::vector<Entity>& GetSpotLightShadows() const { return m_SpotLightShadows; }
+
     // Configuration
     void SetCascadeConfig(const CascadeConfig& config) { m_CascadeConfig = config; }
     const CascadeConfig& GetCascadeConfig() const { return m_CascadeConfig; }
@@ -44,8 +48,15 @@ private:
     Mat4 CalculateLightProjMatrix(const std::vector<Vec4>& frustumCorners,
                                     const Mat4& lightView);
 
+    // Point and spot light shadow calculations
+    void CalculatePointLightShadows();
+    void CalculateSpotLightShadows();
+    Mat4 CalculateCubeFaceViewMatrix(const Vec3& lightPos, u32 faceIndex);
+
     ECSCoordinator* m_ECS = nullptr;
     Entity m_MainDirectionalLight = Entity::Invalid;
+    std::vector<Entity> m_PointLightShadows;
+    std::vector<Entity> m_SpotLightShadows;
     CascadeConfig m_CascadeConfig;
     ShadowUniforms m_ShadowUniforms = {};
 };

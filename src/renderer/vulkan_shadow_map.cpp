@@ -17,6 +17,7 @@ void VulkanShadowMap::CreateSingle(VulkanContext* context, u32 resolution) {
     m_Context = context;
     m_Resolution = resolution;
     m_NumCascades = 1;
+    m_IsCubemap = false;
 
     CreateDepthImage(resolution, 1);
     CreateImageViews();
@@ -39,8 +40,66 @@ void VulkanShadowMap::CreateCascaded(VulkanContext* context, u32 resolution, u32
     m_Context = context;
     m_Resolution = resolution;
     m_NumCascades = numCascades;
+    m_IsCubemap = false;
 
     CreateDepthImage(resolution, numCascades);
+    CreateImageViews();
+    CreateRenderPass();
+    CreateFramebuffers();
+    CreateSampler();
+}
+
+void VulkanShadowMap::CreateCubemap(VulkanContext* context, u32 resolution) {
+    if (!context) {
+        throw std::invalid_argument("VulkanShadowMap::CreateCubemap requires valid context");
+    }
+
+    Destroy();
+
+    m_Context = context;
+    m_Resolution = resolution;
+    m_NumCascades = 6;  // 6 faces for cubemap
+    m_IsCubemap = true;
+
+    // Create cubemap depth image (6 faces)
+    VkDevice device = m_Context->GetDevice();
+
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.extent.width = resolution;
+    imageInfo.extent.height = resolution;
+    imageInfo.extent.depth = 1;
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 6;
+    imageInfo.format = m_DepthFormat;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;  // Required for cubemap
+
+    if (vkCreateImage(device, &imageInfo, nullptr, &m_DepthImage) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create cubemap shadow map depth image");
+    }
+
+    // Allocate memory
+    VkMemoryRequirements memRequirements;
+    vkGetImageMemoryRequirements(device, m_DepthImage, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits,
+                                                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    if (vkAllocateMemory(device, &allocInfo, nullptr, &m_DepthImageMemory) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to allocate cubemap shadow map depth image memory");
+    }
+
+    vkBindImageMemory(device, m_DepthImage, m_DepthImageMemory, 0);
+
     CreateImageViews();
     CreateRenderPass();
     CreateFramebuffers();
@@ -52,6 +111,7 @@ void VulkanShadowMap::Destroy() {
     m_Context = nullptr;
     m_Resolution = 0;
     m_NumCascades = 1;
+    m_IsCubemap = false;
 }
 
 VkImageView VulkanShadowMap::GetCascadeImageView(u32 cascade) const {
@@ -111,11 +171,19 @@ void VulkanShadowMap::CreateDepthImage(u32 resolution, u32 arrayLayers) {
 void VulkanShadowMap::CreateImageViews() {
     VkDevice device = m_Context->GetDevice();
 
-    // Create full array view for sampling in shaders
+    // Create full array/cubemap view for sampling in shaders
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image = m_DepthImage;
-    viewInfo.viewType = (m_NumCascades > 1) ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
+
+    if (m_IsCubemap) {
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
+    } else if (m_NumCascades > 1) {
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+    } else {
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    }
+
     viewInfo.format = m_DepthFormat;
     viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
     viewInfo.subresourceRange.baseMipLevel = 0;
