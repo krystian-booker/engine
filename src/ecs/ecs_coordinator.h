@@ -1,5 +1,4 @@
 #pragma once
-#include "core/config.h"
 
 #include "component_registry.h"
 #include "hierarchy_manager.h"
@@ -568,19 +567,6 @@ private:
         m_HierarchyManager->OnEntityDestroyed(entity);
     }
 
-#if ECS_ENABLE_SIGNATURES
-    template<typename T>
-    void OnComponentAdded(Entity entity) {
-        auto bit = m_ComponentRegistry->GetComponentTypeId<T>();
-        m_EntityManager->SetSignatureBit(entity, bit);
-    }
-
-    template<typename T>
-    void OnComponentRemoved(Entity entity) {
-        auto bit = m_ComponentRegistry->GetComponentTypeId<T>();
-        m_EntityManager->ClearSignatureBit(entity, bit);
-    }
-#else
     template<typename T>
     void OnComponentAdded(Entity entity) {
         (void)entity;
@@ -590,7 +576,6 @@ private:
     void OnComponentRemoved(Entity entity) {
         (void)entity;
     }
-#endif
 
     std::unique_ptr<EntityManager> m_EntityManager;
     std::unique_ptr<ComponentRegistry> m_ComponentRegistry;

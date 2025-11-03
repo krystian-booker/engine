@@ -2,7 +2,6 @@
 
 #include "component_registry.h"
 #include "entity_manager.h"
-#include "core/config.h"
 #include <array>
 #include <functional>
 #include <limits>
@@ -25,9 +24,6 @@ public:
     EntityView(ComponentRegistry* registry, EntityManager* entityManager)
         : m_EntityManager(entityManager)
         , m_Arrays(registry->GetComponentArray<Components>()...) {
-#if ECS_ENABLE_SIGNATURES
-        m_SignatureMask = BuildSignatureMask(registry);
-#endif
         SelectDriver();
     }
 
@@ -136,26 +132,8 @@ private:
         if (!m_EntityManager->IsAlive(entity)) {
             return false;
         }
-#if ECS_ENABLE_SIGNATURES
-        if (!PassesSignature(entity)) {
-            return false;
-        }
-#endif
         return (GetArray<Components>()->Has(entity) && ...);
     }
-
-#if ECS_ENABLE_SIGNATURES
-    EntitySignature BuildSignatureMask(ComponentRegistry* registry) const {
-        EntitySignature mask = 0;
-        ((mask |= (EntitySignature{1} << registry->GetComponentTypeId<Components>())), ...);
-        return mask;
-    }
-
-    bool PassesSignature(Entity entity) const {
-        EntitySignature signature = m_EntityManager->GetSignature(entity);
-        return (signature & m_SignatureMask) == m_SignatureMask;
-    }
-#endif
 
     void SelectDriver() {
         if constexpr (sizeof...(Components) == 0) {
@@ -220,7 +198,4 @@ private:
     ArrayTuple m_Arrays;
     size_t m_DriverSize = 0;
     std::function<Entity(size_t)> m_GetEntity;
-#if ECS_ENABLE_SIGNATURES
-    EntitySignature m_SignatureMask = 0;
-#endif
 };

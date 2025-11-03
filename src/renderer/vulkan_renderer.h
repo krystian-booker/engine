@@ -133,7 +133,5 @@ private:
     bool m_Initialized = false;
     bool m_OffscreenPipelinesInitialized = false;
 
-    f32 m_Rotation = 0.0f;
-
     MeshHandle m_ActiveMesh = MeshHandle::Invalid;
 };

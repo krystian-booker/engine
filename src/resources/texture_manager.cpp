@@ -1523,7 +1523,7 @@ void TextureManager::PerformReload(TextureHandle handle, const std::string& file
         newVulkanTex->SetDescriptorIndex(oldDescriptorIndex);
     }
 
-    // Upload to GPU (synchronous for now, TODO: make async)
+    // Upload to GPU (synchronous - use LoadAsync for async loading)
     if (m_VulkanContext) {
         newVulkanTex->Create(m_VulkanContext, texData);
         texData->gpuTexture = newVulkanTex;

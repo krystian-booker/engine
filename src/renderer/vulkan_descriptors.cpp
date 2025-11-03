@@ -46,6 +46,11 @@ void VulkanDescriptors::Shutdown() {
     }
     m_UniformBuffers.clear();
 
+    for (auto& buffer : m_LightingBuffers) {
+        buffer.Destroy();
+    }
+    m_LightingBuffers.clear();
+
     // Descriptor sets are managed by VulkanDescriptorPools, so we just clear references
     m_TransientSets.clear();
     m_PersistentSet = VK_NULL_HANDLE;
@@ -66,17 +71,31 @@ void VulkanDescriptors::Shutdown() {
 void VulkanDescriptors::CreateDescriptorSetLayouts() {
     VkDevice device = m_Context->GetDevice();
 
-    // ===== Set 0: Transient (per-frame camera UBO) =====
+    // ===== Set 0: Transient (per-frame camera UBO + lighting UBO) =====
+
+    // Binding 0: Camera view/projection UBO
     VkDescriptorSetLayoutBinding uboLayoutBinding{};
     uboLayoutBinding.binding = 0;
     uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     uboLayoutBinding.descriptorCount = 1;
     uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
+    // Binding 1: Lighting UBO
+    VkDescriptorSetLayoutBinding lightingLayoutBinding{};
+    lightingLayoutBinding.binding = 1;
+    lightingLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    lightingLayoutBinding.descriptorCount = 1;
+    lightingLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    std::array<VkDescriptorSetLayoutBinding, 2> transientBindings = {
+        uboLayoutBinding,
+        lightingLayoutBinding
+    };
+
     VkDescriptorSetLayoutCreateInfo transientLayoutInfo{};
     transientLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    transientLayoutInfo.bindingCount = 1;
-    transientLayoutInfo.pBindings = &uboLayoutBinding;
+    transientLayoutInfo.bindingCount = static_cast<u32>(transientBindings.size());
+    transientLayoutInfo.pBindings = transientBindings.data();
 
     if (vkCreateDescriptorSetLayout(device, &transientLayoutInfo, nullptr, &m_TransientLayout) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create transient descriptor set layout");
@@ -132,14 +151,26 @@ void VulkanDescriptors::CreateUniformBuffers(u32 framesInFlight) {
         throw std::invalid_argument("VulkanDescriptors::CreateUniformBuffers requires at least one frame");
     }
 
-    VkDeviceSize bufferSize = sizeof(UniformBufferObject);
-
+    // Create camera uniform buffers
+    VkDeviceSize cameraBufferSize = sizeof(UniformBufferObject);
     m_UniformBuffers.resize(framesInFlight);
 
     for (u32 i = 0; i < framesInFlight; ++i) {
         m_UniformBuffers[i].Create(
             m_Context,
-            bufferSize,
+            cameraBufferSize,
+            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    }
+
+    // Create lighting uniform buffers
+    VkDeviceSize lightingBufferSize = sizeof(LightingUniformBuffer);
+    m_LightingBuffers.resize(framesInFlight);
+
+    for (u32 i = 0; i < framesInFlight; ++i) {
+        m_LightingBuffers[i].Create(
+            m_Context,
+            lightingBufferSize,
             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
     }
@@ -155,6 +186,18 @@ void VulkanDescriptors::UpdateUniformBuffer(u32 currentFrame, const void* data, 
     }
 
     m_UniformBuffers[currentFrame].CopyFrom(data, size);
+}
+
+void VulkanDescriptors::UpdateLightingBuffer(u32 currentFrame, const void* data, size_t size) {
+    if (currentFrame >= m_LightingBuffers.size()) {
+        throw std::out_of_range("VulkanDescriptors::UpdateLightingBuffer frame index out of range");
+    }
+
+    if (size > m_LightingBuffers[currentFrame].GetSize()) {
+        throw std::runtime_error("VulkanDescriptors::UpdateLightingBuffer size exceeds buffer capacity");
+    }
+
+    m_LightingBuffers[currentFrame].CopyFrom(data, size);
 }
 
 void VulkanDescriptors::CreateDescriptorSets(u32 framesInFlight) {
@@ -175,22 +218,39 @@ void VulkanDescriptors::CreateDescriptorSets(u32 framesInFlight) {
             throw std::runtime_error("Failed to allocate transient descriptor set");
         }
 
-        // Bind UBO to transient set
-        VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = m_UniformBuffers[i].GetBuffer();
-        bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(UniformBufferObject);
+        // Bind UBO to transient set (binding 0 - camera)
+        VkDescriptorBufferInfo cameraBufferInfo{};
+        cameraBufferInfo.buffer = m_UniformBuffers[i].GetBuffer();
+        cameraBufferInfo.offset = 0;
+        cameraBufferInfo.range = sizeof(UniformBufferObject);
 
-        VkWriteDescriptorSet descriptorWrite{};
-        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrite.dstSet = m_TransientSets[i];
-        descriptorWrite.dstBinding = 0;
-        descriptorWrite.dstArrayElement = 0;
-        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptorWrite.descriptorCount = 1;
-        descriptorWrite.pBufferInfo = &bufferInfo;
+        // Bind lighting UBO to transient set (binding 1 - lighting)
+        VkDescriptorBufferInfo lightingBufferInfo{};
+        lightingBufferInfo.buffer = m_LightingBuffers[i].GetBuffer();
+        lightingBufferInfo.offset = 0;
+        lightingBufferInfo.range = sizeof(LightingUniformBuffer);
 
-        vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+        std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
+
+        // Camera UBO (binding 0)
+        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[0].dstSet = m_TransientSets[i];
+        descriptorWrites[0].dstBinding = 0;
+        descriptorWrites[0].dstArrayElement = 0;
+        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorWrites[0].descriptorCount = 1;
+        descriptorWrites[0].pBufferInfo = &cameraBufferInfo;
+
+        // Lighting UBO (binding 1)
+        descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[1].dstSet = m_TransientSets[i];
+        descriptorWrites[1].dstBinding = 1;
+        descriptorWrites[1].dstArrayElement = 0;
+        descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorWrites[1].descriptorCount = 1;
+        descriptorWrites[1].pBufferInfo = &lightingBufferInfo;
+
+        vkUpdateDescriptorSets(device, static_cast<u32>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
 
     // Allocate persistent descriptor set (single, shared across all frames)

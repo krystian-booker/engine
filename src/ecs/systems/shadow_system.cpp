@@ -1,0 +1,178 @@
+#include "shadow_system.h"
+#include <algorithm>
+#include <cmath>
+
+ShadowSystem::ShadowSystem(ECSCoordinator* ecs)
+    : m_ECS(ecs) {
+    // Set default shadow parameters
+    m_ShadowUniforms.shadowParams = Vec4(0.005f, 2.0f, 0.0f, 0.0f);  // bias, PCF radius
+}
+
+ShadowSystem::~ShadowSystem() = default;
+
+void ShadowSystem::Update(Entity cameraEntity, f32 nearPlane, f32 farPlane) {
+    if (!m_ECS) {
+        return;
+    }
+
+    // Find main directional light (first one with castsShadows)
+    m_MainDirectionalLight = Entity::Invalid;
+
+    m_ECS->ForEach<Transform, Light>([this](Entity entity, Transform& transform, Light& light) {
+        if (light.type == LightType::Directional && light.castsShadows) {
+            if (!m_MainDirectionalLight.IsValid()) {
+                m_MainDirectionalLight = entity;
+            }
+        }
+    });
+
+    if (!m_MainDirectionalLight.IsValid() || !cameraEntity.IsValid()) {
+        m_ShadowUniforms.cascadeSplits.w = 0.0f;  // No cascades
+        return;
+    }
+
+    // Get camera matrices
+    if (!m_ECS->HasComponent<Camera>(cameraEntity) || !m_ECS->HasComponent<Transform>(cameraEntity)) {
+        return;
+    }
+
+    Camera& camera = m_ECS->GetComponent<Camera>(cameraEntity);
+    Transform& cameraTransform = m_ECS->GetComponent<Transform>(cameraEntity);
+
+    Mat4 cameraView = camera.GetViewMatrix();
+    Mat4 cameraProj = camera.GetProjectionMatrix();
+
+    // Get light direction
+    Transform& lightTransform = m_ECS->GetComponent<Transform>(m_MainDirectionalLight);
+    Vec4 forwardLocal(0.0f, 0.0f, -1.0f, 0.0f);
+    Vec4 forwardWorld = lightTransform.worldMatrix * forwardLocal;
+    Vec3 lightDir = Normalize(Vec3(forwardWorld.x, forwardWorld.y, forwardWorld.z));
+
+    // Calculate cascade splits
+    CalculateCascadeSplits(nearPlane, farPlane);
+
+    // Calculate shadow matrices for each cascade
+    CalculateCascadeMatrices(cameraView, cameraProj, lightDir);
+
+    m_ShadowUniforms.cascadeSplits.w = static_cast<f32>(m_CascadeConfig.numCascades);
+}
+
+void ShadowSystem::CalculateCascadeSplits(f32 nearPlane, f32 farPlane) {
+    f32 range = farPlane - nearPlane;
+    f32 ratio = farPlane / nearPlane;
+
+    for (u32 i = 0; i < m_CascadeConfig.numCascades; ++i) {
+        f32 p = static_cast<f32>(i + 1) / static_cast<f32>(m_CascadeConfig.numCascades);
+
+        // Logarithmic split
+        f32 log = nearPlane * std::pow(ratio, p);
+
+        // Linear split
+        f32 linear = nearPlane + range * p;
+
+        // Blend between linear and logarithmic using lambda
+        f32 d = m_CascadeConfig.splitLambda * (log - linear) + linear;
+
+        // Store absolute distance
+        if (i < 3) {  // Only first 3 splits (4th is always far plane)
+            m_ShadowUniforms.cascadeSplits[i] = d;
+        }
+    }
+
+    // Last split is always the far plane
+    m_ShadowUniforms.cascadeSplits[kMaxCascades - 1] = farPlane;
+}
+
+void ShadowSystem::CalculateCascadeMatrices(const Mat4& cameraView, const Mat4& cameraProj,
+                                            const Vec3& lightDir) {
+    f32 lastSplitDist = 0.0f;
+
+    for (u32 cascade = 0; cascade < m_CascadeConfig.numCascades; ++cascade) {
+        f32 splitDist = m_ShadowUniforms.cascadeSplits[cascade];
+
+        // Create sub-frustum projection matrix for this cascade
+        Mat4 cascadeProj = cameraProj;
+        // Update near and far planes for this cascade
+        // This is a simplified approach - proper implementation would modify projection matrix
+
+        // Get frustum corners for this cascade in world space
+        Mat4 invViewProj = glm::inverse(cascadeProj * cameraView);
+        std::vector<Vec4> frustumCorners = GetFrustumCornersWorldSpace(invViewProj);
+
+        // Calculate frustum center
+        Vec3 frustumCenter(0.0f);
+        for (const auto& corner : frustumCorners) {
+            frustumCenter += Vec3(corner.x, corner.y, corner.z);
+        }
+        frustumCenter /= static_cast<f32>(frustumCorners.size());
+
+        // Calculate light view matrix looking at frustum center
+        Mat4 lightView = CalculateLightViewMatrix(lightDir, frustumCenter);
+
+        // Calculate tight orthographic projection matrix
+        Mat4 lightProj = CalculateLightProjMatrix(frustumCorners, lightView);
+
+        // Store combined view-projection matrix
+        m_ShadowUniforms.cascadeViewProj[cascade] = lightProj * lightView;
+
+        lastSplitDist = splitDist;
+    }
+}
+
+std::vector<Vec4> ShadowSystem::GetFrustumCornersWorldSpace(const Mat4& viewProj) {
+    std::vector<Vec4> corners;
+    corners.reserve(8);
+
+    // NDC cube corners
+    for (u32 x = 0; x < 2; ++x) {
+        for (u32 y = 0; y < 2; ++y) {
+            for (u32 z = 0; z < 2; ++z) {
+                Vec4 pt = viewProj * Vec4(
+                    2.0f * x - 1.0f,
+                    2.0f * y - 1.0f,
+                    2.0f * z - 1.0f,
+                    1.0f
+                );
+                corners.push_back(pt / pt.w);
+            }
+        }
+    }
+
+    return corners;
+}
+
+Mat4 ShadowSystem::CalculateLightViewMatrix(const Vec3& lightDir, const Vec3& frustumCenter) {
+    // Position light looking at frustum center
+    // Use arbitrary "up" vector, adjust if parallel to light direction
+    Vec3 up(0.0f, 1.0f, 0.0f);
+    if (std::abs(Dot(lightDir, up)) > 0.99f) {
+        up = Vec3(1.0f, 0.0f, 0.0f);
+    }
+
+    return glm::lookAt(frustumCenter - lightDir * 10.0f, frustumCenter, up);
+}
+
+Mat4 ShadowSystem::CalculateLightProjMatrix(const std::vector<Vec4>& frustumCorners,
+                                             const Mat4& lightView) {
+    // Transform frustum corners to light space
+    Vec3 minExtents(std::numeric_limits<f32>::max());
+    Vec3 maxExtents(std::numeric_limits<f32>::lowest());
+
+    for (const auto& corner : frustumCorners) {
+        Vec4 lightSpaceCorner = lightView * corner;
+        Vec3 lsc(lightSpaceCorner.x, lightSpaceCorner.y, lightSpaceCorner.z);
+
+        minExtents = glm::min(minExtents, lsc);
+        maxExtents = glm::max(maxExtents, lsc);
+    }
+
+    // Add padding to reduce edge artifacts
+    f32 padding = 2.0f;
+    minExtents -= Vec3(padding);
+    maxExtents += Vec3(padding);
+
+    // Create orthographic projection
+    return glm::ortho(minExtents.x, maxExtents.x,
+                      minExtents.y, maxExtents.y,
+                      minExtents.z, maxExtents.z);
+}

@@ -18,10 +18,10 @@ struct Transform {
     // Dirty flag for optimization
     bool isDirty = true;
 
-    // Helper to mark dirty (propagates to children)
+    // Helper to mark dirty
+    // Note: Dirty propagation to children is handled by TransformSystem
     void MarkDirty() {
         isDirty = true;
-        // TODO: Propagate to children
     }
 
     // Compute local matrix

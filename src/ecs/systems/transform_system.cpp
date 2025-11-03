@@ -1,24 +1,35 @@
 #include "transform_system.h"
-#include <algorithm>
+#include <unordered_set>
 
 void TransformSystem::Update(float deltaTime) {
     (void)deltaTime;
 
     auto transforms = m_Registry->GetComponentArray<Transform>();
 
-    // Get all root entities (no parent)
-    std::vector<Entity> roots = m_Hierarchy->GetRootEntities();
+    // Get all root entities (no parent) - use set for O(1) lookups
+    std::vector<Entity> rootsList = m_Hierarchy->GetRootEntities();
+    std::unordered_set<u32> rootSet;  // Store entity indices for fast lookup
+    for (Entity root : rootsList) {
+        rootSet.insert(root.index);
+    }
 
     // Also check for entities with transforms but not in hierarchy
+    std::vector<Entity> roots;
+    roots.reserve(transforms->Size());  // Reserve worst-case size
+
     for (size_t i = 0; i < transforms->Size(); ++i) {
         Entity entity = transforms->GetEntity(i);
         if (m_Hierarchy->GetParent(entity) == Entity::Invalid) {
-            // This is a root - add if not already in list
-            if (std::find(roots.begin(), roots.end(), entity) == roots.end()) {
+            // This is a root - add if not already in set
+            if (rootSet.find(entity.index) == rootSet.end()) {
                 roots.push_back(entity);
+                rootSet.insert(entity.index);
             }
         }
     }
+
+    // Add hierarchy roots to final list
+    roots.insert(roots.end(), rootsList.begin(), rootsList.end());
 
     // Update each root and its children recursively
     Mat4 identityMatrix(1.0f);

@@ -5,7 +5,10 @@
 enum class LightType {
     Directional,
     Point,
-    Spot
+    Spot,
+    Area,
+    Tube,
+    Hemisphere
 };
 
 struct Light {
@@ -22,6 +25,19 @@ struct Light {
     // Spot light parameters
     f32 innerConeAngle = 30.0f;  // Degrees
     f32 outerConeAngle = 45.0f;  // Degrees
+
+    // Area light parameters
+    f32 width = 1.0f;            // Width of rectangular area light
+    f32 height = 1.0f;           // Height of rectangular area light
+    bool twoSided = false;       // Emit light from both sides
+
+    // Tube light parameters
+    f32 tubeLength = 1.0f;       // Length of tube/line light
+    f32 tubeRadius = 0.1f;       // Radius of tube light
+
+    // Hemisphere light parameters
+    Vec3 skyColor{0.4f, 0.6f, 1.0f};      // Sky/upper hemisphere color
+    Vec3 groundColor{0.1f, 0.1f, 0.1f};   // Ground/lower hemisphere color
 
     // Shadow casting
     bool castsShadows = true;

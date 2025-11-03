@@ -260,6 +260,7 @@ set(ENGINE_SOURCES
         src/renderer/vulkan_material_buffer.cpp
         src/renderer/vulkan_staging_pool.cpp
         src/renderer/vulkan_transfer_queue.cpp
+        src/renderer/ltc_tables.cpp
         src/ui/imgui_project_picker.cpp
 )
 

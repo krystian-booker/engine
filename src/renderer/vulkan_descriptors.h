@@ -23,6 +23,7 @@ public:
 
     void CreateUniformBuffers(u32 framesInFlight);
     void UpdateUniformBuffer(u32 currentFrame, const void* data, size_t size);
+    void UpdateLightingBuffer(u32 currentFrame, const void* data, size_t size);
 
     // Bindless texture registration
     // Returns descriptor index for use in shaders
@@ -60,6 +61,9 @@ private:
 
     // Per-frame uniform buffers (camera/view matrices)
     std::vector<VulkanBuffer> m_UniformBuffers;
+
+    // Per-frame lighting buffers
+    std::vector<VulkanBuffer> m_LightingBuffers;
 
     // Bindless texture index management
     u32 m_NextTextureIndex = 0;
