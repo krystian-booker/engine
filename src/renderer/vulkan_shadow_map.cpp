@@ -286,6 +286,7 @@ void VulkanShadowMap::CreateFramebuffers() {
 void VulkanShadowMap::CreateSampler() {
     VkDevice device = m_Context->GetDevice();
 
+    // Create comparison sampler for hardware PCF
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
     samplerInfo.magFilter = VK_FILTER_LINEAR;
@@ -300,7 +301,24 @@ void VulkanShadowMap::CreateSampler() {
     samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
 
     if (vkCreateSampler(device, &samplerInfo, nullptr, &m_Sampler) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create shadow map sampler");
+        throw std::runtime_error("Failed to create shadow map comparison sampler");
+    }
+
+    // Create non-comparison sampler for raw depth access (PCSS, Contact-Hardening)
+    VkSamplerCreateInfo rawSamplerInfo{};
+    rawSamplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    rawSamplerInfo.magFilter = VK_FILTER_NEAREST;  // Nearest for exact depth values
+    rawSamplerInfo.minFilter = VK_FILTER_NEAREST;
+    rawSamplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    rawSamplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    rawSamplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    rawSamplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+    rawSamplerInfo.anisotropyEnable = VK_FALSE;
+    rawSamplerInfo.compareEnable = VK_FALSE;  // Disable comparison for raw depth
+    rawSamplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+
+    if (vkCreateSampler(device, &rawSamplerInfo, nullptr, &m_RawDepthSampler) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create shadow map raw depth sampler");
     }
 }
 
@@ -326,6 +344,11 @@ void VulkanShadowMap::DestroyResources() {
     if (m_Sampler != VK_NULL_HANDLE) {
         vkDestroySampler(device, m_Sampler, nullptr);
         m_Sampler = VK_NULL_HANDLE;
+    }
+
+    if (m_RawDepthSampler != VK_NULL_HANDLE) {
+        vkDestroySampler(device, m_RawDepthSampler, nullptr);
+        m_RawDepthSampler = VK_NULL_HANDLE;
     }
 
     for (auto imageView : m_CascadeImageViews) {

@@ -25,6 +25,17 @@ public:
     void UpdateUniformBuffer(u32 currentFrame, const void* data, size_t size);
     void UpdateLightingBuffer(u32 currentFrame, const void* data, size_t size);
 
+    // Shadow and IBL texture binding methods (Set 0, Transient)
+    void BindShadowUBO(u32 currentFrame, const void* data, size_t size);  // Binding 2
+    void BindShadowMap(VkImageView imageView, VkSampler sampler);  // Binding 3
+    void BindIBLIrradiance(VkImageView imageView, VkSampler sampler);  // Binding 4
+    void BindIBLPrefiltered(VkImageView imageView, VkSampler sampler);  // Binding 5
+    void BindIBLBRDF(VkImageView imageView, VkSampler sampler);  // Binding 6
+    void BindPointShadowMaps(VkImageView imageView, VkSampler sampler);  // Binding 7
+    void BindSpotShadowMaps(VkImageView imageView, VkSampler sampler);  // Binding 8
+    void BindEVSMShadows(VkImageView imageView, VkSampler sampler);  // Binding 9
+    void BindRawDepthShadowMap(VkImageView imageView, VkSampler sampler);  // Binding 10 (non-comparison for raw depth access)
+
     // Bindless texture registration
     // Returns descriptor index for use in shaders
     u32 RegisterTexture(VkImageView imageView, VkSampler sampler);
@@ -64,6 +75,9 @@ private:
 
     // Per-frame lighting buffers
     std::vector<VulkanBuffer> m_LightingBuffers;
+
+    // Per-frame shadow buffers
+    std::vector<VulkanBuffer> m_ShadowBuffers;
 
     // Bindless texture index management
     u32 m_NextTextureIndex = 0;

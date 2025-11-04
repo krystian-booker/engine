@@ -263,6 +263,9 @@ set(ENGINE_SOURCES
         src/renderer/vulkan_transfer_queue.cpp
         src/renderer/vulkan_shadow_map.cpp
         src/renderer/vulkan_shadow_atlas.cpp
+        src/renderer/vulkan_evsm_shadow.cpp
+        src/renderer/vulkan_shadow_renderer.cpp
+        src/renderer/shadow_profiler.cpp
         src/renderer/vulkan_light_culling.cpp
         src/renderer/ltc_tables.cpp
         src/ui/imgui_project_picker.cpp
@@ -431,6 +434,10 @@ set(MIPGEN_ROUGHNESS_HLSL ${CMAKE_SOURCE_DIR}/assets/shaders/mipgen_roughness.co
 set(MIPGEN_ROUGHNESS_SPV ${CMAKE_SOURCE_DIR}/assets/shaders/mipgen_roughness.comp.spv)
 set(MIPGEN_SRGB_HLSL ${CMAKE_SOURCE_DIR}/assets/shaders/mipgen_srgb.comp)
 set(MIPGEN_SRGB_SPV ${CMAKE_SOURCE_DIR}/assets/shaders/mipgen_srgb.comp.spv)
+set(EVSM_PREFILTER_HLSL ${CMAKE_SOURCE_DIR}/assets/shaders/evsm_prefilter.comp)
+set(EVSM_PREFILTER_SPV ${CMAKE_SOURCE_DIR}/assets/shaders/evsm_prefilter.comp.spv)
+set(EVSM_BLUR_HLSL ${CMAKE_SOURCE_DIR}/assets/shaders/evsm_blur.comp)
+set(EVSM_BLUR_SPV ${CMAKE_SOURCE_DIR}/assets/shaders/evsm_blur.comp.spv)
 
 # Find DXC compiler - prefer Vulkan SDK version with SPIR-V support
 # Check Vulkan SDK locations first (VULKAN_SDK, VK_SDK_PATH environment variables)
@@ -505,8 +512,26 @@ if(DXC_EXECUTABLE)
             VERBATIM
     )
 
+    add_custom_command(
+            OUTPUT ${EVSM_PREFILTER_SPV}
+            COMMAND ${DXC_EXECUTABLE} -spirv -fspv-target-env=vulkan1.2 -T cs_6_7 -E main
+                    ${EVSM_PREFILTER_HLSL} -Fo ${EVSM_PREFILTER_SPV}
+            DEPENDS ${EVSM_PREFILTER_HLSL}
+            COMMENT "Compiling EVSM prefilter compute shader to SPIR-V"
+            VERBATIM
+    )
+
+    add_custom_command(
+            OUTPUT ${EVSM_BLUR_SPV}
+            COMMAND ${DXC_EXECUTABLE} -spirv -fspv-target-env=vulkan1.2 -T cs_6_7 -E main
+                    ${EVSM_BLUR_HLSL} -Fo ${EVSM_BLUR_SPV}
+            DEPENDS ${EVSM_BLUR_HLSL}
+            COMMENT "Compiling EVSM blur compute shader to SPIR-V"
+            VERBATIM
+    )
+
     add_custom_target(Shaders ALL
-            DEPENDS ${CUBE_VERT_SPV} ${CUBE_FRAG_SPV} ${MIPGEN_COLOR_SPV} ${MIPGEN_NORMAL_SPV} ${MIPGEN_ROUGHNESS_SPV} ${MIPGEN_SRGB_SPV}
+            DEPENDS ${CUBE_VERT_SPV} ${CUBE_FRAG_SPV} ${MIPGEN_COLOR_SPV} ${MIPGEN_NORMAL_SPV} ${MIPGEN_ROUGHNESS_SPV} ${MIPGEN_SRGB_SPV} ${EVSM_PREFILTER_SPV} ${EVSM_BLUR_SPV}
     )
 
     add_custom_command(TARGET Shaders POST_BUILD
@@ -517,6 +542,8 @@ if(DXC_EXECUTABLE)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MIPGEN_NORMAL_SPV} ${CMAKE_BINARY_DIR}/assets/shaders/mipgen_normal.comp.spv
             COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MIPGEN_ROUGHNESS_SPV} ${CMAKE_BINARY_DIR}/assets/shaders/mipgen_roughness.comp.spv
             COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MIPGEN_SRGB_SPV} ${CMAKE_BINARY_DIR}/assets/shaders/mipgen_srgb.comp.spv
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${EVSM_PREFILTER_SPV} ${CMAKE_BINARY_DIR}/assets/shaders/evsm_prefilter.comp.spv
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${EVSM_BLUR_SPV} ${CMAKE_BINARY_DIR}/assets/shaders/evsm_blur.comp.spv
     )
 
     add_dependencies(engine Shaders)

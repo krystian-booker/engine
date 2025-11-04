@@ -3,6 +3,14 @@
 #include "core/math.h"
 #include "core/types.h"
 
+// Shadow filtering mode enum
+enum class ShadowFilterMode : u32 {
+    PCF = 0,                // Basic Percentage-Closer Filtering (3x3 or 5x5 kernel)
+    PCSS = 1,               // Percentage-Closer Soft Shadows (variable penumbra)
+    ContactHardening = 2,   // Contact-hardening shadows (simplified PCSS)
+    EVSM = 3                // Exponential Variance Shadow Maps (pre-filtered)
+};
+
 // View/Projection uniform buffer (Set 0, Binding 0)
 struct UniformBufferObject {
     Mat4 view;
@@ -18,8 +26,8 @@ struct GPULight {
     Vec4 spotAngles;         // x = inner cone cos, y = outer cone cos, z = castsShadows, w = shadowMapIndex
 
     // Extended parameters for area/tube/hemisphere lights
-    Vec4 areaParams;         // x = width, y = height, z = twoSided (0/1), w = unused
-    Vec4 tubeParams;         // x = length, y = radius, z/w = unused
+    Vec4 areaParams;         // x = width, y = height, z = twoSided (0/1), w = shadowFilterMode
+    Vec4 tubeParams;         // x = length, y = radius, z = searchRadius, w = unused
     Vec4 hemisphereParams;   // xyz = skyColor or right vector (area), w = unused
     Vec4 hemisphereParams2;  // xyz = groundColor or up vector (area), w = unused
 };
@@ -45,7 +53,9 @@ struct ShadowUniforms {
     // Directional light shadows (CSM)
     Mat4 cascadeViewProj[kMaxCascades];  // View-projection matrix for each cascade
     Vec4 cascadeSplits;                   // xyz = cascade split distances, w = numCascades
-    Vec4 shadowParams;                    // x = shadow bias, y = PCF radius, z/w = padding
+    Vec4 shadowParams;                    // x = shadow bias, y = PCF radius, z = filter mode (0=PCF, 1=PCSS, 2=ContactHardening, 3=EVSM), w = search radius/max radius
+    Vec4 evsmParams;                      // x = positive exponent (default 40.0), y = negative exponent (default 40.0), z = light bleed reduction (default 0.3), w = padding
+    Vec4 debugParams;                     // x = debug mode (0=off, 1=cascades, 2=blocker depth, 3=penumbra size), yzw = padding
 
     // Point light shadows
     u32 numPointLightShadows;             // Number of active point light shadows
@@ -82,8 +92,12 @@ struct GPULightForwardPlus {
     // Shadow data
     u32 shadowIndex;             // Index into shadow atlas region array
     u32 castsShadows;            // Boolean (0 or 1)
-    f32 shadowBias;
+    u32 shadowFilterMode;        // Shadow filter mode (0=PCF, 1=PCSS, 2=ContactHardening, 3=EVSM)
     f32 shadowPCFRadius;
+    f32 shadowBias;
+    f32 shadowSearchRadius;      // Search radius for PCSS/max radius for ContactHardening
+    f32 padding1;
+    f32 padding2;
 
     // Shadow atlas UV parameters
     Vec4 shadowAtlasUV;          // x/y = offset, z/w = scale

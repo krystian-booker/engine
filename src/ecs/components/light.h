@@ -1,6 +1,7 @@
 #pragma once
 #include "core/types.h"
 #include "core/math.h"
+#include "renderer/uniform_buffers.h"  // For ShadowFilterMode
 
 enum class LightType {
     Directional,
@@ -41,6 +42,15 @@ struct Light {
 
     // Shadow casting
     bool castsShadows = true;
+
+    // Shadow filtering configuration
+    ShadowFilterMode shadowFilterMode = ShadowFilterMode::PCF;  // Default to basic PCF
+    f32 shadowSearchRadius = 5.0f;                               // Search radius for PCSS or max radius for ContactHardening
+
+    // EVSM-specific parameters (only used if shadowFilterMode == EVSM)
+    f32 evsmPositiveExponent = 40.0f;
+    f32 evsmNegativeExponent = 40.0f;
+    f32 evsmLightBleedReduction = 0.3f;
 
     // Computed values (updated by lighting system)
     Vec3 direction{0, -1, 0};    // For directional/spot

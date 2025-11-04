@@ -51,6 +51,11 @@ void VulkanDescriptors::Shutdown() {
     }
     m_LightingBuffers.clear();
 
+    for (auto& buffer : m_ShadowBuffers) {
+        buffer.Destroy();
+    }
+    m_ShadowBuffers.clear();
+
     // Descriptor sets are managed by VulkanDescriptorPools, so we just clear references
     m_TransientSets.clear();
     m_PersistentSet = VK_NULL_HANDLE;
@@ -71,7 +76,8 @@ void VulkanDescriptors::Shutdown() {
 void VulkanDescriptors::CreateDescriptorSetLayouts() {
     VkDevice device = m_Context->GetDevice();
 
-    // ===== Set 0: Transient (per-frame camera UBO + lighting UBO) =====
+    // ===== Set 0: Transient (per-frame UBOs + shadow/IBL textures) =====
+    // Note: Must match shader bindings in cube.frag
 
     // Binding 0: Camera view/projection UBO
     VkDescriptorSetLayoutBinding uboLayoutBinding{};
@@ -87,9 +93,81 @@ void VulkanDescriptors::CreateDescriptorSetLayouts() {
     lightingLayoutBinding.descriptorCount = 1;
     lightingLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    std::array<VkDescriptorSetLayoutBinding, 2> transientBindings = {
+    // Binding 2: Shadow UBO
+    VkDescriptorSetLayoutBinding shadowUBOBinding{};
+    shadowUBOBinding.binding = 2;
+    shadowUBOBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    shadowUBOBinding.descriptorCount = 1;
+    shadowUBOBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    // Binding 3: Shadow map array (directional/CSM)
+    VkDescriptorSetLayoutBinding shadowMapBinding{};
+    shadowMapBinding.binding = 3;
+    shadowMapBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    shadowMapBinding.descriptorCount = 1;
+    shadowMapBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    // Binding 4: IBL Irradiance cubemap
+    VkDescriptorSetLayoutBinding irradianceBinding{};
+    irradianceBinding.binding = 4;
+    irradianceBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    irradianceBinding.descriptorCount = 1;
+    irradianceBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    // Binding 5: IBL Prefiltered environment map
+    VkDescriptorSetLayoutBinding prefilteredBinding{};
+    prefilteredBinding.binding = 5;
+    prefilteredBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    prefilteredBinding.descriptorCount = 1;
+    prefilteredBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    // Binding 6: IBL BRDF LUT
+    VkDescriptorSetLayoutBinding brdfBinding{};
+    brdfBinding.binding = 6;
+    brdfBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    brdfBinding.descriptorCount = 1;
+    brdfBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    // Binding 7: Point light shadow cubemap array
+    VkDescriptorSetLayoutBinding pointShadowBinding{};
+    pointShadowBinding.binding = 7;
+    pointShadowBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    pointShadowBinding.descriptorCount = 1;
+    pointShadowBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    // Binding 8: Spot light shadow map array
+    VkDescriptorSetLayoutBinding spotShadowBinding{};
+    spotShadowBinding.binding = 8;
+    spotShadowBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    spotShadowBinding.descriptorCount = 1;
+    spotShadowBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    // Binding 9: EVSM moment texture array
+    VkDescriptorSetLayoutBinding evsmBinding{};
+    evsmBinding.binding = 9;
+    evsmBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    evsmBinding.descriptorCount = 1;
+    evsmBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    // Binding 10: Raw depth shadow map (non-comparison sampler for PCSS blocker search)
+    VkDescriptorSetLayoutBinding rawDepthBinding{};
+    rawDepthBinding.binding = 10;
+    rawDepthBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    rawDepthBinding.descriptorCount = 1;
+    rawDepthBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    std::array<VkDescriptorSetLayoutBinding, 11> transientBindings = {
         uboLayoutBinding,
-        lightingLayoutBinding
+        lightingLayoutBinding,
+        shadowUBOBinding,
+        shadowMapBinding,
+        irradianceBinding,
+        prefilteredBinding,
+        brdfBinding,
+        pointShadowBinding,
+        spotShadowBinding,
+        evsmBinding,
+        rawDepthBinding
     };
 
     VkDescriptorSetLayoutCreateInfo transientLayoutInfo{};
@@ -174,6 +252,18 @@ void VulkanDescriptors::CreateUniformBuffers(u32 framesInFlight) {
             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
     }
+
+    // Create shadow uniform buffers
+    VkDeviceSize shadowBufferSize = sizeof(ShadowUniforms);
+    m_ShadowBuffers.resize(framesInFlight);
+
+    for (u32 i = 0; i < framesInFlight; ++i) {
+        m_ShadowBuffers[i].Create(
+            m_Context,
+            shadowBufferSize,
+            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    }
 }
 
 void VulkanDescriptors::UpdateUniformBuffer(u32 currentFrame, const void* data, size_t size) {
@@ -230,7 +320,13 @@ void VulkanDescriptors::CreateDescriptorSets(u32 framesInFlight) {
         lightingBufferInfo.offset = 0;
         lightingBufferInfo.range = sizeof(LightingUniformBuffer);
 
-        std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
+        // Bind shadow UBO to transient set (binding 2 - shadow)
+        VkDescriptorBufferInfo shadowBufferInfo{};
+        shadowBufferInfo.buffer = m_ShadowBuffers[i].GetBuffer();
+        shadowBufferInfo.offset = 0;
+        shadowBufferInfo.range = sizeof(ShadowUniforms);
+
+        std::array<VkWriteDescriptorSet, 3> descriptorWrites{};
 
         // Camera UBO (binding 0)
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -249,6 +345,15 @@ void VulkanDescriptors::CreateDescriptorSets(u32 framesInFlight) {
         descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         descriptorWrites[1].descriptorCount = 1;
         descriptorWrites[1].pBufferInfo = &lightingBufferInfo;
+
+        // Shadow UBO (binding 2)
+        descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[2].dstSet = m_TransientSets[i];
+        descriptorWrites[2].dstBinding = 2;
+        descriptorWrites[2].dstArrayElement = 0;
+        descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorWrites[2].descriptorCount = 1;
+        descriptorWrites[2].pBufferInfo = &shadowBufferInfo;
 
         vkUpdateDescriptorSets(device, static_cast<u32>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
@@ -336,4 +441,94 @@ void VulkanDescriptors::BindMaterialBuffer(VkBuffer buffer, VkDeviceSize offset,
     descriptorWrite.pBufferInfo = &bufferInfo;
 
     vkUpdateDescriptorSets(m_Context->GetDevice(), 1, &descriptorWrite, 0, nullptr);
+}
+
+// Helper function to bind image sampler to all transient sets
+static void BindImageToAllFrames(VkDevice device, const std::vector<VkDescriptorSet>& sets,
+                                  u32 binding, VkImageView imageView, VkSampler sampler) {
+    VkDescriptorImageInfo imageInfo{};
+    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    imageInfo.imageView = imageView;
+    imageInfo.sampler = sampler;
+
+    for (size_t i = 0; i < sets.size(); ++i) {
+        VkWriteDescriptorSet descriptorWrite{};
+        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrite.dstSet = sets[i];
+        descriptorWrite.dstBinding = binding;
+        descriptorWrite.dstArrayElement = 0;
+        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrite.descriptorCount = 1;
+        descriptorWrite.pImageInfo = &imageInfo;
+
+        vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+    }
+}
+
+void VulkanDescriptors::BindShadowUBO(u32 currentFrame, const void* data, size_t size) {
+    if (currentFrame >= m_ShadowBuffers.size()) {
+        throw std::out_of_range("VulkanDescriptors::BindShadowUBO frame index out of range");
+    }
+
+    if (size > m_ShadowBuffers[currentFrame].GetSize()) {
+        throw std::runtime_error("VulkanDescriptors::BindShadowUBO size exceeds buffer capacity");
+    }
+
+    m_ShadowBuffers[currentFrame].CopyFrom(data, size);
+}
+
+void VulkanDescriptors::BindShadowMap(VkImageView imageView, VkSampler sampler) {
+    if (!imageView || !sampler) {
+        throw std::invalid_argument("VulkanDescriptors::BindShadowMap requires valid imageView and sampler");
+    }
+    BindImageToAllFrames(m_Context->GetDevice(), m_TransientSets, 3, imageView, sampler);
+}
+
+void VulkanDescriptors::BindIBLIrradiance(VkImageView imageView, VkSampler sampler) {
+    if (!imageView || !sampler) {
+        throw std::invalid_argument("VulkanDescriptors::BindIBLIrradiance requires valid imageView and sampler");
+    }
+    BindImageToAllFrames(m_Context->GetDevice(), m_TransientSets, 4, imageView, sampler);
+}
+
+void VulkanDescriptors::BindIBLPrefiltered(VkImageView imageView, VkSampler sampler) {
+    if (!imageView || !sampler) {
+        throw std::invalid_argument("VulkanDescriptors::BindIBLPrefiltered requires valid imageView and sampler");
+    }
+    BindImageToAllFrames(m_Context->GetDevice(), m_TransientSets, 5, imageView, sampler);
+}
+
+void VulkanDescriptors::BindIBLBRDF(VkImageView imageView, VkSampler sampler) {
+    if (!imageView || !sampler) {
+        throw std::invalid_argument("VulkanDescriptors::BindIBLBRDF requires valid imageView and sampler");
+    }
+    BindImageToAllFrames(m_Context->GetDevice(), m_TransientSets, 6, imageView, sampler);
+}
+
+void VulkanDescriptors::BindPointShadowMaps(VkImageView imageView, VkSampler sampler) {
+    if (!imageView || !sampler) {
+        throw std::invalid_argument("VulkanDescriptors::BindPointShadowMaps requires valid imageView and sampler");
+    }
+    BindImageToAllFrames(m_Context->GetDevice(), m_TransientSets, 7, imageView, sampler);
+}
+
+void VulkanDescriptors::BindSpotShadowMaps(VkImageView imageView, VkSampler sampler) {
+    if (!imageView || !sampler) {
+        throw std::invalid_argument("VulkanDescriptors::BindSpotShadowMaps requires valid imageView and sampler");
+    }
+    BindImageToAllFrames(m_Context->GetDevice(), m_TransientSets, 8, imageView, sampler);
+}
+
+void VulkanDescriptors::BindEVSMShadows(VkImageView imageView, VkSampler sampler) {
+    if (!imageView || !sampler) {
+        throw std::invalid_argument("VulkanDescriptors::BindEVSMShadows requires valid imageView and sampler");
+    }
+    BindImageToAllFrames(m_Context->GetDevice(), m_TransientSets, 9, imageView, sampler);
+}
+
+void VulkanDescriptors::BindRawDepthShadowMap(VkImageView imageView, VkSampler sampler) {
+    if (!imageView || !sampler) {
+        throw std::invalid_argument("VulkanDescriptors::BindRawDepthShadowMap requires valid imageView and sampler");
+    }
+    BindImageToAllFrames(m_Context->GetDevice(), m_TransientSets, 10, imageView, sampler);
 }

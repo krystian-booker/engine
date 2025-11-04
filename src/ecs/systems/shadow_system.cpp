@@ -58,6 +58,23 @@ void ShadowSystem::Update(Entity cameraEntity, f32 nearPlane, f32 farPlane) {
 
     m_ShadowUniforms.cascadeSplits.w = static_cast<f32>(m_CascadeConfig.numCascades);
 
+    // Update shadow filtering parameters
+    Light& mainLight = m_ECS->GetComponent<Light>(m_MainDirectionalLight);
+    m_ShadowUniforms.shadowParams.z = static_cast<f32>(mainLight.shadowFilterMode);
+    m_ShadowUniforms.shadowParams.w = mainLight.shadowSearchRadius;
+
+    // Update EVSM parameters
+    m_ShadowUniforms.evsmParams.x = mainLight.evsmPositiveExponent;
+    m_ShadowUniforms.evsmParams.y = mainLight.evsmNegativeExponent;
+    m_ShadowUniforms.evsmParams.z = mainLight.evsmLightBleedReduction;
+    m_ShadowUniforms.evsmParams.w = 0.0f;
+
+    // Update debug parameters
+    m_ShadowUniforms.debugParams.x = static_cast<f32>(m_DebugMode);
+    m_ShadowUniforms.debugParams.y = 0.0f;
+    m_ShadowUniforms.debugParams.z = 0.0f;
+    m_ShadowUniforms.debugParams.w = 0.0f;
+
     // Calculate point and spot light shadows
     CalculatePointLightShadows();
     CalculateSpotLightShadows();
@@ -303,4 +320,68 @@ Mat4 ShadowSystem::CalculateCubeFaceViewMatrix(const Vec3& lightPos, u32 faceInd
     }
 
     return glm::lookAt(lightPos, target, up);
+}
+
+// ============================================================================
+// Shadow Filtering Configuration Methods
+// ============================================================================
+
+void ShadowSystem::SetGlobalFilterMode(ShadowFilterMode mode) {
+    m_GlobalFilterMode = mode;
+
+    // Apply to all shadow-casting lights
+    if (m_ECS) {
+        m_ECS->ForEach<Light>([mode](Entity /* entity */, Light& light) {
+            if (light.castsShadows) {
+                light.shadowFilterMode = mode;
+            }
+        });
+    }
+}
+
+void ShadowSystem::SetEVSMParameters(f32 positiveExp, f32 negativeExp, f32 lightBleedReduction) {
+    m_EVSMPositiveExp = positiveExp;
+    m_EVSMNegativeExp = negativeExp;
+    m_EVSMLightBleedReduction = lightBleedReduction;
+
+    // Apply to all shadow-casting lights
+    if (m_ECS) {
+        m_ECS->ForEach<Light>([=](Entity /* entity */, Light& light) {
+            if (light.castsShadows) {
+                light.evsmPositiveExponent = positiveExp;
+                light.evsmNegativeExponent = negativeExp;
+                light.evsmLightBleedReduction = lightBleedReduction;
+            }
+        });
+    }
+}
+
+void ShadowSystem::GetEVSMParameters(f32& positiveExp, f32& negativeExp, f32& lightBleedReduction) const {
+    positiveExp = m_EVSMPositiveExp;
+    negativeExp = m_EVSMNegativeExp;
+    lightBleedReduction = m_EVSMLightBleedReduction;
+}
+
+void ShadowSystem::SetLightFilterMode(Entity lightEntity, ShadowFilterMode mode) {
+    if (!m_ECS || !lightEntity.IsValid()) {
+        return;
+    }
+
+    if (m_ECS->HasComponent<Light>(lightEntity)) {
+        Light& light = m_ECS->GetComponent<Light>(lightEntity);
+        light.shadowFilterMode = mode;
+    }
+}
+
+ShadowFilterMode ShadowSystem::GetLightFilterMode(Entity lightEntity) const {
+    if (!m_ECS || !lightEntity.IsValid()) {
+        return ShadowFilterMode::PCF;
+    }
+
+    if (m_ECS->HasComponent<Light>(lightEntity)) {
+        const Light& light = m_ECS->GetComponent<Light>(lightEntity);
+        return light.shadowFilterMode;
+    }
+
+    return ShadowFilterMode::PCF;
 }

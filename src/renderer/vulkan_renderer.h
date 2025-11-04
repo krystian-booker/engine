@@ -16,6 +16,8 @@
 #include "renderer/vulkan_material_buffer.h"
 #include "renderer/vulkan_texture.h"
 #include "renderer/vulkan_light_culling.h"
+#include "renderer/vulkan_evsm_shadow.h"
+#include "renderer/vulkan_shadow_renderer.h"
 #include "ecs/systems/render_system.h"
 
 #ifdef _DEBUG
@@ -31,13 +33,14 @@ class VulkanContext;
 class Window;
 class ECSCoordinator;
 class CameraSystem;
+class ShadowSystem;
 class SceneManager;
 class Viewport;
 class ViewportManager;
 
 class VulkanRenderer {
 public:
-    VulkanRenderer() = default;
+    VulkanRenderer();
     ~VulkanRenderer();
 
     void Init(VulkanContext* context, Window* window, ECSCoordinator* ecs, SceneManager* sceneManager);
@@ -125,6 +128,13 @@ private:
 
     // Forward+ light culling system
     std::unique_ptr<VulkanLightCulling> m_LightCulling;
+
+    // Shadow rendering system
+    std::unique_ptr<VulkanShadowRenderer> m_ShadowRenderer;
+    std::unique_ptr<ShadowSystem> m_ShadowSystem;
+
+    // EVSM shadow filtering system
+    std::unique_ptr<VulkanEVSMShadow> m_EVSMShadow;
 
     // Default texture for bindless array (index 0)
     std::unique_ptr<VulkanTexture> m_DefaultTexture;

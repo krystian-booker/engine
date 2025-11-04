@@ -1,0 +1,70 @@
+// evsm_blur.comp - Separable Gaussian Blur for EVSM Moments
+// Applies 2-pass Gaussian blur to EVSM moment textures to reduce noise and light bleeding
+
+// Input: EVSM moments texture (RGBA32F)
+[[vk::binding(0, 0)]]
+Texture2D<float4> inputMoments : register(t0);
+
+[[vk::binding(0, 0)]]
+SamplerState momentSampler : register(s0);
+
+// Output: Blurred EVSM moments (RGBA32F)
+[[vk::binding(1, 0)]]
+RWTexture2D<float4> outputMoments : register(u0);
+
+// Push constants for blur parameters
+struct PushConstants {
+    uint horizontal;    // 1 for horizontal pass, 0 for vertical pass
+    float blurRadius;   // Blur radius in pixels
+    uint padding1;
+    uint padding2;
+};
+
+[[vk::push_constant]]
+ConstantBuffer<PushConstants> pushConstants;
+
+// 9-tap Gaussian kernel (sigma = 2.0)
+// Weights sum to 1.0 for energy conservation
+static const float GAUSSIAN_WEIGHTS[9] = {
+    0.051, 0.0918, 0.122, 0.1531, 0.1633, 0.1531, 0.122, 0.0918, 0.051
+};
+
+static const int KERNEL_RADIUS = 4;  // 9-tap kernel has radius of 4
+
+[numthreads(8, 8, 1)]
+void main(uint3 dispatchThreadID : SV_DispatchThreadID) {
+    uint2 coord = dispatchThreadID.xy;
+
+    // Get output texture dimensions
+    uint width, height;
+    outputMoments.GetDimensions(width, height);
+
+    if (coord.x >= width || coord.y >= height) {
+        return;
+    }
+
+    float2 texelSize = 1.0 / float2(width, height);
+    float2 uv = (float2(coord) + 0.5) * texelSize;
+
+    // Determine blur direction
+    float2 blurDirection = pushConstants.horizontal == 1
+        ? float2(1.0, 0.0)
+        : float2(0.0, 1.0);
+
+    // Apply Gaussian blur
+    float4 result = float4(0.0, 0.0, 0.0, 0.0);
+
+    for (int i = -KERNEL_RADIUS; i <= KERNEL_RADIUS; i++) {
+        float2 offset = float(i) * blurDirection * texelSize;
+        float2 sampleUV = uv + offset;
+
+        // Clamp to edge to avoid sampling outside texture bounds
+        sampleUV = clamp(sampleUV, texelSize * 0.5, 1.0 - texelSize * 0.5);
+
+        float4 sample = inputMoments.SampleLevel(momentSampler, sampleUV, 0);
+        result += sample * GAUSSIAN_WEIGHTS[i + KERNEL_RADIUS];
+    }
+
+    // Write blurred result
+    outputMoments[coord] = result;
+}

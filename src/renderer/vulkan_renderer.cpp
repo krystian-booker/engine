@@ -5,6 +5,7 @@
 #include "ecs/ecs_coordinator.h"
 #include "ecs/systems/camera_system.h"
 #include "ecs/systems/render_system.h"
+#include "ecs/systems/shadow_system.h"
 #include "ecs/components/camera.h"
 #include "ecs/components/transform.h"
 #include "ecs/components/light.h"
@@ -16,6 +17,7 @@
 #include "renderer/material_buffer.h"
 #include "renderer/viewport.h"
 #include "renderer/viewport_manager.h"
+#include "renderer/shadow_profiler.h"
 #include "resources/mesh_manager.h"
 #include "resources/texture_manager.h"
 #include "resources/material_manager.h"
@@ -41,6 +43,8 @@ VkSemaphoreCreateInfo CreateSemaphoreInfo() {
 }
 
 } // namespace
+
+VulkanRenderer::VulkanRenderer() = default;
 
 VulkanRenderer::~VulkanRenderer() {
     Shutdown();
@@ -98,6 +102,23 @@ void VulkanRenderer::Init(VulkanContext* context, Window* window, ECSCoordinator
     m_LightCulling->Init(m_Context, m_Swapchain.GetExtent().width, m_Swapchain.GetExtent().height,
                          MAX_FRAMES_IN_FLIGHT, lightCullingConfig);
 
+    // Initialize shadow system
+    m_ShadowSystem = std::make_unique<ShadowSystem>(m_ECS);
+    std::cout << "Shadow system initialized" << std::endl;
+
+    // Initialize shadow renderer
+    m_ShadowRenderer = std::make_unique<VulkanShadowRenderer>();
+    m_ShadowRenderer->Init(m_Context, m_ECS);
+    m_ShadowRenderer->SetShadowSystem(m_ShadowSystem.get());
+
+    // Initialize EVSM shadow filtering system
+    m_EVSMShadow = std::make_unique<VulkanEVSMShadow>();
+    m_EVSMShadow->Initialize(m_Context, 2048, 4);  // 2048x2048 resolution, 4 cascades
+
+    // Bind EVSM moment texture to descriptor sets
+    m_Descriptors.BindEVSMShadows(m_EVSMShadow->GetMomentsImageView(), m_EVSMShadow->GetSampler());
+    std::cout << "Shadow rendering and EVSM filtering systems initialized" << std::endl;
+
     if (m_ECS) {
         m_RenderSystem = std::make_unique<RenderSystem>(m_ECS, m_Context);
         m_RenderSystem->UploadMeshes();
@@ -143,6 +164,23 @@ void VulkanRenderer::Shutdown() {
         m_LightCulling.reset();
     }
 
+    // Shutdown shadow renderer
+    if (m_ShadowRenderer) {
+        m_ShadowRenderer->Shutdown();
+        m_ShadowRenderer.reset();
+    }
+
+    // Shutdown shadow system
+    if (m_ShadowSystem) {
+        m_ShadowSystem.reset();
+    }
+
+    // Shutdown EVSM shadow filtering
+    if (m_EVSMShadow) {
+        m_EVSMShadow->Shutdown();
+        m_EVSMShadow.reset();
+    }
+
     DestroyDefaultTexture();
     DestroyMeshResources();
     DestroyFrameContexts();
@@ -171,6 +209,72 @@ void VulkanRenderer::DrawFrame(ViewportManager* viewportManager) {
 
     const u32 currentFrameIndex = m_CurrentFrame;
     VkCommandBuffer cmd = frame->commandBuffer;
+
+    // ====================================================================================
+    // SHADOW RENDERING
+    // ====================================================================================
+
+    // Render shadow maps for all shadow-casting lights
+    if (m_ShadowRenderer && m_ShadowRenderer->HasShadowCastingLights()) {
+        m_ShadowRenderer->RenderShadows(cmd, currentFrameIndex);
+
+        // Update profiler results (must be done after command buffer submission - will be called in EndFrame)
+
+        // Transition shadow depth image from DEPTH_ATTACHMENT to SHADER_READ_ONLY
+        VkImage shadowDepthImage = m_ShadowRenderer->GetDirectionalShadowDepthImage();
+        if (shadowDepthImage != VK_NULL_HANDLE) {
+            VkImageMemoryBarrier shadowBarrier{};
+            shadowBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            shadowBarrier.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            shadowBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            shadowBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            shadowBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            shadowBarrier.image = shadowDepthImage;
+            shadowBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+            shadowBarrier.subresourceRange.baseMipLevel = 0;
+            shadowBarrier.subresourceRange.levelCount = 1;
+            shadowBarrier.subresourceRange.baseArrayLayer = 0;
+            shadowBarrier.subresourceRange.layerCount = m_ShadowRenderer->GetNumCascades();
+            shadowBarrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            shadowBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+            vkCmdPipelineBarrier(
+                cmd,
+                VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                0,
+                0, nullptr,
+                0, nullptr,
+                1, &shadowBarrier
+            );
+        }
+
+        // Generate EVSM moments from shadow depth map (if using EVSM filter mode)
+        if (m_EVSMShadow && shadowDepthImage != VK_NULL_HANDLE) {
+            VulkanEVSMShadow::Params evsmParams{};
+            evsmParams.depthImage = shadowDepthImage;
+            evsmParams.depthFormat = m_ShadowRenderer->GetShadowFormat();
+            evsmParams.width = m_ShadowRenderer->GetDirectionalShadowResolution();
+            evsmParams.height = m_ShadowRenderer->GetDirectionalShadowResolution();
+            evsmParams.layerCount = m_ShadowRenderer->GetNumCascades();
+            evsmParams.positiveExponent = 40.0f;
+            evsmParams.negativeExponent = 40.0f;
+
+            m_EVSMShadow->GenerateMoments(evsmParams);
+        }
+
+        // Bind shadow textures to descriptors
+        m_Descriptors.BindShadowMap(
+            m_ShadowRenderer->GetDirectionalShadowImageView(),
+            m_ShadowRenderer->GetDirectionalShadowSampler()
+        );
+
+        // Bind raw depth shadow map for PCSS/Contact-Hardening
+        m_Descriptors.BindRawDepthShadowMap(
+            m_ShadowRenderer->GetDirectionalShadowImageView(),
+            m_ShadowRenderer->GetDirectionalRawDepthSampler()
+        );
+    }
 
     // ====================================================================================
     // FORWARD+ PIPELINE INTEGRATION
@@ -533,6 +637,11 @@ void VulkanRenderer::EndFrame(FrameContext& frame, u32 imageIndex, VkSemaphore* 
     u64 currentTimelineValue = m_Context->GetCurrentTransferTimelineValue();
     m_StagingPool.AdvanceFrame(currentTimelineValue);
 
+    // Update shadow profiler results (after command buffer has been submitted)
+    if (m_ShadowRenderer && m_ShadowRenderer->GetProfiler()) {
+        m_ShadowRenderer->GetProfiler()->UpdateResults(m_CurrentFrame);
+    }
+
     m_CurrentFrame = (m_CurrentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
@@ -611,6 +720,16 @@ void VulkanRenderer::UpdateGlobalUniformsWithCamera(u32 frameIndex, Entity camer
     }
 
     m_Descriptors.UpdateUniformBuffer(frameIndex, &ubo, sizeof(ubo));
+
+    // Update shadow system with camera info
+    if (m_ShadowSystem && cameraEntity.IsValid() && m_ECS && m_ECS->HasComponent<Camera>(cameraEntity)) {
+        const Camera& camera = m_ECS->GetComponent<Camera>(cameraEntity);
+        m_ShadowSystem->Update(cameraEntity, camera.nearPlane, camera.farPlane);
+
+        // Update shadow uniform buffer
+        const ShadowUniforms& shadowUniforms = m_ShadowSystem->GetShadowUniforms();
+        m_Descriptors.BindShadowUBO(frameIndex, &shadowUniforms, sizeof(shadowUniforms));
+    }
 }
 
 void VulkanRenderer::RenderScene(VkCommandBuffer commandBuffer, u32 frameIndex, u32 screenWidth, u32 screenHeight) {

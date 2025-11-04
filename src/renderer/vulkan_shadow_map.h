@@ -33,9 +33,11 @@ public:
     void Destroy();
 
     // Accessors
+    VkImage GetDepthImage() const { return m_DepthImage; }
     VkImageView GetDepthImageView() const { return m_DepthImageView; }
     VkImageView GetCascadeImageView(u32 cascade) const;
-    VkSampler GetSampler() const { return m_Sampler; }
+    VkSampler GetSampler() const { return m_Sampler; }  // Comparison sampler for PCF
+    VkSampler GetRawDepthSampler() const { return m_RawDepthSampler; }  // Non-comparison sampler for PCSS
     VkFramebuffer GetFramebuffer(u32 cascade = 0) const;
     VkRenderPass GetRenderPass() const { return m_RenderPass; }
     VkFormat GetDepthFormat() const { return m_DepthFormat; }
@@ -76,7 +78,8 @@ private:
     VkDeviceMemory m_DepthImageMemory = VK_NULL_HANDLE;
     VkImageView m_DepthImageView = VK_NULL_HANDLE;  // Full array view for sampling
     std::vector<VkImageView> m_CascadeImageViews;   // Individual layer views for rendering
-    VkSampler m_Sampler = VK_NULL_HANDLE;
+    VkSampler m_Sampler = VK_NULL_HANDLE;  // Comparison sampler for hardware PCF
+    VkSampler m_RawDepthSampler = VK_NULL_HANDLE;  // Non-comparison sampler for raw depth access (PCSS)
     VkFormat m_DepthFormat = VK_FORMAT_D32_SFLOAT;
 
     // Render pass and framebuffers (one per cascade)

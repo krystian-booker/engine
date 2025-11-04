@@ -1,5 +1,8 @@
 // HLSL fragment shader with PBR Cook-Torrance BRDF (compiled to SPIR-V via DXC)
 
+// Include advanced shadow filtering functions
+#include "shadow_filtering.hlsl"
+
 // View/Projection matrices (Set 0, Binding 0)
 [[vk::binding(0, 0)]]
 cbuffer ViewProjection : register(b0)
@@ -57,7 +60,9 @@ cbuffer ShadowData : register(b2)
     // Directional light shadows (CSM)
     float4x4 cascadeViewProj[4];  // View-projection matrix for each cascade
     float4 cascadeSplits;          // xyz = cascade split distances, w = numCascades
-    float4 shadowParams;           // x = shadow bias, y = PCF radius, z/w = padding
+    float4 shadowParams;           // x = shadow bias, y = PCF radius, z = filter mode (0=PCF, 1=PCSS, 2=ContactHardening, 3=EVSM), w = search radius/max radius
+    float4 evsmParams;             // x = positive exponent, y = negative exponent, z = light bleed reduction, w = padding
+    float4 debugParams;            // x = debug mode (0=off, 1=cascades, 2=blocker depth, 3=penumbra size), yzw = padding
 
     // Point light shadows
     uint numPointLightShadows;
@@ -94,6 +99,20 @@ Texture2DArray spotShadowMaps : register(t7);
 
 [[vk::binding(8, 0)]]
 SamplerComparisonState spotShadowSampler : register(s7);
+
+// EVSM moment texture array (Set 0, Binding 9 - for EVSM filtering)
+[[vk::binding(9, 0)]]
+Texture2DArray evsmMoments : register(t8);
+
+[[vk::binding(9, 0)]]
+SamplerState evsmSampler : register(s8);
+
+// Raw depth shadow map for PCSS/Contact-Hardening (Set 0, Binding 10)
+[[vk::binding(10, 0)]]
+Texture2DArray rawDepthShadowMap : register(t9);
+
+[[vk::binding(10, 0)]]
+SamplerState rawDepthSampler : register(s9);
 
 // IBL textures (Set 0, Bindings 4-6)
 [[vk::binding(4, 0)]]
@@ -205,8 +224,7 @@ struct PSIn {
     [[vk::location(5)]] nointerpolation uint materialIndex : TEXCOORD5;
 };
 
-// Constants
-static const float PI = 3.14159265359;
+// Note: PI constant is defined in shadow_filtering.hlsl
 
 // ============================================================================
 // PBR Helper Functions
@@ -317,6 +335,46 @@ float CalculateShadowPCF(float3 worldPos, float3 normal, float3 lightDir, uint c
     return shadow;
 }
 
+// ============================================================================
+// Shadow Debug Visualization
+// ============================================================================
+
+// Global variables for debug info (set during shadow calculation)
+static uint g_DebugCascadeIndex = 0;
+static float4 g_DebugShadowCoord = float4(0,0,0,1);
+
+// Get debug visualization color based on debug mode
+float3 GetShadowDebugColor(uint debugMode)
+{
+    if (debugMode == 1) {
+        // Cascade index visualization (different color per cascade)
+        float4 cascadeColors[4] = {
+            float4(1.0, 0.0, 0.0, 1.0),  // Red - Cascade 0 (nearest)
+            float4(0.0, 1.0, 0.0, 1.0),  // Green - Cascade 1
+            float4(0.0, 0.0, 1.0, 1.0),  // Blue - Cascade 2
+            float4(1.0, 1.0, 0.0, 1.0)   // Yellow - Cascade 3 (farthest)
+        };
+        return cascadeColors[min(g_DebugCascadeIndex, 3)].rgb;
+    }
+    else if (debugMode == 2) {
+        // Blocker search depth heatmap (visualize shadow receiver depth)
+        // Red = near, Blue = far
+        float depth = g_DebugShadowCoord.z;
+        float3 heatmap = lerp(float3(0,0,1), float3(1,0,0), depth);
+        return heatmap;
+    }
+    else if (debugMode == 3) {
+        // Penumbra size visualization (approximate based on filter mode)
+        // This shows the theoretical maximum penumbra based on search radius
+        float searchRadius = shadowParams.w;
+        float normalizedRadius = saturate(searchRadius / 20.0);  // Normalize to 0-1
+        float3 sizeViz = lerp(float3(0,0.2,0), float3(1,1,0), normalizedRadius);
+        return sizeViz;
+    }
+
+    return float3(1,1,1);  // No debug (white)
+}
+
 // Select cascade based on view space depth
 uint SelectCascade(float viewDepth)
 {
@@ -343,7 +401,56 @@ float CalculateDirectionalLightShadow(float3 worldPos, float3 normal, float3 lig
     // Select appropriate cascade
     uint cascadeIndex = SelectCascade(viewDepth);
 
-    return CalculateShadowPCF(worldPos, normal, lightDir, cascadeIndex);
+    // Transform position to light clip space for shadow coordinate calculation
+    float4 lightSpacePos = mul(cascadeViewProj[cascadeIndex], float4(worldPos, 1.0));
+    float3 projCoords = lightSpacePos.xyz / lightSpacePos.w;
+    projCoords.xy = projCoords.xy * 0.5 + 0.5;
+    projCoords.y = 1.0 - projCoords.y;  // Flip Y for Vulkan
+
+    // Check if outside shadow map bounds
+    if (projCoords.x < 0.0 || projCoords.x > 1.0 ||
+        projCoords.y < 0.0 || projCoords.y > 1.0 ||
+        projCoords.z < 0.0 || projCoords.z > 1.0) {
+        return 1.0;  // No shadow
+    }
+
+    // Normal-based bias to reduce shadow acne
+    float bias = max(shadowParams.x * (1.0 - dot(normal, lightDir)), shadowParams.x * 0.1);
+    float4 shadowCoord = float4(projCoords.xy, projCoords.z, 1.0);
+
+    // Store cascade index and shadow coord for debug visualization (accessed via global)
+    g_DebugCascadeIndex = cascadeIndex;
+    g_DebugShadowCoord = shadowCoord;
+
+    // Get shadow filter mode
+    uint filterMode = (uint)shadowParams.z;
+
+    // Select shadow filtering method
+    if (filterMode == 1) {
+        // PCSS (Percentage-Closer Soft Shadows) with raw depth access
+        float searchRadius = shadowParams.w;
+        return PCSS_DirectionalShadow(shadowMap, shadowSampler, rawDepthShadowMap, rawDepthSampler,
+                                      shadowCoord, cascadeIndex, bias, searchRadius);
+    }
+    else if (filterMode == 2) {
+        // Contact-Hardening Shadows with depth-based radius
+        float maxRadius = shadowParams.w;
+        return ContactHardeningShadow(shadowMap, shadowSampler, rawDepthShadowMap, rawDepthSampler,
+                                      shadowCoord, cascadeIndex, bias, maxRadius);
+    }
+    else if (filterMode == 3) {
+        // EVSM (Exponential Variance Shadow Maps)
+        float positiveExp = evsmParams.x;
+        float negativeExp = evsmParams.y;
+        float lightBleedReduction = evsmParams.z;
+        return EVSM_DirectionalShadow(evsmMoments, evsmSampler, shadowCoord, cascadeIndex,
+                                     positiveExp, negativeExp, lightBleedReduction);
+    }
+    else {
+        // Default: PCF (filter mode 0)
+        float pcfRadius = shadowParams.y;
+        return PCF_DirectionalShadow(shadowMap, shadowSampler, shadowCoord, cascadeIndex, bias, pcfRadius);
+    }
 }
 
 // Calculate shadow factor for point light (cubemap omnidirectional)
@@ -815,6 +922,13 @@ float4 main(PSIn i) : SV_Target
 
     // Gamma correction
     color = pow(color, float3(1.0 / 2.2, 1.0 / 2.2, 1.0 / 2.2));
+
+    // Apply shadow debug visualization if enabled
+    uint debugMode = (uint)debugParams.x;
+    if (debugMode > 0) {
+        float3 debugColor = GetShadowDebugColor(debugMode);
+        color = debugColor;
+    }
 
     return float4(color, albedo.a);
 }
