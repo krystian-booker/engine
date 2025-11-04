@@ -44,11 +44,12 @@ u32 FindMemoryType(VkPhysicalDevice physicalDevice, u32 typeFilter, VkMemoryProp
 } // namespace
 
 void VulkanLightCulling::Init(VulkanContext* context, u32 screenWidth, u32 screenHeight,
-                               const LightCullingConfig& config) {
+                               u32 framesInFlight, const LightCullingConfig& config) {
     m_Context = context;
     m_Config = config;
     m_ScreenWidth = screenWidth;
     m_ScreenHeight = screenHeight;
+    m_FramesInFlight = framesInFlight;
 
     // Calculate number of tiles
     m_NumTilesX = (m_ScreenWidth + m_Config.tileSize - 1) / m_Config.tileSize;
@@ -57,9 +58,11 @@ void VulkanLightCulling::Init(VulkanContext* context, u32 screenWidth, u32 scree
     CreateBuffers();
     CreateDescriptorSets();
     CreateComputePipeline();
+    CreateTimestampQueries();
 }
 
 void VulkanLightCulling::Destroy() {
+    DestroyTimestampQueries();
     DestroyComputePipeline();
     DestroyDescriptorSets();
     DestroyBuffers();
@@ -88,7 +91,25 @@ void VulkanLightCulling::Resize(u32 newWidth, u32 newHeight) {
     CreateDescriptorSets();
 }
 
-void VulkanLightCulling::CullLights(VkCommandBuffer cmd, VkImageView depthBuffer,
+void VulkanLightCulling::UpdateDepthBuffer(u32 frameIndex, VkImageView depthBuffer) {
+    VkDescriptorImageInfo imageInfo{};
+    imageInfo.imageView = depthBuffer;
+    imageInfo.sampler = m_DepthSampler;
+    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = m_ComputeDescriptorSets[frameIndex];
+    write.dstBinding = 0;
+    write.dstArrayElement = 0;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.descriptorCount = 1;
+    write.pImageInfo = &imageInfo;
+
+    vkUpdateDescriptorSets(m_Context->GetDevice(), 1, &write, 0, nullptr);
+}
+
+void VulkanLightCulling::CullLights(VkCommandBuffer cmd, u32 frameIndex,
                                      const Mat4& invProjection, const Mat4& viewMatrix,
                                      u32 numLights) {
     // Update culling parameters
@@ -101,31 +122,25 @@ void VulkanLightCulling::CullLights(VkCommandBuffer cmd, VkImageView depthBuffer
 
     memcpy(m_CullingParamsMapped, &params, sizeof(CullingParams));
 
-    // Update compute descriptor set with current depth buffer
-    VkDescriptorImageInfo imageInfo{};
-    imageInfo.imageView = depthBuffer;
-    imageInfo.sampler = m_DepthSampler;
-    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    VkWriteDescriptorSet write{};
-    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet = m_ComputeDescriptorSet;
-    write.dstBinding = 0;
-    write.dstArrayElement = 0;
-    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    write.descriptorCount = 1;
-    write.pImageInfo = &imageInfo;
-
-    vkUpdateDescriptorSets(m_Context->GetDevice(), 1, &write, 0, nullptr);
+    // Reset query pool and write start timestamp
+    if (m_TimestampQueryPool != VK_NULL_HANDLE) {
+        vkCmdResetQueryPool(cmd, m_TimestampQueryPool, frameIndex * 2, 2);
+        vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, m_TimestampQueryPool, frameIndex * 2);
+    }
 
     // Dispatch compute shader
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_ComputePipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_ComputePipelineLayout,
-                            0, 1, &m_ComputeDescriptorSet, 0, nullptr);
+                            0, 1, &m_ComputeDescriptorSets[frameIndex], 0, nullptr);
 
     u32 dispatchX = m_NumTilesX;
     u32 dispatchY = m_NumTilesY;
     vkCmdDispatch(cmd, dispatchX, dispatchY, 1);
+
+    // Write end timestamp
+    if (m_TimestampQueryPool != VK_NULL_HANDLE) {
+        vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, m_TimestampQueryPool, frameIndex * 2 + 1);
+    }
 
     // Memory barrier to ensure tile data is written before fragment shader reads it
     VkMemoryBarrier barrier{};
@@ -140,6 +155,9 @@ void VulkanLightCulling::CullLights(VkCommandBuffer cmd, VkImageView depthBuffer
                          1, &barrier,
                          0, nullptr,
                          0, nullptr);
+
+    // Update timestamp results (reads from previous frames to avoid stalling)
+    UpdateTimestampResults();
 }
 
 void VulkanLightCulling::BindTileLightData(VkCommandBuffer cmd, VkPipelineLayout pipelineLayout, u32 set) {
@@ -378,79 +396,84 @@ void VulkanLightCulling::CreateComputePipeline() {
 
     vkDestroyShaderModule(device, shaderModule, nullptr);
 
-    // Create descriptor pool for compute
+    // Create descriptor pool for compute (one set per frame in flight)
     std::array<VkDescriptorPoolSize, 3> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[0].descriptorCount = 1;
+    poolSizes[0].descriptorCount = m_FramesInFlight;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[1].descriptorCount = 1;
+    poolSizes[1].descriptorCount = m_FramesInFlight;
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSizes[2].descriptorCount = 2;
+    poolSizes[2].descriptorCount = m_FramesInFlight * 2;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = static_cast<u32>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
-    poolInfo.maxSets = 1;
+    poolInfo.maxSets = m_FramesInFlight;
 
     if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &m_ComputeDescriptorPool) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create compute descriptor pool!");
     }
 
-    // Allocate descriptor set
+    // Allocate descriptor sets (one per frame in flight)
+    m_ComputeDescriptorSets.resize(m_FramesInFlight);
+    std::vector<VkDescriptorSetLayout> layouts(m_FramesInFlight, m_ComputeDescriptorLayout);
+
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool = m_ComputeDescriptorPool;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &m_ComputeDescriptorLayout;
+    allocInfo.descriptorSetCount = m_FramesInFlight;
+    allocInfo.pSetLayouts = layouts.data();
 
-    if (vkAllocateDescriptorSets(device, &allocInfo, &m_ComputeDescriptorSet) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to allocate compute descriptor set!");
+    if (vkAllocateDescriptorSets(device, &allocInfo, m_ComputeDescriptorSets.data()) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to allocate compute descriptor sets!");
     }
 
-    // Update descriptor set (except depth buffer which is updated per-frame)
-    std::array<VkWriteDescriptorSet, 3> descriptorWrites{};
+    // Update descriptor sets for all frames (depth buffer will be updated later per-frame)
+    for (u32 i = 0; i < m_FramesInFlight; ++i) {
+        std::array<VkWriteDescriptorSet, 3> descriptorWrites{};
 
-    VkDescriptorBufferInfo paramsBufferInfo{};
-    paramsBufferInfo.buffer = m_CullingParamsBuffer;
-    paramsBufferInfo.offset = 0;
-    paramsBufferInfo.range = sizeof(CullingParams);
+        VkDescriptorBufferInfo paramsBufferInfo{};
+        paramsBufferInfo.buffer = m_CullingParamsBuffer;
+        paramsBufferInfo.offset = 0;
+        paramsBufferInfo.range = sizeof(CullingParams);
 
-    descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrites[0].dstSet = m_ComputeDescriptorSet;
-    descriptorWrites[0].dstBinding = 1;
-    descriptorWrites[0].dstArrayElement = 0;
-    descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descriptorWrites[0].descriptorCount = 1;
-    descriptorWrites[0].pBufferInfo = &paramsBufferInfo;
+        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[0].dstSet = m_ComputeDescriptorSets[i];
+        descriptorWrites[0].dstBinding = 1;
+        descriptorWrites[0].dstArrayElement = 0;
+        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorWrites[0].descriptorCount = 1;
+        descriptorWrites[0].pBufferInfo = &paramsBufferInfo;
 
-    VkDescriptorBufferInfo lightBufferInfo{};
-    lightBufferInfo.buffer = m_LightBuffer;
-    lightBufferInfo.offset = 0;
-    lightBufferInfo.range = m_LightBufferSize;
+        VkDescriptorBufferInfo lightBufferInfo{};
+        lightBufferInfo.buffer = m_LightBuffer;
+        lightBufferInfo.offset = 0;
+        lightBufferInfo.range = m_LightBufferSize;
 
-    descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrites[1].dstSet = m_ComputeDescriptorSet;
-    descriptorWrites[1].dstBinding = 2;
-    descriptorWrites[1].dstArrayElement = 0;
-    descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    descriptorWrites[1].descriptorCount = 1;
-    descriptorWrites[1].pBufferInfo = &lightBufferInfo;
+        descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[1].dstSet = m_ComputeDescriptorSets[i];
+        descriptorWrites[1].dstBinding = 2;
+        descriptorWrites[1].dstArrayElement = 0;
+        descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptorWrites[1].descriptorCount = 1;
+        descriptorWrites[1].pBufferInfo = &lightBufferInfo;
 
-    VkDescriptorBufferInfo tileBufferInfo{};
-    tileBufferInfo.buffer = m_TileLightIndexBuffer;
-    tileBufferInfo.offset = 0;
-    tileBufferInfo.range = VK_WHOLE_SIZE;
+        VkDescriptorBufferInfo tileBufferInfo{};
+        tileBufferInfo.buffer = m_TileLightIndexBuffer;
+        tileBufferInfo.offset = 0;
+        tileBufferInfo.range = VK_WHOLE_SIZE;
 
-    descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrites[2].dstSet = m_ComputeDescriptorSet;
-    descriptorWrites[2].dstBinding = 3;
-    descriptorWrites[2].dstArrayElement = 0;
-    descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    descriptorWrites[2].descriptorCount = 1;
-    descriptorWrites[2].pBufferInfo = &tileBufferInfo;
+        descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[2].dstSet = m_ComputeDescriptorSets[i];
+        descriptorWrites[2].dstBinding = 3;
+        descriptorWrites[2].dstArrayElement = 0;
+        descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptorWrites[2].descriptorCount = 1;
+        descriptorWrites[2].pBufferInfo = &tileBufferInfo;
 
-    vkUpdateDescriptorSets(device, static_cast<u32>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+        vkUpdateDescriptorSets(device, static_cast<u32>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+    }
 }
 
 void VulkanLightCulling::CreateDescriptorSets() {
@@ -623,26 +646,111 @@ void VulkanLightCulling::DestroyDescriptorSets() {
 void VulkanLightCulling::UpdateLightBufferDescriptors() {
     VkDevice device = m_Context->GetDevice();
 
-    // Update compute descriptor set
     VkDescriptorBufferInfo lightBufferInfo{};
     lightBufferInfo.buffer = m_LightBuffer;
     lightBufferInfo.offset = 0;
     lightBufferInfo.range = m_LightBufferSize;
 
+    // Update compute descriptor sets for all frames
+    for (u32 i = 0; i < m_FramesInFlight; ++i) {
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = m_ComputeDescriptorSets[i];
+        write.dstBinding = 2;
+        write.dstArrayElement = 0;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        write.descriptorCount = 1;
+        write.pBufferInfo = &lightBufferInfo;
+
+        vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+    }
+
+    // Update fragment descriptor set
     VkWriteDescriptorSet write{};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet = m_ComputeDescriptorSet;
-    write.dstBinding = 2;
+    write.dstSet = m_DescriptorSets[0];
+    write.dstBinding = 0;
     write.dstArrayElement = 0;
     write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     write.descriptorCount = 1;
     write.pBufferInfo = &lightBufferInfo;
 
     vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+}
 
-    // Update fragment descriptor set
-    write.dstSet = m_DescriptorSets[0];
-    write.dstBinding = 0;
+void VulkanLightCulling::CreateTimestampQueries() {
+    VkDevice device = m_Context->GetDevice();
 
-    vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+    // Get timestamp period from physical device properties
+    VkPhysicalDeviceProperties deviceProps{};
+    vkGetPhysicalDeviceProperties(m_Context->GetPhysicalDevice(), &deviceProps);
+    m_TimestampPeriod = deviceProps.limits.timestampPeriod;
+
+    // Check if timestamps are supported
+    if (!deviceProps.limits.timestampComputeAndGraphics) {
+        // Timestamps not supported, skip creation
+        m_TimestampQueryPool = VK_NULL_HANDLE;
+        return;
+    }
+
+    // Create query pool for timestamps (2 queries per frame: start and end)
+    VkQueryPoolCreateInfo queryPoolInfo{};
+    queryPoolInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+    queryPoolInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+    queryPoolInfo.queryCount = m_FramesInFlight * 2;
+
+    if (vkCreateQueryPool(device, &queryPoolInfo, nullptr, &m_TimestampQueryPool) != VK_SUCCESS) {
+        // Failed to create query pool, continue without timestamps
+        m_TimestampQueryPool = VK_NULL_HANDLE;
+    }
+}
+
+void VulkanLightCulling::DestroyTimestampQueries() {
+    if (!m_Context || m_TimestampQueryPool == VK_NULL_HANDLE) return;
+
+    VkDevice device = m_Context->GetDevice();
+    vkDestroyQueryPool(device, m_TimestampQueryPool, nullptr);
+    m_TimestampQueryPool = VK_NULL_HANDLE;
+}
+
+void VulkanLightCulling::UpdateTimestampResults() {
+    if (m_TimestampQueryPool == VK_NULL_HANDLE) return;
+
+    VkDevice device = m_Context->GetDevice();
+
+    // Read timestamps from all frames (non-blocking, may fail if not ready)
+    u64 timestamps[8] = {};  // Max 4 frames in flight * 2 timestamps
+    VkResult result = vkGetQueryPoolResults(
+        device,
+        m_TimestampQueryPool,
+        0,
+        m_FramesInFlight * 2,
+        sizeof(timestamps),
+        timestamps,
+        sizeof(u64),
+        VK_QUERY_RESULT_64_BIT  // Don't wait, just get available results
+    );
+
+    // If we got valid results, compute the average time
+    if (result == VK_SUCCESS) {
+        f32 totalTime = 0.0f;
+        u32 validFrames = 0;
+
+        for (u32 i = 0; i < m_FramesInFlight; ++i) {
+            u64 startTime = timestamps[i * 2];
+            u64 endTime = timestamps[i * 2 + 1];
+
+            // Only count if both timestamps are valid (non-zero)
+            if (startTime > 0 && endTime > startTime) {
+                f32 timeMs = static_cast<f32>(endTime - startTime) * m_TimestampPeriod / 1000000.0f;
+                totalTime += timeMs;
+                ++validFrames;
+            }
+        }
+
+        // Update average time if we have valid data
+        if (validFrames > 0) {
+            m_LastCullingTimeMs = totalTime / static_cast<f32>(validFrames);
+        }
+    }
 }

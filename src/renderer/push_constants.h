@@ -7,7 +7,9 @@
 struct PushConstants {
     Mat4 model;           // 64 bytes
     u32 materialIndex;    // 4 bytes
-    u32 padding[2];       // 8 bytes padding to 16-byte alignment (total 76 bytes)
+    u32 screenWidth;      // 4 bytes - For Forward+ tile calculation
+    u32 screenHeight;     // 4 bytes - For Forward+ tile calculation
+    u32 tileSize;         // 4 bytes - Forward+ tile size (typically 16)
 };
 
-static_assert(sizeof(PushConstants) == 76, "PushConstants must be 76 bytes");
+static_assert(sizeof(PushConstants) == 80, "PushConstants must be 80 bytes");

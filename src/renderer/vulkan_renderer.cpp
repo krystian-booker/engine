@@ -7,6 +7,7 @@
 #include "ecs/systems/render_system.h"
 #include "ecs/components/camera.h"
 #include "ecs/components/transform.h"
+#include "ecs/components/light.h"
 #include "platform/window.h"
 #include "renderer/vulkan_context.h"
 #include "renderer/uniform_buffers.h"
@@ -22,6 +23,7 @@
 
 #include <stdexcept>
 #include <iostream>
+#include <fstream>
 
 namespace {
 
@@ -88,6 +90,14 @@ void VulkanRenderer::Init(VulkanContext* context, Window* window, ECSCoordinator
     CreateFrameContexts();
     InitMeshResources();
 
+    // Initialize Forward+ light culling system
+    m_LightCulling = std::make_unique<VulkanLightCulling>();
+    LightCullingConfig lightCullingConfig{};
+    lightCullingConfig.tileSize = 16;
+    lightCullingConfig.maxLightsPerTile = 256;
+    m_LightCulling->Init(m_Context, m_Swapchain.GetExtent().width, m_Swapchain.GetExtent().height,
+                         MAX_FRAMES_IN_FLIGHT, lightCullingConfig);
+
     if (m_ECS) {
         m_RenderSystem = std::make_unique<RenderSystem>(m_ECS, m_Context);
         m_RenderSystem->UploadMeshes();
@@ -127,6 +137,12 @@ void VulkanRenderer::Shutdown() {
     m_TransferQueue.Shutdown();
     m_StagingPool.Shutdown();
 
+    // Shutdown Forward+ light culling
+    if (m_LightCulling) {
+        m_LightCulling->Destroy();
+        m_LightCulling.reset();
+    }
+
     DestroyDefaultTexture();
     DestroyMeshResources();
     DestroyFrameContexts();
@@ -154,6 +170,88 @@ void VulkanRenderer::DrawFrame(ViewportManager* viewportManager) {
     }
 
     const u32 currentFrameIndex = m_CurrentFrame;
+    VkCommandBuffer cmd = frame->commandBuffer;
+
+    // ====================================================================================
+    // FORWARD+ PIPELINE INTEGRATION
+    // ====================================================================================
+
+    // Step 1: Depth Prepass - Render all opaque geometry to populate depth buffer
+    if (m_DepthPrepassRenderPass != VK_NULL_HANDLE) {
+        RenderDepthPrepass(cmd, currentFrameIndex);
+
+        // Transition depth buffer: DEPTH_ATTACHMENT → SHADER_READ for compute shader
+        TransitionDepthForRead(cmd);
+    }
+
+    // Step 2: Upload Light Data - Convert ECS lights to GPU format
+    UploadLightDataForwardPlus();
+
+    // Step 3: Light Culling Compute Shader - Dispatch per-tile light culling
+    if (m_LightCulling && m_DepthBuffer.GetImageView() != VK_NULL_HANDLE) {
+        u32 numLights = GetLightCount();
+
+        if (numLights > 0 && m_CameraSystem) {
+            Entity activeCamera = m_CameraSystem->GetActiveCamera();
+            if (activeCamera.IsValid() && m_ECS && m_ECS->HasComponent<Camera>(activeCamera)) {
+                const Camera& camera = m_ECS->GetComponent<Camera>(activeCamera);
+
+                // Get projection matrix and invert it for compute shader
+                Mat4 invProjection = glm::inverse(camera.projectionMatrix);
+
+                // Get view matrix from camera transform
+                Mat4 viewMatrix = Mat4(1.0f);
+                if (m_ECS->HasComponent<Transform>(activeCamera)) {
+                    const Transform& camTransform = m_ECS->GetComponent<Transform>(activeCamera);
+                    viewMatrix = glm::inverse(camTransform.worldMatrix);
+                }
+
+                // Update depth buffer descriptor for this frame (done outside command buffer recording ideally, but safe here)
+                m_LightCulling->UpdateDepthBuffer(currentFrameIndex, m_DepthBuffer.GetImageView());
+
+                // Dispatch light culling compute shader
+                m_LightCulling->CullLights(
+                    cmd,
+                    currentFrameIndex,
+                    invProjection,
+                    viewMatrix,
+                    numLights
+                );
+
+                // Memory barrier: COMPUTE_SHADER_WRITE → FRAGMENT_SHADER_READ
+                VkMemoryBarrier memoryBarrier{};
+                memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+                memoryBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                memoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+                vkCmdPipelineBarrier(
+                    cmd,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                    0,
+                    1, &memoryBarrier,
+                    0, nullptr,
+                    0, nullptr
+                );
+            }
+        }
+
+        // Transition depth buffer back: SHADER_READ → DEPTH_ATTACHMENT for main pass
+        TransitionDepthForWrite(cmd);
+    }
+
+    // ====================================================================================
+    // END FORWARD+ PIPELINE
+    // ====================================================================================
+
+    // Log Forward+ performance metrics every 60 frames
+    static u32 frameCounter = 0;
+    if (m_LightCulling && ++frameCounter % 60 == 0) {
+        f32 cullingTime = m_LightCulling->GetLastCullingTimeMs();
+        if (cullingTime > 0.0f) {
+            std::cout << "[Forward+] Light culling: " << cullingTime << " ms (target: < 0.5ms @ 1080p)" << std::endl;
+        }
+    }
 
     // Determine rendering path: viewport-based (Debug) or direct (Release)
     bool useDirectRendering = (viewportManager == nullptr);
@@ -463,11 +561,13 @@ void VulkanRenderer::UpdateGlobalUniforms(u32 frameIndex) {
     m_Descriptors.UpdateUniformBuffer(frameIndex, &ubo, sizeof(ubo));
 }
 
-void VulkanRenderer::PushModelMatrix(VkCommandBuffer commandBuffer, const Mat4& modelMatrix, u32 materialIndex) {
+void VulkanRenderer::PushModelMatrix(VkCommandBuffer commandBuffer, const Mat4& modelMatrix, u32 materialIndex, u32 screenWidth, u32 screenHeight) {
     PushConstants pushConstants;
     pushConstants.model = modelMatrix;
     pushConstants.materialIndex = materialIndex;
-    pushConstants.padding[0] = 0;
+    pushConstants.screenWidth = screenWidth;
+    pushConstants.screenHeight = screenHeight;
+    pushConstants.tileSize = 16;  // Forward+ tile size (must match compute shader)
 
     vkCmdPushConstants(commandBuffer, m_Pipeline.GetLayout(),
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -513,7 +613,7 @@ void VulkanRenderer::UpdateGlobalUniformsWithCamera(u32 frameIndex, Entity camer
     m_Descriptors.UpdateUniformBuffer(frameIndex, &ubo, sizeof(ubo));
 }
 
-void VulkanRenderer::RenderScene(VkCommandBuffer commandBuffer, u32 frameIndex) {
+void VulkanRenderer::RenderScene(VkCommandBuffer commandBuffer, u32 frameIndex, u32 screenWidth, u32 screenHeight) {
     (void)frameIndex;  // Currently unused
 
     if (!m_RenderSystem) {
@@ -527,7 +627,7 @@ void VulkanRenderer::RenderScene(VkCommandBuffer commandBuffer, u32 frameIndex) 
             continue;
         }
 
-        PushModelMatrix(commandBuffer, renderData.modelMatrix, renderData.materialIndex);
+        PushModelMatrix(commandBuffer, renderData.modelMatrix, renderData.materialIndex, screenWidth, screenHeight);
         mesh->Bind(commandBuffer);
         mesh->Draw(commandBuffer);
     }
@@ -570,16 +670,24 @@ void VulkanRenderer::RenderViewport(VkCommandBuffer commandBuffer, Viewport& vie
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
-    // Bind descriptor sets
-    VkDescriptorSet descriptorSets[2] = {
-        m_Descriptors.GetTransientSet(frameIndex),
-        m_Descriptors.GetPersistentSet()
+    // Bind all three descriptor sets
+    VkDescriptorSet descriptorSets[3] = {
+        m_Descriptors.GetTransientSet(frameIndex),  // Set 0: Per-frame camera UBO
+        m_Descriptors.GetPersistentSet(),           // Set 1: Materials + bindless textures
+        VK_NULL_HANDLE                               // Set 2: Forward+ tile data (bound separately)
     };
+
+    // Bind sets 0 and 1 first
     vkCmdBindDescriptorSets(
         cmd,
         VK_PIPELINE_BIND_POINT_GRAPHICS,
         m_Pipeline.GetLayout(),
         0, 2, descriptorSets, 0, nullptr);
+
+    // Bind Forward+ tile light data (set 2)
+    if (m_LightCulling) {
+        m_LightCulling->BindTileLightData(cmd, m_Pipeline.GetLayout(), 2);
+    }
 
     // Update camera UBO for this viewport
     UpdateGlobalUniformsWithCamera(frameIndex, cameraEntity, viewport.GetWidth(), viewport.GetHeight());
@@ -600,7 +708,7 @@ void VulkanRenderer::RenderViewport(VkCommandBuffer commandBuffer, Viewport& vie
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
     // Render scene
-    RenderScene(cmd, frameIndex);
+    RenderScene(cmd, frameIndex, viewport.GetWidth(), viewport.GetHeight());
 
     // End offscreen render pass
     EndOffscreenRenderPass(cmd);
@@ -649,16 +757,24 @@ void VulkanRenderer::RenderDirectToSwapchain(VkCommandBuffer commandBuffer, u32 
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
-    // Bind descriptor sets
-    VkDescriptorSet descriptorSets[2] = {
-        m_Descriptors.GetTransientSet(frameIndex),
-        m_Descriptors.GetPersistentSet()
+    // Bind all three descriptor sets
+    VkDescriptorSet descriptorSets[3] = {
+        m_Descriptors.GetTransientSet(frameIndex),  // Set 0: Per-frame camera UBO
+        m_Descriptors.GetPersistentSet(),           // Set 1: Materials + bindless textures
+        VK_NULL_HANDLE                               // Set 2: Forward+ tile data (bound separately)
     };
+
+    // Bind sets 0 and 1 first
     vkCmdBindDescriptorSets(
         commandBuffer,
         VK_PIPELINE_BIND_POINT_GRAPHICS,
         m_Pipeline.GetLayout(),
         0, 2, descriptorSets, 0, nullptr);
+
+    // Bind Forward+ tile light data (set 2)
+    if (m_LightCulling) {
+        m_LightCulling->BindTileLightData(commandBuffer, m_Pipeline.GetLayout(), 2);
+    }
 
     // Update camera UBO with window dimensions
     UpdateGlobalUniformsWithCamera(frameIndex, cameraEntity, m_Window->GetWidth(), m_Window->GetHeight());
@@ -679,25 +795,32 @@ void VulkanRenderer::RenderDirectToSwapchain(VkCommandBuffer commandBuffer, u32 
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
     // Render scene
-    RenderScene(commandBuffer, frameIndex);
+    RenderScene(commandBuffer, frameIndex, m_Window->GetWidth(), m_Window->GetHeight());
 }
 
 void VulkanRenderer::InitSwapchainResources() {
     m_DepthBuffer.Init(m_Context, &m_Swapchain);
     m_RenderPass.Init(m_Context, &m_Swapchain, m_DepthBuffer.GetFormat());
 
-    // Pass both descriptor set layouts to pipeline
-    VkDescriptorSetLayout layouts[2] = {
-        m_Descriptors.GetTransientLayout(),   // Set 0: Per-frame camera UBO
-        m_Descriptors.GetPersistentLayout()   // Set 1: Materials + bindless textures
+    // Pass all three descriptor set layouts to pipeline
+    VkDescriptorSetLayout layouts[3] = {
+        m_Descriptors.GetTransientLayout(),    // Set 0: Per-frame camera UBO
+        m_Descriptors.GetPersistentLayout(),   // Set 1: Materials + bindless textures
+        m_LightCulling->GetDescriptorLayout()  // Set 2: Forward+ tile light data
     };
-    m_Pipeline.Init(m_Context, &m_RenderPass, &m_Swapchain, layouts, 2);
+    m_Pipeline.Init(m_Context, &m_RenderPass, &m_Swapchain, layouts, 3);
 
     m_Framebuffers.Init(m_Context, &m_Swapchain, &m_RenderPass, m_DepthBuffer.GetImageView());
     ResizeImagesInFlight();
+
+    // Create Forward+ depth prepass resources
+    CreateDepthPrepassResources();
 }
 
 void VulkanRenderer::DestroySwapchainResources() {
+    // Destroy Forward+ depth prepass resources
+    DestroyDepthPrepassResources();
+
     m_Framebuffers.Shutdown();
     m_Pipeline.Shutdown();  // This destroys both swapchain and offscreen pipelines
     m_RenderPass.Shutdown();
@@ -871,6 +994,11 @@ void VulkanRenderer::RecreateSwapchain() {
     m_Swapchain.Recreate(m_Window);
     InitSwapchainResources();
 
+    // Resize Forward+ light culling buffers
+    if (m_LightCulling) {
+        m_LightCulling->Resize(m_Swapchain.GetExtent().width, m_Swapchain.GetExtent().height);
+    }
+
     // Validate that pipeline was successfully recreated
     if (m_Pipeline.GetPipeline() == VK_NULL_HANDLE) {
         std::cerr << "ERROR: Pipeline is NULL after swapchain recreation!" << std::endl;
@@ -989,4 +1117,406 @@ void VulkanRenderer::DestroyDefaultTexture() {
         m_DefaultTexture->Destroy();
         m_DefaultTexture.reset();
     }
+}
+
+void VulkanRenderer::UploadLightDataForwardPlus() {
+    if (!m_ECS || !m_LightCulling) {
+        return;
+    }
+
+    std::vector<GPULightForwardPlus> gpuLights;
+
+    m_ECS->ForEach<Transform, Light>([&](Entity entity, Transform& transform, Light& light) {
+        (void)entity;  // Unused
+        GPULightForwardPlus gpuLight{};
+
+        // Extract world position from world matrix
+        Vec3 worldPosition = Vec3(transform.worldMatrix[3]);
+        gpuLight.positionAndRange = Vec4(worldPosition, light.range);
+
+        // Direction and type (0=Directional, 1=Point, 2=Spot)
+        u32 lightType = 0;
+        if (light.type == LightType::Point) lightType = 1;
+        else if (light.type == LightType::Spot) lightType = 2;
+
+        // Calculate forward direction from world matrix (negative Z axis)
+        Vec3 forward = -Vec3(transform.worldMatrix[2]);
+        forward = Normalize(forward);
+        gpuLight.directionAndType = Vec4(forward, static_cast<f32>(lightType));
+
+        // Color and intensity
+        gpuLight.colorAndIntensity = Vec4(light.color, light.intensity);
+
+        // Spot angles (convert degrees to cosine for shader)
+        if (light.type == LightType::Spot) {
+            gpuLight.spotAngles = Vec4(
+                std::cos(Radians(light.innerConeAngle)),
+                std::cos(Radians(light.outerConeAngle)),
+                0.0f, 0.0f
+            );
+        } else {
+            gpuLight.spotAngles = Vec4(0.0f, 0.0f, 0.0f, 0.0f);
+        }
+
+        // Shadow data (placeholder for now - will integrate with shadow system later)
+        gpuLight.castsShadows = light.castsShadows ? 1u : 0u;
+        gpuLight.shadowIndex = 0;
+        gpuLight.shadowBias = 0.005f;
+        gpuLight.shadowPCFRadius = 2.0f;
+        gpuLight.shadowAtlasUV = Vec4(0.0f, 0.0f, 1.0f, 1.0f);
+
+        gpuLights.push_back(gpuLight);
+    });
+
+    // Upload to GPU
+    if (!gpuLights.empty()) {
+        m_LightCulling->UploadLightData(gpuLights);
+    }
+}
+
+u32 VulkanRenderer::GetLightCount() const {
+    if (!m_ECS) {
+        return 0;
+    }
+
+    u32 count = 0;
+    m_ECS->ForEach<Light>([&](Entity entity, Light& light) {
+        (void)entity;  // Unused
+        (void)light;   // Unused
+        count++;
+    });
+
+    return count;
+}
+
+void VulkanRenderer::CreateDepthPrepassResources() {
+    VkDevice device = m_Context->GetDevice();
+
+    // 1. Create depth-only renderpass
+    VkAttachmentDescription depthAttachment{};
+    depthAttachment.format = m_DepthBuffer.GetFormat();
+    depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;  // Store for later use
+    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference depthRef{};
+    depthRef.attachment = 0;
+    depthRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 0;  // No color attachments
+    subpass.pDepthStencilAttachment = &depthRef;
+
+    VkRenderPassCreateInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassInfo.attachmentCount = 1;
+    renderPassInfo.pAttachments = &depthAttachment;
+    renderPassInfo.subpassCount = 1;
+    renderPassInfo.pSubpasses = &subpass;
+
+    if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &m_DepthPrepassRenderPass) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create depth prepass render pass!");
+    }
+
+    // 2. Create framebuffer
+    VkImageView attachments[] = { m_DepthBuffer.GetImageView() };
+
+    VkFramebufferCreateInfo framebufferInfo{};
+    framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    framebufferInfo.renderPass = m_DepthPrepassRenderPass;
+    framebufferInfo.attachmentCount = 1;
+    framebufferInfo.pAttachments = attachments;
+    framebufferInfo.width = m_Swapchain.GetExtent().width;
+    framebufferInfo.height = m_Swapchain.GetExtent().height;
+    framebufferInfo.layers = 1;
+
+    if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &m_DepthPrepassFramebuffer) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create depth prepass framebuffer!");
+    }
+
+    // 3. Create pipeline layout (uses same descriptor set layout as main pipeline)
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    VkDescriptorSetLayout descriptorLayout = m_Descriptors.GetLayout();
+    pipelineLayoutInfo.pSetLayouts = &descriptorLayout;
+
+    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &m_DepthPrepassPipelineLayout) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create depth prepass pipeline layout!");
+    }
+
+    // 4. Load shaders
+    std::ifstream vertFile("assets/shaders/depth_prepass.vert.spv", std::ios::ate | std::ios::binary);
+    std::ifstream fragFile("assets/shaders/depth_prepass.frag.spv", std::ios::ate | std::ios::binary);
+
+    if (!vertFile.is_open() || !fragFile.is_open()) {
+        throw std::runtime_error("Failed to open depth prepass shader files!");
+    }
+
+    size_t vertFileSize = static_cast<size_t>(vertFile.tellg());
+    size_t fragFileSize = static_cast<size_t>(fragFile.tellg());
+    std::vector<char> vertShaderCode(vertFileSize);
+    std::vector<char> fragShaderCode(fragFileSize);
+
+    vertFile.seekg(0);
+    fragFile.seekg(0);
+    vertFile.read(vertShaderCode.data(), vertFileSize);
+    fragFile.read(fragShaderCode.data(), fragFileSize);
+    vertFile.close();
+    fragFile.close();
+
+    // Create shader modules
+    VkShaderModuleCreateInfo createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    createInfo.codeSize = vertShaderCode.size();
+    createInfo.pCode = reinterpret_cast<const u32*>(vertShaderCode.data());
+
+    VkShaderModule vertShaderModule;
+    if (vkCreateShaderModule(device, &createInfo, nullptr, &vertShaderModule) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create vertex shader module!");
+    }
+
+    createInfo.codeSize = fragShaderCode.size();
+    createInfo.pCode = reinterpret_cast<const u32*>(fragShaderCode.data());
+
+    VkShaderModule fragShaderModule;
+    if (vkCreateShaderModule(device, &createInfo, nullptr, &fragShaderModule) != VK_SUCCESS) {
+        vkDestroyShaderModule(device, vertShaderModule, nullptr);
+        throw std::runtime_error("Failed to create fragment shader module!");
+    }
+
+    // 5. Create pipeline
+    VkPipelineShaderStageCreateInfo shaderStages[2] = {};
+    shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    shaderStages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    shaderStages[0].module = vertShaderModule;
+    shaderStages[0].pName = "main";
+
+    shaderStages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    shaderStages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    shaderStages[1].module = fragShaderModule;
+    shaderStages[1].pName = "main";
+
+    // Vertex input (only position needed)
+    auto bindingDescription = Vertex::GetBindingDescription();
+    auto attributeDescriptions = Vertex::GetAttributeDescriptions();
+
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInputInfo.vertexBindingDescriptionCount = 1;
+    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+    vertexInputInfo.vertexAttributeDescriptionCount = 1;  // Only position
+    vertexInputInfo.pVertexAttributeDescriptions = &attributeDescriptions[0];
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<f32>(m_Swapchain.GetExtent().width);
+    viewport.height = static_cast<f32>(m_Swapchain.GetExtent().height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = m_Swapchain.GetExtent();
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.pViewports = &viewport;
+    viewportState.scissorCount = 1;
+    viewportState.pScissors = &scissor;
+
+    VkPipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.depthClampEnable = VK_FALSE;
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.0f;
+    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rasterizer.depthBiasEnable = VK_FALSE;
+
+    VkPipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+    depthStencil.depthBoundsTestEnable = VK_FALSE;
+    depthStencil.stencilTestEnable = VK_FALSE;
+
+    VkPipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.logicOpEnable = VK_FALSE;
+    colorBlending.attachmentCount = 0;  // No color attachments
+    colorBlending.pAttachments = nullptr;
+
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.stageCount = 2;
+    pipelineInfo.pStages = shaderStages;
+    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.pDynamicState = nullptr;
+    pipelineInfo.layout = m_DepthPrepassPipelineLayout;
+    pipelineInfo.renderPass = m_DepthPrepassRenderPass;
+    pipelineInfo.subpass = 0;
+
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_DepthPrepassPipeline) != VK_SUCCESS) {
+        vkDestroyShaderModule(device, vertShaderModule, nullptr);
+        vkDestroyShaderModule(device, fragShaderModule, nullptr);
+        throw std::runtime_error("Failed to create depth prepass pipeline!");
+    }
+
+    vkDestroyShaderModule(device, vertShaderModule, nullptr);
+    vkDestroyShaderModule(device, fragShaderModule, nullptr);
+
+    std::cout << "Depth prepass resources created successfully" << std::endl;
+}
+
+void VulkanRenderer::DestroyDepthPrepassResources() {
+    if (!m_Context) {
+        return;
+    }
+
+    VkDevice device = m_Context->GetDevice();
+
+    if (m_DepthPrepassPipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(device, m_DepthPrepassPipeline, nullptr);
+        m_DepthPrepassPipeline = VK_NULL_HANDLE;
+    }
+
+    if (m_DepthPrepassPipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(device, m_DepthPrepassPipelineLayout, nullptr);
+        m_DepthPrepassPipelineLayout = VK_NULL_HANDLE;
+    }
+
+    if (m_DepthPrepassFramebuffer != VK_NULL_HANDLE) {
+        vkDestroyFramebuffer(device, m_DepthPrepassFramebuffer, nullptr);
+        m_DepthPrepassFramebuffer = VK_NULL_HANDLE;
+    }
+
+    if (m_DepthPrepassRenderPass != VK_NULL_HANDLE) {
+        vkDestroyRenderPass(device, m_DepthPrepassRenderPass, nullptr);
+        m_DepthPrepassRenderPass = VK_NULL_HANDLE;
+    }
+}
+
+void VulkanRenderer::RenderDepthPrepass(VkCommandBuffer commandBuffer, u32 frameIndex) {
+    if (!m_RenderSystem) {
+        return;
+    }
+
+    VkRenderPassBeginInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassInfo.renderPass = m_DepthPrepassRenderPass;
+    renderPassInfo.framebuffer = m_DepthPrepassFramebuffer;
+    renderPassInfo.renderArea.offset = {0, 0};
+    renderPassInfo.renderArea.extent = m_Swapchain.GetExtent();
+
+    VkClearValue clearValue{};
+    clearValue.depthStencil = {1.0f, 0};
+    renderPassInfo.clearValueCount = 1;
+    renderPassInfo.pClearValues = &clearValue;
+
+    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DepthPrepassPipeline);
+
+    // Bind descriptor set (for MVP matrices)
+    VkDescriptorSet descriptorSet = m_Descriptors.GetDescriptorSet(frameIndex);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            m_DepthPrepassPipelineLayout, 0, 1,
+                            &descriptorSet,
+                            0, nullptr);
+
+    // Get screen dimensions for push constants
+    VkExtent2D extent = m_Swapchain.GetExtent();
+    u32 screenWidth = extent.width;
+    u32 screenHeight = extent.height;
+
+    // Render all meshes (depth only)
+    const auto& renderList = m_RenderSystem->GetRenderData();
+    for (const RenderData& renderData : renderList) {
+        VulkanMesh* mesh = m_RenderSystem->GetVulkanMesh(renderData.meshHandle);
+        if (!mesh || !mesh->IsValid()) {
+            continue;
+        }
+
+        PushModelMatrix(commandBuffer, renderData.modelMatrix, renderData.materialIndex, screenWidth, screenHeight);
+        mesh->Bind(commandBuffer);
+        mesh->Draw(commandBuffer);
+    }
+
+    vkCmdEndRenderPass(commandBuffer);
+}
+
+void VulkanRenderer::TransitionDepthForRead(VkCommandBuffer commandBuffer) {
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = m_DepthBuffer.GetImage();
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+
+    vkCmdPipelineBarrier(commandBuffer,
+                         VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         0,
+                         0, nullptr,
+                         0, nullptr,
+                         1, &barrier);
+}
+
+void VulkanRenderer::TransitionDepthForWrite(VkCommandBuffer commandBuffer) {
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = m_DepthBuffer.GetImage();
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+
+    vkCmdPipelineBarrier(commandBuffer,
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+                         0,
+                         0, nullptr,
+                         0, nullptr,
+                         1, &barrier);
 }

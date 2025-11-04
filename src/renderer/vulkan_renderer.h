@@ -15,6 +15,7 @@
 #include "renderer/vulkan_transfer_queue.h"
 #include "renderer/vulkan_material_buffer.h"
 #include "renderer/vulkan_texture.h"
+#include "renderer/vulkan_light_culling.h"
 #include "ecs/systems/render_system.h"
 
 #ifdef _DEBUG
@@ -76,8 +77,19 @@ private:
     void DestroyMeshResources();
     void UpdateGlobalUniforms(u32 frameIndex);
     void UpdateGlobalUniformsWithCamera(u32 frameIndex, Entity cameraEntity, u32 viewportWidth, u32 viewportHeight);
-    void PushModelMatrix(VkCommandBuffer commandBuffer, const Mat4& modelMatrix, u32 materialIndex);
-    void RenderScene(VkCommandBuffer commandBuffer, u32 frameIndex);
+    void PushModelMatrix(VkCommandBuffer commandBuffer, const Mat4& modelMatrix, u32 materialIndex, u32 screenWidth, u32 screenHeight);
+    void RenderScene(VkCommandBuffer commandBuffer, u32 frameIndex, u32 screenWidth, u32 screenHeight);
+
+    // Forward+ light data upload
+    void UploadLightDataForwardPlus();
+    u32 GetLightCount() const;
+
+    // Depth prepass for Forward+
+    void CreateDepthPrepassResources();
+    void DestroyDepthPrepassResources();
+    void RenderDepthPrepass(VkCommandBuffer commandBuffer, u32 frameIndex);
+    void TransitionDepthForRead(VkCommandBuffer commandBuffer);
+    void TransitionDepthForWrite(VkCommandBuffer commandBuffer);
 
     // Lazy initialization of offscreen pipelines when first viewport is rendered
     void EnsureOffscreenPipelinesInitialized(VkRenderPass offscreenRenderPass, VkExtent2D extent);
@@ -101,9 +113,18 @@ private:
     VulkanDescriptors m_Descriptors;
     VulkanDepthBuffer m_DepthBuffer;
 
+    // Depth prepass resources
+    VkRenderPass m_DepthPrepassRenderPass = VK_NULL_HANDLE;
+    VkPipeline m_DepthPrepassPipeline = VK_NULL_HANDLE;
+    VkPipelineLayout m_DepthPrepassPipelineLayout = VK_NULL_HANDLE;
+    VkFramebuffer m_DepthPrepassFramebuffer = VK_NULL_HANDLE;
+
     // Async upload pipeline
     VulkanStagingPool m_StagingPool;
     VulkanTransferQueue m_TransferQueue;
+
+    // Forward+ light culling system
+    std::unique_ptr<VulkanLightCulling> m_LightCulling;
 
     // Default texture for bindless array (index 0)
     std::unique_ptr<VulkanTexture> m_DefaultTexture;

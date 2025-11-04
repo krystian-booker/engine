@@ -18,6 +18,7 @@ public:
 
     VkImageView GetImageView() const { return m_DepthImageView; }
     VkFormat GetFormat() const { return m_DepthFormat; }
+    VkImage GetImage() const { return m_DepthImage; }
 
 private:
     VkFormat FindDepthFormat() const;

@@ -147,7 +147,56 @@ Texture2D textures[] : register(t1);
 [[vk::binding(1, 1)]]
 SamplerState samplers[] : register(s1);
 
+// ===========================================================================
+// Forward+ Tiled Light Culling Data (Set 2)
+// ===========================================================================
+
+// Forward+ GPU Light structure (must match GPULightForwardPlus in C++)
+struct GPULightForwardPlus
+{
+    float4 positionAndRange;       // xyz = position, w = range
+    float4 directionAndType;       // xyz = direction, w = type (0=Dir, 1=Point, 2=Spot)
+    float4 colorAndIntensity;      // xyz = color, w = intensity
+    float4 spotAngles;             // x = inner cone cos, y = outer cone cos, z/w = unused
+
+    // Shadow data
+    uint shadowIndex;              // Index into shadow atlas
+    uint castsShadows;             // Boolean (0 or 1)
+    float shadowBias;
+    float shadowPCFRadius;
+    float4 shadowAtlasUV;          // Shadow atlas UV parameters
+};
+
+// Tile light index list (max 256 lights per tile)
+struct TileLightData
+{
+    uint lightCount;
+    uint lightIndices[256];
+};
+
+// Set 2, Binding 0: Light buffer (Forward+)
+[[vk::binding(0, 2)]]
+StructuredBuffer<GPULightForwardPlus> forwardPlusLights : register(t8);
+
+// Set 2, Binding 1: Tile light indices (Forward+)
+[[vk::binding(1, 2)]]
+StructuredBuffer<TileLightData> tileLightData : register(t9);
+
+// Push constants for Forward+ tile calculation
+struct PushConstants
+{
+    float4x4 model;
+    uint materialIndex;
+    uint screenWidth;
+    uint screenHeight;
+    uint tileSize;
+};
+
+[[vk::push_constant]]
+ConstantBuffer<PushConstants> pushConstants;
+
 struct PSIn {
+    float4 position : SV_Position;  // Screen-space position for Forward+ tile calculation
     [[vk::location(0)]] float3 fragNormal   : TEXCOORD0;
     [[vk::location(1)]] float3 fragTangent  : TEXCOORD1;
     [[vk::location(2)]] float3 fragBitangent: TEXCOORD2;
@@ -586,8 +635,8 @@ float3 EvaluateHemisphereLight(float3 N, float3 skyColor, float3 groundColor, fl
 
 float4 main(PSIn i) : SV_Target
 {
-    // Fetch material data
-    GPUMaterial mat = materials[i.materialIndex];
+    // Fetch material data from push constants
+    GPUMaterial mat = materials[pushConstants.materialIndex];
 
     // Sample textures using bindless array
     float4 albedo = textures[NonUniformResourceIndex(mat.albedoIndex)].Sample(
@@ -625,16 +674,28 @@ float4 main(PSIn i) : SV_Target
     F0 = lerp(F0, albedo.rgb, metallic);
 
     // ========================================================================
-    // Lighting calculation - loop through all active lights
+    // Forward+ Tiled Light Culling - Calculate tile index from fragment position
     // ========================================================================
+
+    uint2 screenPos = uint2(i.position.xy);
+    uint tileX = screenPos.x / pushConstants.tileSize;
+    uint tileY = screenPos.y / pushConstants.tileSize;
+    uint tilesX = (pushConstants.screenWidth + pushConstants.tileSize - 1) / pushConstants.tileSize;
+    uint tileIndex = tileY * tilesX + tileX;
+
+    // Fetch tile light data
+    TileLightData tile = tileLightData[tileIndex];
+    uint numVisibleLights = min(tile.lightCount, 256);  // Clamp for safety
 
     float3 Lo = float3(0.0, 0.0, 0.0);  // Total outgoing radiance
 
-    for (uint lightIdx = 0; lightIdx < numLights; ++lightIdx)
+    // Loop through only the lights visible in this tile
+    for (uint idx = 0; idx < numVisibleLights; ++idx)
     {
-        GPULight light = lights[lightIdx];
+        uint lightIdx = tile.lightIndices[idx];
+        GPULightForwardPlus light = forwardPlusLights[lightIdx];
 
-        uint lightType = (uint)light.positionAndType.w;
+        uint lightType = (uint)light.directionAndType.w;
         float3 lightColor = light.colorAndIntensity.rgb;
         float lightIntensity = light.colorAndIntensity.w;
 
@@ -644,11 +705,11 @@ float4 main(PSIn i) : SV_Target
         // Calculate light direction and attenuation based on light type
         if (lightType == 0) // Directional light
         {
-            L = normalize(-light.directionAndRange.xyz);
+            L = normalize(-light.directionAndType.xyz);
             attenuation = 1.0;
 
             // Apply shadows if enabled
-            bool castsShadows = light.spotAngles.z > 0.5;
+            bool castsShadows = light.castsShadows > 0;
             if (castsShadows) {
                 // Calculate view space depth for cascade selection
                 float4 viewPos = mul(view, float4(i.fragWorldPos, 1.0));
@@ -660,18 +721,18 @@ float4 main(PSIn i) : SV_Target
         }
         else if (lightType == 1) // Point light
         {
-            float3 lightPos = light.positionAndType.xyz;
+            float3 lightPos = light.positionAndRange.xyz;
             float3 lightVec = lightPos - i.fragWorldPos;
             float distance = length(lightVec);
             L = lightVec / distance;  // Normalize
 
             // Inverse square falloff with range cutoff
-            float range = light.directionAndRange.w;
+            float range = light.positionAndRange.w;
             float distanceRatio = saturate(1.0 - pow(distance / range, 4.0));
             attenuation = distanceRatio * distanceRatio / (distance * distance + 1.0);
 
             // Apply shadows if enabled
-            bool castsShadows = light.spotAngles.z > 0.5;
+            bool castsShadows = light.castsShadows > 0;
             uint shadowMapIndex = (uint)light.spotAngles.w;
             if (castsShadows && shadowMapIndex < numPointLightShadows) {
                 float shadowFactor = CalculatePointLightShadow(i.fragWorldPos, N, shadowMapIndex);
@@ -680,18 +741,18 @@ float4 main(PSIn i) : SV_Target
         }
         else if (lightType == 2) // Spot light
         {
-            float3 lightPos = light.positionAndType.xyz;
+            float3 lightPos = light.positionAndRange.xyz;
             float3 lightVec = lightPos - i.fragWorldPos;
             float distance = length(lightVec);
             L = lightVec / distance;
 
             // Distance attenuation
-            float range = light.directionAndRange.w;
+            float range = light.positionAndRange.w;
             float distanceRatio = saturate(1.0 - pow(distance / range, 4.0));
             float distAttenuation = distanceRatio * distanceRatio / (distance * distance + 1.0);
 
             // Cone attenuation
-            float3 spotDir = normalize(light.directionAndRange.xyz);
+            float3 spotDir = normalize(light.directionAndType.xyz);
             float cosTheta = dot(-L, spotDir);
             float innerCone = light.spotAngles.x;
             float outerCone = light.spotAngles.y;
@@ -701,56 +762,16 @@ float4 main(PSIn i) : SV_Target
             attenuation = distAttenuation * coneAttenuation;
 
             // Apply shadows if enabled
-            bool castsShadows = light.spotAngles.z > 0.5;
-            uint shadowMapIndex = (uint)light.spotAngles.w;
+            bool castsShadows = light.castsShadows > 0;
+            uint shadowMapIndex = light.shadowIndex;
             if (castsShadows && shadowMapIndex < numSpotLightShadows) {
                 float shadowFactor = CalculateSpotLightShadow(i.fragWorldPos, N, L, shadowMapIndex);
                 attenuation *= shadowFactor;
             }
         }
-        else if (lightType == 3) // Area light
-        {
-            float3 lightPos = light.positionAndType.xyz;
-            float3 lightDir = normalize(light.directionAndRange.xyz);
-            float3 lightRight = normalize(light.hemisphereParams.xyz);
-            float3 lightUp = normalize(light.hemisphereParams2.xyz);
-            float width = light.areaParams.x;
-            float height = light.areaParams.y;
-
-            float3 areaContrib = EvaluateAreaLight(N, V, i.fragWorldPos,
-                                                   lightPos, lightDir, lightRight, lightUp,
-                                                   width, height, lightColor, lightIntensity,
-                                                   F0, roughness, albedo.rgb, metallic);
-            Lo += areaContrib;
-            continue;  // Area light handled separately
-        }
-        else if (lightType == 4) // Tube light
-        {
-            float3 lightPos = light.positionAndType.xyz;
-            float3 lightDir = normalize(light.directionAndRange.xyz);
-            float tubeLength = light.tubeParams.x;
-            float tubeRadius = light.tubeParams.y;
-
-            float3 tubeContrib = EvaluateTubeLight(N, V, i.fragWorldPos,
-                                                   lightPos, lightDir, tubeLength, tubeRadius,
-                                                   lightColor, lightIntensity,
-                                                   F0, roughness, albedo.rgb, metallic);
-            Lo += tubeContrib;
-            continue;  // Tube light handled separately
-        }
-        else if (lightType == 5) // Hemisphere light
-        {
-            float3 skyColor = light.hemisphereParams.xyz;
-            float3 groundColor = light.hemisphereParams2.xyz;
-
-            float3 hemisphereContrib = EvaluateHemisphereLight(N, skyColor, groundColor,
-                                                               lightIntensity, albedo.rgb);
-            Lo += hemisphereContrib;
-            continue;  // Hemisphere light handled separately
-        }
         else
         {
-            continue;  // Unknown light type
+            continue;  // Unknown light type (Forward+ supports Directional, Point, Spot only)
         }
 
         // Skip if light contribution is negligible
