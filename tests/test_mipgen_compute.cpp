@@ -3,6 +3,7 @@
 #include "renderer/vulkan_buffer.h"
 #include "platform/window.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>

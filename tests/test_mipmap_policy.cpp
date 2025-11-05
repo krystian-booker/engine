@@ -126,26 +126,41 @@ TEST(MipmapPolicy_TextureDataDefaults) {
 
 TEST(MipmapPolicy_EnumValues) {
     // Verify enum values are distinct
-    ASSERT(MipmapPolicy::Auto != MipmapPolicy::ForceBlit);
-    ASSERT(MipmapPolicy::Auto != MipmapPolicy::ForceCompute);
-    ASSERT(MipmapPolicy::Auto != MipmapPolicy::ForceCPU);
-    ASSERT(MipmapPolicy::ForceBlit != MipmapPolicy::ForceCompute);
+    MipmapPolicy p1 = MipmapPolicy::Auto;
+    MipmapPolicy p2 = MipmapPolicy::ForceBlit;
+    MipmapPolicy p3 = MipmapPolicy::ForceCompute;
+    MipmapPolicy p4 = MipmapPolicy::ForceCPU;
+    ASSERT(p1 != p2);
+    ASSERT(p1 != p3);
+    ASSERT(p1 != p4);
+    ASSERT(p2 != p3);
 
-    ASSERT(MipmapQuality::High != MipmapQuality::Balanced);
-    ASSERT(MipmapQuality::High != MipmapQuality::Fast);
-    ASSERT(MipmapQuality::Balanced != MipmapQuality::Fast);
+    MipmapQuality q1 = MipmapQuality::High;
+    MipmapQuality q2 = MipmapQuality::Balanced;
+    MipmapQuality q3 = MipmapQuality::Fast;
+    ASSERT(q1 != q2);
+    ASSERT(q1 != q3);
+    ASSERT(q2 != q3);
 
-    ASSERT(MipmapMethod::Blit != MipmapMethod::Compute);
-    ASSERT(MipmapMethod::Blit != MipmapMethod::CPU);
-    ASSERT(MipmapMethod::Compute != MipmapMethod::CPU);
+    MipmapMethod m1 = MipmapMethod::Blit;
+    MipmapMethod m2 = MipmapMethod::Compute;
+    MipmapMethod m3 = MipmapMethod::CPU;
+    ASSERT(m1 != m2);
+    ASSERT(m1 != m3);
+    ASSERT(m2 != m3);
 }
 
 TEST(MipmapPolicy_PackedPBRUsageExists) {
     // Verify PackedPBR usage enum exists and is distinct
-    ASSERT(TextureUsage::PackedPBR != TextureUsage::Roughness);
-    ASSERT(TextureUsage::PackedPBR != TextureUsage::Metalness);
-    ASSERT(TextureUsage::PackedPBR != TextureUsage::AO);
-    ASSERT(TextureUsage::PackedPBR != TextureUsage::Generic);
+    TextureUsage u1 = TextureUsage::PackedPBR;
+    TextureUsage u2 = TextureUsage::Roughness;
+    TextureUsage u3 = TextureUsage::Metalness;
+    TextureUsage u4 = TextureUsage::AO;
+    TextureUsage u5 = TextureUsage::Generic;
+    ASSERT(u1 != u2);
+    ASSERT(u1 != u3);
+    ASSERT(u1 != u4);
+    ASSERT(u1 != u5);
 }
 
 // ============================================================================

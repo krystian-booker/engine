@@ -383,9 +383,16 @@ add_executable(test_vulkan
         src/ecs/systems/camera_system.cpp
         tests/stubs/camera_controller_stub.cpp
         src/ecs/systems/render_system.cpp
+        src/ecs/systems/shadow_system.cpp
         src/ecs/entity_manager.cpp
         src/resources/mesh_manager.cpp
+        src/resources/material_manager.cpp
+        src/resources/material_converter.cpp
+        src/resources/image_loader.cpp
+        src/resources/texture_manager.cpp
         src/renderer/vulkan_mesh.cpp
+        src/renderer/vulkan_texture.cpp
+        src/renderer/mipmap_policy.cpp
         src/renderer/vulkan_pipeline.cpp
         src/renderer/vulkan_descriptors.cpp
         src/renderer/vulkan_descriptor_pools.cpp
@@ -397,25 +404,77 @@ add_executable(test_vulkan
         src/renderer/viewport_manager.cpp
         src/renderer/vulkan_command_buffer.cpp
         src/renderer/vulkan_buffer.cpp
+        src/renderer/vulkan_staging_pool.cpp
+        src/renderer/vulkan_transfer_queue.cpp
+        src/renderer/vulkan_material_buffer.cpp
+        src/renderer/vulkan_light_culling.cpp
+        src/renderer/vulkan_shadow_map.cpp
+        src/renderer/vulkan_shadow_atlas.cpp
+        src/renderer/vulkan_evsm_shadow.cpp
+        src/renderer/vulkan_shadow_renderer.cpp
+        src/renderer/shadow_profiler.cpp
+        src/renderer/imgui_layer.cpp
         src/platform/window.cpp
-        src/resources/mesh_manager.cpp
         src/core/time.cpp
+        src/core/texture_data.cpp
+        src/core/job_system.cpp
+        src/core/memory.cpp
+        src/core/file_watcher.cpp
+        src/core/scene_manager.cpp
+        src/core/engine_settings.cpp
+        src/core/file_dialog.cpp
+        src/ecs/hierarchy_manager.cpp
+        src/ecs/ecs_coordinator.cpp
+        src/ecs/systems/transform_system.cpp
+        src/ecs/scene_serializer.cpp
 )
 
 target_include_directories(test_vulkan PRIVATE
         ${CMAKE_SOURCE_DIR}/src
+        ${stb_SOURCE_DIR}
+        ${portable_file_dialogs_SOURCE_DIR}
+        ${imgui_SOURCE_DIR}
+        ${imgui_SOURCE_DIR}/backends
 )
 
 target_link_libraries(test_vulkan PRIVATE
         glfw
+        glm::glm
+        nlohmann_json::nlohmann_json
         Vulkan::Vulkan
+        assimp
 )
 
 target_compile_definitions(test_vulkan PRIVATE ENGINE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
 if(WIN32)
     target_sources(test_vulkan PRIVATE src/platform/win32_platform.cpp)
-    target_link_libraries(test_vulkan PRIVATE User32 Gdi32)
+    target_link_libraries(test_vulkan PRIVATE User32 Gdi32 Ole32 Shell32)
+endif()
+
+# Add ImGui sources for test_vulkan
+target_sources(test_vulkan PRIVATE
+        ${imgui_SOURCE_DIR}/imgui.cpp
+        ${imgui_SOURCE_DIR}/imgui_demo.cpp
+        ${imgui_SOURCE_DIR}/imgui_draw.cpp
+        ${imgui_SOURCE_DIR}/imgui_tables.cpp
+        ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+)
+
+# Suppress warnings for ImGui in test_vulkan
+if(MSVC)
+    set_source_files_properties(
+            ${imgui_SOURCE_DIR}/imgui.cpp
+            ${imgui_SOURCE_DIR}/imgui_demo.cpp
+            ${imgui_SOURCE_DIR}/imgui_draw.cpp
+            ${imgui_SOURCE_DIR}/imgui_tables.cpp
+            ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+            ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
+            ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+            PROPERTIES COMPILE_OPTIONS "/W0"
+    )
 endif()
 
 add_test(NAME VulkanTests COMMAND test_vulkan)
@@ -438,6 +497,18 @@ set(EVSM_PREFILTER_HLSL ${CMAKE_SOURCE_DIR}/assets/shaders/evsm_prefilter.comp)
 set(EVSM_PREFILTER_SPV ${CMAKE_SOURCE_DIR}/assets/shaders/evsm_prefilter.comp.spv)
 set(EVSM_BLUR_HLSL ${CMAKE_SOURCE_DIR}/assets/shaders/evsm_blur.comp)
 set(EVSM_BLUR_SPV ${CMAKE_SOURCE_DIR}/assets/shaders/evsm_blur.comp.spv)
+set(LIGHT_CULLING_HLSL ${CMAKE_SOURCE_DIR}/assets/shaders/light_culling.comp)
+set(LIGHT_CULLING_SPV ${CMAKE_SOURCE_DIR}/assets/shaders/light_culling.comp.spv)
+set(DEPTH_PREPASS_VERT_HLSL ${CMAKE_SOURCE_DIR}/assets/shaders/depth_prepass.vert)
+set(DEPTH_PREPASS_VERT_SPV ${CMAKE_SOURCE_DIR}/assets/shaders/depth_prepass.vert.spv)
+set(DEPTH_PREPASS_FRAG_HLSL ${CMAKE_SOURCE_DIR}/assets/shaders/depth_prepass.frag)
+set(DEPTH_PREPASS_FRAG_SPV ${CMAKE_SOURCE_DIR}/assets/shaders/depth_prepass.frag.spv)
+set(SHADOW_VERT_HLSL ${CMAKE_SOURCE_DIR}/assets/shaders/shadow.vert)
+set(SHADOW_VERT_SPV ${CMAKE_SOURCE_DIR}/assets/shaders/shadow.vert.spv)
+set(FORWARD_PLUS_DEBUG_VERT_HLSL ${CMAKE_SOURCE_DIR}/assets/shaders/forward_plus_debug.vert)
+set(FORWARD_PLUS_DEBUG_VERT_SPV ${CMAKE_SOURCE_DIR}/assets/shaders/forward_plus_debug.vert.spv)
+set(FORWARD_PLUS_DEBUG_FRAG_HLSL ${CMAKE_SOURCE_DIR}/assets/shaders/forward_plus_debug.frag)
+set(FORWARD_PLUS_DEBUG_FRAG_SPV ${CMAKE_SOURCE_DIR}/assets/shaders/forward_plus_debug.frag.spv)
 
 # Find DXC compiler - prefer Vulkan SDK version with SPIR-V support
 # Check Vulkan SDK locations first (VULKAN_SDK, VK_SDK_PATH environment variables)
@@ -530,8 +601,62 @@ if(DXC_EXECUTABLE)
             VERBATIM
     )
 
+    add_custom_command(
+            OUTPUT ${LIGHT_CULLING_SPV}
+            COMMAND ${DXC_EXECUTABLE} -spirv -fspv-target-env=vulkan1.2 -T cs_6_7 -E main
+                    ${LIGHT_CULLING_HLSL} -Fo ${LIGHT_CULLING_SPV}
+            DEPENDS ${LIGHT_CULLING_HLSL}
+            COMMENT "Compiling light culling compute shader to SPIR-V"
+            VERBATIM
+    )
+
+    add_custom_command(
+            OUTPUT ${DEPTH_PREPASS_VERT_SPV}
+            COMMAND ${DXC_EXECUTABLE} -spirv -fspv-target-env=vulkan1.2 -T vs_6_7 -E main
+                    ${DEPTH_PREPASS_VERT_HLSL} -Fo ${DEPTH_PREPASS_VERT_SPV}
+            DEPENDS ${DEPTH_PREPASS_VERT_HLSL}
+            COMMENT "Compiling depth prepass vertex shader to SPIR-V"
+            VERBATIM
+    )
+
+    add_custom_command(
+            OUTPUT ${DEPTH_PREPASS_FRAG_SPV}
+            COMMAND ${DXC_EXECUTABLE} -spirv -fspv-target-env=vulkan1.2 -T ps_6_7 -E main
+                    ${DEPTH_PREPASS_FRAG_HLSL} -Fo ${DEPTH_PREPASS_FRAG_SPV}
+            DEPENDS ${DEPTH_PREPASS_FRAG_HLSL}
+            COMMENT "Compiling depth prepass fragment shader to SPIR-V"
+            VERBATIM
+    )
+
+    add_custom_command(
+            OUTPUT ${SHADOW_VERT_SPV}
+            COMMAND ${DXC_EXECUTABLE} -spirv -fspv-target-env=vulkan1.2 -T vs_6_7 -E main
+                    ${SHADOW_VERT_HLSL} -Fo ${SHADOW_VERT_SPV}
+            DEPENDS ${SHADOW_VERT_HLSL}
+            COMMENT "Compiling shadow vertex shader to SPIR-V"
+            VERBATIM
+    )
+
+    add_custom_command(
+            OUTPUT ${FORWARD_PLUS_DEBUG_VERT_SPV}
+            COMMAND ${DXC_EXECUTABLE} -spirv -fspv-target-env=vulkan1.2 -T vs_6_7 -E main
+                    ${FORWARD_PLUS_DEBUG_VERT_HLSL} -Fo ${FORWARD_PLUS_DEBUG_VERT_SPV}
+            DEPENDS ${FORWARD_PLUS_DEBUG_VERT_HLSL}
+            COMMENT "Compiling forward_plus_debug vertex shader to SPIR-V"
+            VERBATIM
+    )
+
+    add_custom_command(
+            OUTPUT ${FORWARD_PLUS_DEBUG_FRAG_SPV}
+            COMMAND ${DXC_EXECUTABLE} -spirv -fspv-target-env=vulkan1.2 -T ps_6_7 -E main
+                    ${FORWARD_PLUS_DEBUG_FRAG_HLSL} -Fo ${FORWARD_PLUS_DEBUG_FRAG_SPV}
+            DEPENDS ${FORWARD_PLUS_DEBUG_FRAG_HLSL}
+            COMMENT "Compiling forward_plus_debug fragment shader to SPIR-V"
+            VERBATIM
+    )
+
     add_custom_target(Shaders ALL
-            DEPENDS ${CUBE_VERT_SPV} ${CUBE_FRAG_SPV} ${MIPGEN_COLOR_SPV} ${MIPGEN_NORMAL_SPV} ${MIPGEN_ROUGHNESS_SPV} ${MIPGEN_SRGB_SPV} ${EVSM_PREFILTER_SPV} ${EVSM_BLUR_SPV}
+            DEPENDS ${CUBE_VERT_SPV} ${CUBE_FRAG_SPV} ${MIPGEN_COLOR_SPV} ${MIPGEN_NORMAL_SPV} ${MIPGEN_ROUGHNESS_SPV} ${MIPGEN_SRGB_SPV} ${EVSM_PREFILTER_SPV} ${EVSM_BLUR_SPV} ${LIGHT_CULLING_SPV} ${DEPTH_PREPASS_VERT_SPV} ${DEPTH_PREPASS_FRAG_SPV} ${SHADOW_VERT_SPV} ${FORWARD_PLUS_DEBUG_VERT_SPV} ${FORWARD_PLUS_DEBUG_FRAG_SPV}
     )
 
     add_custom_command(TARGET Shaders POST_BUILD
@@ -544,6 +669,32 @@ if(DXC_EXECUTABLE)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MIPGEN_SRGB_SPV} ${CMAKE_BINARY_DIR}/assets/shaders/mipgen_srgb.comp.spv
             COMMAND ${CMAKE_COMMAND} -E copy_if_different ${EVSM_PREFILTER_SPV} ${CMAKE_BINARY_DIR}/assets/shaders/evsm_prefilter.comp.spv
             COMMAND ${CMAKE_COMMAND} -E copy_if_different ${EVSM_BLUR_SPV} ${CMAKE_BINARY_DIR}/assets/shaders/evsm_blur.comp.spv
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${LIGHT_CULLING_SPV} ${CMAKE_BINARY_DIR}/assets/shaders/light_culling.comp.spv
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${DEPTH_PREPASS_VERT_SPV} ${CMAKE_BINARY_DIR}/assets/shaders/depth_prepass.vert.spv
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${DEPTH_PREPASS_FRAG_SPV} ${CMAKE_BINARY_DIR}/assets/shaders/depth_prepass.frag.spv
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SHADOW_VERT_SPV} ${CMAKE_BINARY_DIR}/assets/shaders/shadow.vert.spv
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${FORWARD_PLUS_DEBUG_VERT_SPV} ${CMAKE_BINARY_DIR}/assets/shaders/forward_plus_debug.vert.spv
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${FORWARD_PLUS_DEBUG_FRAG_SPV} ${CMAKE_BINARY_DIR}/assets/shaders/forward_plus_debug.frag.spv
+    )
+
+    # Copy shaders to executable output directory for runtime access
+    add_custom_command(TARGET Shaders POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets/shaders
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CUBE_VERT_SPV} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets/shaders/cube.vert.spv
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CUBE_FRAG_SPV} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets/shaders/cube.frag.spv
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MIPGEN_COLOR_SPV} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets/shaders/mipgen_color.comp.spv
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MIPGEN_NORMAL_SPV} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets/shaders/mipgen_normal.comp.spv
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MIPGEN_ROUGHNESS_SPV} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets/shaders/mipgen_roughness.comp.spv
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${MIPGEN_SRGB_SPV} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets/shaders/mipgen_srgb.comp.spv
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${EVSM_PREFILTER_SPV} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets/shaders/evsm_prefilter.comp.spv
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${EVSM_BLUR_SPV} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets/shaders/evsm_blur.comp.spv
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${LIGHT_CULLING_SPV} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets/shaders/light_culling.comp.spv
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${DEPTH_PREPASS_VERT_SPV} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets/shaders/depth_prepass.vert.spv
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${DEPTH_PREPASS_FRAG_SPV} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets/shaders/depth_prepass.frag.spv
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SHADOW_VERT_SPV} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets/shaders/shadow.vert.spv
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${FORWARD_PLUS_DEBUG_VERT_SPV} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets/shaders/forward_plus_debug.vert.spv
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${FORWARD_PLUS_DEBUG_FRAG_SPV} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets/shaders/forward_plus_debug.frag.spv
+            COMMENT "Copying shaders to executable output directory"
     )
 
     add_dependencies(engine Shaders)
@@ -781,17 +932,42 @@ add_executable(test_render_system
         tests/stubs/camera_controller_stub.cpp
         src/ecs/systems/render_system.cpp
         src/resources/mesh_manager.cpp
+        src/resources/material_manager.cpp
+        src/resources/material_converter.cpp
+        src/resources/image_loader.cpp
+        src/resources/texture_manager.cpp
         src/renderer/vulkan_mesh.cpp
         src/renderer/vulkan_buffer.cpp
+        src/renderer/vulkan_context.cpp
+        src/renderer/vulkan_mipmap_compute.cpp
+        src/renderer/vulkan_texture.cpp
+        src/renderer/vulkan_descriptor_pools.cpp
+        src/renderer/vulkan_descriptors.cpp
+        src/renderer/vulkan_material_buffer.cpp
+        src/renderer/vulkan_staging_pool.cpp
+        src/renderer/vulkan_transfer_queue.cpp
+        src/renderer/mipmap_policy.cpp
+        src/core/texture_data.cpp
+        src/core/job_system.cpp
+        src/core/memory.cpp
+        src/core/file_watcher.cpp
+        src/platform/window.cpp
+        src/platform/win32_platform.cpp
 )
 
 target_include_directories(test_render_system PRIVATE
         ${CMAKE_SOURCE_DIR}/src
+        ${stb_SOURCE_DIR}
 )
 
 target_link_libraries(test_render_system PRIVATE
         glm::glm
+        nlohmann_json::nlohmann_json
         Vulkan::Vulkan
+        assimp
+        glfw
+        User32
+        Gdi32
 )
 
 add_test(NAME RenderSystemTests COMMAND test_render_system)
@@ -930,16 +1106,51 @@ add_executable(test_scene_serializer
         src/ecs/systems/transform_system.cpp
         src/ecs/systems/camera_system.cpp
         tests/stubs/camera_controller_stub.cpp
+        src/resources/mesh_manager.cpp
+        src/resources/material_manager.cpp
+        src/resources/material_converter.cpp
+        src/resources/image_loader.cpp
+        src/resources/texture_manager.cpp
+        src/renderer/vulkan_mesh.cpp
+        src/renderer/vulkan_texture.cpp
+        src/renderer/vulkan_buffer.cpp
+        src/renderer/vulkan_context.cpp
+        src/renderer/vulkan_mipmap_compute.cpp
+        src/renderer/vulkan_descriptor_pools.cpp
+        src/renderer/vulkan_descriptors.cpp
+        src/renderer/vulkan_material_buffer.cpp
+        src/renderer/vulkan_staging_pool.cpp
+        src/renderer/vulkan_transfer_queue.cpp
+        src/renderer/mipmap_policy.cpp
+        src/core/texture_data.cpp
+        src/core/job_system.cpp
+        src/core/memory.cpp
+        src/core/file_watcher.cpp
+        src/platform/window.cpp
 )
+
+if(WIN32)
+    target_sources(test_scene_serializer PRIVATE src/platform/win32_platform.cpp)
+endif()
 
 target_include_directories(test_scene_serializer PRIVATE
         ${CMAKE_SOURCE_DIR}/src
+        ${stb_SOURCE_DIR}
 )
 
 target_link_libraries(test_scene_serializer PRIVATE
         glm::glm
         nlohmann_json::nlohmann_json
+        Vulkan::Vulkan
+        assimp
+        glfw
 )
+
+if(WIN32)
+    target_link_libraries(test_scene_serializer PRIVATE User32 Gdi32)
+endif()
+
+target_compile_definitions(test_scene_serializer PRIVATE ENGINE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
 # Register scene serializer test with CTest
 add_test(NAME SceneSerializerTests COMMAND test_scene_serializer)
@@ -966,17 +1177,42 @@ add_test(NAME TimeSystemTests COMMAND test_time)
 add_executable(test_resource_handle
         tests/test_resource_handle.cpp
         src/resources/mesh_manager.cpp
+        src/resources/material_manager.cpp
+        src/resources/material_converter.cpp
+        src/resources/image_loader.cpp
+        src/resources/texture_manager.cpp
         src/renderer/vulkan_mesh.cpp
         src/renderer/vulkan_buffer.cpp
+        src/renderer/vulkan_texture.cpp
+        src/renderer/vulkan_context.cpp
+        src/renderer/vulkan_mipmap_compute.cpp
+        src/renderer/vulkan_descriptor_pools.cpp
+        src/renderer/vulkan_descriptors.cpp
+        src/renderer/vulkan_material_buffer.cpp
+        src/renderer/vulkan_staging_pool.cpp
+        src/renderer/vulkan_transfer_queue.cpp
+        src/renderer/mipmap_policy.cpp
+        src/core/texture_data.cpp
+        src/core/job_system.cpp
+        src/core/memory.cpp
+        src/core/file_watcher.cpp
+        src/platform/window.cpp
+        src/platform/win32_platform.cpp
 )
 
 target_include_directories(test_resource_handle PRIVATE
         ${CMAKE_SOURCE_DIR}/src
+        ${stb_SOURCE_DIR}
 )
 
 target_link_libraries(test_resource_handle PRIVATE
         glm::glm
         Vulkan::Vulkan
+        assimp
+        glfw
+        nlohmann_json::nlohmann_json
+        User32
+        Gdi32
 )
 
 # Register resource handle test with CTest
@@ -986,17 +1222,42 @@ add_test(NAME ResourceHandleTests COMMAND test_resource_handle)
 add_executable(resource_handle_example
         examples/resource_handle_example.cpp
         src/resources/mesh_manager.cpp
+        src/resources/material_manager.cpp
+        src/resources/material_converter.cpp
+        src/resources/image_loader.cpp
+        src/resources/texture_manager.cpp
         src/renderer/vulkan_mesh.cpp
         src/renderer/vulkan_buffer.cpp
+        src/renderer/vulkan_texture.cpp
+        src/renderer/vulkan_context.cpp
+        src/renderer/vulkan_mipmap_compute.cpp
+        src/renderer/vulkan_descriptor_pools.cpp
+        src/renderer/vulkan_descriptors.cpp
+        src/renderer/vulkan_material_buffer.cpp
+        src/renderer/vulkan_staging_pool.cpp
+        src/renderer/vulkan_transfer_queue.cpp
+        src/renderer/mipmap_policy.cpp
+        src/core/texture_data.cpp
+        src/core/job_system.cpp
+        src/core/memory.cpp
+        src/core/file_watcher.cpp
+        src/platform/window.cpp
+        src/platform/win32_platform.cpp
 )
 
 target_include_directories(resource_handle_example PRIVATE
         ${CMAKE_SOURCE_DIR}/src
+        ${stb_SOURCE_DIR}
 )
 
 target_link_libraries(resource_handle_example PRIVATE
         glm::glm
         Vulkan::Vulkan
+        assimp
+        glfw
+        nlohmann_json::nlohmann_json
+        User32
+        Gdi32
 )
 
 # Test executable for file watcher system
@@ -1049,6 +1310,7 @@ add_executable(vulkan_buffer_example
         examples/vulkan_buffer_example.cpp
         src/renderer/vulkan_context.cpp
         src/renderer/vulkan_mipmap_compute.cpp
+        src/renderer/vulkan_descriptor_pools.cpp
         src/renderer/vulkan_buffer.cpp
         src/platform/window.cpp
 )
@@ -1075,6 +1337,7 @@ add_executable(test_vulkan_buffer
         tests/test_vulkan_buffer.cpp
         src/renderer/vulkan_context.cpp
         src/renderer/vulkan_mipmap_compute.cpp
+        src/renderer/vulkan_descriptor_pools.cpp
         src/renderer/vulkan_buffer.cpp
         src/platform/window.cpp
 )
@@ -1121,8 +1384,27 @@ add_test(NAME TextureLoadingTests COMMAND test_texture_loading)
 add_executable(test_texture_manager
         tests/test_texture_manager.cpp
         src/core/texture_data.cpp
+        src/core/job_system.cpp
+        src/core/memory.cpp
+        src/core/file_watcher.cpp
         src/resources/image_loader.cpp
         src/resources/texture_manager.cpp
+        src/resources/material_manager.cpp
+        src/resources/material_converter.cpp
+        src/resources/mesh_manager.cpp
+        src/renderer/vulkan_texture.cpp
+        src/renderer/vulkan_context.cpp
+        src/renderer/vulkan_mipmap_compute.cpp
+        src/renderer/vulkan_buffer.cpp
+        src/renderer/vulkan_mesh.cpp
+        src/renderer/vulkan_descriptor_pools.cpp
+        src/renderer/vulkan_descriptors.cpp
+        src/renderer/vulkan_staging_pool.cpp
+        src/renderer/vulkan_transfer_queue.cpp
+        src/renderer/vulkan_material_buffer.cpp
+        src/renderer/mipmap_policy.cpp
+        src/platform/window.cpp
+        src/platform/win32_platform.cpp
 )
 
 target_include_directories(test_texture_manager PRIVATE
@@ -1133,6 +1415,11 @@ target_include_directories(test_texture_manager PRIVATE
 target_link_libraries(test_texture_manager PRIVATE
         glm::glm
         Vulkan::Vulkan
+        assimp
+        glfw
+        nlohmann_json::nlohmann_json
+        User32
+        Gdi32
 )
 
 add_test(NAME TextureManagerTests COMMAND test_texture_manager)
@@ -1143,8 +1430,24 @@ add_executable(test_texture_async
         src/core/texture_data.cpp
         src/core/job_system.cpp
         src/core/memory.cpp
+        src/core/file_watcher.cpp
         src/resources/image_loader.cpp
         src/resources/texture_manager.cpp
+        src/resources/material_manager.cpp
+        src/resources/material_converter.cpp
+        src/resources/mesh_manager.cpp
+        src/renderer/vulkan_texture.cpp
+        src/renderer/vulkan_context.cpp
+        src/renderer/vulkan_mipmap_compute.cpp
+        src/renderer/vulkan_buffer.cpp
+        src/renderer/vulkan_mesh.cpp
+        src/renderer/vulkan_descriptor_pools.cpp
+        src/renderer/vulkan_descriptors.cpp
+        src/renderer/vulkan_staging_pool.cpp
+        src/renderer/vulkan_transfer_queue.cpp
+        src/renderer/vulkan_material_buffer.cpp
+        src/renderer/mipmap_policy.cpp
+        src/platform/window.cpp
         src/platform/win32_platform.cpp
 )
 
@@ -1156,6 +1459,11 @@ target_include_directories(test_texture_async PRIVATE
 target_link_libraries(test_texture_async PRIVATE
         glm::glm
         Vulkan::Vulkan
+        assimp
+        glfw
+        nlohmann_json::nlohmann_json
+        User32
+        Gdi32
 )
 
 add_test(NAME TextureAsyncTests COMMAND test_texture_async)
@@ -1201,6 +1509,9 @@ add_executable(test_vulkan_texture_array
         src/renderer/vulkan_context.cpp
         src/renderer/vulkan_mipmap_compute.cpp
         src/renderer/vulkan_buffer.cpp
+        src/renderer/vulkan_staging_pool.cpp
+        src/renderer/vulkan_transfer_queue.cpp
+        src/renderer/vulkan_descriptor_pools.cpp
         src/renderer/mipmap_policy.cpp
         src/core/texture_data.cpp
         src/platform/window.cpp
@@ -1232,6 +1543,9 @@ add_executable(test_mipmap_array
         src/renderer/vulkan_context.cpp
         src/renderer/vulkan_mipmap_compute.cpp
         src/renderer/vulkan_buffer.cpp
+        src/renderer/vulkan_staging_pool.cpp
+        src/renderer/vulkan_transfer_queue.cpp
+        src/renderer/vulkan_descriptor_pools.cpp
         src/renderer/mipmap_policy.cpp
         src/core/texture_data.cpp
         src/platform/window.cpp
@@ -1262,8 +1576,24 @@ add_executable(test_texture_array_async
         src/core/texture_data.cpp
         src/core/job_system.cpp
         src/core/memory.cpp
+        src/core/file_watcher.cpp
         src/resources/image_loader.cpp
         src/resources/texture_manager.cpp
+        src/resources/material_manager.cpp
+        src/resources/material_converter.cpp
+        src/resources/mesh_manager.cpp
+        src/renderer/vulkan_texture.cpp
+        src/renderer/vulkan_context.cpp
+        src/renderer/vulkan_mipmap_compute.cpp
+        src/renderer/vulkan_buffer.cpp
+        src/renderer/vulkan_mesh.cpp
+        src/renderer/vulkan_descriptor_pools.cpp
+        src/renderer/vulkan_descriptors.cpp
+        src/renderer/vulkan_staging_pool.cpp
+        src/renderer/vulkan_transfer_queue.cpp
+        src/renderer/vulkan_material_buffer.cpp
+        src/renderer/mipmap_policy.cpp
+        src/platform/window.cpp
         src/platform/win32_platform.cpp
 )
 
@@ -1275,6 +1605,11 @@ target_include_directories(test_texture_array_async PRIVATE
 target_link_libraries(test_texture_array_async PRIVATE
         glm::glm
         Vulkan::Vulkan
+        assimp
+        glfw
+        nlohmann_json::nlohmann_json
+        User32
+        Gdi32
 )
 
 add_test(NAME TextureArrayAsyncTests COMMAND test_texture_array_async)
@@ -1288,6 +1623,8 @@ add_executable(test_texture_descriptors
         src/renderer/vulkan_context.cpp
         src/renderer/vulkan_mipmap_compute.cpp
         src/renderer/vulkan_buffer.cpp
+        src/renderer/vulkan_staging_pool.cpp
+        src/renderer/vulkan_transfer_queue.cpp
         src/renderer/mipmap_policy.cpp
         src/core/texture_data.cpp
         src/platform/window.cpp
@@ -1335,10 +1672,20 @@ add_executable(test_cubemap
         src/renderer/vulkan_context.cpp
         src/renderer/vulkan_mipmap_compute.cpp
         src/renderer/vulkan_buffer.cpp
+        src/renderer/vulkan_staging_pool.cpp
+        src/renderer/vulkan_transfer_queue.cpp
+        src/renderer/vulkan_descriptor_pools.cpp
+        src/renderer/vulkan_descriptors.cpp
+        src/renderer/vulkan_mesh.cpp
+        src/renderer/vulkan_material_buffer.cpp
         src/renderer/mipmap_policy.cpp
         src/core/texture_data.cpp
+        src/core/file_watcher.cpp
         src/resources/image_loader.cpp
         src/resources/texture_manager.cpp
+        src/resources/material_manager.cpp
+        src/resources/material_converter.cpp
+        src/resources/mesh_manager.cpp
         src/core/job_system.cpp
         src/core/memory.cpp
         src/platform/window.cpp
@@ -1357,6 +1704,8 @@ target_link_libraries(test_cubemap PRIVATE
         glfw
         glm::glm
         Vulkan::Vulkan
+        assimp
+        nlohmann_json::nlohmann_json
 )
 
 if(WIN32)
@@ -1370,6 +1719,7 @@ add_executable(test_format_support
         tests/test_format_support.cpp
         src/renderer/vulkan_context.cpp
         src/renderer/vulkan_mipmap_compute.cpp
+        src/renderer/vulkan_descriptor_pools.cpp
         src/platform/window.cpp
 )
 
@@ -1397,6 +1747,7 @@ add_executable(test_mipmap_policy
         src/renderer/mipmap_policy.cpp
         src/renderer/vulkan_context.cpp
         src/renderer/vulkan_mipmap_compute.cpp
+        src/renderer/vulkan_descriptor_pools.cpp
         src/renderer/vulkan_buffer.cpp
         src/core/texture_data.cpp
         src/platform/window.cpp
@@ -1425,6 +1776,7 @@ add_executable(test_mipgen_compute
         tests/test_mipgen_compute.cpp
         src/renderer/vulkan_context.cpp
         src/renderer/vulkan_mipmap_compute.cpp
+        src/renderer/vulkan_descriptor_pools.cpp
         src/renderer/vulkan_buffer.cpp
         src/platform/window.cpp
 )
@@ -1450,8 +1802,26 @@ add_test(NAME MipgenComputeTests COMMAND test_mipgen_compute)
 add_executable(test_mesh_loading
         tests/test_mesh_loading.cpp
         src/resources/mesh_manager.cpp
+        src/resources/material_manager.cpp
+        src/resources/material_converter.cpp
+        src/resources/image_loader.cpp
+        src/resources/texture_manager.cpp
         src/renderer/vulkan_mesh.cpp
         src/renderer/vulkan_buffer.cpp
+        src/renderer/vulkan_context.cpp
+        src/renderer/vulkan_mipmap_compute.cpp
+        src/renderer/vulkan_texture.cpp
+        src/renderer/vulkan_descriptor_pools.cpp
+        src/renderer/vulkan_descriptors.cpp
+        src/renderer/vulkan_material_buffer.cpp
+        src/renderer/vulkan_staging_pool.cpp
+        src/renderer/vulkan_transfer_queue.cpp
+        src/renderer/mipmap_policy.cpp
+        src/core/texture_data.cpp
+        src/core/job_system.cpp
+        src/core/memory.cpp
+        src/core/file_watcher.cpp
+        src/platform/window.cpp
 )
 
 if(WIN32)
@@ -1460,12 +1830,15 @@ endif()
 
 target_include_directories(test_mesh_loading PRIVATE
         ${CMAKE_SOURCE_DIR}/src
+        ${stb_SOURCE_DIR}
 )
 
 target_link_libraries(test_mesh_loading PRIVATE
         glm::glm
         assimp
         Vulkan::Vulkan
+        glfw
+        nlohmann_json::nlohmann_json
 )
 
 if(WIN32)
@@ -1487,6 +1860,7 @@ target_include_directories(test_material PRIVATE
 
 target_link_libraries(test_material PRIVATE
         glm::glm
+        Vulkan::Vulkan
 )
 
 add_test(NAME MaterialSystemTests COMMAND test_material)

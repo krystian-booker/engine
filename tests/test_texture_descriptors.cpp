@@ -97,14 +97,16 @@ TEST(Descriptors_InitWithTextureSampler) {
     ASSERT(descriptors.GetLayout() != VK_NULL_HANDLE);
     ASSERT(descriptors.GetDescriptorSet(0) != VK_NULL_HANDLE);
     ASSERT(descriptors.GetDescriptorSet(1) != VK_NULL_HANDLE);
+    ASSERT(descriptors.GetPersistentLayout() != VK_NULL_HANDLE);
+    ASSERT(descriptors.GetPersistentSet() != VK_NULL_HANDLE);
 
     descriptors.Shutdown();
     context.Shutdown();
 }
 
-TEST(Descriptors_BindRegularTexture) {
+TEST(Descriptors_RegisterRegularTexture) {
     WindowProperties props;
-    props.title = "Bind Regular Texture Test";
+    props.title = "Register Regular Texture Test";
     props.width = 640;
     props.height = 480;
     props.resizable = false;
@@ -123,20 +125,20 @@ TEST(Descriptors_BindRegularTexture) {
 
     ASSERT(texture.IsValid());
 
-    // Bind texture to descriptor set (binding 1, frame 0)
-    descriptors.BindTexture(0, 1, texture.GetImageView(), texture.GetSampler());
+    // Register texture in bindless array
+    u32 textureIndex = descriptors.RegisterTexture(texture.GetImageView(), texture.GetSampler());
 
-    // Should not throw - binding successful
-    ASSERT(descriptors.GetDescriptorSet(0) != VK_NULL_HANDLE);
+    // Should return a valid index
+    ASSERT(textureIndex < VulkanDescriptors::MAX_BINDLESS_TEXTURES);
 
     texture.Destroy();
     descriptors.Shutdown();
     context.Shutdown();
 }
 
-TEST(Descriptors_BindArrayTexture) {
+TEST(Descriptors_RegisterArrayTexture) {
     WindowProperties props;
-    props.title = "Bind Array Texture Test";
+    props.title = "Register Array Texture Test";
     props.width = 640;
     props.height = 480;
     props.resizable = false;
@@ -155,20 +157,20 @@ TEST(Descriptors_BindArrayTexture) {
 
     ASSERT(texture.IsValid());
 
-    // Bind array texture to descriptor set
-    descriptors.BindTextureArray(0, 1, texture.GetImageView(), texture.GetSampler());
+    // Register array texture (works identically to regular textures)
+    u32 textureIndex = descriptors.RegisterTexture(texture.GetImageView(), texture.GetSampler());
 
-    // Should work identically to regular BindTexture
-    ASSERT(descriptors.GetDescriptorSet(0) != VK_NULL_HANDLE);
+    // Should return a valid index
+    ASSERT(textureIndex < VulkanDescriptors::MAX_BINDLESS_TEXTURES);
 
     texture.Destroy();
     descriptors.Shutdown();
     context.Shutdown();
 }
 
-TEST(Descriptors_BindMultipleFrames) {
+TEST(Descriptors_RegisterMultipleTextures) {
     WindowProperties props;
-    props.title = "Bind Multiple Frames Test";
+    props.title = "Register Multiple Textures Test";
     props.width = 640;
     props.height = 480;
     props.resizable = false;
@@ -178,9 +180,9 @@ TEST(Descriptors_BindMultipleFrames) {
     context.Init(&window);
 
     VulkanDescriptors descriptors;
-    descriptors.Init(&context, 3);  // 3 frames
+    descriptors.Init(&context, 2);
 
-    // Create different textures for different frames
+    // Create different textures
     TextureData data1 = CreateTestTexture(64, 64, 4);
     TextureData data2 = CreateTestTexture(128, 128, 4);
     TextureData data3 = CreateTestTexture(32, 32, 4);
@@ -190,15 +192,18 @@ TEST(Descriptors_BindMultipleFrames) {
     texture2.Create(&context, &data2);
     texture3.Create(&context, &data3);
 
-    // Bind different textures to different frames
-    descriptors.BindTexture(0, 1, texture1.GetImageView(), texture1.GetSampler());
-    descriptors.BindTexture(1, 1, texture2.GetImageView(), texture2.GetSampler());
-    descriptors.BindTexture(2, 1, texture3.GetImageView(), texture3.GetSampler());
+    // Register all textures
+    u32 index1 = descriptors.RegisterTexture(texture1.GetImageView(), texture1.GetSampler());
+    u32 index2 = descriptors.RegisterTexture(texture2.GetImageView(), texture2.GetSampler());
+    u32 index3 = descriptors.RegisterTexture(texture3.GetImageView(), texture3.GetSampler());
 
-    // All descriptor sets should be valid
-    ASSERT(descriptors.GetDescriptorSet(0) != VK_NULL_HANDLE);
-    ASSERT(descriptors.GetDescriptorSet(1) != VK_NULL_HANDLE);
-    ASSERT(descriptors.GetDescriptorSet(2) != VK_NULL_HANDLE);
+    // All indices should be unique and valid
+    ASSERT(index1 < VulkanDescriptors::MAX_BINDLESS_TEXTURES);
+    ASSERT(index2 < VulkanDescriptors::MAX_BINDLESS_TEXTURES);
+    ASSERT(index3 < VulkanDescriptors::MAX_BINDLESS_TEXTURES);
+    ASSERT(index1 != index2);
+    ASSERT(index2 != index3);
+    ASSERT(index1 != index3);
 
     texture1.Destroy();
     texture2.Destroy();
@@ -207,9 +212,9 @@ TEST(Descriptors_BindMultipleFrames) {
     context.Shutdown();
 }
 
-TEST(Descriptors_RebindTexture) {
+TEST(Descriptors_UnregisterTexture) {
     WindowProperties props;
-    props.title = "Rebind Texture Test";
+    props.title = "Unregister Texture Test";
     props.width = 640;
     props.height = 480;
     props.resizable = false;
@@ -229,14 +234,17 @@ TEST(Descriptors_RebindTexture) {
     texture1.Create(&context, &data1);
     texture2.Create(&context, &data2);
 
-    // Bind first texture
-    descriptors.BindTexture(0, 1, texture1.GetImageView(), texture1.GetSampler());
+    // Register first texture
+    u32 index1 = descriptors.RegisterTexture(texture1.GetImageView(), texture1.GetSampler());
 
-    // Rebind to different texture (should update descriptor)
-    descriptors.BindTexture(0, 1, texture2.GetImageView(), texture2.GetSampler());
+    // Unregister it
+    descriptors.UnregisterTexture(index1);
 
-    // Should succeed without errors
-    ASSERT(descriptors.GetDescriptorSet(0) != VK_NULL_HANDLE);
+    // Register second texture (should reuse the freed index)
+    u32 index2 = descriptors.RegisterTexture(texture2.GetImageView(), texture2.GetSampler());
+
+    // Should have reused the index
+    ASSERT(index2 == index1);
 
     texture1.Destroy();
     texture2.Destroy();
@@ -244,9 +252,9 @@ TEST(Descriptors_RebindTexture) {
     context.Shutdown();
 }
 
-TEST(Descriptors_BindInvalidFrameIndex) {
+TEST(Descriptors_RegisterSequentialIndices) {
     WindowProperties props;
-    props.title = "Bind Invalid Frame Index Test";
+    props.title = "Register Sequential Indices Test";
     props.width = 640;
     props.height = 480;
     props.resizable = false;
@@ -262,24 +270,23 @@ TEST(Descriptors_BindInvalidFrameIndex) {
     VulkanTexture texture;
     texture.Create(&context, &data);
 
-    // Try to bind to invalid frame index (should throw)
-    bool threw = false;
-    try {
-        descriptors.BindTexture(5, 1, texture.GetImageView(), texture.GetSampler());
-    } catch (const std::out_of_range&) {
-        threw = true;
-    }
+    // Register multiple times and verify sequential indices
+    u32 index1 = descriptors.RegisterTexture(texture.GetImageView(), texture.GetSampler());
+    u32 index2 = descriptors.RegisterTexture(texture.GetImageView(), texture.GetSampler());
+    u32 index3 = descriptors.RegisterTexture(texture.GetImageView(), texture.GetSampler());
 
-    ASSERT(threw);
+    ASSERT(index1 == 0);
+    ASSERT(index2 == 1);
+    ASSERT(index3 == 2);
 
     texture.Destroy();
     descriptors.Shutdown();
     context.Shutdown();
 }
 
-TEST(Descriptors_BindNullHandles) {
+TEST(Descriptors_MixedTextureTypes) {
     WindowProperties props;
-    props.title = "Bind Null Handles Test";
+    props.title = "Mixed Texture Types Test";
     props.width = 640;
     props.height = 480;
     props.resizable = false;
@@ -291,51 +298,24 @@ TEST(Descriptors_BindNullHandles) {
     VulkanDescriptors descriptors;
     descriptors.Init(&context, 2);
 
-    // Try to bind null image view (should throw)
-    bool threw = false;
-    try {
-        descriptors.BindTexture(0, 1, VK_NULL_HANDLE, VK_NULL_HANDLE);
-    } catch (const std::invalid_argument&) {
-        threw = true;
-    }
-
-    ASSERT(threw);
-
-    descriptors.Shutdown();
-    context.Shutdown();
-}
-
-TEST(Descriptors_BindMixedTextureTypes) {
-    WindowProperties props;
-    props.title = "Bind Mixed Texture Types Test";
-    props.width = 640;
-    props.height = 480;
-    props.resizable = false;
-
-    Window window(props);
-    VulkanContext context;
-    context.Init(&window);
-
-    VulkanDescriptors descriptors;
-    descriptors.Init(&context, 2);
-
-    // Create regular texture for frame 0
+    // Create regular texture
     TextureData data1 = CreateTestTexture(64, 64, 4);
     VulkanTexture texture1;
     texture1.Create(&context, &data1);
 
-    // Create array texture for frame 1
+    // Create array texture
     TextureData data2 = CreateTestArrayTexture(64, 64, 4, 3);
     VulkanTexture texture2;
     texture2.Create(&context, &data2);
 
-    // Bind different texture types to different frames
-    descriptors.BindTexture(0, 1, texture1.GetImageView(), texture1.GetSampler());
-    descriptors.BindTextureArray(1, 1, texture2.GetImageView(), texture2.GetSampler());
+    // Register both texture types
+    u32 index1 = descriptors.RegisterTexture(texture1.GetImageView(), texture1.GetSampler());
+    u32 index2 = descriptors.RegisterTexture(texture2.GetImageView(), texture2.GetSampler());
 
-    // Both should work
-    ASSERT(descriptors.GetDescriptorSet(0) != VK_NULL_HANDLE);
-    ASSERT(descriptors.GetDescriptorSet(1) != VK_NULL_HANDLE);
+    // Both should work and have different indices
+    ASSERT(index1 < VulkanDescriptors::MAX_BINDLESS_TEXTURES);
+    ASSERT(index2 < VulkanDescriptors::MAX_BINDLESS_TEXTURES);
+    ASSERT(index1 != index2);
 
     texture1.Destroy();
     texture2.Destroy();
@@ -347,13 +327,12 @@ int main() {
     std::cout << "=== Texture Descriptor Binding Tests ===" << std::endl << std::endl;
 
     Descriptors_InitWithTextureSampler_runner();
-    Descriptors_BindRegularTexture_runner();
-    Descriptors_BindArrayTexture_runner();
-    Descriptors_BindMultipleFrames_runner();
-    Descriptors_RebindTexture_runner();
-    Descriptors_BindInvalidFrameIndex_runner();
-    Descriptors_BindNullHandles_runner();
-    Descriptors_BindMixedTextureTypes_runner();
+    Descriptors_RegisterRegularTexture_runner();
+    Descriptors_RegisterArrayTexture_runner();
+    Descriptors_RegisterMultipleTextures_runner();
+    Descriptors_UnregisterTexture_runner();
+    Descriptors_RegisterSequentialIndices_runner();
+    Descriptors_MixedTextureTypes_runner();
 
     std::cout << std::endl;
     std::cout << "Tests run:    " << testsRun << std::endl;

@@ -90,17 +90,17 @@ void VulkanRenderer::Init(VulkanContext* context, Window* window, ECSCoordinator
     // Create default texture for bindless array (MUST be done before any rendering)
     CreateDefaultTexture();
 
-    InitSwapchainResources();
-    CreateFrameContexts();
-    InitMeshResources();
-
-    // Initialize Forward+ light culling system
+    // Initialize Forward+ light culling system (MUST be done before InitSwapchainResources)
     m_LightCulling = std::make_unique<VulkanLightCulling>();
     LightCullingConfig lightCullingConfig{};
     lightCullingConfig.tileSize = 16;
     lightCullingConfig.maxLightsPerTile = 256;
     m_LightCulling->Init(m_Context, m_Swapchain.GetExtent().width, m_Swapchain.GetExtent().height,
                          MAX_FRAMES_IN_FLIGHT, lightCullingConfig);
+
+    InitSwapchainResources();
+    CreateFrameContexts();
+    InitMeshResources();
 
     // Initialize shadow system
     m_ShadowSystem = std::make_unique<ShadowSystem>(m_ECS);

@@ -71,7 +71,7 @@ TextureData CreateTestArrayTexture(u32 width, u32 height, u32 channels, u32 laye
             for (u32 x = 0; x < width; ++x) {
                 u32 idx = (y * width + x) * channels;
                 bool checker = ((x / 16) + (y / 16)) % 2;
-                u8 value = checker ? (255 - i * 30) : (i * 30);
+                u8 value = static_cast<u8>(checker ? (255 - i * 30) : (i * 30));
 
                 for (u32 c = 0; c < channels; ++c) {
                     layerData[idx + c] = value;

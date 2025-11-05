@@ -217,7 +217,7 @@ TEST(VulkanRenderer_FrameLifecycleHandlesBeginEnd) {
     context.Init(&window);
 
     VulkanRenderer renderer;
-    renderer.Init(&context, &window, nullptr);
+    renderer.Init(&context, &window, nullptr, nullptr);
 
     FrameContext* frame = nullptr;
     u32 imageIndex = 0;
