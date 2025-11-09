@@ -85,3 +85,27 @@ inline f32 Degrees(f32 radians) {
 inline f32 Clamp(f32 value, f32 min, f32 max) {
     return glm::clamp(value, min, max);
 }
+
+// Matrix inverse
+inline Mat4 Inverse(const Mat4& m) {
+    return glm::inverse(m);
+}
+
+// Vector min/max
+inline Vec3 Min(const Vec3& a, const Vec3& b) {
+    return glm::min(a, b);
+}
+
+inline Vec3 Max(const Vec3& a, const Vec3& b) {
+    return glm::max(a, b);
+}
+
+// Quaternion from Euler angles (in radians)
+inline Quat QuatFromEuler(const Vec3& euler) {
+    return glm::quat(euler);
+}
+
+// Quaternion to Euler angles (in radians)
+inline Vec3 QuatToEuler(const Quat& q) {
+    return glm::eulerAngles(q);
+}

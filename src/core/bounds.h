@@ -1,8 +1,8 @@
 #pragma once
 
-#include "core/types.h"
-#include "core/math.h"
-#include "core/ray.h"
+#include "types.h"
+#include "math.h"
+#include "ray.h"
 #include <limits>
 #include <algorithm>
 
@@ -116,20 +116,3 @@ struct AABB {
         return AABB::FromCenterExtents(newCenter, newExtents);
     }
 };
-
-// Min/Max helper functions for AABB
-inline Vec3 Min(const Vec3& a, const Vec3& b) {
-    return Vec3(
-        std::min(a.x, b.x),
-        std::min(a.y, b.y),
-        std::min(a.z, b.z)
-    );
-}
-
-inline Vec3 Max(const Vec3& a, const Vec3& b) {
-    return Vec3(
-        std::max(a.x, b.x),
-        std::max(a.y, b.y),
-        std::max(a.z, b.z)
-    );
-}

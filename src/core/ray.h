@@ -1,7 +1,7 @@
 #pragma once
 
-#include "core/types.h"
-#include "core/math.h"
+#include "types.h"
+#include "math.h"
 
 /**
  * Ray
