@@ -52,6 +52,9 @@ public:
 #ifdef _DEBUG
     // Check if user requested to change project via ImGui
     bool ShouldChangeProject() const;
+
+    // Get ImGui layer for editor functionality
+    ImGuiLayer* GetImGuiLayer() { return &m_ImGuiLayer; }
 #endif
 
     bool BeginFrame(FrameContext*& outFrame, u32& outImageIndex);

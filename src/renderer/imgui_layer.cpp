@@ -80,7 +80,8 @@ void ImGuiLayer::Init(VulkanContext* context, Window* window, VkRenderPass rende
     }
 
     // Setup Platform/Renderer backends
-    ImGui_ImplGlfw_InitForVulkan(window->GetNativeWindow(), true);
+    // Pass false to NOT install GLFW callbacks - we'll chain them manually to preserve Input system
+    ImGui_ImplGlfw_InitForVulkan(window->GetNativeWindow(), false);
 
     ImGui_ImplVulkan_InitInfo initInfo = {};
     initInfo.ApiVersion = VK_API_VERSION_1_2;

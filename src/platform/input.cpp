@@ -94,6 +94,12 @@ Vec2 Input::GetMouseScroll() {
 
 // GLFW Callback Implementations
 void Input::KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    // Forward to ImGui first (in debug mode with editor)
+#ifdef _DEBUG
+    ImGui_ImplGlfw_KeyCallback(window, key, scancode, action, mods);
+#endif
+
+    // Then handle for Input system
     (void)window;
     (void)scancode;
     (void)mods;
@@ -109,6 +115,12 @@ void Input::KeyCallback(GLFWwindow* window, int key, int scancode, int action, i
 }
 
 void Input::MouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
+    // Forward to ImGui first (in debug mode with editor)
+#ifdef _DEBUG
+    ImGui_ImplGlfw_MouseButtonCallback(window, button, action, mods);
+#endif
+
+    // Then handle for Input system
     (void)window;
     (void)mods;
 
@@ -122,11 +134,23 @@ void Input::MouseButtonCallback(GLFWwindow* window, int button, int action, int 
 }
 
 void Input::CursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
+    // Forward to ImGui first (in debug mode with editor)
+#ifdef _DEBUG
+    ImGui_ImplGlfw_CursorPosCallback(window, xpos, ypos);
+#endif
+
+    // Then handle for Input system
     (void)window;
     s_MousePos = Vec2(static_cast<f32>(xpos), static_cast<f32>(ypos));
 }
 
 void Input::ScrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
+    // Forward to ImGui first (in debug mode with editor)
+#ifdef _DEBUG
+    ImGui_ImplGlfw_ScrollCallback(window, xoffset, yoffset);
+#endif
+
+    // Then handle for Input system
     (void)window;
     s_MouseScroll = Vec2(static_cast<f32>(xoffset), static_cast<f32>(yoffset));
 }

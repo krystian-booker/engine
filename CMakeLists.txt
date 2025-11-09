@@ -230,6 +230,11 @@ target_link_libraries(engine_platform PUBLIC
         glfw
 )
 
+# Link ImGui for debug builds (input.cpp calls ImGui GLFW callbacks in _DEBUG mode)
+target_link_libraries(engine_platform PUBLIC
+        $<$<CONFIG:Debug>:imgui_lib>
+)
+
 if(WIN32)
     target_link_libraries(engine_platform PUBLIC User32 Gdi32)
 endif()
@@ -279,6 +284,8 @@ add_library(engine_ecs STATIC
 
 target_include_directories(engine_ecs PUBLIC
         ${CMAKE_SOURCE_DIR}/src
+        ${imgui_SOURCE_DIR}
+        ${imgui_SOURCE_DIR}/backends
 )
 
 target_link_libraries(engine_ecs PUBLIC
@@ -529,6 +536,9 @@ function(add_engine_test TEST_NAME)
 
     # Link additional libraries
     target_link_libraries(${TEST_NAME} PRIVATE ${ARG_LIBS})
+
+    # Always link GLM for tests (many tests use it directly or indirectly)
+    target_link_libraries(${TEST_NAME} PRIVATE glm::glm)
 
     # Apply compiler flags
     if(MSVC)
@@ -1115,6 +1125,7 @@ add_engine_test(test_vulkan_buffer
 # Test executable for texture loading
 add_engine_test(test_texture_loading
     SOURCES src/core/texture_data.cpp src/resources/image_loader.cpp
+    LIBS Vulkan::Vulkan
 )
 
 # Test executable for texture manager

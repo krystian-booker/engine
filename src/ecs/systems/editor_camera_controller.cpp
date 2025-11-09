@@ -7,6 +7,10 @@
 #include <algorithm>
 #include <cmath>
 
+#ifdef _DEBUG
+#include <imgui.h>
+#endif
+
 EditorCameraController::EditorCameraController(ECSCoordinator* ecs, Window* window)
     : m_ECS(ecs), m_Window(window) {
 
@@ -28,6 +32,14 @@ void EditorCameraController::HandleKeyboardInput(f32 deltaTime) {
     if (!m_ECS->HasComponent<Transform>(m_ControlledCamera)) {
         return;
     }
+
+#ifdef _DEBUG
+    // Don't process input if ImGui wants to capture keyboard (e.g., typing in console)
+    ImGuiIO& io = ImGui::GetIO();
+    if (io.WantCaptureKeyboard) {
+        return;
+    }
+#endif
 
     Transform& transform = m_ECS->GetComponent<Transform>(m_ControlledCamera);
 
@@ -74,6 +86,15 @@ void EditorCameraController::HandleKeyboardInput(f32 deltaTime) {
 
 void EditorCameraController::HandleMouseInput(f32 deltaTime) {
     (void)deltaTime;  // Unused for mouse look
+
+#ifdef _DEBUG
+    // Don't process input if ImGui wants to capture mouse (e.g., clicking on UI elements)
+    ImGuiIO& io = ImGui::GetIO();
+    if (io.WantCaptureMouse) {
+        m_Window->SetCursorMode(false);  // Unlock cursor
+        return;
+    }
+#endif
 
     Vec2 mousePos = Input::GetMousePosition();
 

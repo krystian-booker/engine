@@ -6,6 +6,14 @@
 struct GLFWwindow;
 class Window;
 
+#ifdef _DEBUG
+struct ImGuiContext;
+void ImGui_ImplGlfw_KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
+void ImGui_ImplGlfw_MouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
+void ImGui_ImplGlfw_CursorPosCallback(GLFWwindow* window, double x, double y);
+void ImGui_ImplGlfw_ScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
+#endif
+
 // Key codes (matching GLFW values for simplicity)
 enum class KeyCode {
     Space = 32,

@@ -193,10 +193,8 @@ int main() {
         // Get focused viewport ID from ImGui (0 = none focused)
         u32 focusedViewportID = 0;
 #ifdef _DEBUG
-        // In debug builds, we can get this from ImGuiLayer (accessed via renderer)
-        // For now, we'll need to expose this through renderer or pass it differently
-        // Simplified: assume scene viewport is focused by default for editor camera
-        focusedViewportID = sceneViewportID;  // TODO: Get actual focused viewport from ImGuiLayer
+        // Get the actual focused viewport from ImGuiLayer
+        focusedViewportID = renderer.GetImGuiLayer()->GetFocusedViewportID();
 #endif
 
         // Update editor camera controller (only when scene viewport is focused)
