@@ -614,8 +614,11 @@ void ImGuiLayer::RenderViewportWindow(Viewport* viewport, const char* title)
                 {
                     ImGui::Image(descriptorSet, viewportPanelSize);
 
-                    // Render gizmo on top of viewport
-                    RenderGizmo(viewport);
+                    // Render gizmo on top of viewport (Scene viewport only)
+                    if (viewport->GetType() == ViewportType::Scene)
+                    {
+                        RenderGizmo(viewport);
+                    }
                 }
                 else
                 {
@@ -938,6 +941,43 @@ void ImGuiLayer::RenderEntityTree(Entity entity)
         flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
     }
 
+    // Show rename input or tree node
+    if (m_RenamingEntity == entity)
+    {
+        // Show rename input field
+        ImGui::SetNextItemWidth(-1);
+        ImGui::SetKeyboardFocusHere();
+        if (ImGui::InputText("##rename", m_RenameBuffer, sizeof(m_RenameBuffer), ImGuiInputTextFlags_EnterReturnsTrue))
+        {
+            // Apply rename on Enter
+            if (m_RenameBuffer[0] != '\0')
+            {
+                std::string uniqueName = GenerateUniqueName(m_RenameBuffer);
+                if (m_ECS->HasComponent<Name>(entity))
+                {
+                    Name& name = m_ECS->GetMutableComponent<Name>(entity);
+                    name.SetName(uniqueName.c_str());
+                }
+                else
+                {
+                    m_ECS->AddComponent(entity, Name(uniqueName.c_str()));
+                }
+            }
+            m_RenamingEntity = Entity::Invalid;
+        }
+        // Cancel rename on Escape
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape))
+        {
+            m_RenamingEntity = Entity::Invalid;
+        }
+        // Cancel rename if focus lost
+        if (!ImGui::IsItemActive() && !ImGui::IsItemFocused())
+        {
+            m_RenamingEntity = Entity::Invalid;
+        }
+        return;  // Skip rest of rendering for this entity
+    }
+
     bool nodeOpen = ImGui::TreeNodeEx((void*)(intptr_t)entity.index, flags, "%s", label.c_str());
 
     // Handle selection on click
@@ -1004,6 +1044,25 @@ void ImGuiLayer::RenderEntityTree(Entity entity)
 
 void ImGuiLayer::RenderEntityContextMenu(Entity entity)
 {
+    if (ImGui::MenuItem("Rename", "F2"))
+    {
+        m_RenamingEntity = entity;
+        if (m_ECS->HasComponent<Name>(entity))
+        {
+            const Name& name = m_ECS->GetComponent<Name>(entity);
+#ifdef _MSC_VER
+            strncpy_s(m_RenameBuffer, sizeof(m_RenameBuffer), name.GetName(), _TRUNCATE);
+#else
+            strncpy(m_RenameBuffer, name.GetName(), sizeof(m_RenameBuffer) - 1);
+            m_RenameBuffer[sizeof(m_RenameBuffer) - 1] = '\0';
+#endif
+        }
+        else
+        {
+            m_RenameBuffer[0] = '\0';
+        }
+    }
+
     if (ImGui::MenuItem("Delete"))
     {
         // Defer deletion to avoid modifying ECS during iteration
@@ -1224,6 +1283,7 @@ void ImGuiLayer::FrameEntity(Entity entity)
     lookAtMatrix[2] = Vec4(-forward, 0.0f);  // Negative because camera looks down -Z
 
     cameraTransform.localRotation = glm::quat_cast(lookAtMatrix);
+    cameraTransform.isDirty = true;  // Mark as dirty to update world matrix
 }
 
 void ImGuiLayer::HandleKeyboardShortcuts()
@@ -1258,6 +1318,30 @@ void ImGuiLayer::HandleKeyboardShortcuts()
         {
             DeleteEntity(selected);
             m_EditorState->ClearSelection();
+        }
+    }
+
+    // Rename selected entity (F2 key)
+    if (Input::IsKeyPressed(KeyCode::F2))
+    {
+        Entity selected = m_EditorState->GetSelectedEntity();
+        if (selected.IsValid())
+        {
+            m_RenamingEntity = selected;
+            if (m_ECS->HasComponent<Name>(selected))
+            {
+                const Name& name = m_ECS->GetComponent<Name>(selected);
+#ifdef _MSC_VER
+                strncpy_s(m_RenameBuffer, sizeof(m_RenameBuffer), name.GetName(), _TRUNCATE);
+#else
+                strncpy(m_RenameBuffer, name.GetName(), sizeof(m_RenameBuffer) - 1);
+                m_RenameBuffer[sizeof(m_RenameBuffer) - 1] = '\0';
+#endif
+            }
+            else
+            {
+                m_RenameBuffer[0] = '\0';
+            }
         }
     }
 }
@@ -1387,7 +1471,12 @@ void ImGuiLayer::RenderGizmo(Viewport* viewport)
 
     // Build transform matrix from entity transform
     // ImGuizmo expects a 4x4 matrix in column-major order
-    Mat4 matrix = entityTransform.worldMatrix;
+    // Build from local transform components for entities without parents
+    // (for entities with parents, we'd need to use worldMatrix)
+    Mat4 translationMatrix = glm::translate(Mat4(1.0f), entityTransform.localPosition);
+    Mat4 rotationMatrix = glm::mat4_cast(entityTransform.localRotation);
+    Mat4 scaleMatrix = glm::scale(Mat4(1.0f), entityTransform.localScale);
+    Mat4 matrix = translationMatrix * rotationMatrix * scaleMatrix;
 
     // Manipulate transform
     bool isManipulating = ImGuizmo::Manipulate(

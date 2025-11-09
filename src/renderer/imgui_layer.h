@@ -112,6 +112,10 @@ private:
     // Deferred entity operations (to avoid modifying ECS during iteration)
     std::vector<Entity> m_EntitiesToDelete;
 
+    // Entity renaming state
+    Entity m_RenamingEntity = Entity::Invalid;
+    char m_RenameBuffer[64] = "";
+
     // Viewport texture descriptor management (separate from ImGui pool)
     VkDescriptorPool m_ViewportDescriptorPool = VK_NULL_HANDLE;
     VkDescriptorSetLayout m_ViewportDescriptorSetLayout = VK_NULL_HANDLE;
