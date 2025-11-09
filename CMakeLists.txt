@@ -329,6 +329,9 @@ add_library(engine_renderer STATIC
         src/renderer/vulkan_light_culling.cpp
         src/renderer/ltc_tables.cpp
         src/renderer/imgui_layer.cpp
+        src/editor/editor_state.cpp
+        src/editor/entity_inspector.cpp
+        src/editor/entity_picker.cpp
 )
 
 target_include_directories(engine_renderer PUBLIC
