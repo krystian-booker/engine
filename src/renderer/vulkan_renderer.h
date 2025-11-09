@@ -104,6 +104,10 @@ private:
     void CreateDefaultTexture();
     void DestroyDefaultTexture();
 
+    // IBL placeholder texture initialization (for scenes without IBL)
+    void CreateIBLPlaceholders();
+    void DestroyIBLPlaceholders();
+
     VulkanContext* m_Context = nullptr;
     Window* m_Window = nullptr;
     ECSCoordinator* m_ECS = nullptr;
@@ -141,6 +145,11 @@ private:
 
     // Default texture for bindless array (index 0)
     std::unique_ptr<VulkanTexture> m_DefaultTexture;
+
+    // IBL placeholder textures (for scenes without IBL)
+    std::unique_ptr<VulkanTexture> m_PlaceholderIrradianceMap;
+    std::unique_ptr<VulkanTexture> m_PlaceholderPrefilteredMap;
+    std::unique_ptr<VulkanTexture> m_PlaceholderBRDFLUT;
 
 #ifdef _DEBUG
     // ImGui layer for debug UI (only in debug builds)

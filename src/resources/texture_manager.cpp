@@ -69,6 +69,9 @@ void TextureManager::InitAsyncPipeline(VulkanContext* context, VulkanTransferQue
     m_StagingPool = stagingPool;
     m_Descriptors = descriptors;
     std::cout << "TextureManager async GPU upload pipeline initialized" << std::endl;
+
+    // Process any deferred texture uploads (textures created before GPU context was ready)
+    ProcessDeferredUploads();
 }
 
 void TextureManager::ShutdownAsyncPipeline() {
@@ -242,6 +245,14 @@ TextureHandle TextureManager::LoadFromMemory(
         }
     } else if (!m_VulkanContext || !m_Descriptors) {
         std::cout << "Deferring texture upload (Vulkan context not ready): " << debugName << std::endl;
+
+        // Track this texture for deferred upload
+        if (!m_DeferredMutex) {
+            m_DeferredMutex = Platform::CreateMutex();
+        }
+        Platform::Lock(m_DeferredMutex.get());
+        m_DeferredTextures.push_back(handle);
+        Platform::Unlock(m_DeferredMutex.get());
     }
 
     return handle;
@@ -992,6 +1003,9 @@ void TextureManager::Update() {
         m_FileWatcher.Update();
     }
 
+    // Process any deferred texture uploads (safety net)
+    ProcessDeferredUploads();
+
     // Upload any pending textures that haven't been uploaded yet (lazy upload)
     if (m_VulkanContext && m_Descriptors) {
         ForEachResource([this](TextureData& texture) {
@@ -1545,6 +1559,63 @@ void TextureManager::PerformReload(TextureHandle handle, const std::string& file
         if (errorData && errorData->gpuTexture) {
             texData->gpuTexture = errorData->gpuTexture;
         }
+    }
+}
+
+void TextureManager::ProcessDeferredUploads() {
+    if (!m_VulkanContext || !m_Descriptors) {
+        return;  // Context still not ready
+    }
+
+    if (!m_DeferredMutex) {
+        return;  // No deferred textures tracked
+    }
+
+    Platform::Lock(m_DeferredMutex.get());
+
+    if (m_DeferredTextures.empty()) {
+        Platform::Unlock(m_DeferredMutex.get());
+        return;
+    }
+
+    std::cout << "Processing " << m_DeferredTextures.size() << " deferred texture upload(s)..." << std::endl;
+
+    // Process all deferred textures
+    std::vector<TextureHandle> uploadedTextures;
+    uploadedTextures.reserve(m_DeferredTextures.size());
+
+    for (TextureHandle handle : m_DeferredTextures) {
+        TextureData* texture = Get(handle);
+        if (texture && !texture->gpuTexture && texture->pixels) {
+            std::cout << "  Uploading deferred texture: " << (texture->sourcePaths.empty() ? "unknown" : texture->sourcePaths[0]) << std::endl;
+
+            // Create VulkanTexture and upload
+            texture->gpuTexture = new VulkanTexture();
+            texture->gpuTexture->Create(m_VulkanContext, texture);
+
+            // Register with bindless descriptor array
+            u32 descriptorIndex = m_Descriptors->RegisterTexture(
+                texture->gpuTexture->GetImageView(),
+                texture->gpuTexture->GetSampler()
+            );
+
+            texture->gpuTexture->SetDescriptorIndex(descriptorIndex);
+            texture->gpuUploaded = true;
+
+            uploadedTextures.push_back(handle);
+
+            std::cout << "  Deferred texture uploaded and registered at bindless index " << descriptorIndex << std::endl;
+        }
+    }
+
+    // Clear the deferred textures list
+    m_DeferredTextures.clear();
+
+    Platform::Unlock(m_DeferredMutex.get());
+
+    // Invalidate materials that use these textures
+    if (!uploadedTextures.empty()) {
+        MaterialManager::Instance().InvalidateMaterialsUsingTextures(uploadedTextures);
     }
 }
 

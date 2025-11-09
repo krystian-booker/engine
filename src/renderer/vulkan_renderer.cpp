@@ -90,6 +90,9 @@ void VulkanRenderer::Init(VulkanContext* context, Window* window, ECSCoordinator
     // Create default texture for bindless array (MUST be done before any rendering)
     CreateDefaultTexture();
 
+    // Create IBL placeholder textures (for scenes without IBL)
+    CreateIBLPlaceholders();
+
     // Initialize Forward+ light culling system (MUST be done before InitSwapchainResources)
     m_LightCulling = std::make_unique<VulkanLightCulling>();
     LightCullingConfig lightCullingConfig{};
@@ -182,6 +185,7 @@ void VulkanRenderer::Shutdown() {
     }
 
     DestroyDefaultTexture();
+    DestroyIBLPlaceholders();
     DestroyMeshResources();
     DestroyFrameContexts();
     DestroySwapchainResources();
@@ -275,6 +279,32 @@ void VulkanRenderer::DrawFrame(ViewportManager* viewportManager) {
             m_ShadowRenderer->GetDirectionalRawDepthSampler()
         );
     }
+
+    // Bind IBL placeholder textures (fallback for scenes without IBL)
+    // NOTE: This MUST be outside the shadow conditional block to ensure IBL descriptors
+    // are always bound, even in scenes without lights.
+    std::cout << "[DEBUG] Binding IBL placeholder textures to descriptors (frame " << currentFrameIndex << "):" << std::endl;
+
+    std::cout << "  Binding irradiance map (binding 4): imageView=" << (void*)m_PlaceholderIrradianceMap->GetImageView()
+              << ", sampler=" << (void*)m_PlaceholderIrradianceMap->GetSampler() << std::endl;
+    m_Descriptors.BindIBLIrradiance(
+        m_PlaceholderIrradianceMap->GetImageView(),
+        m_PlaceholderIrradianceMap->GetSampler()
+    );
+
+    std::cout << "  Binding prefiltered map (binding 5): imageView=" << (void*)m_PlaceholderPrefilteredMap->GetImageView()
+              << ", sampler=" << (void*)m_PlaceholderPrefilteredMap->GetSampler() << std::endl;
+    m_Descriptors.BindIBLPrefiltered(
+        m_PlaceholderPrefilteredMap->GetImageView(),
+        m_PlaceholderPrefilteredMap->GetSampler()
+    );
+
+    std::cout << "  Binding BRDF LUT (binding 6): imageView=" << (void*)m_PlaceholderBRDFLUT->GetImageView()
+              << ", sampler=" << (void*)m_PlaceholderBRDFLUT->GetSampler() << std::endl;
+    m_Descriptors.BindIBLBRDF(
+        m_PlaceholderBRDFLUT->GetImageView(),
+        m_PlaceholderBRDFLUT->GetSampler()
+    );
 
     // ====================================================================================
     // FORWARD+ PIPELINE INTEGRATION
@@ -739,16 +769,31 @@ void VulkanRenderer::RenderScene(VkCommandBuffer commandBuffer, u32 frameIndex, 
         return;
     }
 
+    static u32 debugFrameCount = 0;
+    bool shouldLog = (debugFrameCount < 2);  // Log first 2 frames only
+
     const auto& renderList = m_RenderSystem->GetRenderData();
+    if (shouldLog) {
+        std::cout << "[DEBUG] RenderScene: Rendering " << renderList.size() << " objects (frame " << debugFrameCount << ")" << std::endl;
+    }
+
     for (const RenderData& renderData : renderList) {
         VulkanMesh* mesh = m_RenderSystem->GetVulkanMesh(renderData.meshHandle);
         if (!mesh || !mesh->IsValid()) {
             continue;
         }
 
+        if (shouldLog) {
+            std::cout << "  Drawing mesh with materialIndex=" << renderData.materialIndex << std::endl;
+        }
+
         PushModelMatrix(commandBuffer, renderData.modelMatrix, renderData.materialIndex, screenWidth, screenHeight);
         mesh->Bind(commandBuffer);
         mesh->Draw(commandBuffer);
+    }
+
+    if (shouldLog) {
+        debugFrameCount++;
     }
 }
 
@@ -1236,6 +1281,130 @@ void VulkanRenderer::DestroyDefaultTexture() {
         m_DefaultTexture->Destroy();
         m_DefaultTexture.reset();
     }
+}
+
+void VulkanRenderer::CreateIBLPlaceholders() {
+    std::cout << "Creating IBL placeholder textures..." << std::endl;
+
+    // Create 1x1 dark gray cubemap for irradiance map (subtle ambient lighting)
+    {
+        TextureData* textureData = new TextureData();
+        textureData->width = 1;
+        textureData->height = 1;
+        textureData->channels = 4;
+        textureData->mipLevels = 1;
+        textureData->arrayLayers = 6;  // Cubemap has 6 faces
+        textureData->usage = TextureUsage::Generic;
+        textureData->type = TextureType::Cubemap;
+
+        // Allocate separate pixel data for each face (required for proper cleanup)
+        for (u32 face = 0; face < 6; ++face) {
+            u8* facePixels = new u8[4];  // 1x1 RGBA
+            facePixels[0] = 30;  // R - dark gray for subtle ambient (0.12 intensity)
+            facePixels[1] = 30;  // G
+            facePixels[2] = 30;  // B
+            facePixels[3] = 255;  // A
+            textureData->layerPixels.push_back(facePixels);
+        }
+
+        // Pack layers into contiguous staging buffer (required by VulkanTexture)
+        if (!textureData->PackLayersIntoStagingBuffer()) {
+            std::cerr << "Failed to pack irradiance map layers" << std::endl;
+            delete textureData;
+            return;
+        }
+
+        // Create VulkanTexture
+        m_PlaceholderIrradianceMap = std::make_unique<VulkanTexture>();
+        m_PlaceholderIrradianceMap->Create(m_Context, textureData);
+
+        std::cout << "  Created placeholder irradiance map (1x1 dark gray cubemap for subtle ambient)" << std::endl;
+        std::cout << "    ImageView: " << (void*)m_PlaceholderIrradianceMap->GetImageView() << std::endl;
+        std::cout << "    Sampler: " << (void*)m_PlaceholderIrradianceMap->GetSampler() << std::endl;
+        delete textureData;
+    }
+
+    // Create 1x1 dark gray cubemap for prefiltered map (subtle reflections)
+    {
+        TextureData* textureData = new TextureData();
+        textureData->width = 1;
+        textureData->height = 1;
+        textureData->channels = 4;
+        textureData->mipLevels = 1;
+        textureData->arrayLayers = 6;  // Cubemap has 6 faces
+        textureData->usage = TextureUsage::Generic;
+        textureData->type = TextureType::Cubemap;
+
+        // Allocate separate pixel data for each face (required for proper cleanup)
+        for (u32 face = 0; face < 6; ++face) {
+            u8* facePixels = new u8[4];  // 1x1 RGBA
+            facePixels[0] = 30;  // R - dark gray for subtle reflections (0.12 intensity)
+            facePixels[1] = 30;  // G
+            facePixels[2] = 30;  // B
+            facePixels[3] = 255;  // A
+            textureData->layerPixels.push_back(facePixels);
+        }
+
+        // Pack layers into contiguous staging buffer (required by VulkanTexture)
+        if (!textureData->PackLayersIntoStagingBuffer()) {
+            std::cerr << "Failed to pack prefiltered map layers" << std::endl;
+            delete textureData;
+            return;
+        }
+
+        m_PlaceholderPrefilteredMap = std::make_unique<VulkanTexture>();
+        m_PlaceholderPrefilteredMap->Create(m_Context, textureData);
+
+        std::cout << "  Created placeholder prefiltered map (1x1 dark gray cubemap for subtle reflections)" << std::endl;
+        std::cout << "    ImageView: " << (void*)m_PlaceholderPrefilteredMap->GetImageView() << std::endl;
+        std::cout << "    Sampler: " << (void*)m_PlaceholderPrefilteredMap->GetSampler() << std::endl;
+        delete textureData;
+    }
+
+    // Create 1x1 neutral 2D texture for BRDF LUT (neutral Fresnel response)
+    {
+        TextureData* textureData = new TextureData();
+        textureData->width = 1;
+        textureData->height = 1;
+        textureData->channels = 4;
+        textureData->mipLevels = 1;
+        textureData->arrayLayers = 1;
+        textureData->usage = TextureUsage::Generic;
+        textureData->type = TextureType::Texture2D;
+
+        // Allocate pixel data (1x1 RGBA)
+        textureData->pixels = new u8[4];
+        textureData->pixels[0] = 128;  // R - neutral Fresnel scale (0.5)
+        textureData->pixels[1] = 0;    // G - no bias
+        textureData->pixels[2] = 0;    // B - unused
+        textureData->pixels[3] = 255;  // A
+
+        m_PlaceholderBRDFLUT = std::make_unique<VulkanTexture>();
+        m_PlaceholderBRDFLUT->Create(m_Context, textureData);
+
+        std::cout << "  Created placeholder BRDF LUT (1x1 neutral texture with Fresnel 0.5)" << std::endl;
+        std::cout << "    ImageView: " << (void*)m_PlaceholderBRDFLUT->GetImageView() << std::endl;
+        std::cout << "    Sampler: " << (void*)m_PlaceholderBRDFLUT->GetSampler() << std::endl;
+        delete textureData;
+    }
+
+    std::cout << "IBL placeholder textures created successfully" << std::endl;
+}
+
+void VulkanRenderer::DestroyIBLPlaceholders() {
+    if (m_PlaceholderIrradianceMap) {
+        m_PlaceholderIrradianceMap->Destroy();
+        m_PlaceholderIrradianceMap.reset();
+    }
+    if (m_PlaceholderPrefilteredMap) {
+        m_PlaceholderPrefilteredMap->Destroy();
+        m_PlaceholderPrefilteredMap.reset();
+    }
+    if (m_PlaceholderBRDFLUT) {
+        m_PlaceholderBRDFLUT->Destroy();
+        m_PlaceholderBRDFLUT.reset();
+    }
+    std::cout << "IBL placeholder textures destroyed" << std::endl;
 }
 
 void VulkanRenderer::UploadLightDataForwardPlus() {

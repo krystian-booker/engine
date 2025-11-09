@@ -178,6 +178,9 @@ public:
     // Enqueue a completed load job for GPU upload (called by worker threads)
     void EnqueuePendingUpload(TextureLoadJob* job);
 
+    // Process deferred texture uploads (textures created before GPU context was ready)
+    void ProcessDeferredUploads();
+
     // ========================================================================
     // Hot Reload API
     // ========================================================================
@@ -266,4 +269,10 @@ private:
     // Hot reload helpers
     void OnTextureFileModified(const std::string& filepath, FileAction action);
     void PerformReload(TextureHandle handle, const std::string& filepath);
+
+    // ========================================================================
+    // Deferred Upload State (textures created before GPU context was ready)
+    // ========================================================================
+    std::vector<TextureHandle> m_DeferredTextures;
+    Platform::MutexPtr m_DeferredMutex;
 };

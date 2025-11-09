@@ -703,6 +703,15 @@ MeshLoadResult MeshManager::ProcessMeshWithMaterial(
 MeshLoadResult MeshManager::LoadWithMaterial(const std::string& filepath) {
     std::cout << "Loading mesh with material: " << filepath << std::endl;
 
+    // IMPORTANT: Warn if TextureManager GPU context is not initialized yet
+    // This can cause textures to be deferred and materials to initially render incorrectly
+    TextureManager& texMgr = TextureManager::Instance();
+    if (!texMgr.GetPlaceholderTexture().IsValid()) {
+        std::cerr << "WARNING: LoadWithMaterial called before TextureManager GPU initialization!" << std::endl;
+        std::cerr << "         Textures will be deferred and may not display correctly until GPU upload." << std::endl;
+        std::cerr << "         Ensure VulkanRenderer::Init() is called BEFORE loading scenes with materials." << std::endl;
+    }
+
     MeshLoadResult result;
 
     // Check if this is a sub-mesh request (format: "path/to/file.obj#0")

@@ -431,3 +431,33 @@ void MaterialManager::InvalidateMaterialsUsingTexture(TextureHandle texHandle) {
                   << ", gen " << texHandle.generation << ")" << std::endl;
     }
 }
+
+void MaterialManager::InvalidateMaterialsUsingTextures(const std::vector<TextureHandle>& texHandles) {
+    if (texHandles.empty()) {
+        return;
+    }
+
+    u32 invalidatedCount = 0;
+
+    // Iterate through all active materials
+    ForEachResource([&](MaterialData& material) {
+        // Check if this material uses any of the textures
+        for (TextureHandle texHandle : texHandles) {
+            if (material.albedo == texHandle ||
+                material.normal == texHandle ||
+                material.metalRough == texHandle ||
+                material.ao == texHandle ||
+                material.emissive == texHandle) {
+
+                material.descriptorDirty = true;
+                invalidatedCount++;
+                break;  // Only count each material once
+            }
+        }
+    });
+
+    if (invalidatedCount > 0) {
+        std::cout << "MaterialManager: Invalidated " << invalidatedCount
+                  << " materials using " << texHandles.size() << " deferred texture(s)" << std::endl;
+    }
+}

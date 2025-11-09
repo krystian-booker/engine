@@ -60,6 +60,9 @@ public:
     // Invalidate all materials using a specific texture (for hot-reload)
     void InvalidateMaterialsUsingTexture(TextureHandle texHandle);
 
+    // Invalidate all materials using any of the given textures (for deferred texture uploads)
+    void InvalidateMaterialsUsingTextures(const std::vector<TextureHandle>& texHandles);
+
 protected:
     // Override ResourceManager::LoadResource to parse JSON
     std::unique_ptr<MaterialData> LoadResource(const std::string& filepath) override;
