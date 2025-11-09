@@ -47,9 +47,18 @@ void EntityInspector::RenderNameComponent(Entity entity) {
     char nameBuf[Name::MaxLength];
     if (hasName) {
         Name& name = m_ECS->GetMutableComponent<Name>(entity);
-        std::strncpy(nameBuf, name.GetName(), Name::MaxLength);
+#ifdef _MSC_VER
+        strncpy_s(nameBuf, Name::MaxLength, name.GetName(), _TRUNCATE);
+#else
+        std::strncpy(nameBuf, name.GetName(), Name::MaxLength - 1);
+        nameBuf[Name::MaxLength - 1] = '\0';
+#endif
     } else {
+#ifdef _MSC_VER
+        strcpy_s(nameBuf, Name::MaxLength, "Entity");
+#else
         std::strcpy(nameBuf, "Entity");
+#endif
     }
 
     ImGui::PushItemWidth(-1);
@@ -393,7 +402,7 @@ bool EntityInspector::BeginComponentHeader(const char* name, bool canRemove, boo
 
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_DefaultOpen |
                                ImGuiTreeNodeFlags_Framed |
-                               ImGuiTreeNodeFlags_AllowItemOverlap |
+                               ImGuiTreeNodeFlags_AllowOverlap |
                                ImGuiTreeNodeFlags_SpanAvailWidth;
 
     bool open = ImGui::CollapsingHeader(name, flags);
