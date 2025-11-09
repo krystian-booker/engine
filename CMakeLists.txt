@@ -669,7 +669,11 @@ add_executable(test_vulkan
         src/renderer/vulkan_shadow_renderer.cpp
         src/renderer/shadow_profiler.cpp
         src/renderer/imgui_layer.cpp
+        src/editor/editor_state.cpp
+        src/editor/entity_inspector.cpp
+        src/editor/entity_picker.cpp
         src/platform/window.cpp
+        src/platform/input.cpp
         src/core/time.cpp
         src/core/texture_data.cpp
         src/core/job_system.cpp
@@ -690,6 +694,7 @@ target_include_directories(test_vulkan PRIVATE
         ${portable_file_dialogs_SOURCE_DIR}
         ${imgui_SOURCE_DIR}
         ${imgui_SOURCE_DIR}/backends
+        ${CMAKE_SOURCE_DIR}/external/ImGuizmo
 )
 
 target_link_libraries(test_vulkan PRIVATE
@@ -716,6 +721,7 @@ target_sources(test_vulkan PRIVATE
         ${imgui_SOURCE_DIR}/imgui_widgets.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+        ${CMAKE_SOURCE_DIR}/external/ImGuizmo/ImGuizmo.cpp
 )
 
 # Suppress warnings for ImGui in test_vulkan
