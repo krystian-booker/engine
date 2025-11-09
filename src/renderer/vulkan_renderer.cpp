@@ -283,24 +283,16 @@ void VulkanRenderer::DrawFrame(ViewportManager* viewportManager) {
     // Bind IBL placeholder textures (fallback for scenes without IBL)
     // NOTE: This MUST be outside the shadow conditional block to ensure IBL descriptors
     // are always bound, even in scenes without lights.
-    std::cout << "[DEBUG] Binding IBL placeholder textures to descriptors (frame " << currentFrameIndex << "):" << std::endl;
-
-    std::cout << "  Binding irradiance map (binding 4): imageView=" << (void*)m_PlaceholderIrradianceMap->GetImageView()
-              << ", sampler=" << (void*)m_PlaceholderIrradianceMap->GetSampler() << std::endl;
     m_Descriptors.BindIBLIrradiance(
         m_PlaceholderIrradianceMap->GetImageView(),
         m_PlaceholderIrradianceMap->GetSampler()
     );
 
-    std::cout << "  Binding prefiltered map (binding 5): imageView=" << (void*)m_PlaceholderPrefilteredMap->GetImageView()
-              << ", sampler=" << (void*)m_PlaceholderPrefilteredMap->GetSampler() << std::endl;
     m_Descriptors.BindIBLPrefiltered(
         m_PlaceholderPrefilteredMap->GetImageView(),
         m_PlaceholderPrefilteredMap->GetSampler()
     );
 
-    std::cout << "  Binding BRDF LUT (binding 6): imageView=" << (void*)m_PlaceholderBRDFLUT->GetImageView()
-              << ", sampler=" << (void*)m_PlaceholderBRDFLUT->GetSampler() << std::endl;
     m_Descriptors.BindIBLBRDF(
         m_PlaceholderBRDFLUT->GetImageView(),
         m_PlaceholderBRDFLUT->GetSampler()
@@ -769,13 +761,7 @@ void VulkanRenderer::RenderScene(VkCommandBuffer commandBuffer, u32 frameIndex, 
         return;
     }
 
-    static u32 debugFrameCount = 0;
-    bool shouldLog = (debugFrameCount < 2);  // Log first 2 frames only
-
     const auto& renderList = m_RenderSystem->GetRenderData();
-    if (shouldLog) {
-        std::cout << "[DEBUG] RenderScene: Rendering " << renderList.size() << " objects (frame " << debugFrameCount << ")" << std::endl;
-    }
 
     for (const RenderData& renderData : renderList) {
         VulkanMesh* mesh = m_RenderSystem->GetVulkanMesh(renderData.meshHandle);
@@ -783,17 +769,9 @@ void VulkanRenderer::RenderScene(VkCommandBuffer commandBuffer, u32 frameIndex, 
             continue;
         }
 
-        if (shouldLog) {
-            std::cout << "  Drawing mesh with materialIndex=" << renderData.materialIndex << std::endl;
-        }
-
         PushModelMatrix(commandBuffer, renderData.modelMatrix, renderData.materialIndex, screenWidth, screenHeight);
         mesh->Bind(commandBuffer);
         mesh->Draw(commandBuffer);
-    }
-
-    if (shouldLog) {
-        debugFrameCount++;
     }
 }
 

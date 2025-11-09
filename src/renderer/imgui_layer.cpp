@@ -946,6 +946,12 @@ void ImGuiLayer::RenderEntityTree(Entity entity)
         m_EditorState->SetSelectedEntity(entity);
     }
 
+    // Handle double-click to frame entity
+    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+    {
+        FrameEntity(entity);
+    }
+
     // Context menu
     if (ImGui::BeginPopupContextItem())
     {
@@ -1041,11 +1047,63 @@ void ImGuiLayer::RenderEntityContextMenu(Entity entity)
     }
 }
 
+std::string ImGuiLayer::GenerateUniqueName(const char* baseName)
+{
+    // Get all entities with Name component
+    const auto& namedEntities = m_ECS->GetAllEntitiesWithComponent<Name>();
+
+    // Check if base name is available
+    bool nameExists = false;
+    for (Entity e : namedEntities)
+    {
+        const Name& n = m_ECS->GetComponent<Name>(e);
+        if (strcmp(n.GetName(), baseName) == 0)
+        {
+            nameExists = true;
+            break;
+        }
+    }
+
+    if (!nameExists)
+    {
+        return std::string(baseName);
+    }
+
+    // Find next available number
+    int counter = 1;
+    while (true)
+    {
+        std::string candidateName = std::string(baseName) + " " + std::to_string(counter);
+        bool found = false;
+
+        for (Entity e : namedEntities)
+        {
+            const Name& n = m_ECS->GetComponent<Name>(e);
+            if (candidateName == n.GetName())
+            {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found)
+        {
+            return candidateName;
+        }
+
+        counter++;
+    }
+}
+
 void ImGuiLayer::CreateEntity(const char* name)
 {
     Entity entity = m_ECS->CreateEntity();
     m_ECS->AddComponent(entity, Transform{});
-    m_ECS->AddComponent(entity, Name(name));
+
+    // Generate unique name
+    std::string uniqueName = GenerateUniqueName(name);
+    m_ECS->AddComponent(entity, Name(uniqueName.c_str()));
+
     m_EditorState->SetSelectedEntity(entity);
 }
 
@@ -1080,16 +1138,18 @@ void ImGuiLayer::DuplicateEntity(Entity source)
     sourceTransform.localPosition.x += 1.0f;  // Offset slightly
     m_ECS->AddComponent(duplicate, sourceTransform);
 
-    // Copy Name (with " Copy" suffix)
+    // Copy Name (with unique suffix)
     if (m_ECS->HasComponent<Name>(source))
     {
         Name sourceName = m_ECS->GetComponent<Name>(source);
-        std::string newName = std::string(sourceName.GetName()) + " Copy";
-        m_ECS->AddComponent(duplicate, Name(newName.c_str()));
+        std::string baseName = std::string(sourceName.GetName()) + " Copy";
+        std::string uniqueName = GenerateUniqueName(baseName.c_str());
+        m_ECS->AddComponent(duplicate, Name(uniqueName.c_str()));
     }
     else
     {
-        m_ECS->AddComponent(duplicate, Name("Entity Copy"));
+        std::string uniqueName = GenerateUniqueName("Entity Copy");
+        m_ECS->AddComponent(duplicate, Name(uniqueName.c_str()));
     }
 
     // Copy other components
@@ -1115,17 +1175,64 @@ void ImGuiLayer::DuplicateEntity(Entity source)
     m_EditorState->SetSelectedEntity(duplicate);
 }
 
+void ImGuiLayer::FrameEntity(Entity entity)
+{
+    if (!entity.IsValid() || !m_ECS->HasComponent<Transform>(entity))
+    {
+        return;
+    }
+
+    // Find the editor camera
+    Entity cameraEntity = Entity::Invalid;
+    const auto& cameras = m_ECS->GetAllEntitiesWithComponent<Camera>();
+    for (Entity e : cameras)
+    {
+        const Camera& cam = m_ECS->GetComponent<Camera>(e);
+        if (cam.isEditorCamera)
+        {
+            cameraEntity = e;
+            break;
+        }
+    }
+
+    if (!cameraEntity.IsValid() || !m_ECS->HasComponent<Transform>(cameraEntity))
+    {
+        return;
+    }
+
+    // Get entity position
+    const Transform& entityTransform = m_ECS->GetComponent<Transform>(entity);
+    Vec3 targetPosition = entityTransform.localPosition;
+
+    // Calculate a good camera position (offset back and up)
+    Vec3 offset = Vec3(0.0f, 2.0f, 5.0f);  // Back 5 units, up 2 units
+    Vec3 cameraPosition = targetPosition + offset;
+
+    // Update camera transform
+    Transform& cameraTransform = m_ECS->GetMutableComponent<Transform>(cameraEntity);
+    cameraTransform.localPosition = cameraPosition;
+
+    // Calculate rotation to look at the entity
+    Vec3 forward = Normalize(targetPosition - cameraPosition);
+    Vec3 right = Normalize(Cross(forward, Vec3(0.0f, 1.0f, 0.0f)));
+    Vec3 up = Cross(right, forward);
+
+    // Create rotation matrix and convert to quaternion
+    Mat4 lookAtMatrix = Mat4(1.0f);
+    lookAtMatrix[0] = Vec4(right, 0.0f);
+    lookAtMatrix[1] = Vec4(up, 0.0f);
+    lookAtMatrix[2] = Vec4(-forward, 0.0f);  // Negative because camera looks down -Z
+
+    cameraTransform.localRotation = glm::quat_cast(lookAtMatrix);
+}
+
 void ImGuiLayer::HandleKeyboardShortcuts()
 {
-    // Don't handle shortcuts if ImGui is capturing keyboard
+    // Don't handle shortcuts if ImGui is capturing keyboard or wants text input
     ImGuiIO& io = ImGui::GetIO();
-    if (io.WantCaptureKeyboard && !io.WantTextInput)
+    if (io.WantCaptureKeyboard || io.WantTextInput)
     {
-        // Allow shortcuts even when keyboard is captured, unless typing in a text field
-    }
-    else if (io.WantTextInput)
-    {
-        // Don't process shortcuts when typing
+        // Don't process shortcuts when ImGui is using the keyboard
         return;
     }
 

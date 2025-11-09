@@ -69,6 +69,8 @@ private:
     void CreateEntity(const char* name = "Entity");
     void DeleteEntity(Entity entity);
     void DuplicateEntity(Entity entity);
+    void FrameEntity(Entity entity);
+    std::string GenerateUniqueName(const char* baseName);
 
     // Input handling
     void HandleKeyboardShortcuts();
