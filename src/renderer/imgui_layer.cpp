@@ -4,6 +4,7 @@
 
 #include "vulkan_context.h"
 #include "platform/window.h"
+#include "platform/input.h"
 #include "core/scene_manager.h"
 #include "core/file_dialog.h"
 #include "core/engine_settings.h"
@@ -14,10 +15,16 @@
 #include "ecs/components/camera.h"
 #include "ecs/components/renderable.h"
 #include "ecs/components/rotator.h"
+#include "ecs/components/light.h"
+#include "ecs/components/name.h"
+#include "editor/editor_state.h"
+#include "editor/entity_inspector.h"
+#include "editor/entity_picker.h"
 #include <imgui.h>
 #include <imgui_internal.h>  // For DockBuilder API
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
+#include "../external/ImGuizmo/ImGuizmo.h"
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
 #include <stdexcept>
@@ -109,10 +116,25 @@ void ImGuiLayer::Init(VulkanContext* context, Window* window, VkRenderPass rende
 
     // Create viewport descriptor resources (separate from ImGui pool)
     CreateViewportDescriptorResources();
+
+    // Initialize editor systems
+    m_EditorState = new EditorState();
+    m_EntityInspector = new EntityInspector(ecs);
+    m_EntityPicker = new EntityPicker(ecs);
 }
 
 void ImGuiLayer::Shutdown()
 {
+    // Clean up editor systems
+    delete m_EntityPicker;
+    m_EntityPicker = nullptr;
+
+    delete m_EntityInspector;
+    m_EntityInspector = nullptr;
+
+    delete m_EditorState;
+    m_EditorState = nullptr;
+
     // Destroy viewport descriptor resources first
     DestroyViewportDescriptorResources();
 
@@ -133,6 +155,9 @@ void ImGuiLayer::BeginFrame()
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
+
+    // Handle keyboard shortcuts
+    HandleKeyboardShortcuts();
 }
 
 void ImGuiLayer::SetupFrameLayout(ViewportManager* viewportManager)
@@ -421,19 +446,64 @@ void ImGuiLayer::RenderSceneHierarchyWindow()
         return;
     }
 
-    if (!m_ECS)
+    if (!m_ECS || !m_EditorState)
     {
         ImGui::Text("No ECS coordinator available");
         ImGui::End();
         return;
     }
 
+    // Toolbar for creating entities
+    if (ImGui::Button("+ Entity"))
+    {
+        CreateEntity("Entity");
+    }
+
+    ImGui::SameLine();
+    if (ImGui::BeginMenu("+ Preset"))
+    {
+        if (ImGui::MenuItem("Cube"))
+        {
+            CreateEntity("Cube");
+            // TODO: Add cube mesh
+        }
+        if (ImGui::MenuItem("Point Light"))
+        {
+            Entity light = m_ECS->CreateEntity();
+            m_ECS->AddComponent(light, Transform{});
+            m_ECS->AddComponent(light, Light{.type = LightType::Point});
+            m_ECS->AddComponent(light, Name("Point Light"));
+            m_EditorState->SetSelectedEntity(light);
+        }
+        if (ImGui::MenuItem("Directional Light"))
+        {
+            Entity light = m_ECS->CreateEntity();
+            m_ECS->AddComponent(light, Transform{});
+            m_ECS->AddComponent(light, Light{.type = LightType::Directional});
+            m_ECS->AddComponent(light, Name("Directional Light"));
+            m_EditorState->SetSelectedEntity(light);
+        }
+        if (ImGui::MenuItem("Camera"))
+        {
+            Entity camera = m_ECS->CreateEntity();
+            m_ECS->AddComponent(camera, Transform{});
+            m_ECS->AddComponent(camera, Camera{});
+            m_ECS->AddComponent(camera, Name("Camera"));
+            m_EditorState->SetSelectedEntity(camera);
+        }
+
+        ImGui::EndMenu();
+    }
+
+    ImGui::Separator();
+
     // Get all entities with Transform component
     auto transforms = m_ECS->GetComponentRegistry()->GetComponentArray<Transform>();
 
     if (transforms->Size() == 0)
     {
-        ImGui::Text("(Empty scene)");
+        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "(Empty scene)");
+        ImGui::Text("Click '+ Entity' to create one");
         ImGui::End();
         return;
     }
@@ -450,83 +520,16 @@ void ImGuiLayer::RenderSceneHierarchyWindow()
             continue;
         }
 
-        // Recursive function to display entity tree
-        std::function<void(Entity)> displayEntityTree = [&](Entity e) {
-            // Build entity label
-            std::string label = "Entity " + std::to_string(e.index) + ":" + std::to_string(e.generation);
-
-            // Check if entity has children
-            const auto& children = m_ECS->GetChildren(e);
-            bool hasChildren = !children.empty();
-
-            ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick;
-            if (!hasChildren)
-            {
-                flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-            }
-
-            bool nodeOpen = ImGui::TreeNodeEx(label.c_str(), flags);
-
-            // Display components inline
-            ImGui::SameLine();
-            ImGui::TextDisabled("[");
-            bool firstComponent = true;
-
-            if (m_ECS->HasComponent<Transform>(e))
-            {
-                if (!firstComponent) {
-                    ImGui::SameLine();
-                    ImGui::TextDisabled(",");
-                }
-                ImGui::SameLine();
-                ImGui::TextDisabled("T");
-                firstComponent = false;
-            }
-            if (m_ECS->HasComponent<Camera>(e))
-            {
-                if (!firstComponent) {
-                    ImGui::SameLine();
-                    ImGui::TextDisabled(",");
-                }
-                ImGui::SameLine();
-                ImGui::TextDisabled("C");
-                firstComponent = false;
-            }
-            if (m_ECS->HasComponent<Renderable>(e))
-            {
-                if (!firstComponent) {
-                    ImGui::SameLine();
-                    ImGui::TextDisabled(",");
-                }
-                ImGui::SameLine();
-                ImGui::TextDisabled("R");
-                firstComponent = false;
-            }
-            if (m_ECS->HasComponent<Rotator>(e))
-            {
-                if (!firstComponent) {
-                    ImGui::SameLine();
-                    ImGui::TextDisabled(",");
-                }
-                ImGui::SameLine();
-                ImGui::TextDisabled("Rot");
-                firstComponent = false;
-            }
-
-            ImGui::SameLine(); ImGui::TextDisabled("]");
-
-            if (nodeOpen && hasChildren)
-            {
-                for (Entity child : children)
-                {
-                    displayEntityTree(child);
-                }
-                ImGui::TreePop();
-            }
-        };
-
-        displayEntityTree(entity);
+        // Render entity tree
+        RenderEntityTree(entity);
     }
+
+    // Handle deferred entity deletions
+    for (Entity entity : m_EntitiesToDelete)
+    {
+        DeleteEntity(entity);
+    }
+    m_EntitiesToDelete.clear();
 
     ImGui::End();
 }
@@ -567,7 +570,14 @@ void ImGuiLayer::RenderViewportWindow(Viewport* viewport, const char* title)
         if (ImGui::IsWindowFocused())
         {
             m_FocusedViewportID = viewport->GetID();
+            if (m_EditorState)
+            {
+                m_EditorState->SetFocusedViewportID(viewport->GetID());
+            }
         }
+
+        // Handle viewport input (entity picking)
+        HandleViewportInput(viewport);
 
         // Get available content region
         ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
@@ -603,6 +613,9 @@ void ImGuiLayer::RenderViewportWindow(Viewport* viewport, const char* title)
                 if (descriptorSet != VK_NULL_HANDLE)
                 {
                     ImGui::Image(descriptorSet, viewportPanelSize);
+
+                    // Render gizmo on top of viewport
+                    RenderGizmo(viewport);
                 }
                 else
                 {
@@ -838,20 +851,16 @@ void ImGuiLayer::RenderInspectorWindow()
         return;
     }
 
-    if (!m_ECS)
+    if (!m_ECS || !m_EntityInspector || !m_EditorState)
     {
         ImGui::Text("No ECS coordinator available");
         ImGui::End();
         return;
     }
 
-    // TODO: Get selected entity from scene hierarchy
-    // For now, show a placeholder
-    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Select an entity to inspect");
-    ImGui::Separator();
-
-    ImGui::Text("Component Properties");
-    ImGui::Text("(Select an entity from Scene Hierarchy)");
+    // Render inspector for selected entity
+    Entity selected = m_EditorState->GetSelectedEntity();
+    m_EntityInspector->Render(selected);
 
     ImGui::End();
 }
@@ -895,6 +904,428 @@ void ImGuiLayer::RenderConsoleWindow()
     ImGui::EndChild();
 
     ImGui::End();
+}
+
+void ImGuiLayer::RenderEntityTree(Entity entity)
+{
+    // Build entity label - use Name component if available
+    std::string label;
+    if (m_ECS->HasComponent<Name>(entity))
+    {
+        const Name& name = m_ECS->GetComponent<Name>(entity);
+        label = std::string(name.GetName()) + " (" + std::to_string(entity.index) + ":" + std::to_string(entity.generation) + ")";
+    }
+    else
+    {
+        label = "Entity " + std::to_string(entity.index) + ":" + std::to_string(entity.generation);
+    }
+
+    // Check if entity has children
+    const auto& children = m_ECS->GetChildren(entity);
+    bool hasChildren = !children.empty();
+
+    // Build tree node flags
+    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick | ImGuiTreeNodeFlags_SpanAvailWidth;
+
+    // Highlight selected entity
+    if (m_EditorState->GetSelectedEntity() == entity)
+    {
+        flags |= ImGuiTreeNodeFlags_Selected;
+    }
+
+    if (!hasChildren)
+    {
+        flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+    }
+
+    bool nodeOpen = ImGui::TreeNodeEx((void*)(intptr_t)entity.index, flags, "%s", label.c_str());
+
+    // Handle selection on click
+    if (ImGui::IsItemClicked())
+    {
+        m_EditorState->SetSelectedEntity(entity);
+    }
+
+    // Context menu
+    if (ImGui::BeginPopupContextItem())
+    {
+        RenderEntityContextMenu(entity);
+        ImGui::EndPopup();
+    }
+
+    // Display components inline
+    ImGui::SameLine();
+    ImGui::TextDisabled("[");
+    bool firstComponent = true;
+
+    if (m_ECS->HasComponent<Camera>(entity))
+    {
+        if (!firstComponent) { ImGui::SameLine(); ImGui::TextDisabled(","); }
+        ImGui::SameLine(); ImGui::TextDisabled("C");
+        firstComponent = false;
+    }
+    if (m_ECS->HasComponent<Light>(entity))
+    {
+        if (!firstComponent) { ImGui::SameLine(); ImGui::TextDisabled(","); }
+        ImGui::SameLine(); ImGui::TextDisabled("L");
+        firstComponent = false;
+    }
+    if (m_ECS->HasComponent<Renderable>(entity))
+    {
+        if (!firstComponent) { ImGui::SameLine(); ImGui::TextDisabled(","); }
+        ImGui::SameLine(); ImGui::TextDisabled("R");
+        firstComponent = false;
+    }
+    if (m_ECS->HasComponent<Rotator>(entity))
+    {
+        if (!firstComponent) { ImGui::SameLine(); ImGui::TextDisabled(","); }
+        ImGui::SameLine(); ImGui::TextDisabled("Rot");
+        firstComponent = false;
+    }
+
+    ImGui::SameLine(); ImGui::TextDisabled("]");
+
+    // Render children if node is open
+    if (nodeOpen && hasChildren)
+    {
+        for (Entity child : children)
+        {
+            RenderEntityTree(child);
+        }
+        ImGui::TreePop();
+    }
+}
+
+void ImGuiLayer::RenderEntityContextMenu(Entity entity)
+{
+    if (ImGui::MenuItem("Delete"))
+    {
+        // Defer deletion to avoid modifying ECS during iteration
+        m_EntitiesToDelete.push_back(entity);
+
+        // Clear selection if deleting selected entity
+        if (m_EditorState->GetSelectedEntity() == entity)
+        {
+            m_EditorState->ClearSelection();
+        }
+    }
+
+    ImGui::Separator();
+
+    if (ImGui::BeginMenu("Add Component"))
+    {
+        if (!m_ECS->HasComponent<Light>(entity) && ImGui::MenuItem("Light"))
+        {
+            m_ECS->AddComponent(entity, Light{});
+        }
+        if (!m_ECS->HasComponent<Camera>(entity) && ImGui::MenuItem("Camera"))
+        {
+            m_ECS->AddComponent(entity, Camera{});
+        }
+        if (!m_ECS->HasComponent<Renderable>(entity) && ImGui::MenuItem("Renderable"))
+        {
+            m_ECS->AddComponent(entity, Renderable{});
+        }
+        if (!m_ECS->HasComponent<Rotator>(entity) && ImGui::MenuItem("Rotator"))
+        {
+            m_ECS->AddComponent(entity, Rotator{});
+        }
+        ImGui::EndMenu();
+    }
+
+    ImGui::Separator();
+
+    if (ImGui::MenuItem("Duplicate"))
+    {
+        DuplicateEntity(entity);
+    }
+}
+
+void ImGuiLayer::CreateEntity(const char* name)
+{
+    Entity entity = m_ECS->CreateEntity();
+    m_ECS->AddComponent(entity, Transform{});
+    m_ECS->AddComponent(entity, Name(name));
+    m_EditorState->SetSelectedEntity(entity);
+}
+
+void ImGuiLayer::DeleteEntity(Entity entity)
+{
+    if (!entity.IsValid())
+    {
+        return;
+    }
+
+    // Recursively delete children first
+    const auto& children = m_ECS->GetChildren(entity);
+    for (Entity child : children)
+    {
+        DeleteEntity(child);
+    }
+
+    m_ECS->DestroyEntity(entity);
+}
+
+void ImGuiLayer::DuplicateEntity(Entity source)
+{
+    if (!source.IsValid() || !m_ECS->HasComponent<Transform>(source))
+    {
+        return;
+    }
+
+    Entity duplicate = m_ECS->CreateEntity();
+
+    // Copy Transform
+    Transform sourceTransform = m_ECS->GetComponent<Transform>(source);
+    sourceTransform.localPosition.x += 1.0f;  // Offset slightly
+    m_ECS->AddComponent(duplicate, sourceTransform);
+
+    // Copy Name (with " Copy" suffix)
+    if (m_ECS->HasComponent<Name>(source))
+    {
+        Name sourceName = m_ECS->GetComponent<Name>(source);
+        std::string newName = std::string(sourceName.GetName()) + " Copy";
+        m_ECS->AddComponent(duplicate, Name(newName.c_str()));
+    }
+    else
+    {
+        m_ECS->AddComponent(duplicate, Name("Entity Copy"));
+    }
+
+    // Copy other components
+    if (m_ECS->HasComponent<Renderable>(source))
+    {
+        m_ECS->AddComponent(duplicate, m_ECS->GetComponent<Renderable>(source));
+    }
+    if (m_ECS->HasComponent<Light>(source))
+    {
+        m_ECS->AddComponent(duplicate, m_ECS->GetComponent<Light>(source));
+    }
+    if (m_ECS->HasComponent<Camera>(source))
+    {
+        Camera cam = m_ECS->GetComponent<Camera>(source);
+        cam.isEditorCamera = false;  // Don't duplicate as editor camera
+        m_ECS->AddComponent(duplicate, cam);
+    }
+    if (m_ECS->HasComponent<Rotator>(source))
+    {
+        m_ECS->AddComponent(duplicate, m_ECS->GetComponent<Rotator>(source));
+    }
+
+    m_EditorState->SetSelectedEntity(duplicate);
+}
+
+void ImGuiLayer::HandleKeyboardShortcuts()
+{
+    // Don't handle shortcuts if ImGui is capturing keyboard
+    ImGuiIO& io = ImGui::GetIO();
+    if (io.WantCaptureKeyboard && !io.WantTextInput)
+    {
+        // Allow shortcuts even when keyboard is captured, unless typing in a text field
+    }
+    else if (io.WantTextInput)
+    {
+        // Don't process shortcuts when typing
+        return;
+    }
+
+    // Gizmo mode shortcuts (W/E/R like Unity)
+    if (Input::IsKeyPressed(KeyCode::W))
+    {
+        m_EditorState->SetGizmoMode(EditorState::GizmoMode::Translate);
+    }
+    else if (Input::IsKeyPressed(KeyCode::E))
+    {
+        m_EditorState->SetGizmoMode(EditorState::GizmoMode::Rotate);
+    }
+    else if (Input::IsKeyPressed(KeyCode::R))
+    {
+        m_EditorState->SetGizmoMode(EditorState::GizmoMode::Scale);
+    }
+
+    // Delete selected entity
+    if (Input::IsKeyPressed(KeyCode::Delete) || Input::IsKeyPressed(KeyCode::Backspace))
+    {
+        Entity selected = m_EditorState->GetSelectedEntity();
+        if (selected.IsValid())
+        {
+            DeleteEntity(selected);
+            m_EditorState->ClearSelection();
+        }
+    }
+}
+
+void ImGuiLayer::HandleViewportInput(Viewport* viewport)
+{
+    if (!viewport || !m_EntityPicker || !m_EditorState)
+    {
+        return;
+    }
+
+    // Only handle input if viewport window is hovered (not just focused)
+    if (!ImGui::IsWindowHovered())
+    {
+        return;
+    }
+
+    // Handle mouse click for entity selection
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !ImGui::IsAnyItemActive())
+    {
+        // Get mouse position relative to viewport
+        ImVec2 mousePos = ImGui::GetMousePos();
+        ImVec2 windowPos = ImGui::GetWindowPos();
+        ImVec2 contentMin = ImGui::GetWindowContentRegionMin();
+        ImVec2 contentMax = ImGui::GetWindowContentRegionMax();
+
+        Vec2 viewportPos(
+            mousePos.x - windowPos.x - contentMin.x,
+            mousePos.y - windowPos.y - contentMin.y
+        );
+
+        Vec2 viewportSize(
+            contentMax.x - contentMin.x,
+            contentMax.y - contentMin.y
+        );
+
+        // Make sure click is within viewport bounds
+        if (viewportPos.x >= 0 && viewportPos.y >= 0 &&
+            viewportPos.x < viewportSize.x && viewportPos.y < viewportSize.y)
+        {
+            // Get viewport camera
+            Entity cameraEntity = viewport->GetCamera();
+            if (cameraEntity.IsValid() && m_ECS->HasComponent<Camera>(cameraEntity))
+            {
+                Camera& camera = m_ECS->GetComponent<Camera>(cameraEntity);
+                Transform& cameraTransform = m_ECS->GetComponent<Transform>(cameraEntity);
+
+                // Pick entity
+                Entity picked = m_EntityPicker->PickEntity(
+                    viewportPos, viewportSize,
+                    camera.viewMatrix, camera.projectionMatrix
+                );
+
+                if (picked.IsValid())
+                {
+                    m_EditorState->SetSelectedEntity(picked);
+                }
+                else
+                {
+                    // Clicked on empty space - deselect
+                    m_EditorState->ClearSelection();
+                }
+            }
+        }
+    }
+}
+
+void ImGuiLayer::RenderGizmo(Viewport* viewport)
+{
+    if (!viewport || !m_EditorState || !m_ECS)
+    {
+        return;
+    }
+
+    // Only render gizmo if an entity is selected
+    Entity selected = m_EditorState->GetSelectedEntity();
+    if (!selected.IsValid() || !m_ECS->HasComponent<Transform>(selected))
+    {
+        return;
+    }
+
+    // Get viewport camera
+    Entity cameraEntity = viewport->GetCamera();
+    if (!cameraEntity.IsValid() || !m_ECS->HasComponent<Camera>(cameraEntity))
+    {
+        return;
+    }
+
+    Camera& camera = m_ECS->GetComponent<Camera>(cameraEntity);
+    Transform& cameraTransform = m_ECS->GetComponent<Transform>(cameraEntity);
+    Transform& entityTransform = m_ECS->GetMutableComponent<Transform>(selected);
+
+    // Setup ImGuizmo
+    ImGuizmo::SetOrthographic(camera.projection == CameraProjection::Orthographic);
+    ImGuizmo::SetDrawlist();
+
+    // Set viewport rect (where gizmo should render)
+    ImVec2 windowPos = ImGui::GetWindowPos();
+    ImVec2 windowSize = ImGui::GetWindowSize();
+    ImVec2 contentMin = ImGui::GetWindowContentRegionMin();
+    ImVec2 contentMax = ImGui::GetWindowContentRegionMax();
+
+    ImGuizmo::SetRect(
+        windowPos.x + contentMin.x,
+        windowPos.y + contentMin.y,
+        contentMax.x - contentMin.x,
+        contentMax.y - contentMin.y
+    );
+
+    // Convert gizmo mode
+    ImGuizmo::OPERATION operation = ImGuizmo::TRANSLATE;
+    switch (m_EditorState->GetGizmoMode())
+    {
+        case EditorState::GizmoMode::Translate:
+            operation = ImGuizmo::TRANSLATE;
+            break;
+        case EditorState::GizmoMode::Rotate:
+            operation = ImGuizmo::ROTATE;
+            break;
+        case EditorState::GizmoMode::Scale:
+            operation = ImGuizmo::SCALE;
+            break;
+    }
+
+    // Gizmo space
+    ImGuizmo::MODE mode = (m_EditorState->GetGizmoSpace() == EditorState::GizmoSpace::World)
+        ? ImGuizmo::WORLD
+        : ImGuizmo::LOCAL;
+
+    // Build transform matrix from entity transform
+    // ImGuizmo expects a 4x4 matrix in column-major order
+    Mat4 matrix = entityTransform.worldMatrix;
+
+    // Manipulate transform
+    bool isManipulating = ImGuizmo::Manipulate(
+        &camera.viewMatrix[0][0],
+        &camera.projectionMatrix[0][0],
+        operation,
+        mode,
+        &matrix[0][0],
+        nullptr,  // deltaMatrix
+        nullptr   // snap
+    );
+
+    // Update entity transform if gizmo was manipulated
+    if (isManipulating)
+    {
+        m_EditorState->SetManipulating(true);
+
+        // Decompose matrix to get position, rotation, scale
+        Vec3 position, rotation, scale;
+        ImGuizmo::DecomposeMatrixToComponents(
+            &matrix[0][0],
+            &position.x,
+            &rotation.x,
+            &scale.x
+        );
+
+        // Apply to local transform
+        // Note: If entity has a parent, we'd need to convert world to local space
+        // For now, assume we're working in world space
+        entityTransform.localPosition = position;
+        entityTransform.localRotation = QuatFromEuler(Vec3(
+            Radians(rotation.x),
+            Radians(rotation.y),
+            Radians(rotation.z)
+        ));
+        entityTransform.localScale = scale;
+        entityTransform.isDirty = true;
+    }
+    else if (m_EditorState->IsManipulating())
+    {
+        // Just finished manipulating
+        m_EditorState->SetManipulating(false);
+    }
 }
 
 #endif // _DEBUG

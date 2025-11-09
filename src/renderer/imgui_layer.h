@@ -1,8 +1,10 @@
 #pragma once
 
 #include "core/types.h"
+#include "ecs/entity.h"
 #include <vulkan/vulkan.h>
 #include <unordered_map>
+#include <vector>
 
 #ifdef _DEBUG
 
@@ -13,6 +15,9 @@ class SceneManager;
 class ECSCoordinator;
 class ViewportManager;
 class Viewport;
+class EditorState;
+class EntityInspector;
+class EntityPicker;
 
 // ImGuiLayer - Manages Dear ImGui integration
 // Only available in debug builds
@@ -58,11 +63,30 @@ private:
     void RenderViewportWindow(Viewport* viewport, const char* title);
     void SetupDockspace();
 
+    // Entity operations
+    void RenderEntityContextMenu(Entity entity);
+    void RenderEntityTree(Entity entity);
+    void CreateEntity(const char* name = "Entity");
+    void DeleteEntity(Entity entity);
+    void DuplicateEntity(Entity entity);
+
+    // Input handling
+    void HandleKeyboardShortcuts();
+    void HandleViewportInput(Viewport* viewport);
+
+    // Gizmo rendering
+    void RenderGizmo(Viewport* viewport);
+
     VulkanContext* m_Context = nullptr;
     Window* m_Window = nullptr;
     SceneManager* m_SceneManager = nullptr;
     ECSCoordinator* m_ECS = nullptr;
     VkDescriptorPool m_DescriptorPool = VK_NULL_HANDLE;
+
+    // Editor state management
+    EditorState* m_EditorState = nullptr;
+    EntityInspector* m_EntityInspector = nullptr;
+    EntityPicker* m_EntityPicker = nullptr;
 
     // UI state
     bool m_ShowDemoWindow = false;
@@ -81,6 +105,9 @@ private:
 
     // Project change state
     bool m_ShouldChangeProject = false;  // Flag to signal project change request
+
+    // Deferred entity operations (to avoid modifying ECS during iteration)
+    std::vector<Entity> m_EntitiesToDelete;
 
     // Viewport texture descriptor management (separate from ImGui pool)
     VkDescriptorPool m_ViewportDescriptorPool = VK_NULL_HANDLE;

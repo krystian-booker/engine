@@ -5,6 +5,7 @@
 #include "ecs/components/rotator.h"
 #include "ecs/components/camera.h"
 #include "ecs/components/light.h"
+#include "ecs/components/name.h"
 #include "ecs/systems/camera_system.h"
 #include "ecs/systems/camera_controller.h"
 #include "ecs/systems/transform_system.h"
@@ -33,6 +34,7 @@ void ECSCoordinator::Init() {
     RegisterComponent<Rotator>();
     RegisterComponent<Camera>();
     RegisterComponent<Light>();
+    RegisterComponent<Name>();
 
     std::cout << "Renderable component registered" << std::endl;
 

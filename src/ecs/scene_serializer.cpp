@@ -4,6 +4,7 @@
 #include "components/camera.h"
 #include "components/rotator.h"
 #include "components/light.h"
+#include "components/name.h"
 #include "resources/material_manager.h"
 #include "resources/mesh_manager.h"
 #include "resources/texture_manager.h"
@@ -336,6 +337,12 @@ bool SceneSerializer::SaveScene(const std::string& filepath) {
             entityJson["light"] = lightJson;
         }
 
+        // Serialize Name component
+        if (m_ECS->HasComponent<Name>(entity)) {
+            const Name& name = m_ECS->GetComponent<Name>(entity);
+            entityJson["name"] = name.GetName();
+        }
+
         // Serialize hierarchy
         Entity parent = m_ECS->GetParent(entity);
         if (parent.IsValid()) {
@@ -629,6 +636,12 @@ bool SceneSerializer::LoadScene(const std::string& filepath) {
             }
 
             m_ECS->AddComponent(entity, light);
+        }
+
+        // Load Name component
+        if (entityJson.contains("name") && entityJson["name"].is_string()) {
+            std::string nameStr = entityJson["name"].get<std::string>();
+            m_ECS->AddComponent(entity, Name(nameStr.c_str()));
         }
     }
 

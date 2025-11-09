@@ -389,6 +389,7 @@ add_library(imgui_lib STATIC
         ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+        ${CMAKE_SOURCE_DIR}/external/ImGuizmo/ImGuizmo.cpp
 )
 
 target_include_directories(imgui_lib PUBLIC
