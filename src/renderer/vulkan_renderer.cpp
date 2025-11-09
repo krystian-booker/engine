@@ -1370,8 +1370,10 @@ void VulkanRenderer::CreateDepthPrepassResources() {
     }
 
     // 4. Load shaders
-    std::ifstream vertFile("assets/shaders/depth_prepass.vert.spv", std::ios::ate | std::ios::binary);
-    std::ifstream fragFile("assets/shaders/depth_prepass.frag.spv", std::ios::ate | std::ios::binary);
+    std::filesystem::path vertPath = std::filesystem::path(ENGINE_SOURCE_DIR) / "assets" / "shaders" / "depth_prepass.vert.spv";
+    std::filesystem::path fragPath = std::filesystem::path(ENGINE_SOURCE_DIR) / "assets" / "shaders" / "depth_prepass.frag.spv";
+    std::ifstream vertFile(vertPath, std::ios::ate | std::ios::binary);
+    std::ifstream fragFile(fragPath, std::ios::ate | std::ios::binary);
 
     if (!vertFile.is_open() || !fragFile.is_open()) {
         throw std::runtime_error("Failed to open depth prepass shader files!");

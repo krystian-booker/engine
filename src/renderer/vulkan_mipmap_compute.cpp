@@ -537,13 +537,7 @@ void VulkanMipmapCompute::CreatePipelines() {
     }};
 
     for (const auto& [variant, relativePath] : shaderPaths) {
-        fs::path path = relativePath;
-
-#ifdef ENGINE_SOURCE_DIR
-        if (!fs::exists(path)) {
-            path = fs::path(ENGINE_SOURCE_DIR) / path;
-        }
-#endif
+        fs::path path = fs::path(ENGINE_SOURCE_DIR) / relativePath;
 
         if (!fs::exists(path)) {
             throw std::runtime_error("Shader not found for mipmap compute: " + path.string());

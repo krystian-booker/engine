@@ -1,8 +1,5 @@
-cmake_minimum_required(VERSION 4.0)
+cmake_minimum_required(VERSION 3.20)
 project(engine)
-
-# Allow FetchContent_Populate for header-only libraries
-cmake_policy(SET CMP0169 OLD)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 20)
@@ -210,10 +207,37 @@ if(NOT stb_POPULATED)
     FetchContent_Populate(stb)
 endif()
 
-# Source files - we'll add these as we create them
-set(ENGINE_SOURCES
-        src/main.cpp
-        src/examples/test_scene.cpp
+# ==============================================================================
+# Component Libraries
+# ==============================================================================
+
+# -------------------- Platform Library --------------------
+add_library(engine_platform STATIC
+        src/platform/window.cpp
+        src/platform/input.cpp
+)
+
+if(WIN32)
+    target_sources(engine_platform PRIVATE src/platform/win32_platform.cpp)
+endif()
+
+target_include_directories(engine_platform PUBLIC
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(engine_platform PUBLIC
+        glm::glm
+        glfw
+)
+
+if(WIN32)
+    target_link_libraries(engine_platform PUBLIC User32 Gdi32)
+endif()
+
+target_compile_features(engine_platform PUBLIC cxx_std_20)
+
+# -------------------- Core Library --------------------
+add_library(engine_core STATIC
         src/core/memory.cpp
         src/core/job_system.cpp
         src/core/time.cpp
@@ -223,6 +247,24 @@ set(ENGINE_SOURCES
         src/core/project_manager.cpp
         src/core/engine_settings.cpp
         src/core/texture_data.cpp
+)
+
+target_include_directories(engine_core PUBLIC
+        ${CMAKE_SOURCE_DIR}/src
+        ${portable_file_dialogs_SOURCE_DIR}
+)
+
+target_link_libraries(engine_core PUBLIC
+        glm::glm
+        nlohmann_json::nlohmann_json
+        Vulkan::Vulkan
+        engine_platform
+)
+
+target_compile_features(engine_core PUBLIC cxx_std_20)
+
+# -------------------- ECS Library --------------------
+add_library(engine_ecs STATIC
         src/ecs/ecs_coordinator.cpp
         src/ecs/entity_manager.cpp
         src/ecs/hierarchy_manager.cpp
@@ -233,13 +275,24 @@ set(ENGINE_SOURCES
         src/ecs/systems/editor_camera_controller.cpp
         src/ecs/systems/render_system.cpp
         src/ecs/systems/shadow_system.cpp
-        src/platform/window.cpp
-        src/platform/input.cpp
-        src/resources/mesh_manager.cpp
-        src/resources/material_manager.cpp
-        src/resources/material_converter.cpp
-        src/resources/image_loader.cpp
-        src/resources/texture_manager.cpp
+)
+
+target_include_directories(engine_ecs PUBLIC
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(engine_ecs PUBLIC
+        glm::glm
+        nlohmann_json::nlohmann_json
+        engine_core
+)
+
+target_compile_definitions(engine_ecs PUBLIC ENGINE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
+target_compile_features(engine_ecs PUBLIC cxx_std_20)
+
+# -------------------- Renderer Library --------------------
+add_library(engine_renderer STATIC
         src/renderer/vulkan_context.cpp
         src/renderer/vulkan_swapchain.cpp
         src/renderer/vulkan_renderer.cpp
@@ -268,21 +321,59 @@ set(ENGINE_SOURCES
         src/renderer/shadow_profiler.cpp
         src/renderer/vulkan_light_culling.cpp
         src/renderer/ltc_tables.cpp
-        src/ui/imgui_project_picker.cpp
+        src/renderer/imgui_layer.cpp
 )
 
-# Platform-specific source files
-if(WIN32)
-    list(APPEND ENGINE_SOURCES src/platform/win32_platform.cpp)
-endif()
+target_include_directories(engine_renderer PUBLIC
+        ${CMAKE_SOURCE_DIR}/src
+        ${stb_SOURCE_DIR}
+        ${imgui_SOURCE_DIR}
+        ${imgui_SOURCE_DIR}/backends
+)
 
+target_link_libraries(engine_renderer PUBLIC
+        glm::glm
+        Vulkan::Vulkan
+        engine_core
+        engine_platform
+)
+
+target_compile_definitions(engine_renderer PUBLIC ENGINE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
+target_compile_features(engine_renderer PUBLIC cxx_std_20)
+
+# -------------------- Resources Library --------------------
+add_library(engine_resources STATIC
+        src/resources/mesh_manager.cpp
+        src/resources/material_manager.cpp
+        src/resources/material_converter.cpp
+        src/resources/image_loader.cpp
+        src/resources/texture_manager.cpp
+)
+
+target_include_directories(engine_resources PUBLIC
+        ${CMAKE_SOURCE_DIR}/src
+        ${stb_SOURCE_DIR}
+)
+
+target_link_libraries(engine_resources PUBLIC
+        glm::glm
+        assimp
+        nlohmann_json::nlohmann_json
+        engine_core
+        engine_renderer
+)
+
+target_compile_features(engine_resources PUBLIC cxx_std_20)
+
+# -------------------- ImGui Library --------------------
 # Dear ImGui source files - always needed for project picker
 FetchContent_GetProperties(imgui)
 if(NOT imgui_POPULATED)
     FetchContent_Populate(imgui)
 endif()
 
-list(APPEND ENGINE_SOURCES
+add_library(imgui_lib STATIC
         ${imgui_SOURCE_DIR}/imgui.cpp
         ${imgui_SOURCE_DIR}/imgui_demo.cpp
         ${imgui_SOURCE_DIR}/imgui_draw.cpp
@@ -290,89 +381,239 @@ list(APPEND ENGINE_SOURCES
         ${imgui_SOURCE_DIR}/imgui_widgets.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
-)
-
-# ImGuiLayer is only needed in Debug builds
-# Always include source files - the #ifdef _DEBUG in the source handles conditional compilation
-list(APPEND ENGINE_SOURCES
-        src/renderer/imgui_layer.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
 )
 
-# Main executable
-add_executable(engine ${ENGINE_SOURCES})
+target_include_directories(imgui_lib PUBLIC
+        ${imgui_SOURCE_DIR}
+        ${imgui_SOURCE_DIR}/backends
+)
 
-# Include directories
+target_link_libraries(imgui_lib PUBLIC
+        glfw
+        OpenGL::GL
+        Vulkan::Vulkan
+)
+
+# Suppress warnings for ImGui (external code)
+if(MSVC)
+    target_compile_options(imgui_lib PRIVATE /W0)
+else()
+    target_compile_options(imgui_lib PRIVATE -w)
+endif()
+
+target_compile_features(imgui_lib PUBLIC cxx_std_20)
+
+# -------------------- UI Library --------------------
+add_library(engine_ui STATIC
+        src/ui/imgui_project_picker.cpp
+)
+
+target_include_directories(engine_ui PUBLIC
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(engine_ui PUBLIC
+        imgui_lib
+        glew_static
+        engine_core
+)
+
+target_compile_features(engine_ui PUBLIC cxx_std_20)
+
+# ==============================================================================
+# Main Engine Executable
+# ==============================================================================
+
+# Main executable - now just links component libraries
+add_executable(engine
+        src/main.cpp
+        src/examples/test_scene.cpp
+)
+
 target_include_directories(engine PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+# Link all component libraries
+target_link_libraries(engine PRIVATE
+        engine_core
+        engine_ecs
+        engine_renderer
+        engine_resources
+        engine_ui
+        imgui_lib
+)
+
+target_compile_definitions(engine PRIVATE ENGINE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
+# Platform-specific linking
+if(WIN32)
+    # Windows libraries for file dialogs (COM)
+    target_link_libraries(engine PRIVATE Ole32 Shell32)
+endif()
+
+# Apply target-specific compiler flags
+if(MSVC)
+    target_compile_options(engine PRIVATE /W4 /WX /MP)
+    # Sanitizers for MSVC (limited support)
+    if(ENABLE_SANITIZERS AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+        target_compile_options(engine PRIVATE /fsanitize=address)
+    endif()
+else()
+    # GCC/Clang/MinGW
+    target_compile_options(engine PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    # Sanitizers for GCC/Clang
+    if(ENABLE_SANITIZERS AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+        include(CheckCXXCompilerFlag)
+        check_cxx_compiler_flag("-fsanitize=address" HAS_ASAN)
+        check_cxx_compiler_flag("-fsanitize=undefined" HAS_UBSAN)
+        if(HAS_ASAN)
+            target_compile_options(engine PRIVATE -fsanitize=address)
+            target_link_options(engine PRIVATE -fsanitize=address)
+        endif()
+        if(HAS_UBSAN)
+            target_compile_options(engine PRIVATE -fsanitize=undefined)
+            target_link_options(engine PRIVATE -fsanitize=undefined)
+        endif()
+    endif()
+endif()
+
+# Platform detection compile definitions
+if(WIN32)
+    target_compile_definitions(engine PRIVATE PLATFORM_WINDOWS)
+elseif(UNIX AND NOT APPLE)
+    target_compile_definitions(engine PRIVATE PLATFORM_LINUX)
+elseif(APPLE)
+    target_compile_definitions(engine PRIVATE PLATFORM_MACOS)
+endif()
+
+# Define _DEBUG for debug builds (for ImGui and other debug-only code)
+target_compile_definitions(engine PRIVATE $<$<CONFIG:Debug>:_DEBUG>)
+
+# Enable testing
+enable_testing()
+
+# ==============================================================================
+# Helper Functions
+# ==============================================================================
+
+# Helper function to add engine tests with minimal boilerplate
+function(add_engine_test TEST_NAME)
+    cmake_parse_arguments(ARG "" "TEST_FILE;LABEL;TIMEOUT" "SOURCES;LIBS;COMPONENTS" ${ARGN})
+
+    # Default test file path
+    if(NOT ARG_TEST_FILE)
+        set(ARG_TEST_FILE "tests/${TEST_NAME}.cpp")
+    endif()
+
+    # Create test executable
+    add_executable(${TEST_NAME}
+        ${ARG_TEST_FILE}
+        ${ARG_SOURCES}
+    )
+
+    # Include directories
+    target_include_directories(${TEST_NAME} PRIVATE
         ${CMAKE_SOURCE_DIR}/src
         ${stb_SOURCE_DIR}
         ${portable_file_dialogs_SOURCE_DIR}
         ${imgui_SOURCE_DIR}
         ${imgui_SOURCE_DIR}/backends
-)
-
-# Link GLM, JSON, GLFW, Assimp, OpenGL, and GLEW
-target_link_libraries(engine PRIVATE
-        glm::glm
-        nlohmann_json::nlohmann_json
-        glfw
-        assimp
-        Vulkan::Vulkan
-        OpenGL::GL
-        glew_static
-)
-
-target_compile_definitions(engine PRIVATE ENGINE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
-
-target_compile_features(engine PRIVATE cxx_std_20)
-
-# Suppress warnings for ImGui source files (external code)
-if(MSVC)
-    set_source_files_properties(
-            ${imgui_SOURCE_DIR}/imgui.cpp
-            ${imgui_SOURCE_DIR}/imgui_demo.cpp
-            ${imgui_SOURCE_DIR}/imgui_draw.cpp
-            ${imgui_SOURCE_DIR}/imgui_tables.cpp
-            ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-            ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
-            ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
-            PROPERTIES COMPILE_FLAGS /W0
     )
-    # Suppress warnings for Vulkan backend only in Debug
-    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        set_source_files_properties(
-                ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
-                PROPERTIES COMPILE_FLAGS /W0
-        )
+
+    # Link component libraries
+    foreach(comp ${ARG_COMPONENTS})
+        target_link_libraries(${TEST_NAME} PRIVATE engine_${comp})
+    endforeach()
+
+    # Link additional libraries
+    target_link_libraries(${TEST_NAME} PRIVATE ${ARG_LIBS})
+
+    # Apply compiler flags
+    if(MSVC)
+        target_compile_options(${TEST_NAME} PRIVATE /W4 /WX /MP)
+    else()
+        target_compile_options(${TEST_NAME} PRIVATE -Wall -Wextra -Wpedantic -Werror)
     endif()
-else()
-    set_source_files_properties(
-            ${imgui_SOURCE_DIR}/imgui.cpp
-            ${imgui_SOURCE_DIR}/imgui_demo.cpp
-            ${imgui_SOURCE_DIR}/imgui_draw.cpp
-            ${imgui_SOURCE_DIR}/imgui_tables.cpp
-            ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-            ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
-            ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
-            PROPERTIES COMPILE_FLAGS -w
+
+    # Platform detection
+    if(WIN32)
+        target_compile_definitions(${TEST_NAME} PRIVATE PLATFORM_WINDOWS)
+    elseif(UNIX AND NOT APPLE)
+        target_compile_definitions(${TEST_NAME} PRIVATE PLATFORM_LINUX)
+    elseif(APPLE)
+        target_compile_definitions(${TEST_NAME} PRIVATE PLATFORM_MACOS)
+    endif()
+
+    # Add ENGINE_SOURCE_DIR for tests that need it
+    target_compile_definitions(${TEST_NAME} PRIVATE ENGINE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
+    # Register with CTest
+    add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
+
+    # Set test properties
+    if(ARG_LABEL)
+        set_tests_properties(${TEST_NAME} PROPERTIES LABELS "${ARG_LABEL}")
+    else()
+        # Auto-detect label from components
+        if("${ARG_COMPONENTS}" MATCHES "ecs")
+            set_tests_properties(${TEST_NAME} PROPERTIES LABELS "ecs")
+        elseif("${ARG_COMPONENTS}" MATCHES "renderer")
+            set_tests_properties(${TEST_NAME} PROPERTIES LABELS "renderer")
+        elseif("${ARG_COMPONENTS}" MATCHES "resources")
+            set_tests_properties(${TEST_NAME} PROPERTIES LABELS "resources")
+        elseif("${ARG_COMPONENTS}" MATCHES "core")
+            set_tests_properties(${TEST_NAME} PROPERTIES LABELS "core")
+        endif()
+    endif()
+
+    # Set timeout (default 30 seconds for unit tests, 60 for integration tests)
+    if(ARG_TIMEOUT)
+        set_tests_properties(${TEST_NAME} PROPERTIES TIMEOUT ${ARG_TIMEOUT})
+    else()
+        if("${ARG_COMPONENTS}" MATCHES "renderer")
+            set_tests_properties(${TEST_NAME} PROPERTIES TIMEOUT 60)  # Renderer tests may be slower
+        else()
+            set_tests_properties(${TEST_NAME} PROPERTIES TIMEOUT 30)
+        endif()
+    endif()
+endfunction()
+
+# Helper function for shader compilation
+function(add_spirv_shader OUTPUT_VAR SHADER_TYPE SHADER_FILE)
+    get_filename_component(SHADER_NAME ${SHADER_FILE} NAME)
+    set(SHADER_HLSL ${CMAKE_SOURCE_DIR}/${SHADER_FILE})
+    set(SHADER_SPV ${CMAKE_SOURCE_DIR}/${SHADER_FILE}.spv)
+
+    # Determine shader model based on type
+    if(SHADER_TYPE STREQUAL "vertex")
+        set(SHADER_MODEL "vs_6_7")
+    elseif(SHADER_TYPE STREQUAL "fragment" OR SHADER_TYPE STREQUAL "pixel")
+        set(SHADER_MODEL "ps_6_7")
+    elseif(SHADER_TYPE STREQUAL "compute")
+        set(SHADER_MODEL "cs_6_7")
+    else()
+        message(FATAL_ERROR "Unknown shader type: ${SHADER_TYPE}")
+    endif()
+
+    # Add custom command to compile shader
+    add_custom_command(
+        OUTPUT ${SHADER_SPV}
+        COMMAND ${DXC_EXECUTABLE} -spirv -fspv-target-env=vulkan1.2 -T ${SHADER_MODEL} -E main
+                ${SHADER_HLSL} -Fo ${SHADER_SPV} -I ${CMAKE_SOURCE_DIR}/assets/shaders
+        DEPENDS ${SHADER_HLSL}
+        COMMENT "Compiling ${SHADER_NAME} shader to SPIR-V"
+        VERBATIM
     )
-    # Suppress warnings for Vulkan backend only in Debug
-    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        set_source_files_properties(
-                ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
-                PROPERTIES COMPILE_FLAGS -w
-        )
-    endif()
-endif()
 
-# Platform-specific linking
-if(WIN32)
-    # Windows libraries for platform layer and file dialogs (COM)
-    target_link_libraries(engine PRIVATE User32 Gdi32 Ole32 Shell32)
-endif()
+    # Set output variable in parent scope
+    set(${OUTPUT_VAR} ${SHADER_SPV} PARENT_SCOPE)
+endfunction()
 
-# Enable testing
-enable_testing()
+# ==============================================================================
+# Tests and Examples
+# ==============================================================================
 
 add_executable(test_vulkan
         tests/test_vulkan.cpp
@@ -704,1163 +945,253 @@ else()
 endif()
 
 # Test executable for memory allocators
-add_executable(test_memory
-        tests/test_memory.cpp
-        src/core/memory.cpp
+add_engine_test(test_memory
+    COMPONENTS platform
+    SOURCES src/core/memory.cpp
 )
-
-# Platform-specific source files for tests
-if(WIN32)
-    target_sources(test_memory PRIVATE src/platform/win32_platform.cpp)
-endif()
-
-target_include_directories(test_memory PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-)
-
-target_link_libraries(test_memory PRIVATE
-        glm::glm
-)
-
-# Platform-specific linking for tests
-if(WIN32)
-    target_link_libraries(test_memory PRIVATE User32 Gdi32)
-endif()
-
-# Register test with CTest
-add_test(NAME MemoryAllocatorTests COMMAND test_memory)
 
 # Test executable for job system
-add_executable(test_job_system
-        tests/test_job_system.cpp
-        src/core/job_system.cpp
-        src/core/memory.cpp
+add_engine_test(test_job_system
+    COMPONENTS core platform
 )
-
-# Platform-specific source files for job system tests
-if(WIN32)
-    target_sources(test_job_system PRIVATE src/platform/win32_platform.cpp)
-endif()
-
-target_include_directories(test_job_system PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-)
-
-target_link_libraries(test_job_system PRIVATE
-        glm::glm
-)
-
-# Platform-specific linking for job system tests
-if(WIN32)
-    target_link_libraries(test_job_system PRIVATE User32 Gdi32)
-endif()
-
-# Register job system test with CTest
-add_test(NAME JobSystemTests COMMAND test_job_system)
 
 # Test executable for entity system
-add_executable(test_entity
-        tests/test_entity.cpp
-        src/ecs/entity_manager.cpp
+add_engine_test(test_entity
+    SOURCES src/ecs/entity_manager.cpp
 )
-
-target_include_directories(test_entity PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-)
-
-target_link_libraries(test_entity PRIVATE
-        glm::glm
-)
-
-# Register entity test with CTest
-add_test(NAME EntitySystemTests COMMAND test_entity)
 
 # Test executable for component array
-add_executable(test_component_array
-        tests/test_component_array.cpp
-        src/ecs/entity_manager.cpp
+add_engine_test(test_component_array
+    SOURCES src/ecs/entity_manager.cpp
 )
-
-target_include_directories(test_component_array PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-)
-
-target_link_libraries(test_component_array PRIVATE
-        glm::glm
-)
-
-# Register component array test with CTest
-add_test(NAME ComponentArrayTests COMMAND test_component_array)
 
 # Test executable for component array example
-add_executable(test_component_example
-        tests/test_component_example.cpp
-        src/ecs/entity_manager.cpp
+add_engine_test(test_component_example
+    SOURCES src/ecs/entity_manager.cpp
 )
-
-target_include_directories(test_component_example PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-)
-
-target_link_libraries(test_component_example PRIVATE
-        glm::glm
-)
-
-# Register component example test with CTest
-add_test(NAME ComponentExampleTest COMMAND test_component_example)
 
 # Test executable for component registry
-add_executable(test_component_registry
-        tests/test_component_registry.cpp
-        src/ecs/entity_manager.cpp
+add_engine_test(test_component_registry
+    SOURCES src/ecs/entity_manager.cpp
 )
-
-target_include_directories(test_component_registry PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-)
-
-target_link_libraries(test_component_registry PRIVATE
-        glm::glm
-)
-
-# Register component registry test with CTest
-add_test(NAME ComponentRegistryTests COMMAND test_component_registry)
 
 # Test executable for left-handed math validation
-add_executable(test_left_handed_math
-        tests/test_left_handed_math.cpp
-)
-
-target_include_directories(test_left_handed_math PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-)
-
-target_link_libraries(test_left_handed_math PRIVATE
-        glm::glm
-)
-
-add_test(NAME LeftHandedMathTests COMMAND test_left_handed_math)
+add_engine_test(test_left_handed_math)
 
 # Test executable for transform system
-add_executable(test_transform
-        tests/test_transform.cpp
-        src/ecs/entity_manager.cpp
-        src/ecs/hierarchy_manager.cpp
-        src/ecs/systems/transform_system.cpp
+add_engine_test(test_transform
+    SOURCES src/ecs/entity_manager.cpp src/ecs/hierarchy_manager.cpp src/ecs/systems/transform_system.cpp
 )
-
-target_include_directories(test_transform PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-)
-
-target_link_libraries(test_transform PRIVATE
-        glm::glm
-)
-
-# Register transform test with CTest
-add_test(NAME TransformSystemTests COMMAND test_transform)
 
 # Test executable for ECS coordinator
-add_executable(test_ecs_coordinator
-        tests/test_ecs_coordinator.cpp
-        src/ecs/ecs_coordinator.cpp
-        src/ecs/entity_manager.cpp
-        src/ecs/hierarchy_manager.cpp
-        src/ecs/systems/transform_system.cpp
-        src/ecs/systems/camera_system.cpp
-        tests/stubs/camera_controller_stub.cpp
+add_engine_test(test_ecs_coordinator
+    COMPONENTS ecs
+    SOURCES tests/stubs/camera_controller_stub.cpp
 )
 
-target_include_directories(test_ecs_coordinator PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
+# Test executable for ECS queries
+add_engine_test(test_ecs_queries
+    COMPONENTS ecs
+    SOURCES tests/stubs/camera_controller_stub.cpp
 )
 
-target_link_libraries(test_ecs_coordinator PRIVATE
-        glm::glm
+# Test executable for renderable components
+add_engine_test(test_renderable
+    COMPONENTS ecs
+    SOURCES tests/stubs/camera_controller_stub.cpp
 )
 
-# Register ECS coordinator test with CTest
-add_test(NAME ECSCoordinatorTests COMMAND test_ecs_coordinator)
-
-add_executable(test_ecs_queries
-        tests/test_ecs_queries.cpp
-        src/ecs/ecs_coordinator.cpp
-        src/ecs/entity_manager.cpp
-        src/ecs/hierarchy_manager.cpp
-        src/ecs/systems/transform_system.cpp
-        src/ecs/systems/camera_system.cpp
-        tests/stubs/camera_controller_stub.cpp
+# Test executable for render system
+add_engine_test(test_render_system
+    COMPONENTS ecs renderer resources
+    SOURCES tests/stubs/camera_controller_stub.cpp
 )
 
-target_include_directories(test_ecs_queries PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
+# Test executable for camera system
+add_engine_test(test_camera
+    COMPONENTS ecs
+    SOURCES tests/stubs/camera_controller_stub.cpp
 )
 
-target_link_libraries(test_ecs_queries PRIVATE
-        glm::glm
+# Test executable for ECS deferred operations
+add_engine_test(test_ecs_deferred
+    COMPONENTS ecs
+    SOURCES tests/stubs/camera_controller_stub.cpp
 )
 
-add_test(NAME ECSQueryTests COMMAND test_ecs_queries)
-
-add_executable(test_renderable
-        tests/test_renderable.cpp
-        src/ecs/ecs_coordinator.cpp
-        src/ecs/entity_manager.cpp
-        src/ecs/hierarchy_manager.cpp
-        src/ecs/systems/transform_system.cpp
-        src/ecs/systems/camera_system.cpp
-        tests/stubs/camera_controller_stub.cpp
+# Test executable for ECS versioning
+add_engine_test(test_ecs_versions
+    COMPONENTS ecs
+    SOURCES tests/stubs/camera_controller_stub.cpp
 )
 
-target_include_directories(test_renderable PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
+# Test executable for ECS signatures
+add_engine_test(test_ecs_signatures
+    COMPONENTS ecs
+    SOURCES tests/stubs/camera_controller_stub.cpp
 )
 
-target_link_libraries(test_renderable PRIVATE
-        glm::glm
+# Test executable for ECS parallel operations
+add_engine_test(test_ecs_parallel
+    COMPONENTS ecs core platform
+    SOURCES tests/stubs/camera_controller_stub.cpp
 )
-
-add_test(NAME RenderableTests COMMAND test_renderable)
-
-add_executable(test_render_system
-        tests/test_render_system.cpp
-        src/ecs/ecs_coordinator.cpp
-        src/ecs/entity_manager.cpp
-        src/ecs/hierarchy_manager.cpp
-        src/ecs/systems/transform_system.cpp
-        src/ecs/systems/camera_system.cpp
-        tests/stubs/camera_controller_stub.cpp
-        src/ecs/systems/render_system.cpp
-        src/resources/mesh_manager.cpp
-        src/resources/material_manager.cpp
-        src/resources/material_converter.cpp
-        src/resources/image_loader.cpp
-        src/resources/texture_manager.cpp
-        src/renderer/vulkan_mesh.cpp
-        src/renderer/vulkan_buffer.cpp
-        src/renderer/vulkan_context.cpp
-        src/renderer/vulkan_mipmap_compute.cpp
-        src/renderer/vulkan_texture.cpp
-        src/renderer/vulkan_descriptor_pools.cpp
-        src/renderer/vulkan_descriptors.cpp
-        src/renderer/vulkan_material_buffer.cpp
-        src/renderer/vulkan_staging_pool.cpp
-        src/renderer/vulkan_transfer_queue.cpp
-        src/renderer/mipmap_policy.cpp
-        src/core/texture_data.cpp
-        src/core/job_system.cpp
-        src/core/memory.cpp
-        src/core/file_watcher.cpp
-        src/platform/window.cpp
-        src/platform/win32_platform.cpp
-)
-
-target_include_directories(test_render_system PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-        ${stb_SOURCE_DIR}
-)
-
-target_link_libraries(test_render_system PRIVATE
-        glm::glm
-        nlohmann_json::nlohmann_json
-        Vulkan::Vulkan
-        assimp
-        glfw
-        User32
-        Gdi32
-)
-
-add_test(NAME RenderSystemTests COMMAND test_render_system)
-
-add_executable(test_camera
-        tests/test_camera.cpp
-        src/ecs/ecs_coordinator.cpp
-        src/ecs/entity_manager.cpp
-        src/ecs/hierarchy_manager.cpp
-        src/ecs/systems/transform_system.cpp
-        src/ecs/systems/camera_system.cpp
-        tests/stubs/camera_controller_stub.cpp
-)
-
-target_include_directories(test_camera PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-)
-
-target_link_libraries(test_camera PRIVATE
-        glm::glm
-)
-
-add_test(NAME CameraSystemTests COMMAND test_camera)
-
-add_executable(test_ecs_deferred
-        tests/test_ecs_deferred.cpp
-        src/ecs/ecs_coordinator.cpp
-        src/ecs/entity_manager.cpp
-        src/ecs/hierarchy_manager.cpp
-        src/ecs/systems/transform_system.cpp
-        src/ecs/systems/camera_system.cpp
-        tests/stubs/camera_controller_stub.cpp
-)
-
-target_include_directories(test_ecs_deferred PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-)
-
-target_link_libraries(test_ecs_deferred PRIVATE
-        glm::glm
-)
-
-add_test(NAME ECSDeferredTests COMMAND test_ecs_deferred)
-
-add_executable(test_ecs_versions
-        tests/test_ecs_versions.cpp
-        src/ecs/ecs_coordinator.cpp
-        src/ecs/entity_manager.cpp
-        src/ecs/hierarchy_manager.cpp
-        src/ecs/systems/transform_system.cpp
-        src/ecs/systems/camera_system.cpp
-        tests/stubs/camera_controller_stub.cpp
-)
-
-target_include_directories(test_ecs_versions PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-)
-
-target_link_libraries(test_ecs_versions PRIVATE
-        glm::glm
-)
-
-add_test(NAME ECSVersionTests COMMAND test_ecs_versions)
-
-add_executable(test_ecs_signatures
-        tests/test_ecs_signatures.cpp
-        src/ecs/ecs_coordinator.cpp
-        src/ecs/entity_manager.cpp
-        src/ecs/hierarchy_manager.cpp
-        src/ecs/systems/transform_system.cpp
-        src/ecs/systems/camera_system.cpp
-        tests/stubs/camera_controller_stub.cpp
-)
-
-target_include_directories(test_ecs_signatures PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-)
-
-target_link_libraries(test_ecs_signatures PRIVATE
-        glm::glm
-)
-
-add_test(NAME ECSSignatureTests COMMAND test_ecs_signatures)
-
-add_executable(test_ecs_parallel
-        tests/test_ecs_parallel.cpp
-        src/ecs/ecs_coordinator.cpp
-        src/ecs/entity_manager.cpp
-        src/ecs/hierarchy_manager.cpp
-        src/ecs/systems/transform_system.cpp
-        src/ecs/systems/camera_system.cpp
-        tests/stubs/camera_controller_stub.cpp
-        src/core/job_system.cpp
-        src/core/memory.cpp
-)
-
-if(WIN32)
-    target_sources(test_ecs_parallel PRIVATE src/platform/win32_platform.cpp)
-endif()
-
-target_include_directories(test_ecs_parallel PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-)
-
-target_link_libraries(test_ecs_parallel PRIVATE
-        glm::glm
-)
-
-add_test(NAME ECSParallelTests COMMAND test_ecs_parallel)
 
 # Test executable for hierarchy manager
-add_executable(test_hierarchy_manager
-        tests/test_hierarchy_manager.cpp
-        src/ecs/hierarchy_manager.cpp
-        src/ecs/entity_manager.cpp
+add_engine_test(test_hierarchy_manager
+    SOURCES src/ecs/hierarchy_manager.cpp src/ecs/entity_manager.cpp
 )
-
-target_include_directories(test_hierarchy_manager PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-)
-
-target_link_libraries(test_hierarchy_manager PRIVATE
-        glm::glm
-)
-
-# Register hierarchy manager test with CTest
-add_test(NAME HierarchyManagerTests COMMAND test_hierarchy_manager)
 
 # Test executable for scene serializer
-add_executable(test_scene_serializer
-        tests/test_scene_serializer.cpp
-        src/ecs/ecs_coordinator.cpp
-        src/ecs/entity_manager.cpp
-        src/ecs/hierarchy_manager.cpp
-        src/ecs/scene_serializer.cpp
-        src/ecs/systems/transform_system.cpp
-        src/ecs/systems/camera_system.cpp
-        tests/stubs/camera_controller_stub.cpp
-        src/resources/mesh_manager.cpp
-        src/resources/material_manager.cpp
-        src/resources/material_converter.cpp
-        src/resources/image_loader.cpp
-        src/resources/texture_manager.cpp
-        src/renderer/vulkan_mesh.cpp
-        src/renderer/vulkan_texture.cpp
-        src/renderer/vulkan_buffer.cpp
-        src/renderer/vulkan_context.cpp
-        src/renderer/vulkan_mipmap_compute.cpp
-        src/renderer/vulkan_descriptor_pools.cpp
-        src/renderer/vulkan_descriptors.cpp
-        src/renderer/vulkan_material_buffer.cpp
-        src/renderer/vulkan_staging_pool.cpp
-        src/renderer/vulkan_transfer_queue.cpp
-        src/renderer/mipmap_policy.cpp
-        src/core/texture_data.cpp
-        src/core/job_system.cpp
-        src/core/memory.cpp
-        src/core/file_watcher.cpp
-        src/platform/window.cpp
+add_engine_test(test_scene_serializer
+    COMPONENTS ecs renderer resources platform
+    SOURCES tests/stubs/camera_controller_stub.cpp
 )
-
-if(WIN32)
-    target_sources(test_scene_serializer PRIVATE src/platform/win32_platform.cpp)
-endif()
-
-target_include_directories(test_scene_serializer PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-        ${stb_SOURCE_DIR}
-)
-
-target_link_libraries(test_scene_serializer PRIVATE
-        glm::glm
-        nlohmann_json::nlohmann_json
-        Vulkan::Vulkan
-        assimp
-        glfw
-)
-
-if(WIN32)
-    target_link_libraries(test_scene_serializer PRIVATE User32 Gdi32)
-endif()
-
-target_compile_definitions(test_scene_serializer PRIVATE ENGINE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
-
-# Register scene serializer test with CTest
-add_test(NAME SceneSerializerTests COMMAND test_scene_serializer)
 
 # Test executable for time system
-add_executable(test_time
-        tests/test_time.cpp
-        src/core/time.cpp
+add_engine_test(test_time
+    COMPONENTS core
+    SOURCES src/core/time.cpp
 )
-
-target_include_directories(test_time PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-)
-
-target_link_libraries(test_time PRIVATE
-        glm::glm
-        glfw
-)
-
-# Register time system test with CTest
-add_test(NAME TimeSystemTests COMMAND test_time)
 
 # Test executable for resource handle system
-add_executable(test_resource_handle
-        tests/test_resource_handle.cpp
-        src/resources/mesh_manager.cpp
-        src/resources/material_manager.cpp
-        src/resources/material_converter.cpp
-        src/resources/image_loader.cpp
-        src/resources/texture_manager.cpp
-        src/renderer/vulkan_mesh.cpp
-        src/renderer/vulkan_buffer.cpp
-        src/renderer/vulkan_texture.cpp
-        src/renderer/vulkan_context.cpp
-        src/renderer/vulkan_mipmap_compute.cpp
-        src/renderer/vulkan_descriptor_pools.cpp
-        src/renderer/vulkan_descriptors.cpp
-        src/renderer/vulkan_material_buffer.cpp
-        src/renderer/vulkan_staging_pool.cpp
-        src/renderer/vulkan_transfer_queue.cpp
-        src/renderer/mipmap_policy.cpp
-        src/core/texture_data.cpp
-        src/core/job_system.cpp
-        src/core/memory.cpp
-        src/core/file_watcher.cpp
-        src/platform/window.cpp
-        src/platform/win32_platform.cpp
+add_engine_test(test_resource_handle
+    COMPONENTS renderer resources platform
 )
-
-target_include_directories(test_resource_handle PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-        ${stb_SOURCE_DIR}
-)
-
-target_link_libraries(test_resource_handle PRIVATE
-        glm::glm
-        Vulkan::Vulkan
-        assimp
-        glfw
-        nlohmann_json::nlohmann_json
-        User32
-        Gdi32
-)
-
-# Register resource handle test with CTest
-add_test(NAME ResourceHandleTests COMMAND test_resource_handle)
 
 # Example executable for resource handle system
 add_executable(resource_handle_example
         examples/resource_handle_example.cpp
-        src/resources/mesh_manager.cpp
-        src/resources/material_manager.cpp
-        src/resources/material_converter.cpp
-        src/resources/image_loader.cpp
-        src/resources/texture_manager.cpp
-        src/renderer/vulkan_mesh.cpp
-        src/renderer/vulkan_buffer.cpp
-        src/renderer/vulkan_texture.cpp
-        src/renderer/vulkan_context.cpp
-        src/renderer/vulkan_mipmap_compute.cpp
-        src/renderer/vulkan_descriptor_pools.cpp
-        src/renderer/vulkan_descriptors.cpp
-        src/renderer/vulkan_material_buffer.cpp
-        src/renderer/vulkan_staging_pool.cpp
-        src/renderer/vulkan_transfer_queue.cpp
-        src/renderer/mipmap_policy.cpp
-        src/core/texture_data.cpp
-        src/core/job_system.cpp
-        src/core/memory.cpp
-        src/core/file_watcher.cpp
-        src/platform/window.cpp
-        src/platform/win32_platform.cpp
 )
 
 target_include_directories(resource_handle_example PRIVATE
         ${CMAKE_SOURCE_DIR}/src
-        ${stb_SOURCE_DIR}
 )
 
 target_link_libraries(resource_handle_example PRIVATE
-        glm::glm
-        Vulkan::Vulkan
-        assimp
-        glfw
-        nlohmann_json::nlohmann_json
-        User32
-        Gdi32
+        engine_renderer
+        engine_resources
+        engine_platform
 )
 
 # Test executable for file watcher system
-add_executable(test_file_watcher
-        tests/test_file_watcher.cpp
-        src/core/file_watcher.cpp
+add_engine_test(test_file_watcher
+    SOURCES src/core/file_watcher.cpp
 )
-
-target_include_directories(test_file_watcher PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-)
-
-target_link_libraries(test_file_watcher PRIVATE
-        glm::glm
-)
-
-# Register file watcher test with CTest
-add_test(NAME FileWatcherTests COMMAND test_file_watcher)
 
 # Example executable for file watcher system
 add_executable(file_watcher_example
         examples/file_watcher_example.cpp
-        src/core/file_watcher.cpp
-        src/core/time.cpp
-        src/platform/window.cpp
-        src/platform/input.cpp
 )
-
-# Platform-specific source files for file watcher example
-if(WIN32)
-    target_sources(file_watcher_example PRIVATE src/platform/win32_platform.cpp)
-endif()
 
 target_include_directories(file_watcher_example PRIVATE
         ${CMAKE_SOURCE_DIR}/src
 )
 
 target_link_libraries(file_watcher_example PRIVATE
-        glm::glm
-        glfw
+        engine_core
+        engine_platform
 )
-
-# Platform-specific linking for file watcher example
-if(WIN32)
-    target_link_libraries(file_watcher_example PRIVATE User32 Gdi32)
-endif()
 
 # Example executable for Vulkan buffer usage
 add_executable(vulkan_buffer_example
         examples/vulkan_buffer_example.cpp
-        src/renderer/vulkan_context.cpp
-        src/renderer/vulkan_mipmap_compute.cpp
-        src/renderer/vulkan_descriptor_pools.cpp
-        src/renderer/vulkan_buffer.cpp
-        src/platform/window.cpp
 )
-
-if(WIN32)
-    target_sources(vulkan_buffer_example PRIVATE src/platform/win32_platform.cpp)
-endif()
 
 target_include_directories(vulkan_buffer_example PRIVATE
         ${CMAKE_SOURCE_DIR}/src
 )
 
 target_link_libraries(vulkan_buffer_example PRIVATE
-        glfw
-        Vulkan::Vulkan
+        engine_renderer
+        engine_platform
 )
-
-if(WIN32)
-    target_link_libraries(vulkan_buffer_example PRIVATE User32 Gdi32)
-endif()
 
 # Test executable for Vulkan buffer abstraction
-add_executable(test_vulkan_buffer
-        tests/test_vulkan_buffer.cpp
-        src/renderer/vulkan_context.cpp
-        src/renderer/vulkan_mipmap_compute.cpp
-        src/renderer/vulkan_descriptor_pools.cpp
-        src/renderer/vulkan_buffer.cpp
-        src/platform/window.cpp
+add_engine_test(test_vulkan_buffer
+    COMPONENTS renderer platform
 )
-
-if(WIN32)
-    target_sources(test_vulkan_buffer PRIVATE src/platform/win32_platform.cpp)
-endif()
-
-target_include_directories(test_vulkan_buffer PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-)
-
-target_link_libraries(test_vulkan_buffer PRIVATE
-        glfw
-        Vulkan::Vulkan
-)
-
-if(WIN32)
-    target_link_libraries(test_vulkan_buffer PRIVATE User32 Gdi32)
-endif()
-
-add_test(NAME VulkanBufferTests COMMAND test_vulkan_buffer)
 
 # Test executable for texture loading
-add_executable(test_texture_loading
-        tests/test_texture_loading.cpp
-        src/core/texture_data.cpp
-        src/resources/image_loader.cpp
+add_engine_test(test_texture_loading
+    SOURCES src/core/texture_data.cpp src/resources/image_loader.cpp
 )
-
-target_include_directories(test_texture_loading PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-        ${stb_SOURCE_DIR}
-)
-
-target_link_libraries(test_texture_loading PRIVATE
-        glm::glm
-        Vulkan::Vulkan
-)
-
-add_test(NAME TextureLoadingTests COMMAND test_texture_loading)
 
 # Test executable for texture manager
-add_executable(test_texture_manager
-        tests/test_texture_manager.cpp
-        src/core/texture_data.cpp
-        src/core/job_system.cpp
-        src/core/memory.cpp
-        src/core/file_watcher.cpp
-        src/resources/image_loader.cpp
-        src/resources/texture_manager.cpp
-        src/resources/material_manager.cpp
-        src/resources/material_converter.cpp
-        src/resources/mesh_manager.cpp
-        src/renderer/vulkan_texture.cpp
-        src/renderer/vulkan_context.cpp
-        src/renderer/vulkan_mipmap_compute.cpp
-        src/renderer/vulkan_buffer.cpp
-        src/renderer/vulkan_mesh.cpp
-        src/renderer/vulkan_descriptor_pools.cpp
-        src/renderer/vulkan_descriptors.cpp
-        src/renderer/vulkan_staging_pool.cpp
-        src/renderer/vulkan_transfer_queue.cpp
-        src/renderer/vulkan_material_buffer.cpp
-        src/renderer/mipmap_policy.cpp
-        src/platform/window.cpp
-        src/platform/win32_platform.cpp
+add_engine_test(test_texture_manager
+    COMPONENTS renderer resources platform
 )
-
-target_include_directories(test_texture_manager PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-        ${stb_SOURCE_DIR}
-)
-
-target_link_libraries(test_texture_manager PRIVATE
-        glm::glm
-        Vulkan::Vulkan
-        assimp
-        glfw
-        nlohmann_json::nlohmann_json
-        User32
-        Gdi32
-)
-
-add_test(NAME TextureManagerTests COMMAND test_texture_manager)
 
 # Test executable for async texture loading
-add_executable(test_texture_async
-        tests/test_texture_async.cpp
-        src/core/texture_data.cpp
-        src/core/job_system.cpp
-        src/core/memory.cpp
-        src/core/file_watcher.cpp
-        src/resources/image_loader.cpp
-        src/resources/texture_manager.cpp
-        src/resources/material_manager.cpp
-        src/resources/material_converter.cpp
-        src/resources/mesh_manager.cpp
-        src/renderer/vulkan_texture.cpp
-        src/renderer/vulkan_context.cpp
-        src/renderer/vulkan_mipmap_compute.cpp
-        src/renderer/vulkan_buffer.cpp
-        src/renderer/vulkan_mesh.cpp
-        src/renderer/vulkan_descriptor_pools.cpp
-        src/renderer/vulkan_descriptors.cpp
-        src/renderer/vulkan_staging_pool.cpp
-        src/renderer/vulkan_transfer_queue.cpp
-        src/renderer/vulkan_material_buffer.cpp
-        src/renderer/mipmap_policy.cpp
-        src/platform/window.cpp
-        src/platform/win32_platform.cpp
+add_engine_test(test_texture_async
+    COMPONENTS renderer resources platform
 )
-
-target_include_directories(test_texture_async PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-        ${stb_SOURCE_DIR}
-)
-
-target_link_libraries(test_texture_async PRIVATE
-        glm::glm
-        Vulkan::Vulkan
-        assimp
-        glfw
-        nlohmann_json::nlohmann_json
-        User32
-        Gdi32
-)
-
-add_test(NAME TextureAsyncTests COMMAND test_texture_async)
 
 # Test executable for texture array data validation
-add_executable(test_texture_array_data
-        tests/test_texture_array_data.cpp
-        src/core/texture_data.cpp
+add_engine_test(test_texture_array_data
+    SOURCES src/core/texture_data.cpp
+    LIBS Vulkan::Vulkan
 )
-
-target_include_directories(test_texture_array_data PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-)
-
-target_link_libraries(test_texture_array_data PRIVATE
-        Vulkan::Vulkan
-)
-
-add_test(NAME TextureArrayDataTests COMMAND test_texture_array_data)
 
 # Test executable for image loader array functions
-add_executable(test_image_loader_array
-        tests/test_image_loader_array.cpp
-        src/resources/image_loader.cpp
-        src/core/texture_data.cpp
+add_engine_test(test_image_loader_array
+    SOURCES src/resources/image_loader.cpp src/core/texture_data.cpp
+    LIBS Vulkan::Vulkan
 )
-
-target_include_directories(test_image_loader_array PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-        ${stb_SOURCE_DIR}
-)
-
-target_link_libraries(test_image_loader_array PRIVATE
-        Vulkan::Vulkan
-)
-
-add_test(NAME ImageLoaderArrayTests COMMAND test_image_loader_array)
 
 # Test executable for Vulkan texture array creation
-add_executable(test_vulkan_texture_array
-        tests/test_vulkan_texture_array.cpp
-        src/renderer/vulkan_texture.cpp
-        src/renderer/vulkan_context.cpp
-        src/renderer/vulkan_mipmap_compute.cpp
-        src/renderer/vulkan_buffer.cpp
-        src/renderer/vulkan_staging_pool.cpp
-        src/renderer/vulkan_transfer_queue.cpp
-        src/renderer/vulkan_descriptor_pools.cpp
-        src/renderer/mipmap_policy.cpp
-        src/core/texture_data.cpp
-        src/platform/window.cpp
+add_engine_test(test_vulkan_texture_array
+    COMPONENTS renderer platform
 )
-
-if(WIN32)
-    target_sources(test_vulkan_texture_array PRIVATE src/platform/win32_platform.cpp)
-endif()
-
-target_include_directories(test_vulkan_texture_array PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-)
-
-target_link_libraries(test_vulkan_texture_array PRIVATE
-        glfw
-        Vulkan::Vulkan
-)
-
-if(WIN32)
-    target_link_libraries(test_vulkan_texture_array PRIVATE User32 Gdi32)
-endif()
-
-add_test(NAME VulkanTextureArrayTests COMMAND test_vulkan_texture_array)
 
 # Test executable for array texture mipmap generation
-add_executable(test_mipmap_array
-        tests/test_mipmap_array.cpp
-        src/renderer/vulkan_texture.cpp
-        src/renderer/vulkan_context.cpp
-        src/renderer/vulkan_mipmap_compute.cpp
-        src/renderer/vulkan_buffer.cpp
-        src/renderer/vulkan_staging_pool.cpp
-        src/renderer/vulkan_transfer_queue.cpp
-        src/renderer/vulkan_descriptor_pools.cpp
-        src/renderer/mipmap_policy.cpp
-        src/core/texture_data.cpp
-        src/platform/window.cpp
+add_engine_test(test_mipmap_array
+    COMPONENTS renderer platform
 )
-
-if(WIN32)
-    target_sources(test_mipmap_array PRIVATE src/platform/win32_platform.cpp)
-endif()
-
-target_include_directories(test_mipmap_array PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-)
-
-target_link_libraries(test_mipmap_array PRIVATE
-        glfw
-        Vulkan::Vulkan
-)
-
-if(WIN32)
-    target_link_libraries(test_mipmap_array PRIVATE User32 Gdi32)
-endif()
-
-add_test(NAME MipmapArrayTests COMMAND test_mipmap_array)
 
 # Test executable for async array texture loading
-add_executable(test_texture_array_async
-        tests/test_texture_array_async.cpp
-        src/core/texture_data.cpp
-        src/core/job_system.cpp
-        src/core/memory.cpp
-        src/core/file_watcher.cpp
-        src/resources/image_loader.cpp
-        src/resources/texture_manager.cpp
-        src/resources/material_manager.cpp
-        src/resources/material_converter.cpp
-        src/resources/mesh_manager.cpp
-        src/renderer/vulkan_texture.cpp
-        src/renderer/vulkan_context.cpp
-        src/renderer/vulkan_mipmap_compute.cpp
-        src/renderer/vulkan_buffer.cpp
-        src/renderer/vulkan_mesh.cpp
-        src/renderer/vulkan_descriptor_pools.cpp
-        src/renderer/vulkan_descriptors.cpp
-        src/renderer/vulkan_staging_pool.cpp
-        src/renderer/vulkan_transfer_queue.cpp
-        src/renderer/vulkan_material_buffer.cpp
-        src/renderer/mipmap_policy.cpp
-        src/platform/window.cpp
-        src/platform/win32_platform.cpp
+add_engine_test(test_texture_array_async
+    COMPONENTS renderer resources platform
 )
-
-target_include_directories(test_texture_array_async PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-        ${stb_SOURCE_DIR}
-)
-
-target_link_libraries(test_texture_array_async PRIVATE
-        glm::glm
-        Vulkan::Vulkan
-        assimp
-        glfw
-        nlohmann_json::nlohmann_json
-        User32
-        Gdi32
-)
-
-add_test(NAME TextureArrayAsyncTests COMMAND test_texture_array_async)
 
 # Test executable for texture descriptor binding
-add_executable(test_texture_descriptors
-        tests/test_texture_descriptors.cpp
-        src/renderer/vulkan_descriptors.cpp
-        src/renderer/vulkan_descriptor_pools.cpp
-        src/renderer/vulkan_texture.cpp
-        src/renderer/vulkan_context.cpp
-        src/renderer/vulkan_mipmap_compute.cpp
-        src/renderer/vulkan_buffer.cpp
-        src/renderer/vulkan_staging_pool.cpp
-        src/renderer/vulkan_transfer_queue.cpp
-        src/renderer/mipmap_policy.cpp
-        src/core/texture_data.cpp
-        src/platform/window.cpp
+add_engine_test(test_texture_descriptors
+    COMPONENTS renderer platform
 )
-
-if(WIN32)
-    target_sources(test_texture_descriptors PRIVATE src/platform/win32_platform.cpp)
-endif()
-
-target_include_directories(test_texture_descriptors PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-)
-
-target_link_libraries(test_texture_descriptors PRIVATE
-        glfw
-        Vulkan::Vulkan
-)
-
-if(WIN32)
-    target_link_libraries(test_texture_descriptors PRIVATE User32 Gdi32)
-endif()
-
-add_test(NAME TextureDescriptorTests COMMAND test_texture_descriptors)
 
 # Test executable for sampler settings
-add_executable(test_sampler_settings
-        tests/test_sampler_settings.cpp
-        src/core/texture_data.cpp
+add_engine_test(test_sampler_settings
+    SOURCES src/core/texture_data.cpp
+    LIBS Vulkan::Vulkan
 )
-
-target_include_directories(test_sampler_settings PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-)
-
-target_link_libraries(test_sampler_settings PRIVATE
-        Vulkan::Vulkan
-)
-
-add_test(NAME SamplerSettingsTests COMMAND test_sampler_settings)
 
 # Test executable for cubemap loading and rendering
-add_executable(test_cubemap
-        tests/test_cubemap.cpp
-        src/renderer/vulkan_texture.cpp
-        src/renderer/vulkan_context.cpp
-        src/renderer/vulkan_mipmap_compute.cpp
-        src/renderer/vulkan_buffer.cpp
-        src/renderer/vulkan_staging_pool.cpp
-        src/renderer/vulkan_transfer_queue.cpp
-        src/renderer/vulkan_descriptor_pools.cpp
-        src/renderer/vulkan_descriptors.cpp
-        src/renderer/vulkan_mesh.cpp
-        src/renderer/vulkan_material_buffer.cpp
-        src/renderer/mipmap_policy.cpp
-        src/core/texture_data.cpp
-        src/core/file_watcher.cpp
-        src/resources/image_loader.cpp
-        src/resources/texture_manager.cpp
-        src/resources/material_manager.cpp
-        src/resources/material_converter.cpp
-        src/resources/mesh_manager.cpp
-        src/core/job_system.cpp
-        src/core/memory.cpp
-        src/platform/window.cpp
+add_engine_test(test_cubemap
+    COMPONENTS renderer resources platform
 )
-
-if(WIN32)
-    target_sources(test_cubemap PRIVATE src/platform/win32_platform.cpp)
-endif()
-
-target_include_directories(test_cubemap PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-        ${stb_SOURCE_DIR}
-)
-
-target_link_libraries(test_cubemap PRIVATE
-        glfw
-        glm::glm
-        Vulkan::Vulkan
-        assimp
-        nlohmann_json::nlohmann_json
-)
-
-if(WIN32)
-    target_link_libraries(test_cubemap PRIVATE User32 Gdi32)
-endif()
-
-add_test(NAME CubemapTests COMMAND test_cubemap)
 
 # Test executable for format support detection
-add_executable(test_format_support
-        tests/test_format_support.cpp
-        src/renderer/vulkan_context.cpp
-        src/renderer/vulkan_mipmap_compute.cpp
-        src/renderer/vulkan_descriptor_pools.cpp
-        src/platform/window.cpp
+add_engine_test(test_format_support
+    COMPONENTS renderer platform
 )
 
-if(WIN32)
-    target_sources(test_format_support PRIVATE src/platform/win32_platform.cpp)
-endif()
-
-target_include_directories(test_format_support PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
+# Test executable for mipmap policy
+add_engine_test(test_mipmap_policy
+    COMPONENTS renderer platform
+    SOURCES src/core/texture_data.cpp
 )
 
-target_link_libraries(test_format_support PRIVATE
-        glfw
-        Vulkan::Vulkan
+# Test executable for mipgen compute
+add_engine_test(test_mipgen_compute
+    COMPONENTS renderer platform
 )
-
-if(WIN32)
-    target_link_libraries(test_format_support PRIVATE User32 Gdi32)
-endif()
-
-add_test(NAME FormatSupportTests COMMAND test_format_support)
-
-add_executable(test_mipmap_policy
-        tests/test_mipmap_policy.cpp
-        src/renderer/mipmap_policy.cpp
-        src/renderer/vulkan_context.cpp
-        src/renderer/vulkan_mipmap_compute.cpp
-        src/renderer/vulkan_descriptor_pools.cpp
-        src/renderer/vulkan_buffer.cpp
-        src/core/texture_data.cpp
-        src/platform/window.cpp
-)
-
-if(WIN32)
-    target_sources(test_mipmap_policy PRIVATE src/platform/win32_platform.cpp)
-endif()
-
-target_include_directories(test_mipmap_policy PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-)
-
-target_link_libraries(test_mipmap_policy PRIVATE
-        glfw
-        Vulkan::Vulkan
-)
-
-if(WIN32)
-    target_link_libraries(test_mipmap_policy PRIVATE User32 Gdi32)
-endif()
-
-add_test(NAME MipmapPolicyTests COMMAND test_mipmap_policy)
-
-add_executable(test_mipgen_compute
-        tests/test_mipgen_compute.cpp
-        src/renderer/vulkan_context.cpp
-        src/renderer/vulkan_mipmap_compute.cpp
-        src/renderer/vulkan_descriptor_pools.cpp
-        src/renderer/vulkan_buffer.cpp
-        src/platform/window.cpp
-)
-
-if(WIN32)
-    target_sources(test_mipgen_compute PRIVATE src/platform/win32_platform.cpp)
-endif()
-
-target_include_directories(test_mipgen_compute PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-)
-
-target_link_libraries(test_mipgen_compute PRIVATE
-        glfw
-        Vulkan::Vulkan
-)
-
-target_compile_definitions(test_mipgen_compute PRIVATE ENGINE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
-
-add_test(NAME MipgenComputeTests COMMAND test_mipgen_compute)
 
 # Test executable for mesh loading
-add_executable(test_mesh_loading
-        tests/test_mesh_loading.cpp
-        src/resources/mesh_manager.cpp
-        src/resources/material_manager.cpp
-        src/resources/material_converter.cpp
-        src/resources/image_loader.cpp
-        src/resources/texture_manager.cpp
-        src/renderer/vulkan_mesh.cpp
-        src/renderer/vulkan_buffer.cpp
-        src/renderer/vulkan_context.cpp
-        src/renderer/vulkan_mipmap_compute.cpp
-        src/renderer/vulkan_texture.cpp
-        src/renderer/vulkan_descriptor_pools.cpp
-        src/renderer/vulkan_descriptors.cpp
-        src/renderer/vulkan_material_buffer.cpp
-        src/renderer/vulkan_staging_pool.cpp
-        src/renderer/vulkan_transfer_queue.cpp
-        src/renderer/mipmap_policy.cpp
-        src/core/texture_data.cpp
-        src/core/job_system.cpp
-        src/core/memory.cpp
-        src/core/file_watcher.cpp
-        src/platform/window.cpp
+add_engine_test(test_mesh_loading
+    COMPONENTS renderer resources platform
 )
 
-if(WIN32)
-    target_sources(test_mesh_loading PRIVATE src/platform/win32_platform.cpp)
-endif()
-
-target_include_directories(test_mesh_loading PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-        ${stb_SOURCE_DIR}
+# Test executable for material system
+add_engine_test(test_material
+    LIBS Vulkan::Vulkan
 )
-
-target_link_libraries(test_mesh_loading PRIVATE
-        glm::glm
-        assimp
-        Vulkan::Vulkan
-        glfw
-        nlohmann_json::nlohmann_json
-)
-
-if(WIN32)
-    target_link_libraries(test_mesh_loading PRIVATE User32 Gdi32)
-endif()
-
-target_compile_definitions(test_mesh_loading PRIVATE ENGINE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
-
-add_test(NAME MeshLoadingTests COMMAND test_mesh_loading)
-
-# Material System Test (core data structures only, no Vulkan required)
-add_executable(test_material
-        tests/test_material.cpp
-)
-
-target_include_directories(test_material PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-)
-
-target_link_libraries(test_material PRIVATE
-        glm::glm
-        Vulkan::Vulkan
-)
-
-add_test(NAME MaterialSystemTests COMMAND test_material)

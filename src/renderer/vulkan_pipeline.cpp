@@ -192,8 +192,10 @@ VkPipeline VulkanPipeline::GetOffscreenPipeline(PipelineVariant variant) const {
 }
 
 VkPipeline VulkanPipeline::CreatePipelineVariant(PipelineVariant variant, VkDescriptorSetLayout /*descriptorSetLayout*/, VkExtent2D extent, VkRenderPass renderPass) {
-    const auto vertShaderCode = ReadFile("assets/shaders/cube.vert.spv");
-    const auto fragShaderCode = ReadFile("assets/shaders/cube.frag.spv");
+    std::filesystem::path vertPath = std::filesystem::path(ENGINE_SOURCE_DIR) / "assets" / "shaders" / "cube.vert.spv";
+    std::filesystem::path fragPath = std::filesystem::path(ENGINE_SOURCE_DIR) / "assets" / "shaders" / "cube.frag.spv";
+    const auto vertShaderCode = ReadFile(vertPath.string());
+    const auto fragShaderCode = ReadFile(fragPath.string());
 
     VkShaderModule vertShaderModule = CreateShaderModule(vertShaderCode);
     VkShaderModule fragShaderModule = CreateShaderModule(fragShaderCode);

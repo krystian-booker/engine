@@ -17,6 +17,7 @@
 #include <fstream>
 #include <iostream>
 #include <array>
+#include <filesystem>
 
 namespace {
 
@@ -123,7 +124,8 @@ void VulkanShadowRenderer::CreateShadowPipeline() {
     VkDevice device = m_Context->GetDevice();
 
     // Load shadow vertex shader
-    auto vertShaderCode = ReadFile("assets/shaders/shadow.vert.spv");
+    std::filesystem::path shaderPath = std::filesystem::path(ENGINE_SOURCE_DIR) / "assets" / "shaders" / "shadow.vert.spv";
+    auto vertShaderCode = ReadFile(shaderPath.string());
     VkShaderModule vertShaderModule = CreateShaderModule(device, vertShaderCode);
 
     VkPipelineShaderStageCreateInfo vertShaderStageInfo{};

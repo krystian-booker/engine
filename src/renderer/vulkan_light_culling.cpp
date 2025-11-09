@@ -365,7 +365,8 @@ void VulkanLightCulling::CreateComputePipeline() {
     }
 
     // Load compute shader
-    auto shaderCode = ReadBinaryFile("assets/shaders/light_culling.comp.spv");
+    std::filesystem::path shaderPath = std::filesystem::path(ENGINE_SOURCE_DIR) / "assets" / "shaders" / "light_culling.comp.spv";
+    auto shaderCode = ReadBinaryFile(shaderPath);
 
     VkShaderModuleCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
