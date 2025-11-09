@@ -1196,7 +1196,6 @@ void ImGuiLayer::HandleViewportInput(Viewport* viewport)
             if (cameraEntity.IsValid() && m_ECS->HasComponent<Camera>(cameraEntity))
             {
                 Camera& camera = m_ECS->GetComponent<Camera>(cameraEntity);
-                Transform& cameraTransform = m_ECS->GetComponent<Transform>(cameraEntity);
 
                 // Pick entity
                 Entity picked = m_EntityPicker->PickEntity(
@@ -1240,7 +1239,6 @@ void ImGuiLayer::RenderGizmo(Viewport* viewport)
     }
 
     Camera& camera = m_ECS->GetComponent<Camera>(cameraEntity);
-    Transform& cameraTransform = m_ECS->GetComponent<Transform>(cameraEntity);
     Transform& entityTransform = m_ECS->GetMutableComponent<Transform>(selected);
 
     // Setup ImGuizmo
