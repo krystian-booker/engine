@@ -5,6 +5,7 @@
 #include <vulkan/vulkan.h>
 #include <unordered_map>
 #include <vector>
+#include <string>
 
 #ifdef _DEBUG
 

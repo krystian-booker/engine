@@ -1050,7 +1050,7 @@ void ImGuiLayer::RenderEntityContextMenu(Entity entity)
 std::string ImGuiLayer::GenerateUniqueName(const char* baseName)
 {
     // Get all entities with Name component
-    const auto& namedEntities = m_ECS->GetAllEntitiesWithComponent<Name>();
+    std::vector<Entity> namedEntities = m_ECS->QueryEntities<Name>();
 
     // Check if base name is available
     bool nameExists = false;
@@ -1184,7 +1184,7 @@ void ImGuiLayer::FrameEntity(Entity entity)
 
     // Find the editor camera
     Entity cameraEntity = Entity::Invalid;
-    const auto& cameras = m_ECS->GetAllEntitiesWithComponent<Camera>();
+    std::vector<Entity> cameras = m_ECS->QueryEntities<Camera>();
     for (Entity e : cameras)
     {
         const Camera& cam = m_ECS->GetComponent<Camera>(e);
