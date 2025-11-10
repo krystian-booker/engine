@@ -21,6 +21,7 @@ void Input::Init(Window* window) {
 
     // Set GLFW input callbacks
     glfwSetKeyCallback(glfwWindow, KeyCallback);
+    glfwSetCharCallback(glfwWindow, CharCallback);
     glfwSetMouseButtonCallback(glfwWindow, MouseButtonCallback);
     glfwSetCursorPosCallback(glfwWindow, CursorPosCallback);
     glfwSetScrollCallback(glfwWindow, ScrollCallback);
@@ -112,6 +113,17 @@ void Input::KeyCallback(GLFWwindow* window, int key, int scancode, int action, i
         }
         // GLFW_REPEAT is ignored (handled by IsKeyDown)
     }
+}
+
+void Input::CharCallback(GLFWwindow* window, unsigned int codepoint) {
+    // Forward to ImGui (in debug mode with editor)
+#ifdef _DEBUG
+    ImGui_ImplGlfw_CharCallback(window, codepoint);
+#endif
+
+    // Input system doesn't need character input (only key states)
+    (void)window;
+    (void)codepoint;
 }
 
 void Input::MouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {

@@ -12,6 +12,7 @@ void ImGui_ImplGlfw_KeyCallback(GLFWwindow* window, int key, int scancode, int a
 void ImGui_ImplGlfw_MouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
 void ImGui_ImplGlfw_CursorPosCallback(GLFWwindow* window, double x, double y);
 void ImGui_ImplGlfw_ScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
+void ImGui_ImplGlfw_CharCallback(GLFWwindow* window, unsigned int c);
 #endif
 
 // Key codes (matching GLFW values for simplicity)
@@ -124,6 +125,7 @@ private:
 
     // GLFW callbacks
     static void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
+    static void CharCallback(GLFWwindow* window, unsigned int codepoint);
     static void MouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
     static void CursorPosCallback(GLFWwindow* window, double xpos, double ypos);
     static void ScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
