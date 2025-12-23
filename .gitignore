@@ -178,3 +178,4 @@ build/
 AGENTS.md
 assets/shaders/*.spv
 assets/models/*
+.vs/
