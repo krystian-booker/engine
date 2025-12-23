@@ -1,9 +1,0 @@
-{
-  "albedoTint": [1.0, 1.0, 1.0, 1.0],
-  "emissiveFactor": [0.0, 0.0, 0.0, 0.0],
-  "metallicFactor": 0.0,
-  "roughnessFactor": 0.5,
-  "normalScale": 1.0,
-  "aoStrength": 1.0,
-  "flags": []
-}
