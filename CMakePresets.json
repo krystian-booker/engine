@@ -7,57 +7,37 @@
   },
   "configurePresets": [
     {
-      "name": "vcpkg",
+      "name": "windows-base",
       "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      },
       "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": {
-          "value": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
-          "type": "FILEPATH"
-        }
+        "CMAKE_PREFIX_PATH": "$env{QTDIR}"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
       }
     },
     {
       "name": "windows-x64-debug",
       "displayName": "Windows x64 Debug",
-      "inherits": "vcpkg",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "inherits": "windows-base",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "VCPKG_TARGET_TRIPLET": "x64-windows"
-      },
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Windows"
+        "CMAKE_BUILD_TYPE": "Debug"
       }
     },
     {
       "name": "windows-x64-release",
       "displayName": "Windows x64 Release",
-      "inherits": "vcpkg",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "inherits": "windows-base",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "VCPKG_TARGET_TRIPLET": "x64-windows"
-      },
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Windows"
-      }
-    },
-    {
-      "hidden": true,
-      "name": "Qt",
-      "cacheVariables": {
-        "CMAKE_PREFIX_PATH": "$env{QTDIR}"
-      },
-      "vendor": {
-        "qt-project.org/Qt": {
-          "checksum": "wVa86FgEkvdCTVp1/nxvrkaemJc="
-        }
+        "CMAKE_BUILD_TYPE": "Release"
       }
     }
   ],
@@ -70,10 +50,5 @@
       "name": "windows-x64-release",
       "configurePreset": "windows-x64-release"
     }
-  ],
-  "vendor": {
-    "qt-project.org/Presets": {
-      "checksum": "wxdADEhPztX9LCfHwWinC+xtYpc="
-    }
-  }
+  ]
 }

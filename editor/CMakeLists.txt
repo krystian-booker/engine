@@ -27,13 +27,17 @@ set_target_properties(editor PROPERTIES
     FOLDER "editor"
 )
 
-# Copy Qt DLLs on Windows
+# Deploy Qt DLLs and plugins on Windows using windeployqt
 if(WIN32)
-    add_custom_command(TARGET editor POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:Qt6::Core>
-            $<TARGET_FILE:Qt6::Gui>
-            $<TARGET_FILE:Qt6::Widgets>
-            $<TARGET_FILE_DIR:editor>
-    )
+    find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS "${QTDIR}/bin")
+    if(WINDEPLOYQT_EXECUTABLE)
+        add_custom_command(TARGET editor POST_BUILD
+            COMMAND "${WINDEPLOYQT_EXECUTABLE}"
+                --no-translations
+                --no-system-d3d-compiler
+                --no-opengl-sw
+                "$<TARGET_FILE:editor>"
+            COMMENT "Running windeployqt..."
+        )
+    endif()
 endif()
