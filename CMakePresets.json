@@ -47,6 +47,18 @@
         "lhs": "${hostSystemName}",
         "rhs": "Windows"
       }
+    },
+    {
+      "hidden": true,
+      "name": "Qt",
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "$env{QTDIR}"
+      },
+      "vendor": {
+        "qt-project.org/Qt": {
+          "checksum": "wVa86FgEkvdCTVp1/nxvrkaemJc="
+        }
+      }
     }
   ],
   "buildPresets": [
@@ -58,5 +70,10 @@
       "name": "windows-x64-release",
       "configurePreset": "windows-x64-release"
     }
-  ]
+  ],
+  "vendor": {
+    "qt-project.org/Presets": {
+      "checksum": "wxdADEhPztX9LCfHwWinC+xtYpc="
+    }
+  }
 }
