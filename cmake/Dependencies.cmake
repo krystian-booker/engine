@@ -8,11 +8,6 @@ set(BGFX_INSTALL OFF CACHE BOOL "" FORCE)
 set(BGFX_AMALGAMATED OFF CACHE BOOL "" FORCE)
 set(BGFX_CONFIG_DEBUG ON CACHE BOOL "" FORCE)
 
-# Point to local bgfx submodules
-set(BGFX_DIR ${CMAKE_SOURCE_DIR}/external/bgfx CACHE STRING "" FORCE)
-set(BX_DIR ${CMAKE_SOURCE_DIR}/external/bx CACHE STRING "" FORCE)
-set(BIMG_DIR ${CMAKE_SOURCE_DIR}/external/bimg CACHE STRING "" FORCE)
-
 # Add bgfx.cmake
 add_subdirectory(${CMAKE_SOURCE_DIR}/external/bgfx.cmake)
 
