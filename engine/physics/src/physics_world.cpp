@@ -1,0 +1,209 @@
+#include <engine/physics/physics_world.hpp>
+#include <engine/core/log.hpp>
+
+namespace engine::physics {
+
+using namespace engine::core;
+
+// Forward declaration of Impl (defined in jolt_impl.cpp)
+struct PhysicsWorld::Impl;
+
+// These are implemented in jolt_impl.cpp
+extern PhysicsWorld::Impl* create_physics_impl();
+extern void destroy_physics_impl(PhysicsWorld::Impl* impl);
+extern void init_physics_impl(PhysicsWorld::Impl* impl, const PhysicsSettings& settings);
+extern void shutdown_physics_impl(PhysicsWorld::Impl* impl);
+extern void step_physics_impl(PhysicsWorld::Impl* impl, double dt);
+extern PhysicsBodyId create_body_impl(PhysicsWorld::Impl* impl, const BodySettings& settings);
+extern void destroy_body_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id);
+extern bool is_valid_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id);
+extern void set_position_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id, const Vec3& pos);
+extern void set_rotation_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id, const Quat& rot);
+extern Vec3 get_position_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id);
+extern Quat get_rotation_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id);
+extern void set_linear_velocity_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id, const Vec3& vel);
+extern void set_angular_velocity_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id, const Vec3& vel);
+extern Vec3 get_linear_velocity_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id);
+extern Vec3 get_angular_velocity_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id);
+extern void add_force_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id, const Vec3& force);
+extern void add_impulse_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id, const Vec3& impulse);
+extern RaycastHit raycast_impl(PhysicsWorld::Impl* impl, const Vec3& origin, const Vec3& dir, float max_dist, uint16_t mask);
+extern void set_gravity_impl(PhysicsWorld::Impl* impl, const Vec3& gravity);
+extern Vec3 get_gravity_impl(PhysicsWorld::Impl* impl);
+extern uint32_t get_body_count_impl(PhysicsWorld::Impl* impl);
+extern CollisionFilter& get_collision_filter_impl(PhysicsWorld::Impl* impl);
+
+PhysicsWorld::PhysicsWorld()
+    : m_impl(create_physics_impl())
+{
+}
+
+PhysicsWorld::~PhysicsWorld() {
+    if (m_impl) {
+        shutdown_physics_impl(m_impl.get());
+    }
+}
+
+PhysicsWorld::PhysicsWorld(PhysicsWorld&&) noexcept = default;
+PhysicsWorld& PhysicsWorld::operator=(PhysicsWorld&&) noexcept = default;
+
+void PhysicsWorld::init(const PhysicsSettings& settings) {
+    init_physics_impl(m_impl.get(), settings);
+    log(LogLevel::Info, "Physics world initialized");
+}
+
+void PhysicsWorld::shutdown() {
+    shutdown_physics_impl(m_impl.get());
+    log(LogLevel::Info, "Physics world shutdown");
+}
+
+void PhysicsWorld::step(double dt) {
+    step_physics_impl(m_impl.get(), dt);
+}
+
+PhysicsBodyId PhysicsWorld::create_body(const BodySettings& settings) {
+    return create_body_impl(m_impl.get(), settings);
+}
+
+void PhysicsWorld::destroy_body(PhysicsBodyId id) {
+    destroy_body_impl(m_impl.get(), id);
+}
+
+bool PhysicsWorld::is_valid(PhysicsBodyId id) const {
+    return is_valid_impl(m_impl.get(), id);
+}
+
+void PhysicsWorld::set_position(PhysicsBodyId id, const Vec3& pos) {
+    set_position_impl(m_impl.get(), id, pos);
+}
+
+void PhysicsWorld::set_rotation(PhysicsBodyId id, const Quat& rot) {
+    set_rotation_impl(m_impl.get(), id, rot);
+}
+
+void PhysicsWorld::set_transform(PhysicsBodyId id, const Vec3& pos, const Quat& rot) {
+    set_position_impl(m_impl.get(), id, pos);
+    set_rotation_impl(m_impl.get(), id, rot);
+}
+
+Vec3 PhysicsWorld::get_position(PhysicsBodyId id) const {
+    return get_position_impl(m_impl.get(), id);
+}
+
+Quat PhysicsWorld::get_rotation(PhysicsBodyId id) const {
+    return get_rotation_impl(m_impl.get(), id);
+}
+
+void PhysicsWorld::set_linear_velocity(PhysicsBodyId id, const Vec3& vel) {
+    set_linear_velocity_impl(m_impl.get(), id, vel);
+}
+
+void PhysicsWorld::set_angular_velocity(PhysicsBodyId id, const Vec3& vel) {
+    set_angular_velocity_impl(m_impl.get(), id, vel);
+}
+
+Vec3 PhysicsWorld::get_linear_velocity(PhysicsBodyId id) const {
+    return get_linear_velocity_impl(m_impl.get(), id);
+}
+
+Vec3 PhysicsWorld::get_angular_velocity(PhysicsBodyId id) const {
+    return get_angular_velocity_impl(m_impl.get(), id);
+}
+
+void PhysicsWorld::add_force(PhysicsBodyId id, const Vec3& force) {
+    add_force_impl(m_impl.get(), id, force);
+}
+
+void PhysicsWorld::add_force_at_point(PhysicsBodyId id, const Vec3& force, const Vec3& /*point*/) {
+    // Simplified - just add force at center
+    add_force_impl(m_impl.get(), id, force);
+}
+
+void PhysicsWorld::add_torque(PhysicsBodyId /*id*/, const Vec3& /*torque*/) {
+    // TODO: Implement
+}
+
+void PhysicsWorld::add_impulse(PhysicsBodyId id, const Vec3& impulse) {
+    add_impulse_impl(m_impl.get(), id, impulse);
+}
+
+void PhysicsWorld::add_impulse_at_point(PhysicsBodyId id, const Vec3& impulse, const Vec3& /*point*/) {
+    add_impulse_impl(m_impl.get(), id, impulse);
+}
+
+void PhysicsWorld::set_gravity_factor(PhysicsBodyId /*id*/, float /*factor*/) {
+    // TODO: Implement per-body gravity
+}
+
+void PhysicsWorld::set_friction(PhysicsBodyId /*id*/, float /*friction*/) {
+    // TODO: Implement
+}
+
+void PhysicsWorld::set_restitution(PhysicsBodyId /*id*/, float /*restitution*/) {
+    // TODO: Implement
+}
+
+void PhysicsWorld::activate_body(PhysicsBodyId /*id*/) {
+    // TODO: Implement
+}
+
+bool PhysicsWorld::is_active(PhysicsBodyId /*id*/) const {
+    return true;  // TODO: Implement
+}
+
+RaycastHit PhysicsWorld::raycast(const Vec3& origin, const Vec3& direction,
+                                  float max_distance, uint16_t layer_mask) const {
+    return raycast_impl(m_impl.get(), origin, direction, max_distance, layer_mask);
+}
+
+std::vector<RaycastHit> PhysicsWorld::raycast_all(const Vec3& origin, const Vec3& direction,
+                                                   float max_distance, uint16_t layer_mask) const {
+    // Simplified - just return single hit
+    auto hit = raycast(origin, direction, max_distance, layer_mask);
+    if (hit.hit) {
+        return {hit};
+    }
+    return {};
+}
+
+std::vector<PhysicsBodyId> PhysicsWorld::overlap_sphere(const Vec3& /*center*/, float /*radius*/,
+                                                        uint16_t /*layer_mask*/) const {
+    // TODO: Implement
+    return {};
+}
+
+std::vector<PhysicsBodyId> PhysicsWorld::overlap_box(const Vec3& /*center*/, const Vec3& /*half_extents*/,
+                                                     const Quat& /*rotation*/, uint16_t /*layer_mask*/) const {
+    // TODO: Implement
+    return {};
+}
+
+void PhysicsWorld::set_collision_callback(CollisionCallback /*callback*/) {
+    // TODO: Implement
+}
+
+CollisionFilter& PhysicsWorld::get_collision_filter() {
+    return get_collision_filter_impl(m_impl.get());
+}
+
+const CollisionFilter& PhysicsWorld::get_collision_filter() const {
+    return get_collision_filter_impl(m_impl.get());
+}
+
+void PhysicsWorld::set_gravity(const Vec3& gravity) {
+    set_gravity_impl(m_impl.get(), gravity);
+}
+
+Vec3 PhysicsWorld::get_gravity() const {
+    return get_gravity_impl(m_impl.get());
+}
+
+uint32_t PhysicsWorld::get_body_count() const {
+    return get_body_count_impl(m_impl.get());
+}
+
+uint32_t PhysicsWorld::get_active_body_count() const {
+    return get_body_count();  // TODO: Track active vs sleeping
+}
+
+} // namespace engine::physics

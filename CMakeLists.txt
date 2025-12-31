@@ -23,7 +23,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 # Custom CMake modules
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
-# Dependencies (bgfx.cmake)
+# Dependencies (bgfx.cmake, EnTT, GLM, etc.)
 include(Dependencies)
 
 # Compiler flags
@@ -31,6 +31,7 @@ include(CompilerFlags)
 
 # Options
 option(ENGINE_BUILD_EDITOR "Build the Qt6 editor application" ON)
+option(ENGINE_BUILD_SAMPLES "Build sample applications" ON)
 
 # Engine libraries
 add_subdirectory(engine)
@@ -38,4 +39,9 @@ add_subdirectory(engine)
 # Editor (optional)
 if(ENGINE_BUILD_EDITOR)
     add_subdirectory(editor)
+endif()
+
+# Samples (optional)
+if(ENGINE_BUILD_SAMPLES)
+    add_subdirectory(samples/spinning_cube)
 endif()

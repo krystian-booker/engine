@@ -5,8 +5,20 @@ find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Widgets)
 
 add_executable(editor WIN32
     src/main.cpp
-    src/main_window.cpp
     src/main_window.hpp
+    src/main_window.cpp
+    src/editor_state.hpp
+    src/editor_state.cpp
+    src/viewport_widget.hpp
+    src/viewport_widget.cpp
+    src/hierarchy_panel.hpp
+    src/hierarchy_panel.cpp
+    src/inspector_panel.hpp
+    src/inspector_panel.cpp
+    src/asset_browser.hpp
+    src/asset_browser.cpp
+    src/console_panel.hpp
+    src/console_panel.cpp
     resources/editor.qrc
 )
 
