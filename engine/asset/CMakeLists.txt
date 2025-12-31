@@ -9,6 +9,7 @@ target_sources(engine_asset
         src/importer.cpp
         src/hot_reload.cpp
         src/manager.cpp
+        src/gltf_importer.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -19,6 +20,7 @@ target_sources(engine_asset
             include/engine/asset/asset.hpp
             include/engine/asset/types.hpp
             include/engine/asset/manager.hpp
+            include/engine/asset/gltf_importer.hpp
 )
 
 target_include_directories(engine_asset

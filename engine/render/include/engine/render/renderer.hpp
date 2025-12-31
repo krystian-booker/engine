@@ -1,6 +1,8 @@
 #pragma once
 
 #include <engine/render/types.hpp>
+#include <engine/render/render_target.hpp>
+#include <array>
 #include <memory>
 #include <vector>
 
@@ -35,13 +37,37 @@ public:
     virtual void destroy_shader(ShaderHandle h) = 0;
     virtual void destroy_material(MaterialHandle h) = 0;
 
+    // Render target management
+    virtual RenderTargetHandle create_render_target(const RenderTargetDesc& desc) = 0;
+    virtual void destroy_render_target(RenderTargetHandle h) = 0;
+
+    // Get the texture from a render target attachment
+    // attachment: 0 for first color attachment, 1+ for additional color attachments
+    // Use UINT32_MAX for depth attachment
+    virtual TextureHandle get_render_target_texture(RenderTargetHandle h, uint32_t attachment = 0) = 0;
+
+    // Resize an existing render target (recreates internal textures)
+    virtual void resize_render_target(RenderTargetHandle h, uint32_t width, uint32_t height) = 0;
+
+    // View management
+    virtual void configure_view(RenderView view, const ViewConfig& config) = 0;
+    virtual void set_view_transform(RenderView view, const Mat4& view_matrix, const Mat4& proj_matrix) = 0;
+
     // Draw call management (queued for batching)
     virtual void queue_draw(const DrawCall& call) = 0;
+    virtual void queue_draw(const DrawCall& call, RenderView view) = 0;
 
     // Camera and lighting
     virtual void set_camera(const Mat4& view, const Mat4& proj) = 0;
     virtual void set_light(uint32_t index, const LightData& light) = 0;
     virtual void clear_lights() = 0;
+
+    // Shadow mapping
+    virtual void set_shadow_data(const std::array<Mat4, 4>& cascade_matrices,
+                                  const Vec4& cascade_splits,
+                                  const Vec4& shadow_params) = 0;
+    virtual void set_shadow_texture(uint32_t cascade, TextureHandle texture) = 0;
+    virtual void enable_shadows(bool enabled) = 0;
 
     // Sorts queued draws by material/mesh and submits to GPU
     virtual void flush() = 0;

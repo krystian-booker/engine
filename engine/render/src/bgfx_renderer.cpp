@@ -1,4 +1,5 @@
 #include <engine/render/renderer.hpp>
+#include <engine/render/pbr_material.hpp>
 #include <engine/core/log.hpp>
 #include <bgfx/bgfx.h>
 #include <bgfx/platform.h>
@@ -6,6 +7,7 @@
 #include <unordered_map>
 #include <cmath>
 #include <fstream>
+#include <array>
 
 namespace engine::render {
 
@@ -13,6 +15,112 @@ using namespace engine::core;
 
 // Vertex layout for our Vertex struct
 static bgfx::VertexLayout s_vertex_layout;
+
+// PBR Uniform handles (created once, reused)
+struct PBRUniforms {
+    bgfx::UniformHandle u_cameraPos = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_albedoColor = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_pbrParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_emissiveColor = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_lights = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_lightCount = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_iblParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_time = BGFX_INVALID_HANDLE;
+
+    // Shadow uniforms
+    bgfx::UniformHandle u_shadowParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_cascadeSplits = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_shadowMatrix0 = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_shadowMatrix1 = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_shadowMatrix2 = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_shadowMatrix3 = BGFX_INVALID_HANDLE;
+
+    // Texture samplers
+    bgfx::UniformHandle s_albedo = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_normal = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_metallicRoughness = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_ao = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_emissive = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_irradiance = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_prefilter = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_brdfLUT = BGFX_INVALID_HANDLE;
+
+    // Shadow map samplers
+    bgfx::UniformHandle s_shadowMap0 = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_shadowMap1 = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_shadowMap2 = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_shadowMap3 = BGFX_INVALID_HANDLE;
+
+    void create() {
+        u_cameraPos = bgfx::createUniform("u_cameraPos", bgfx::UniformType::Vec4);
+        u_albedoColor = bgfx::createUniform("u_albedoColor", bgfx::UniformType::Vec4);
+        u_pbrParams = bgfx::createUniform("u_pbrParams", bgfx::UniformType::Vec4);
+        u_emissiveColor = bgfx::createUniform("u_emissiveColor", bgfx::UniformType::Vec4);
+        u_lights = bgfx::createUniform("u_lights", bgfx::UniformType::Vec4, 32);  // 8 lights * 4 vec4s
+        u_lightCount = bgfx::createUniform("u_lightCount", bgfx::UniformType::Vec4);
+        u_iblParams = bgfx::createUniform("u_iblParams", bgfx::UniformType::Vec4);
+        u_time = bgfx::createUniform("u_time", bgfx::UniformType::Vec4);
+
+        // Shadow uniforms
+        u_shadowParams = bgfx::createUniform("u_shadowParams", bgfx::UniformType::Vec4);
+        u_cascadeSplits = bgfx::createUniform("u_cascadeSplits", bgfx::UniformType::Vec4);
+        u_shadowMatrix0 = bgfx::createUniform("u_shadowMatrix0", bgfx::UniformType::Mat4);
+        u_shadowMatrix1 = bgfx::createUniform("u_shadowMatrix1", bgfx::UniformType::Mat4);
+        u_shadowMatrix2 = bgfx::createUniform("u_shadowMatrix2", bgfx::UniformType::Mat4);
+        u_shadowMatrix3 = bgfx::createUniform("u_shadowMatrix3", bgfx::UniformType::Mat4);
+
+        s_albedo = bgfx::createUniform("s_albedo", bgfx::UniformType::Sampler);
+        s_normal = bgfx::createUniform("s_normal", bgfx::UniformType::Sampler);
+        s_metallicRoughness = bgfx::createUniform("s_metallicRoughness", bgfx::UniformType::Sampler);
+        s_ao = bgfx::createUniform("s_ao", bgfx::UniformType::Sampler);
+        s_emissive = bgfx::createUniform("s_emissive", bgfx::UniformType::Sampler);
+        s_irradiance = bgfx::createUniform("s_irradiance", bgfx::UniformType::Sampler);
+        s_prefilter = bgfx::createUniform("s_prefilter", bgfx::UniformType::Sampler);
+        s_brdfLUT = bgfx::createUniform("s_brdfLUT", bgfx::UniformType::Sampler);
+
+        // Shadow map samplers
+        s_shadowMap0 = bgfx::createUniform("s_shadowMap0", bgfx::UniformType::Sampler);
+        s_shadowMap1 = bgfx::createUniform("s_shadowMap1", bgfx::UniformType::Sampler);
+        s_shadowMap2 = bgfx::createUniform("s_shadowMap2", bgfx::UniformType::Sampler);
+        s_shadowMap3 = bgfx::createUniform("s_shadowMap3", bgfx::UniformType::Sampler);
+    }
+
+    void destroy() {
+        if (bgfx::isValid(u_cameraPos)) bgfx::destroy(u_cameraPos);
+        if (bgfx::isValid(u_albedoColor)) bgfx::destroy(u_albedoColor);
+        if (bgfx::isValid(u_pbrParams)) bgfx::destroy(u_pbrParams);
+        if (bgfx::isValid(u_emissiveColor)) bgfx::destroy(u_emissiveColor);
+        if (bgfx::isValid(u_lights)) bgfx::destroy(u_lights);
+        if (bgfx::isValid(u_lightCount)) bgfx::destroy(u_lightCount);
+        if (bgfx::isValid(u_iblParams)) bgfx::destroy(u_iblParams);
+        if (bgfx::isValid(u_time)) bgfx::destroy(u_time);
+
+        // Shadow uniforms
+        if (bgfx::isValid(u_shadowParams)) bgfx::destroy(u_shadowParams);
+        if (bgfx::isValid(u_cascadeSplits)) bgfx::destroy(u_cascadeSplits);
+        if (bgfx::isValid(u_shadowMatrix0)) bgfx::destroy(u_shadowMatrix0);
+        if (bgfx::isValid(u_shadowMatrix1)) bgfx::destroy(u_shadowMatrix1);
+        if (bgfx::isValid(u_shadowMatrix2)) bgfx::destroy(u_shadowMatrix2);
+        if (bgfx::isValid(u_shadowMatrix3)) bgfx::destroy(u_shadowMatrix3);
+
+        if (bgfx::isValid(s_albedo)) bgfx::destroy(s_albedo);
+        if (bgfx::isValid(s_normal)) bgfx::destroy(s_normal);
+        if (bgfx::isValid(s_metallicRoughness)) bgfx::destroy(s_metallicRoughness);
+        if (bgfx::isValid(s_ao)) bgfx::destroy(s_ao);
+        if (bgfx::isValid(s_emissive)) bgfx::destroy(s_emissive);
+        if (bgfx::isValid(s_irradiance)) bgfx::destroy(s_irradiance);
+        if (bgfx::isValid(s_prefilter)) bgfx::destroy(s_prefilter);
+        if (bgfx::isValid(s_brdfLUT)) bgfx::destroy(s_brdfLUT);
+
+        // Shadow map samplers
+        if (bgfx::isValid(s_shadowMap0)) bgfx::destroy(s_shadowMap0);
+        if (bgfx::isValid(s_shadowMap1)) bgfx::destroy(s_shadowMap1);
+        if (bgfx::isValid(s_shadowMap2)) bgfx::destroy(s_shadowMap2);
+        if (bgfx::isValid(s_shadowMap3)) bgfx::destroy(s_shadowMap3);
+    }
+};
+
+static PBRUniforms s_pbr_uniforms;
 
 // Helper function to load shader binary from file
 static bgfx::ShaderHandle load_shader_from_file(const std::string& path) {
@@ -91,6 +199,44 @@ public:
             log(LogLevel::Warn, "Failed to load default shader program");
         }
 
+        // Load PBR shader
+        bgfx::ShaderHandle pbr_vsh = load_shader_from_file(shader_path + "vs_pbr.sc.bin");
+        bgfx::ShaderHandle pbr_fsh = load_shader_from_file(shader_path + "fs_pbr.sc.bin");
+
+        if (bgfx::isValid(pbr_vsh) && bgfx::isValid(pbr_fsh)) {
+            m_pbr_program = bgfx::createProgram(pbr_vsh, pbr_fsh, true);
+            log(LogLevel::Info, "PBR shader program loaded successfully");
+        } else {
+            log(LogLevel::Warn, "Failed to load PBR shader program - using default");
+            m_pbr_program = m_default_program;
+        }
+
+        // Load shadow shader
+        bgfx::ShaderHandle shadow_vsh = load_shader_from_file(shader_path + "vs_shadow.sc.bin");
+        bgfx::ShaderHandle shadow_fsh = load_shader_from_file(shader_path + "fs_shadow.sc.bin");
+
+        if (bgfx::isValid(shadow_vsh) && bgfx::isValid(shadow_fsh)) {
+            m_shadow_program = bgfx::createProgram(shadow_vsh, shadow_fsh, true);
+            log(LogLevel::Info, "Shadow shader program loaded successfully");
+        } else {
+            log(LogLevel::Warn, "Failed to load shadow shader program");
+        }
+
+        // Create PBR uniforms
+        s_pbr_uniforms.create();
+
+        // Create default 1x1 white texture for missing textures
+        uint32_t white_pixel = 0xFFFFFFFF;
+        m_white_texture = bgfx::createTexture2D(1, 1, false, 1, bgfx::TextureFormat::RGBA8,
+            BGFX_TEXTURE_NONE | BGFX_SAMPLER_POINT,
+            bgfx::copy(&white_pixel, sizeof(white_pixel)));
+
+        // Create default 1x1 normal texture (flat normal pointing up)
+        uint32_t normal_pixel = 0xFFFF8080;  // (128, 128, 255) = (0, 0, 1) in tangent space
+        m_default_normal = bgfx::createTexture2D(1, 1, false, 1, bgfx::TextureFormat::RGBA8,
+            BGFX_TEXTURE_NONE | BGFX_SAMPLER_POINT,
+            bgfx::copy(&normal_pixel, sizeof(normal_pixel)));
+
         m_initialized = true;
         return true;
     }
@@ -100,10 +246,29 @@ public:
             return;
         }
 
-        // Destroy default shader program
+        // Destroy shader programs
         if (bgfx::isValid(m_default_program)) {
             bgfx::destroy(m_default_program);
             m_default_program = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_pbr_program) && m_pbr_program.idx != m_default_program.idx) {
+            bgfx::destroy(m_pbr_program);
+            m_pbr_program = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_shadow_program)) {
+            bgfx::destroy(m_shadow_program);
+            m_shadow_program = BGFX_INVALID_HANDLE;
+        }
+
+        // Destroy PBR uniforms
+        s_pbr_uniforms.destroy();
+
+        // Destroy default textures
+        if (bgfx::isValid(m_white_texture)) {
+            bgfx::destroy(m_white_texture);
+        }
+        if (bgfx::isValid(m_default_normal)) {
+            bgfx::destroy(m_default_normal);
         }
 
         // Destroy all resources
@@ -125,12 +290,27 @@ public:
         }
         m_shaders.clear();
 
+        // Destroy render targets
+        for (auto& [id, rt] : m_render_targets) {
+            if (bgfx::isValid(rt.fbh)) {
+                bgfx::destroy(rt.fbh);
+            }
+            for (auto th : rt.color_attachments) {
+                bgfx::destroy(th);
+            }
+            if (bgfx::isValid(rt.depth_attachment)) {
+                bgfx::destroy(rt.depth_attachment);
+            }
+        }
+        m_render_targets.clear();
+
         bgfx::shutdown();
         m_initialized = false;
     }
 
     void begin_frame() override {
         bgfx::touch(0);
+        m_total_time += 0.016f;  // Approximate 60fps delta time
     }
 
     void end_frame() override {
@@ -305,14 +485,209 @@ public:
         m_materials.erase(h.id);
     }
 
+    RenderTargetHandle create_render_target(const RenderTargetDesc& desc) override {
+        RenderTargetHandle handle{m_next_render_target_id++};
+        BGFXRenderTarget rt;
+        rt.desc = desc;
+
+        // Calculate texture flags
+        uint64_t flags = BGFX_TEXTURE_RT;
+        if (desc.samplable) {
+            flags |= BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+        }
+
+        // Create color attachments
+        std::vector<bgfx::Attachment> attachments;
+        for (uint32_t i = 0; i < desc.color_attachment_count; ++i) {
+            bgfx::TextureHandle th = bgfx::createTexture2D(
+                uint16_t(desc.width),
+                uint16_t(desc.height),
+                desc.generate_mipmaps,
+                1,
+                to_bgfx_format(desc.color_format),
+                flags
+            );
+            rt.color_attachments.push_back(th);
+
+            // Create external texture handle
+            TextureHandle ext_handle{m_next_texture_id++};
+            m_textures[ext_handle.id] = th;
+            rt.color_texture_handles.push_back(ext_handle);
+
+            bgfx::Attachment att;
+            att.init(th);
+            attachments.push_back(att);
+        }
+
+        // Create depth attachment if requested
+        if (desc.has_depth) {
+            bgfx::TextureHandle th = bgfx::createTexture2D(
+                uint16_t(desc.width),
+                uint16_t(desc.height),
+                false,
+                1,
+                to_bgfx_format(desc.depth_format),
+                BGFX_TEXTURE_RT | BGFX_TEXTURE_RT_WRITE_ONLY
+            );
+            rt.depth_attachment = th;
+
+            // Create external texture handle for depth
+            TextureHandle ext_handle{m_next_texture_id++};
+            m_textures[ext_handle.id] = th;
+            rt.depth_texture_handle = ext_handle;
+
+            bgfx::Attachment att;
+            att.init(th);
+            attachments.push_back(att);
+        }
+
+        // Create framebuffer
+        rt.fbh = bgfx::createFrameBuffer(
+            static_cast<uint8_t>(attachments.size()),
+            attachments.data(),
+            false  // Don't destroy textures with framebuffer
+        );
+
+        if (!bgfx::isValid(rt.fbh)) {
+            log(LogLevel::Error, "Failed to create render target");
+            // Cleanup textures
+            for (auto th : rt.color_attachments) {
+                bgfx::destroy(th);
+            }
+            if (bgfx::isValid(rt.depth_attachment)) {
+                bgfx::destroy(rt.depth_attachment);
+            }
+            return RenderTargetHandle{};
+        }
+
+        m_render_targets[handle.id] = std::move(rt);
+
+        if (desc.debug_name) {
+            bgfx::setName(m_render_targets[handle.id].fbh, desc.debug_name);
+        }
+
+        log(LogLevel::Debug, ("Created render target " + std::to_string(handle.id) +
+            " (" + std::to_string(desc.width) + "x" + std::to_string(desc.height) + ")").c_str());
+
+        return handle;
+    }
+
+    void destroy_render_target(RenderTargetHandle h) override {
+        auto it = m_render_targets.find(h.id);
+        if (it == m_render_targets.end()) return;
+
+        auto& rt = it->second;
+
+        // Destroy framebuffer
+        if (bgfx::isValid(rt.fbh)) {
+            bgfx::destroy(rt.fbh);
+        }
+
+        // Destroy color textures
+        for (auto th : rt.color_attachments) {
+            bgfx::destroy(th);
+        }
+        for (auto& ext : rt.color_texture_handles) {
+            m_textures.erase(ext.id);
+        }
+
+        // Destroy depth texture
+        if (bgfx::isValid(rt.depth_attachment)) {
+            bgfx::destroy(rt.depth_attachment);
+            m_textures.erase(rt.depth_texture_handle.id);
+        }
+
+        m_render_targets.erase(it);
+    }
+
+    TextureHandle get_render_target_texture(RenderTargetHandle h, uint32_t attachment) override {
+        auto it = m_render_targets.find(h.id);
+        if (it == m_render_targets.end()) return TextureHandle{};
+
+        const auto& rt = it->second;
+
+        if (attachment == UINT32_MAX) {
+            // Return depth attachment
+            return rt.depth_texture_handle;
+        }
+
+        if (attachment < rt.color_texture_handles.size()) {
+            return rt.color_texture_handles[attachment];
+        }
+
+        return TextureHandle{};
+    }
+
+    void resize_render_target(RenderTargetHandle h, uint32_t width, uint32_t height) override {
+        auto it = m_render_targets.find(h.id);
+        if (it == m_render_targets.end()) return;
+
+        RenderTargetDesc new_desc = it->second.desc;
+        new_desc.width = width;
+        new_desc.height = height;
+
+        // Destroy old render target
+        destroy_render_target(h);
+
+        // Create new one with same handle ID
+        // We need to recreate with the same ID, so we temporarily reserve it
+        m_next_render_target_id--;  // Reuse the ID
+        create_render_target(new_desc);
+    }
+
+    void configure_view(RenderView view, const ViewConfig& config) override {
+        uint16_t view_id = static_cast<uint16_t>(view);
+        m_view_configs[view_id] = config;
+
+        // Set up the view
+        if (config.render_target.valid()) {
+            auto it = m_render_targets.find(config.render_target.id);
+            if (it != m_render_targets.end()) {
+                bgfx::setViewFrameBuffer(view_id, it->second.fbh);
+
+                uint16_t w = config.viewport_width ? config.viewport_width : uint16_t(it->second.desc.width);
+                uint16_t h = config.viewport_height ? config.viewport_height : uint16_t(it->second.desc.height);
+                bgfx::setViewRect(view_id, config.viewport_x, config.viewport_y, w, h);
+            }
+        } else {
+            // Use backbuffer
+            bgfx::setViewFrameBuffer(view_id, BGFX_INVALID_HANDLE);
+
+            uint16_t w = config.viewport_width ? config.viewport_width : uint16_t(m_width);
+            uint16_t h = config.viewport_height ? config.viewport_height : uint16_t(m_height);
+            bgfx::setViewRect(view_id, config.viewport_x, config.viewport_y, w, h);
+        }
+
+        // Set clear flags
+        uint16_t clear_flags = 0;
+        if (config.clear_color_enabled) clear_flags |= BGFX_CLEAR_COLOR;
+        if (config.clear_depth_enabled) clear_flags |= BGFX_CLEAR_DEPTH;
+        if (config.clear_stencil_enabled) clear_flags |= BGFX_CLEAR_STENCIL;
+
+        bgfx::setViewClear(view_id, clear_flags, config.clear_color, config.clear_depth, config.clear_stencil);
+    }
+
+    void set_view_transform(RenderView view, const Mat4& view_matrix, const Mat4& proj_matrix) override {
+        uint16_t view_id = static_cast<uint16_t>(view);
+        bgfx::setViewTransform(view_id, glm::value_ptr(view_matrix), glm::value_ptr(proj_matrix));
+    }
+
     void queue_draw(const DrawCall& call) override {
         m_draw_queue.push_back(call);
+    }
+
+    void queue_draw(const DrawCall& call, RenderView view) override {
+        m_view_draw_queue.push_back({call, view});
     }
 
     void set_camera(const Mat4& view, const Mat4& proj) override {
         m_view_matrix = view;
         m_proj_matrix = proj;
         bgfx::setViewTransform(0, glm::value_ptr(view), glm::value_ptr(proj));
+
+        // Extract camera position from inverse view matrix
+        Mat4 inv_view = glm::inverse(view);
+        m_camera_position = Vec3(inv_view[3]);
     }
 
     void set_light(uint32_t index, const LightData& light) override {
@@ -327,54 +702,202 @@ public:
         }
     }
 
-    void flush() override {
-        // Sort draw calls by material then mesh for batching
-        std::sort(m_draw_queue.begin(), m_draw_queue.end(),
-            [](const DrawCall& a, const DrawCall& b) {
-                if (a.material.id != b.material.id) return a.material.id < b.material.id;
-                return a.mesh.id < b.mesh.id;
-            });
+    void set_shadow_data(const std::array<Mat4, 4>& cascade_matrices,
+                          const Vec4& cascade_splits,
+                          const Vec4& shadow_params) override {
+        m_shadow_matrices = cascade_matrices;
+        m_cascade_splits = cascade_splits;
+        m_shadow_params = shadow_params;
+    }
 
-        // Submit draw calls
-        for (const auto& call : m_draw_queue) {
-            auto mesh_it = m_meshes.find(call.mesh.id);
-            if (mesh_it == m_meshes.end()) continue;
-
-            const auto& mesh = mesh_it->second;
-
-            // Set transform
-            bgfx::setTransform(glm::value_ptr(call.transform));
-
-            // Set vertex buffer
-            bgfx::setVertexBuffer(0, mesh.vbh);
-
-            // Set index buffer if available
-            if (bgfx::isValid(mesh.ibh)) {
-                bgfx::setIndexBuffer(mesh.ibh);
+    void set_shadow_texture(uint32_t cascade, TextureHandle texture) override {
+        if (cascade < 4) {
+            auto it = m_textures.find(texture.id);
+            if (it != m_textures.end()) {
+                m_shadow_textures[cascade] = it->second;
             }
+        }
+    }
 
-            // Set state
-            uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
-                             BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
-                             BGFX_STATE_CULL_CW | BGFX_STATE_MSAA;
+    void enable_shadows(bool enabled) override {
+        m_shadows_enabled = enabled;
+    }
 
-            bgfx::setState(state);
+    void flush() override {
+        // Process legacy draw queue (view 0)
+        if (!m_draw_queue.empty()) {
+            // Sort draw calls by material then mesh for batching
+            std::sort(m_draw_queue.begin(), m_draw_queue.end(),
+                [](const DrawCall& a, const DrawCall& b) {
+                    if (a.material.id != b.material.id) return a.material.id < b.material.id;
+                    return a.mesh.id < b.mesh.id;
+                });
 
-            // Determine which shader program to use
-            bgfx::ProgramHandle program = m_default_program;
-            auto mat_it = m_materials.find(call.material.id);
-            if (mat_it != m_materials.end() && mat_it->second.shader.valid()) {
+            // Submit draw calls to view 0
+            submit_draw_calls(m_draw_queue, 0);
+            m_draw_queue.clear();
+        }
+
+        // Process view-specific draw queue
+        if (!m_view_draw_queue.empty()) {
+            // Sort by view, then by material, then by mesh
+            std::sort(m_view_draw_queue.begin(), m_view_draw_queue.end(),
+                [](const ViewDrawCall& a, const ViewDrawCall& b) {
+                    uint16_t va = static_cast<uint16_t>(a.view);
+                    uint16_t vb = static_cast<uint16_t>(b.view);
+                    if (va != vb) return va < vb;
+                    if (a.call.material.id != b.call.material.id)
+                        return a.call.material.id < b.call.material.id;
+                    return a.call.mesh.id < b.call.mesh.id;
+                });
+
+            // Submit per-view
+            for (const auto& vdc : m_view_draw_queue) {
+                submit_single_draw(vdc.call, static_cast<uint16_t>(vdc.view));
+            }
+            m_view_draw_queue.clear();
+        }
+    }
+
+    // Helper to submit draw calls to a specific view
+    void submit_draw_calls(const std::vector<DrawCall>& calls, uint16_t view_id) {
+        for (const auto& call : calls) {
+            submit_single_draw(call, view_id);
+        }
+    }
+
+    void submit_single_draw(const DrawCall& call, uint16_t view_id) {
+        auto mesh_it = m_meshes.find(call.mesh.id);
+        if (mesh_it == m_meshes.end()) return;
+
+        const auto& mesh = mesh_it->second;
+
+        // Set transform
+        bgfx::setTransform(glm::value_ptr(call.transform));
+
+        // Set vertex buffer
+        bgfx::setVertexBuffer(0, mesh.vbh);
+
+        // Set index buffer if available
+        if (bgfx::isValid(mesh.ibh)) {
+            bgfx::setIndexBuffer(mesh.ibh);
+        }
+
+        // Set state
+        uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                         BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
+                         BGFX_STATE_CULL_CW | BGFX_STATE_MSAA;
+
+        bgfx::setState(state);
+
+        // Determine which shader program to use
+        bgfx::ProgramHandle program = m_default_program;
+        bool use_pbr = false;
+
+        auto mat_it = m_materials.find(call.material.id);
+        if (mat_it != m_materials.end()) {
+            if (mat_it->second.shader.valid()) {
                 auto shader_it = m_shaders.find(mat_it->second.shader.id);
                 if (shader_it != m_shaders.end()) {
                     program = shader_it->second;
                 }
+            } else {
+                // No custom shader - use PBR if available
+                use_pbr = bgfx::isValid(m_pbr_program);
+                if (use_pbr) {
+                    program = m_pbr_program;
+                }
             }
-
-            // Submit draw call
-            bgfx::submit(0, program);
         }
 
-        m_draw_queue.clear();
+        // Upload PBR uniforms if using PBR shader
+        if (use_pbr) {
+            upload_pbr_uniforms();
+        }
+
+        // Submit draw call
+        bgfx::submit(view_id, program);
+    }
+
+    // Upload PBR uniforms (lights, camera, material defaults, etc.)
+    void upload_pbr_uniforms() {
+        // Camera position
+        Vec4 cam_pos(m_camera_position, 1.0f);
+        bgfx::setUniform(s_pbr_uniforms.u_cameraPos, glm::value_ptr(cam_pos));
+
+        // Default material values (white, 0.5 roughness, no metallic)
+        Vec4 albedo(1.0f, 1.0f, 1.0f, 1.0f);
+        Vec4 pbr_params(0.0f, 0.5f, 1.0f, 0.5f);  // metallic, roughness, ao, alpha_cutoff
+        Vec4 emissive(0.0f, 0.0f, 0.0f, 0.0f);
+        bgfx::setUniform(s_pbr_uniforms.u_albedoColor, glm::value_ptr(albedo));
+        bgfx::setUniform(s_pbr_uniforms.u_pbrParams, glm::value_ptr(pbr_params));
+        bgfx::setUniform(s_pbr_uniforms.u_emissiveColor, glm::value_ptr(emissive));
+
+        // Pack and upload light data
+        std::array<Vec4, 32> light_data{};
+        int active_light_count = 0;
+
+        for (int i = 0; i < 8; ++i) {
+            if (m_lights[i].intensity > 0.0f) {
+                GPULightData gpu_light = packLightForGPU(m_lights[i]);
+                int base = i * 4;
+                light_data[base + 0] = gpu_light.position_type;
+                light_data[base + 1] = gpu_light.direction_range;
+                light_data[base + 2] = gpu_light.color_intensity;
+                light_data[base + 3] = gpu_light.spot_params;
+                active_light_count = i + 1;
+            }
+        }
+
+        bgfx::setUniform(s_pbr_uniforms.u_lights, light_data.data(), 32);
+        Vec4 light_count(static_cast<float>(active_light_count), 0.0f, 0.0f, 0.0f);
+        bgfx::setUniform(s_pbr_uniforms.u_lightCount, glm::value_ptr(light_count));
+
+        // IBL params (disabled by default)
+        Vec4 ibl_params(0.0f, 0.0f, 5.0f, 0.0f);  // intensity, rotation, max_mip, unused
+        bgfx::setUniform(s_pbr_uniforms.u_iblParams, glm::value_ptr(ibl_params));
+
+        // Time uniform
+        Vec4 time_data(m_total_time, 0.016f, std::sin(m_total_time), std::cos(m_total_time));
+        bgfx::setUniform(s_pbr_uniforms.u_time, glm::value_ptr(time_data));
+
+        // Shadow uniforms
+        if (m_shadows_enabled) {
+            bgfx::setUniform(s_pbr_uniforms.u_shadowParams, glm::value_ptr(m_shadow_params));
+            bgfx::setUniform(s_pbr_uniforms.u_cascadeSplits, glm::value_ptr(m_cascade_splits));
+            bgfx::setUniform(s_pbr_uniforms.u_shadowMatrix0, glm::value_ptr(m_shadow_matrices[0]));
+            bgfx::setUniform(s_pbr_uniforms.u_shadowMatrix1, glm::value_ptr(m_shadow_matrices[1]));
+            bgfx::setUniform(s_pbr_uniforms.u_shadowMatrix2, glm::value_ptr(m_shadow_matrices[2]));
+            bgfx::setUniform(s_pbr_uniforms.u_shadowMatrix3, glm::value_ptr(m_shadow_matrices[3]));
+        } else {
+            // Set zero bias to disable shadows in shader
+            Vec4 disabled_params(0.0f, 0.0f, 0.0f, 0.0f);
+            bgfx::setUniform(s_pbr_uniforms.u_shadowParams, glm::value_ptr(disabled_params));
+        }
+
+        // Bind default textures
+        bgfx::setTexture(0, s_pbr_uniforms.s_albedo, m_white_texture);
+        bgfx::setTexture(1, s_pbr_uniforms.s_normal, m_default_normal);
+        bgfx::setTexture(2, s_pbr_uniforms.s_metallicRoughness, m_white_texture);
+        bgfx::setTexture(3, s_pbr_uniforms.s_ao, m_white_texture);
+        bgfx::setTexture(4, s_pbr_uniforms.s_emissive, m_white_texture);
+
+        // Bind shadow map textures (slots 8-11)
+        if (m_shadows_enabled) {
+            for (int i = 0; i < 4; ++i) {
+                if (bgfx::isValid(m_shadow_textures[i])) {
+                    bgfx::UniformHandle sampler;
+                    switch (i) {
+                        case 0: sampler = s_pbr_uniforms.s_shadowMap0; break;
+                        case 1: sampler = s_pbr_uniforms.s_shadowMap1; break;
+                        case 2: sampler = s_pbr_uniforms.s_shadowMap2; break;
+                        default: sampler = s_pbr_uniforms.s_shadowMap3; break;
+                    }
+                    bgfx::setTexture(8 + i, sampler, m_shadow_textures[i],
+                        BGFX_SAMPLER_COMPARE_LEQUAL | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+                }
+            }
+        }
     }
 
     void clear(uint32_t color, float depth) override {
@@ -400,6 +923,22 @@ private:
         uint32_t vertex_count = 0;
         uint32_t index_count = 0;
         AABB bounds;
+    };
+
+    // Internal render target structure
+    struct BGFXRenderTarget {
+        bgfx::FrameBufferHandle fbh = BGFX_INVALID_HANDLE;
+        std::vector<bgfx::TextureHandle> color_attachments;
+        bgfx::TextureHandle depth_attachment = BGFX_INVALID_HANDLE;
+        RenderTargetDesc desc;
+        std::vector<TextureHandle> color_texture_handles;  // External handles for color
+        TextureHandle depth_texture_handle;                // External handle for depth
+    };
+
+    // View-specific draw queue entry
+    struct ViewDrawCall {
+        DrawCall call;
+        RenderView view;
     };
 
     // Primitive mesh generators
@@ -533,19 +1072,46 @@ private:
     uint32_t m_width = 0;
     uint32_t m_height = 0;
 
-    // Default shader program
+    // Shader programs
     bgfx::ProgramHandle m_default_program = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_pbr_program = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_shadow_program = BGFX_INVALID_HANDLE;
+
+    // Default textures for PBR
+    bgfx::TextureHandle m_white_texture = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle m_default_normal = BGFX_INVALID_HANDLE;
+
+    // Camera position (for PBR specular)
+    Vec3 m_camera_position{0.0f};
+
+    // Shadow system data
+    bool m_shadows_enabled = false;
+    std::array<Mat4, 4> m_shadow_matrices{Mat4(1.0f), Mat4(1.0f), Mat4(1.0f), Mat4(1.0f)};
+    Vec4 m_cascade_splits{10.0f, 30.0f, 100.0f, 500.0f};
+    Vec4 m_shadow_params{0.001f, 0.01f, 0.1f, 1.0f};  // bias, normalBias, cascadeBlend, pcfRadius
+    std::array<bgfx::TextureHandle, 4> m_shadow_textures{
+        BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE
+    };
+
+    // Total time for shader animations
+    float m_total_time = 0.0f;
 
     // Resources
     uint32_t m_next_mesh_id = 1;
     uint32_t m_next_texture_id = 1;
     uint32_t m_next_shader_id = 1;
     uint32_t m_next_material_id = 1;
+    uint32_t m_next_render_target_id = 1;
 
     std::unordered_map<uint32_t, BGFXMesh> m_meshes;
     std::unordered_map<uint32_t, bgfx::TextureHandle> m_textures;
     std::unordered_map<uint32_t, bgfx::ProgramHandle> m_shaders;
     std::unordered_map<uint32_t, MaterialData> m_materials;
+    std::unordered_map<uint32_t, BGFXRenderTarget> m_render_targets;
+
+    // View configurations
+    std::unordered_map<uint16_t, ViewConfig> m_view_configs;
+    std::unordered_map<uint16_t, RenderTargetHandle> m_view_render_targets;
 
     // Camera
     Mat4 m_view_matrix{1.0f};
@@ -554,8 +1120,26 @@ private:
     // Lights
     LightData m_lights[8]{};
 
-    // Draw queue
-    std::vector<DrawCall> m_draw_queue;
+    // Draw queues
+    std::vector<DrawCall> m_draw_queue;  // Legacy queue for view 0
+    std::vector<ViewDrawCall> m_view_draw_queue;  // Queue with view specification
+
+    // Helper to convert TextureFormat to bgfx format
+    static bgfx::TextureFormat::Enum to_bgfx_format(TextureFormat format) {
+        switch (format) {
+            case TextureFormat::RGBA8:    return bgfx::TextureFormat::RGBA8;
+            case TextureFormat::RGBA16F:  return bgfx::TextureFormat::RGBA16F;
+            case TextureFormat::RGBA32F:  return bgfx::TextureFormat::RGBA32F;
+            case TextureFormat::R8:       return bgfx::TextureFormat::R8;
+            case TextureFormat::RG8:      return bgfx::TextureFormat::RG8;
+            case TextureFormat::Depth24:  return bgfx::TextureFormat::D24;
+            case TextureFormat::Depth32F: return bgfx::TextureFormat::D32F;
+            case TextureFormat::BC1:      return bgfx::TextureFormat::BC1;
+            case TextureFormat::BC3:      return bgfx::TextureFormat::BC3;
+            case TextureFormat::BC7:      return bgfx::TextureFormat::BC7;
+            default:                      return bgfx::TextureFormat::RGBA8;
+        }
+    }
 };
 
 std::unique_ptr<IRenderer> create_bgfx_renderer() {

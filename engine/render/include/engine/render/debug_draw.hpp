@@ -78,10 +78,16 @@ public:
     // Clear all debug draws
     static void clear();
 
+    // Update time for expiration (call once per frame)
+    static void update_time(float delta_time);
+
     // Flush and render all debug draws
     static void flush(IRenderer* renderer);
 
-private:
+    // Shutdown and release resources
+    static void shutdown(IRenderer* renderer);
+
+    // Debug line data (public for renderer access)
     struct DebugLine {
         Vec3 a, b;
         uint32_t color_a, color_b;
@@ -103,6 +109,12 @@ private:
         float expire_time;
     };
 
+    // Get pending lines for custom rendering
+    static const std::vector<DebugLine>& get_lines() { return s_lines; }
+    static const std::vector<DebugText3D>& get_texts_3d() { return s_texts_3d; }
+    static const std::vector<DebugText2D>& get_texts_2d() { return s_texts_2d; }
+
+private:
     static std::vector<DebugLine> s_lines;
     static std::vector<DebugText3D> s_texts_3d;
     static std::vector<DebugText2D> s_texts_2d;

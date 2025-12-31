@@ -1,5 +1,6 @@
 #include <engine/asset/manager.hpp>
 #include <engine/asset/hot_reload.hpp>
+#include <engine/asset/gltf_importer.hpp>
 #include <engine/core/filesystem.hpp>
 #include <engine/core/log.hpp>
 #include <engine/core/job_system.hpp>
@@ -287,9 +288,22 @@ void AssetManager::set_reload_callback(ReloadCallback callback) {
 
 // Internal loading implementations
 std::shared_ptr<MeshAsset> AssetManager::load_mesh_internal(const std::string& path) {
-    // For now, just return nullptr - mesh loading requires cgltf implementation
     log(LogLevel::Debug, ("Loading mesh: " + path).c_str());
-    // TODO: Implement cgltf-based mesh loading
+
+    std::string ext = get_extension(path);
+
+    // Use glTF importer for supported formats
+    if (ext == ".gltf" || ext == ".glb") {
+        return GltfImporter::import_mesh(path, m_renderer);
+    }
+
+    // TODO: Support for .obj and .fbx formats
+    if (ext == ".obj" || ext == ".fbx") {
+        log(LogLevel::Warn, ("Unsupported mesh format (only glTF supported): " + path).c_str());
+        return nullptr;
+    }
+
+    log(LogLevel::Error, ("Unknown mesh format: " + path).c_str());
     return nullptr;
 }
 

@@ -10,6 +10,7 @@ target_sources(engine_scene
         src/systems.cpp
         src/transform.cpp
         src/hierarchy.cpp
+        src/scene_serializer.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -22,6 +23,7 @@ target_sources(engine_scene
             include/engine/scene/systems.hpp
             include/engine/scene/transform.hpp
             include/engine/scene/render_components.hpp
+            include/engine/scene/scene_serializer.hpp
 )
 
 target_include_directories(engine_scene

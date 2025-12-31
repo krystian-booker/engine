@@ -12,6 +12,13 @@ target_sources(engine_render
         src/device.cpp
         src/bgfx_renderer.cpp
         src/debug_draw.cpp
+        src/shadow_system.cpp
+        src/ssao.cpp
+        src/post_process.cpp
+        src/skeleton.cpp
+        src/animation.cpp
+        src/volumetric.cpp
+        src/render_pipeline.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -20,6 +27,15 @@ target_sources(engine_render
             include/engine/render/device.hpp
             include/engine/render/render.hpp
             include/engine/render/renderer.hpp
+            include/engine/render/render_target.hpp
+            include/engine/render/pbr_material.hpp
+            include/engine/render/shadow_system.hpp
+            include/engine/render/ssao.hpp
+            include/engine/render/post_process.hpp
+            include/engine/render/skeleton.hpp
+            include/engine/render/animation.hpp
+            include/engine/render/volumetric.hpp
+            include/engine/render/render_pipeline.hpp
             include/engine/render/types.hpp
             include/engine/render/debug_draw.hpp
 )
@@ -46,15 +62,17 @@ set_target_properties(engine_render PROPERTIES
 # Compile shaders at build time
 if(TARGET bgfx::shaderc)
     set(BGFX_SHADER_INCLUDE_PATH "${CMAKE_SOURCE_DIR}/external/bgfx.cmake/bgfx/src")
+    set(SHADER_COMMON_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders/common")
     set(SHADER_OUTPUT_DIR "${CMAKE_BINARY_DIR}/shaders")
     set(RUNTIME_SHADER_DIR "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders")
 
+    # Default shaders (simple)
     bgfx_compile_shaders(
         TYPE VERTEX
         SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vs_default.sc
         VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying.def.sc
         OUTPUT_DIR ${SHADER_OUTPUT_DIR}
-        OUT_FILES_VAR VS_OUTPUTS
+        OUT_FILES_VAR VS_DEFAULT_OUTPUTS
         INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
     )
 
@@ -63,12 +81,158 @@ if(TARGET bgfx::shaderc)
         SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fs_default.sc
         VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying.def.sc
         OUTPUT_DIR ${SHADER_OUTPUT_DIR}
-        OUT_FILES_VAR FS_OUTPUTS
+        OUT_FILES_VAR FS_DEFAULT_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
+    # PBR shaders
+    bgfx_compile_shaders(
+        TYPE VERTEX
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vs_pbr.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_pbr.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR VS_PBR_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH} ${SHADER_COMMON_DIR}
+    )
+
+    bgfx_compile_shaders(
+        TYPE FRAGMENT
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fs_pbr.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_pbr.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR FS_PBR_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH} ${SHADER_COMMON_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/shaders
+    )
+
+    # Shadow shaders
+    bgfx_compile_shaders(
+        TYPE VERTEX
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vs_shadow.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_shadow.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR VS_SHADOW_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
+    bgfx_compile_shaders(
+        TYPE FRAGMENT
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fs_shadow.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_shadow.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR FS_SHADOW_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
+    # Fullscreen vertex shader (used by all post-processing)
+    bgfx_compile_shaders(
+        TYPE VERTEX
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vs_fullscreen.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_fullscreen.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR VS_FULLSCREEN_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
+    # SSAO shaders
+    bgfx_compile_shaders(
+        TYPE FRAGMENT
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fs_ssao.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_fullscreen.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR FS_SSAO_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
+    bgfx_compile_shaders(
+        TYPE FRAGMENT
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fs_ssao_blur.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_fullscreen.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR FS_SSAO_BLUR_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
+    # Bloom shaders
+    bgfx_compile_shaders(
+        TYPE FRAGMENT
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fs_bloom_downsample.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_fullscreen.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR FS_BLOOM_DOWN_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
+    bgfx_compile_shaders(
+        TYPE FRAGMENT
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fs_bloom_upsample.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_fullscreen.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR FS_BLOOM_UP_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
+    # Tonemapping shader
+    bgfx_compile_shaders(
+        TYPE FRAGMENT
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fs_tonemap.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_fullscreen.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR FS_TONEMAP_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
+    # Skinned PBR shaders (for skeletal animation)
+    bgfx_compile_shaders(
+        TYPE VERTEX
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vs_skinned_pbr.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_skinned_pbr.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR VS_SKINNED_PBR_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH} ${SHADER_COMMON_DIR}
+    )
+
+    # Volumetric fog shader
+    bgfx_compile_shaders(
+        TYPE FRAGMENT
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fs_volumetric.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_fullscreen.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR FS_VOLUMETRIC_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
+    # Debug line shaders
+    bgfx_compile_shaders(
+        TYPE VERTEX
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vs_debug.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_debug.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR VS_DEBUG_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
+    bgfx_compile_shaders(
+        TYPE FRAGMENT
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fs_debug.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_debug.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR FS_DEBUG_OUTPUTS
         INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
     )
 
     # Create custom target for shaders
-    add_custom_target(engine_shaders DEPENDS ${VS_OUTPUTS} ${FS_OUTPUTS})
+    add_custom_target(engine_shaders DEPENDS
+        ${VS_DEFAULT_OUTPUTS} ${FS_DEFAULT_OUTPUTS}
+        ${VS_PBR_OUTPUTS} ${FS_PBR_OUTPUTS}
+        ${VS_SHADOW_OUTPUTS} ${FS_SHADOW_OUTPUTS}
+        ${VS_FULLSCREEN_OUTPUTS}
+        ${FS_SSAO_OUTPUTS} ${FS_SSAO_BLUR_OUTPUTS}
+        ${FS_BLOOM_DOWN_OUTPUTS} ${FS_BLOOM_UP_OUTPUTS}
+        ${FS_TONEMAP_OUTPUTS}
+        ${VS_SKINNED_PBR_OUTPUTS}
+        ${FS_VOLUMETRIC_OUTPUTS}
+        ${VS_DEBUG_OUTPUTS} ${FS_DEBUG_OUTPUTS}
+    )
 
     # Copy compiled shaders next to the runtime binaries so the renderer can find them
     add_custom_command(TARGET engine_shaders POST_BUILD

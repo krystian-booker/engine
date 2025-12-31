@@ -1,4 +1,5 @@
 #include <engine/render/debug_draw.hpp>
+#include <engine/render/renderer.hpp>
 #include <cmath>
 #include <algorithm>
 
@@ -11,6 +12,12 @@ std::vector<DebugDraw::DebugText2D> DebugDraw::s_texts_2d;
 float DebugDraw::s_current_duration = 0.0f;
 bool DebugDraw::s_depth_test = true;
 float DebugDraw::s_current_time = 0.0f;
+
+// GPU resources (initialized lazily)
+static bool s_gpu_initialized = false;
+static VertexBufferHandle s_line_vb;
+static ProgramHandle s_line_program;
+static constexpr uint32_t MAX_DEBUG_LINES = 65536;
 
 void DebugDraw::line(const Vec3& a, const Vec3& b, uint32_t color) {
     line(a, b, color, color);
@@ -364,9 +371,12 @@ void DebugDraw::clear() {
     s_texts_2d.clear();
 }
 
-void DebugDraw::flush(IRenderer* /*renderer*/) {
-    // Update time (should be called once per frame with actual delta time)
-    s_current_time += 1.0f / 60.0f;  // Assume 60 FPS for now
+void DebugDraw::update_time(float delta_time) {
+    s_current_time += delta_time;
+}
+
+void DebugDraw::flush(IRenderer* renderer) {
+    if (!renderer) return;
 
     // Remove expired items
     s_lines.erase(
@@ -390,9 +400,32 @@ void DebugDraw::flush(IRenderer* /*renderer*/) {
             }),
         s_texts_2d.end());
 
-    // TODO: Actually render the debug lines using the renderer
-    // This requires creating a simple line shader and submitting
-    // the line vertices to BGFX. For now, the data is stored and ready.
+    // Render debug lines
+    if (!s_lines.empty()) {
+        // Separate lines by depth test mode
+        std::vector<const DebugLine*> depth_lines;
+        std::vector<const DebugLine*> overlay_lines;
+
+        for (const auto& line : s_lines) {
+            if (line.depth_test) {
+                depth_lines.push_back(&line);
+            } else {
+                overlay_lines.push_back(&line);
+            }
+        }
+
+        // Submit depth-tested lines
+        if (!depth_lines.empty()) {
+            renderer->submit_debug_lines(RenderView::Debug, depth_lines.data(),
+                                          static_cast<uint32_t>(depth_lines.size()), true);
+        }
+
+        // Submit overlay lines (no depth test)
+        if (!overlay_lines.empty()) {
+            renderer->submit_debug_lines(RenderView::DebugOverlay, overlay_lines.data(),
+                                          static_cast<uint32_t>(overlay_lines.size()), false);
+        }
+    }
 
     // Clear single-frame items
     s_lines.erase(
@@ -409,6 +442,11 @@ void DebugDraw::flush(IRenderer* /*renderer*/) {
         std::remove_if(s_texts_2d.begin(), s_texts_2d.end(),
             [](const DebugText2D& t) { return t.expire_time == 0; }),
         s_texts_2d.end());
+}
+
+void DebugDraw::shutdown(IRenderer* renderer) {
+    clear();
+    s_gpu_initialized = false;
 }
 
 } // namespace engine::render
