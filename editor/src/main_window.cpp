@@ -255,7 +255,7 @@ void MainWindow::setup_panels() {
 
     // Set default sizes
     m_hierarchy->setMinimumWidth(200);
-    m_inspector->setMinimumWidth(300);
+    m_inspector->setMinimumWidth(220);
 }
 
 void MainWindow::setup_connections() {

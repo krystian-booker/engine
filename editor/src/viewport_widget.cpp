@@ -129,6 +129,9 @@ void ViewportWidget::render_frame() {
 
     // Render scene
     if (world) {
+        // Update world transforms from local transforms before rendering
+        engine::scene::transform_system(*world, 0.0);
+
         auto render_view = world->view<engine::scene::WorldTransform, engine::scene::MeshRenderer>();
         for (auto entity : render_view) {
             auto& transform = render_view.get<engine::scene::WorldTransform>(entity);

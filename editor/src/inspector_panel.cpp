@@ -14,6 +14,11 @@
 #include <QComboBox>
 #include <QGroupBox>
 #include <QFrame>
+#include <QSizePolicy>
+#include <QMenu>
+#include <QContextMenuEvent>
+#include <QListWidget>
+#include <QDialogButtonBox>
 
 namespace editor {
 
@@ -24,33 +29,210 @@ CollapsibleSection::CollapsibleSection(const QString& title, QWidget* content, Q
 {
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(2);
+    layout->setSpacing(0);
 
-    // Header with toggle button
-    auto* header = new QFrame(this);
-    header->setFrameShape(QFrame::StyledPanel);
-    auto* header_layout = new QHBoxLayout(header);
-    header_layout->setContentsMargins(4, 2, 4, 2);
+    // Header frame with dark styling
+    m_header = new QFrame(this);
+    m_header->setFrameShape(QFrame::NoFrame);
+    m_header->setStyleSheet(
+        "QFrame { background-color: #3C3C3C; border: 1px solid #555; border-radius: 2px; }"
+    );
 
-    m_toggle_btn = new QPushButton(title, header);
+    auto* header_layout = new QHBoxLayout(m_header);
+    header_layout->setContentsMargins(4, 4, 4, 4);
+    header_layout->setSpacing(4);
+
+    // Arrow indicator
+    m_arrow_label = new QLabel(m_header);
+    m_arrow_label->setFixedSize(12, 12);
+    m_arrow_label->setAlignment(Qt::AlignCenter);
+    m_arrow_label->setStyleSheet("QLabel { color: #AAA; font-size: 10px; border: none; background: transparent; }");
+    update_arrow();
+    header_layout->addWidget(m_arrow_label);
+
+    // Title button
+    m_toggle_btn = new QPushButton(title, m_header);
     m_toggle_btn->setFlat(true);
-    m_toggle_btn->setCheckable(true);
-    m_toggle_btn->setStyleSheet("text-align: left; font-weight: bold;");
-    header_layout->addWidget(m_toggle_btn);
-    header_layout->addStretch();
+    m_toggle_btn->setStyleSheet(
+        "QPushButton { text-align: left; font-weight: bold; color: #DDD; border: none; background: transparent; }"
+        "QPushButton:hover { color: #FFF; }"
+    );
+    header_layout->addWidget(m_toggle_btn, 1);
 
-    layout->addWidget(header);
+    // Options menu button
+    auto* menu_btn = new QPushButton("...", m_header);
+    menu_btn->setFixedSize(20, 16);
+    menu_btn->setFlat(true);
+    menu_btn->setStyleSheet(
+        "QPushButton { color: #888; border: none; background: transparent; font-weight: bold; }"
+        "QPushButton:hover { color: #FFF; background: #555; border-radius: 2px; }"
+    );
+    connect(menu_btn, &QPushButton::clicked, [this, menu_btn]() {
+        show_context_menu(menu_btn->mapToGlobal(QPoint(0, menu_btn->height())));
+    });
+    header_layout->addWidget(menu_btn);
+
+    layout->addWidget(m_header);
     layout->addWidget(m_content);
 
-    connect(m_toggle_btn, &QPushButton::toggled, [this](bool checked) {
-        set_collapsed(checked);
+    connect(m_toggle_btn, &QPushButton::clicked, [this]() {
+        set_collapsed(!m_collapsed);
     });
+
+    // Also toggle when clicking the arrow
+    m_arrow_label->installEventFilter(this);
 }
 
 void CollapsibleSection::set_collapsed(bool collapsed) {
     m_collapsed = collapsed;
     m_content->setVisible(!collapsed);
-    m_toggle_btn->setText(m_toggle_btn->text()); // Refresh
+    update_arrow();
+}
+
+void CollapsibleSection::update_arrow() {
+    // Unicode arrows: right arrow for collapsed, down arrow for expanded
+    m_arrow_label->setText(m_collapsed ? "\u25B6" : "\u25BC");
+}
+
+void CollapsibleSection::contextMenuEvent(QContextMenuEvent* event) {
+    show_context_menu(event->globalPos());
+}
+
+void CollapsibleSection::show_context_menu(const QPoint& pos) {
+    QMenu menu(this);
+
+    menu.addAction("Reset", [this]() { emit reset_requested(); });
+    menu.addSeparator();
+    menu.addAction("Copy Component", [this]() { emit copy_requested(); });
+    menu.addAction("Paste Component Values", [this]() { emit paste_requested(); });
+
+    if (m_removable) {
+        menu.addSeparator();
+        menu.addAction("Remove Component", [this]() { emit remove_requested(); });
+    }
+
+    menu.exec(pos);
+}
+
+// DraggableLabel implementation
+DraggableLabel::DraggableLabel(const QString& text, QWidget* parent)
+    : QLabel(text, parent)
+{
+    setCursor(Qt::SizeHorCursor);
+}
+
+void DraggableLabel::mousePressEvent(QMouseEvent* event) {
+    if (event->button() == Qt::LeftButton) {
+        m_dragging = true;
+        m_drag_start = event->globalPosition().toPoint();
+        emit drag_started();
+        grabMouse();
+    }
+    QLabel::mousePressEvent(event);
+}
+
+void DraggableLabel::mouseMoveEvent(QMouseEvent* event) {
+    if (m_dragging) {
+        int delta_x = event->globalPosition().toPoint().x() - m_drag_start.x();
+        double value_delta = delta_x * m_sensitivity;
+        emit value_changed(value_delta);
+        m_drag_start = event->globalPosition().toPoint();
+    }
+    QLabel::mouseMoveEvent(event);
+}
+
+void DraggableLabel::mouseReleaseEvent(QMouseEvent* event) {
+    if (m_dragging) {
+        m_dragging = false;
+        releaseMouse();
+        emit drag_finished();
+    }
+    QLabel::mouseReleaseEvent(event);
+}
+
+void DraggableLabel::enterEvent(QEnterEvent* event) {
+    QLabel::enterEvent(event);
+}
+
+void DraggableLabel::leaveEvent(QEvent* event) {
+    QLabel::leaveEvent(event);
+}
+
+// AddComponentDialog implementation
+AddComponentDialog::AddComponentDialog(QWidget* parent)
+    : QDialog(parent)
+{
+    setWindowTitle("Add Component");
+    setMinimumSize(280, 350);
+    setup_ui();
+}
+
+void AddComponentDialog::setup_ui() {
+    auto* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(8, 8, 8, 8);
+    layout->setSpacing(8);
+
+    // Search box
+    m_search = new QLineEdit(this);
+    m_search->setPlaceholderText("Search components...");
+    m_search->setClearButtonEnabled(true);
+    layout->addWidget(m_search);
+
+    // Component list
+    m_list = new QListWidget(this);
+    m_list->setAlternatingRowColors(true);
+
+    // Add available components (hardcoded for now, could be made dynamic)
+    m_list->addItem("Mesh Renderer");
+    m_list->addItem("Camera");
+    m_list->addItem("Light");
+    m_list->addItem("Audio Source");
+    m_list->addItem("Audio Listener");
+    m_list->addItem("Rigidbody");
+    m_list->addItem("Box Collider");
+    m_list->addItem("Sphere Collider");
+    m_list->addItem("Capsule Collider");
+    m_list->addItem("Script");
+
+    layout->addWidget(m_list, 1);
+
+    // Buttons
+    auto* buttons = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+    layout->addWidget(buttons);
+
+    // Connections
+    connect(m_search, &QLineEdit::textChanged, this, &AddComponentDialog::filter_components);
+    connect(m_list, &QListWidget::itemDoubleClicked, this, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+
+    // Select first item by default
+    if (m_list->count() > 0) {
+        m_list->setCurrentRow(0);
+    }
+}
+
+QString AddComponentDialog::selected_component() const {
+    auto* item = m_list->currentItem();
+    return item ? item->text() : QString();
+}
+
+void AddComponentDialog::filter_components(const QString& text) {
+    for (int i = 0; i < m_list->count(); ++i) {
+        auto* item = m_list->item(i);
+        bool matches = item->text().contains(text, Qt::CaseInsensitive);
+        item->setHidden(!matches);
+    }
+
+    // Select first visible item
+    for (int i = 0; i < m_list->count(); ++i) {
+        auto* item = m_list->item(i);
+        if (!item->isHidden()) {
+            m_list->setCurrentItem(item);
+            break;
+        }
+    }
 }
 
 // InspectorPanel implementation
@@ -94,6 +276,7 @@ void InspectorPanel::clear_content() {
         }
         delete item;
     }
+    m_euler_cache.clear();
 }
 
 void InspectorPanel::on_selection_changed() {
@@ -182,17 +365,18 @@ QWidget* InspectorPanel::create_transform_editor(engine::scene::Entity entity) {
 
     auto* widget = new QWidget(m_content);
     auto* layout = new QFormLayout(widget);
-    layout->setContentsMargins(8, 4, 8, 4);
+    layout->setContentsMargins(4, 2, 4, 2);
+    layout->setVerticalSpacing(4);
 
     // Position
     auto* pos_widget = create_vec3_editor("Position", transform.position, []{});
     layout->addRow("Position", pos_widget);
 
-    // Rotation (euler angles)
-    static engine::core::Vec3 euler;
-    euler = transform.euler();
-    euler = glm::degrees(euler);
-    auto* rot_widget = create_vec3_editor("Rotation", euler, [&transform]() {
+    // Rotation (euler angles) - use cache to avoid static variable issues
+    auto entity_id = static_cast<uint32_t>(entity);
+    m_euler_cache[entity_id] = glm::degrees(transform.euler());
+    auto& euler = m_euler_cache[entity_id];
+    auto* rot_widget = create_vec3_editor("Rotation", euler, [&transform, &euler]() {
         transform.set_euler(glm::radians(euler));
     });
     layout->addRow("Rotation", rot_widget);
@@ -210,7 +394,8 @@ QWidget* InspectorPanel::create_mesh_renderer_editor(engine::scene::Entity entit
 
     auto* widget = new QWidget(m_content);
     auto* layout = new QFormLayout(widget);
-    layout->setContentsMargins(8, 4, 8, 4);
+    layout->setContentsMargins(4, 2, 4, 2);
+    layout->setVerticalSpacing(4);
 
     // Visible checkbox
     auto* visible_cb = new QCheckBox(widget);
@@ -237,12 +422,15 @@ QWidget* InspectorPanel::create_camera_editor(engine::scene::Entity entity) {
 
     auto* widget = new QWidget(m_content);
     auto* layout = new QFormLayout(widget);
-    layout->setContentsMargins(8, 4, 8, 4);
+    layout->setContentsMargins(4, 2, 4, 2);
+    layout->setVerticalSpacing(4);
 
     // FOV
     auto* fov_spin = new QDoubleSpinBox(widget);
     fov_spin->setRange(1.0, 180.0);
     fov_spin->setValue(camera.fov);
+    fov_spin->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    fov_spin->setMaximumWidth(80);
     connect(fov_spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             [&camera](double value) { camera.fov = static_cast<float>(value); });
     layout->addRow("FOV", fov_spin);
@@ -252,6 +440,8 @@ QWidget* InspectorPanel::create_camera_editor(engine::scene::Entity entity) {
     near_spin->setRange(0.001, 1000.0);
     near_spin->setDecimals(3);
     near_spin->setValue(camera.near_plane);
+    near_spin->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    near_spin->setMaximumWidth(80);
     connect(near_spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             [&camera](double value) { camera.near_plane = static_cast<float>(value); });
     layout->addRow("Near", near_spin);
@@ -260,6 +450,8 @@ QWidget* InspectorPanel::create_camera_editor(engine::scene::Entity entity) {
     auto* far_spin = new QDoubleSpinBox(widget);
     far_spin->setRange(1.0, 100000.0);
     far_spin->setValue(camera.far_plane);
+    far_spin->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    far_spin->setMaximumWidth(80);
     connect(far_spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             [&camera](double value) { camera.far_plane = static_cast<float>(value); });
     layout->addRow("Far", far_spin);
@@ -281,7 +473,8 @@ QWidget* InspectorPanel::create_light_editor(engine::scene::Entity entity) {
 
     auto* widget = new QWidget(m_content);
     auto* layout = new QFormLayout(widget);
-    layout->setContentsMargins(8, 4, 8, 4);
+    layout->setContentsMargins(4, 2, 4, 2);
+    layout->setVerticalSpacing(4);
 
     // Type
     auto* type_combo = new QComboBox(widget);
@@ -301,6 +494,8 @@ QWidget* InspectorPanel::create_light_editor(engine::scene::Entity entity) {
     auto* intensity_spin = new QDoubleSpinBox(widget);
     intensity_spin->setRange(0.0, 100.0);
     intensity_spin->setValue(light.intensity);
+    intensity_spin->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    intensity_spin->setMaximumWidth(80);
     connect(intensity_spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             [&light](double value) { light.intensity = static_cast<float>(value); });
     layout->addRow("Intensity", intensity_spin);
@@ -309,6 +504,8 @@ QWidget* InspectorPanel::create_light_editor(engine::scene::Entity entity) {
     auto* range_spin = new QDoubleSpinBox(widget);
     range_spin->setRange(0.0, 1000.0);
     range_spin->setValue(light.range);
+    range_spin->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    range_spin->setMaximumWidth(80);
     connect(range_spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             [&light](double value) { light.range = static_cast<float>(value); });
     layout->addRow("Range", range_spin);
@@ -317,6 +514,8 @@ QWidget* InspectorPanel::create_light_editor(engine::scene::Entity entity) {
     auto* angle_spin = new QDoubleSpinBox(widget);
     angle_spin->setRange(1.0, 180.0);
     angle_spin->setValue(light.spot_outer_angle);
+    angle_spin->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    angle_spin->setMaximumWidth(80);
     connect(angle_spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             [&light](double value) { light.spot_outer_angle = static_cast<float>(value); });
     layout->addRow("Spot Angle", angle_spin);
@@ -329,25 +528,55 @@ QWidget* InspectorPanel::create_vec3_editor(const QString& /*label*/, engine::co
     auto* widget = new QWidget(m_content);
     auto* layout = new QHBoxLayout(widget);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(4);
+    layout->setSpacing(2);
 
-    auto create_spin = [&](float& v, const QString& prefix) {
-        auto* spin = new QDoubleSpinBox(widget);
-        spin->setPrefix(prefix + ": ");
+    // Helper to create a component with draggable label + spinbox
+    auto create_component = [&](float& v, const QString& axis, const QString& color) {
+        auto* container = new QWidget(widget);
+        auto* h_layout = new QHBoxLayout(container);
+        h_layout->setContentsMargins(0, 0, 0, 0);
+        h_layout->setSpacing(1);
+
+        // Draggable axis label
+        auto* label = new DraggableLabel(axis, container);
+        label->setFixedWidth(14);
+        label->setAlignment(Qt::AlignCenter);
+        label->setStyleSheet(QString("QLabel { color: %1; font-weight: bold; }").arg(color));
+        label->set_sensitivity(0.1);
+
+        auto* spin = new QDoubleSpinBox(container);
         spin->setRange(-100000.0, 100000.0);
-        spin->setDecimals(3);
+        spin->setDecimals(2);
         spin->setValue(v);
+        spin->setButtonSymbols(QAbstractSpinBox::NoButtons);
+        spin->setMinimumWidth(45);
+        spin->setMaximumWidth(55);
+        spin->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+
+        // Connect draggable label to adjust value
+        connect(label, &DraggableLabel::value_changed, [spin, &v, on_changed](double delta) {
+            v += static_cast<float>(delta);
+            spin->setValue(v);
+            if (on_changed) on_changed();
+        });
+
+        // Connect spinbox value changes
         connect(spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
                 [&v, on_changed](double val) {
                     v = static_cast<float>(val);
                     if (on_changed) on_changed();
                 });
-        return spin;
+
+        h_layout->addWidget(label);
+        h_layout->addWidget(spin);
+        return container;
     };
 
-    layout->addWidget(create_spin(value.x, "X"));
-    layout->addWidget(create_spin(value.y, "Y"));
-    layout->addWidget(create_spin(value.z, "Z"));
+    // Color-coded X (red), Y (green), Z (blue) - Unity style
+    layout->addWidget(create_component(value.x, "X", "#FF6464"));
+    layout->addWidget(create_component(value.y, "Y", "#64FF64"));
+    layout->addWidget(create_component(value.z, "Z", "#6496FF"));
+    layout->addStretch();
 
     return widget;
 }
@@ -357,8 +586,11 @@ QWidget* InspectorPanel::create_float_editor(const QString& /*label*/, float& va
                                               float min, float max) {
     auto* spin = new QDoubleSpinBox(m_content);
     spin->setRange(min, max);
-    spin->setDecimals(3);
+    spin->setDecimals(2);
     spin->setValue(value);
+    spin->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    spin->setMaximumWidth(80);
+    spin->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     connect(spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             [&value, on_changed](double val) {
                 value = static_cast<float>(val);
@@ -403,7 +635,30 @@ QWidget* InspectorPanel::create_color_editor(const QString& /*label*/, engine::c
 }
 
 void InspectorPanel::on_add_component() {
-    // TODO: Show component picker dialog
+    if (!m_state || m_state->selection().empty()) return;
+
+    AddComponentDialog dialog(this);
+    if (dialog.exec() == QDialog::Accepted) {
+        QString component = dialog.selected_component();
+        if (component.isEmpty()) return;
+
+        auto entity = m_state->primary_selection();
+        auto* world = m_state->world();
+        if (!world || !world->valid(entity)) return;
+
+        // Add the selected component
+        if (component == "Mesh Renderer" && !world->has<engine::scene::MeshRenderer>(entity)) {
+            world->emplace<engine::scene::MeshRenderer>(entity);
+        } else if (component == "Camera" && !world->has<engine::scene::Camera>(entity)) {
+            world->emplace<engine::scene::Camera>(entity);
+        } else if (component == "Light" && !world->has<engine::scene::Light>(entity)) {
+            world->emplace<engine::scene::Light>(entity);
+        }
+        // Other components can be added here as they become available
+
+        // Refresh the inspector to show the new component
+        refresh();
+    }
 }
 
 } // namespace editor

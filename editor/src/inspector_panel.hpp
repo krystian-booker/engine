@@ -9,8 +9,17 @@
 #include <QFormLayout>
 #include <QWidget>
 #include <QPushButton>
+#include <QLabel>
+#include <QFrame>
+#include <QMouseEvent>
+#include <QDialog>
+#include <QLineEdit>
+#include <QListWidget>
 #include <functional>
 #include <memory>
+#include <unordered_map>
+
+class QContextMenuEvent;
 
 namespace editor {
 
@@ -59,6 +68,9 @@ private:
     QScrollArea* m_scroll_area;
     QWidget* m_content;
     QVBoxLayout* m_layout;
+
+    // Cache for euler angles (avoids static variable issues)
+    std::unordered_map<uint32_t, engine::core::Vec3> m_euler_cache;
 };
 
 // Collapsible section for component groups
@@ -70,11 +82,72 @@ public:
 
     void set_collapsed(bool collapsed);
     bool is_collapsed() const { return m_collapsed; }
+    void set_removable(bool removable) { m_removable = removable; }
+
+signals:
+    void remove_requested();
+    void reset_requested();
+    void copy_requested();
+    void paste_requested();
+
+protected:
+    void contextMenuEvent(QContextMenuEvent* event) override;
 
 private:
+    void update_arrow();
+    void show_context_menu(const QPoint& pos);
+
     bool m_collapsed = false;
+    bool m_removable = true;
     QWidget* m_content;
     QPushButton* m_toggle_btn;
+    QLabel* m_arrow_label;
+    QFrame* m_header;
+};
+
+// Dialog for adding components to an entity
+class AddComponentDialog : public QDialog {
+    Q_OBJECT
+
+public:
+    explicit AddComponentDialog(QWidget* parent = nullptr);
+
+    QString selected_component() const;
+
+private:
+    void setup_ui();
+    void filter_components(const QString& text);
+
+    QLineEdit* m_search;
+    QListWidget* m_list;
+};
+
+// Draggable label that adjusts a value when dragged horizontally (Unity-style)
+class DraggableLabel : public QLabel {
+    Q_OBJECT
+
+public:
+    explicit DraggableLabel(const QString& text, QWidget* parent = nullptr);
+
+    void set_sensitivity(double sensitivity) { m_sensitivity = sensitivity; }
+    double sensitivity() const { return m_sensitivity; }
+
+signals:
+    void value_changed(double delta);
+    void drag_started();
+    void drag_finished();
+
+protected:
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
+    void enterEvent(QEnterEvent* event) override;
+    void leaveEvent(QEvent* event) override;
+
+private:
+    bool m_dragging = false;
+    QPoint m_drag_start;
+    double m_sensitivity = 0.1;
 };
 
 } // namespace editor
