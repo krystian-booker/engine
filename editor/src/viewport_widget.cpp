@@ -162,7 +162,10 @@ void ViewportWidget::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
 
     if (m_state && m_state->renderer()) {
-        m_state->renderer()->resize(event->size().width(), event->size().height());
+        const float dpr = devicePixelRatioF();
+        const uint32_t w = static_cast<uint32_t>(event->size().width() * dpr);
+        const uint32_t h = static_cast<uint32_t>(event->size().height() * dpr);
+        m_state->renderer()->resize(w, h);
     }
 
     emit viewport_resized(event->size().width(), event->size().height());

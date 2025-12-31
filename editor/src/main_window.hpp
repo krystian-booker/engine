@@ -4,6 +4,7 @@
 #include <engine/scene/world.hpp>
 #include <engine/render/renderer.hpp>
 #include <QMainWindow>
+#include <QShowEvent>
 #include <memory>
 
 namespace editor {
@@ -22,6 +23,7 @@ public:
     ~MainWindow() override;
 
 protected:
+    void showEvent(QShowEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
 
 private slots:

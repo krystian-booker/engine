@@ -49,6 +49,11 @@ MainWindow::~MainWindow() {
     shutdown_engine();
 }
 
+void MainWindow::showEvent(QShowEvent* event) {
+    QMainWindow::showEvent(event);
+    init_engine();
+}
+
 void MainWindow::closeEvent(QCloseEvent* event) {
     save_layout();
     shutdown_engine();
@@ -272,8 +277,11 @@ void MainWindow::init_engine() {
     // Create renderer
     m_renderer = engine::render::create_bgfx_renderer();
     if (m_renderer) {
-        if (m_renderer->init(m_viewport->native_handle(),
-                             m_viewport->width(), m_viewport->height())) {
+        const float dpr = m_viewport->devicePixelRatioF();
+        const uint32_t w = static_cast<uint32_t>(m_viewport->width() * dpr);
+        const uint32_t h = static_cast<uint32_t>(m_viewport->height() * dpr);
+
+        if (m_renderer->init(m_viewport->native_handle(), w, h)) {
             m_state->set_renderer(m_renderer.get());
             m_engine_initialized = true;
 
@@ -548,7 +556,10 @@ void MainWindow::on_entity_picked(engine::scene::Entity entity) {
 
 void MainWindow::on_viewport_resized(int width, int height) {
     if (m_renderer && m_engine_initialized) {
-        m_renderer->resize(width, height);
+        const float dpr = m_viewport->devicePixelRatioF();
+        const uint32_t w = static_cast<uint32_t>(width * dpr);
+        const uint32_t h = static_cast<uint32_t>(height * dpr);
+        m_renderer->resize(w, h);
     }
 }
 
