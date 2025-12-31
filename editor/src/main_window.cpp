@@ -178,57 +178,74 @@ void MainWindow::setup_menus() {
 void MainWindow::setup_toolbar() {
     auto* toolbar = addToolBar("Main Toolbar");
     toolbar->setMovable(false);
+    toolbar->setIconSize(QSize(20, 20));
 
-    // Transform mode buttons
-    auto* select_action = toolbar->addAction("Select");
-    select_action->setCheckable(true);
-    select_action->setChecked(true);
-    connect(select_action, &QAction::triggered, [this]() {
+    // Transform mode buttons with icons
+    m_select_action = toolbar->addAction(QIcon(":/icons/select.svg"), "");
+    m_select_action->setCheckable(true);
+    m_select_action->setChecked(true);
+    m_select_action->setToolTip("Select (Q)");
+    m_select_action->setShortcut(QKeySequence("Q"));
+    connect(m_select_action, &QAction::triggered, [this]() {
         m_state->set_mode(EditorState::Mode::Select);
     });
 
-    auto* translate_action = toolbar->addAction("Move");
-    translate_action->setCheckable(true);
-    translate_action->setShortcut(QKeySequence("W"));
-    connect(translate_action, &QAction::triggered, [this]() {
+    m_translate_action = toolbar->addAction(QIcon(":/icons/move.svg"), "");
+    m_translate_action->setCheckable(true);
+    m_translate_action->setToolTip("Move (W)");
+    m_translate_action->setShortcut(QKeySequence("W"));
+    connect(m_translate_action, &QAction::triggered, [this]() {
         m_state->set_mode(EditorState::Mode::Translate);
     });
 
-    auto* rotate_action = toolbar->addAction("Rotate");
-    rotate_action->setCheckable(true);
-    rotate_action->setShortcut(QKeySequence("E"));
-    connect(rotate_action, &QAction::triggered, [this]() {
+    m_rotate_action = toolbar->addAction(QIcon(":/icons/rotate.svg"), "");
+    m_rotate_action->setCheckable(true);
+    m_rotate_action->setToolTip("Rotate (E)");
+    m_rotate_action->setShortcut(QKeySequence("E"));
+    connect(m_rotate_action, &QAction::triggered, [this]() {
         m_state->set_mode(EditorState::Mode::Rotate);
     });
 
-    auto* scale_action = toolbar->addAction("Scale");
-    scale_action->setCheckable(true);
-    scale_action->setShortcut(QKeySequence("R"));
-    connect(scale_action, &QAction::triggered, [this]() {
+    m_scale_action = toolbar->addAction(QIcon(":/icons/scale.svg"), "");
+    m_scale_action->setCheckable(true);
+    m_scale_action->setToolTip("Scale (R)");
+    m_scale_action->setShortcut(QKeySequence("R"));
+    connect(m_scale_action, &QAction::triggered, [this]() {
         m_state->set_mode(EditorState::Mode::Scale);
     });
 
-    // Mode action group
+    // Mode action group (mutually exclusive)
     auto* mode_group = new QActionGroup(this);
-    mode_group->addAction(select_action);
-    mode_group->addAction(translate_action);
-    mode_group->addAction(rotate_action);
-    mode_group->addAction(scale_action);
+    mode_group->addAction(m_select_action);
+    mode_group->addAction(m_translate_action);
+    mode_group->addAction(m_rotate_action);
+    mode_group->addAction(m_scale_action);
 
-    toolbar->addSeparator();
+    // Left spacer to push play controls to center
+    auto* left_spacer = new QWidget();
+    left_spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    toolbar->addWidget(left_spacer);
 
-    // Play controls
-    m_play_action = toolbar->addAction("Play");
+    // Play controls (centered)
+    m_play_action = toolbar->addAction(QIcon(":/icons/play.svg"), "");
+    m_play_action->setToolTip("Play (Ctrl+P)");
     m_play_action->setShortcut(QKeySequence("Ctrl+P"));
     connect(m_play_action, &QAction::triggered, this, &MainWindow::on_play);
 
-    m_pause_action = toolbar->addAction("Pause");
+    m_pause_action = toolbar->addAction(QIcon(":/icons/pause.svg"), "");
+    m_pause_action->setToolTip("Pause");
     m_pause_action->setEnabled(false);
     connect(m_pause_action, &QAction::triggered, this, &MainWindow::on_pause);
 
-    m_stop_action = toolbar->addAction("Stop");
+    m_stop_action = toolbar->addAction(QIcon(":/icons/stop.svg"), "");
+    m_stop_action->setToolTip("Stop");
     m_stop_action->setEnabled(false);
     connect(m_stop_action, &QAction::triggered, this, &MainWindow::on_stop);
+
+    // Right spacer to balance centering
+    auto* right_spacer = new QWidget();
+    right_spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    toolbar->addWidget(right_spacer);
 }
 
 void MainWindow::setup_panels() {

@@ -1,5 +1,21 @@
 <!DOCTYPE RCC>
 <RCC version="1.0">
     <qresource prefix="/">
+        <file>icons/entity.svg</file>
+        <file>icons/mesh.svg</file>
+        <file>icons/camera.svg</file>
+        <file>icons/light_directional.svg</file>
+        <file>icons/light_point.svg</file>
+        <file>icons/light_spot.svg</file>
+        <file>icons/particle.svg</file>
+        <file>icons/visibility_on.svg</file>
+        <file>icons/visibility_off.svg</file>
+        <file>icons/select.svg</file>
+        <file>icons/move.svg</file>
+        <file>icons/rotate.svg</file>
+        <file>icons/scale.svg</file>
+        <file>icons/play.svg</file>
+        <file>icons/pause.svg</file>
+        <file>icons/stop.svg</file>
     </qresource>
 </RCC>

@@ -19,6 +19,8 @@ add_executable(editor WIN32
     src/asset_browser.cpp
     src/console_panel.hpp
     src/console_panel.cpp
+    src/entity_icons.hpp
+    src/entity_icons.cpp
     resources/editor.qrc
 )
 

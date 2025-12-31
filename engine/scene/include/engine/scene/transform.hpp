@@ -2,6 +2,7 @@
 
 #include <engine/core/math.hpp>
 #include <engine/scene/entity.hpp>
+#include <functional>
 #include <vector>
 
 namespace engine::scene {
@@ -111,8 +112,14 @@ class World;
 // Set parent of an entity, handles all linked list updates
 void set_parent(World& world, Entity child, Entity parent);
 
+// Set parent and place the child before a specific sibling (or append if null)
+void set_parent(World& world, Entity child, Entity parent, Entity before_sibling);
+
 // Remove parent relationship
 void remove_parent(World& world, Entity child);
+
+// Detach an entity from its current parent/root list without attaching elsewhere
+void detach_from_hierarchy(World& world, Entity child);
 
 // Get children of an entity (uses cache if valid)
 const std::vector<Entity>& get_children(World& world, Entity parent);

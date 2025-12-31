@@ -9,6 +9,9 @@ EditorState::EditorState(QObject* parent)
     : QObject(parent)
 {
     m_undo_stack.setUndoLimit(100);
+    m_scheduler = std::make_unique<engine::scene::Scheduler>();
+    m_scheduler->add(engine::scene::Phase::PreRender,
+                     engine::scene::transform_system, "transform", 0);
 }
 
 EditorState::~EditorState() = default;
@@ -133,33 +136,41 @@ void DeleteEntityCommand::redo() {
 }
 
 // SetParentCommand implementation
-SetParentCommand::SetParentCommand(EditorState* state, Entity child, Entity new_parent)
+SetParentCommand::SetParentCommand(EditorState* state,
+                                   Entity child,
+                                   Entity new_parent,
+                                   std::optional<Entity> before_sibling)
     : EditorCommand(state, "Set Parent")
     , m_child(child)
+    , m_old_parent(engine::scene::NullEntity)
     , m_new_parent(new_parent)
+    , m_new_before_sibling(before_sibling)
 {
     if (m_state->world() && m_state->world()->valid(child)) {
         auto* hier = m_state->world()->try_get<engine::scene::Hierarchy>(child);
         m_old_parent = hier ? hier->parent : engine::scene::NullEntity;
+        if (hier) {
+            m_old_before_sibling = hier->next_sibling;
+        }
     }
 }
 
 void SetParentCommand::undo() {
     if (m_state->world() && m_state->world()->valid(m_child)) {
-        if (m_old_parent != engine::scene::NullEntity) {
-            engine::scene::set_parent(*m_state->world(), m_child, m_old_parent);
+        if (m_old_before_sibling.has_value()) {
+            engine::scene::set_parent(*m_state->world(), m_child, m_old_parent, *m_old_before_sibling);
         } else {
-            engine::scene::remove_parent(*m_state->world(), m_child);
+            engine::scene::set_parent(*m_state->world(), m_child, m_old_parent);
         }
     }
 }
 
 void SetParentCommand::redo() {
     if (m_state->world() && m_state->world()->valid(m_child)) {
-        if (m_new_parent != engine::scene::NullEntity) {
-            engine::scene::set_parent(*m_state->world(), m_child, m_new_parent);
+        if (m_new_before_sibling.has_value()) {
+            engine::scene::set_parent(*m_state->world(), m_child, m_new_parent, *m_new_before_sibling);
         } else {
-            engine::scene::remove_parent(*m_state->world(), m_child);
+            engine::scene::set_parent(*m_state->world(), m_child, m_new_parent);
         }
     }
 }

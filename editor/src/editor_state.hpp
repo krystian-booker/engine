@@ -3,11 +3,13 @@
 #include <engine/scene/world.hpp>
 #include <engine/scene/entity.hpp>
 #include <engine/render/renderer.hpp>
+#include <engine/scene/systems.hpp>
 #include <QObject>
 #include <QUndoStack>
 #include <vector>
 #include <memory>
 #include <functional>
+#include <optional>
 
 namespace editor {
 
@@ -29,6 +31,9 @@ public:
     // Renderer management
     void set_renderer(engine::render::IRenderer* renderer);
     engine::render::IRenderer* renderer() const { return m_renderer; }
+
+    // System scheduler
+    engine::scene::Scheduler* scheduler() const { return m_scheduler.get(); }
 
     // Selection management
     void select(Entity entity);
@@ -74,6 +79,7 @@ private:
     float m_grid_snap = 1.0f;
     bool m_grid_enabled = false;
     bool m_playing = false;
+    std::unique_ptr<engine::scene::Scheduler> m_scheduler;
 };
 
 // Base command for undo/redo
@@ -118,7 +124,10 @@ private:
 // Set parent command
 class SetParentCommand : public EditorCommand {
 public:
-    SetParentCommand(EditorState* state, Entity child, Entity new_parent);
+    SetParentCommand(EditorState* state,
+                     Entity child,
+                     Entity new_parent,
+                     std::optional<Entity> before_sibling = std::nullopt);
 
     void undo() override;
     void redo() override;
@@ -127,6 +136,8 @@ private:
     Entity m_child;
     Entity m_old_parent;
     Entity m_new_parent;
+    std::optional<Entity> m_old_before_sibling;
+    std::optional<Entity> m_new_before_sibling;
 };
 
 } // namespace editor

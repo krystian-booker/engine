@@ -1,5 +1,6 @@
 #include "viewport_widget.hpp"
 #include <engine/scene/transform.hpp>
+#include <engine/scene/systems.hpp>
 #include <engine/scene/render_components.hpp>
 #include <QMouseEvent>
 #include <QKeyEvent>
@@ -129,8 +130,10 @@ void ViewportWidget::render_frame() {
 
     // Render scene
     if (world) {
-        // Update world transforms from local transforms before rendering
-        engine::scene::transform_system(*world, 0.0);
+        // Run PreRender phase systems (includes transform_system)
+        if (auto* scheduler = m_state->scheduler()) {
+            scheduler->run(*world, 0.0, engine::scene::Phase::PreRender);
+        }
 
         auto render_view = world->view<engine::scene::WorldTransform, engine::scene::MeshRenderer>();
         for (auto entity : render_view) {

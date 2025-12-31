@@ -1,10 +1,223 @@
 #include <engine/scene/transform.hpp>
 #include <engine/scene/world.hpp>
+#include <unordered_map>
 
 namespace engine::scene {
 
+namespace {
+
+struct RootList {
+    Entity first = NullEntity;
+    Entity last = NullEntity;
+    mutable std::vector<Entity> cached;
+    mutable bool dirty = true;
+};
+
+RootList& roots(World& world) {
+    static std::unordered_map<entt::registry*, RootList> root_map;
+
+    auto& registry = world.registry();
+    auto& root_list = root_map[&registry];
+
+    // Reset if the cached head/tail are no longer valid (e.g., after a clear)
+    if ((root_list.first != NullEntity && !registry.valid(root_list.first)) ||
+        (root_list.last != NullEntity && !registry.valid(root_list.last))) {
+        root_list = RootList{};
+    }
+
+    if (!root_list.cached.empty() && (root_list.cached.front() != NullEntity) &&
+        !registry.valid(root_list.cached.front())) {
+        root_list.cached.clear();
+        root_list.dirty = true;
+    }
+
+    return root_list;
+}
+
+void mark_roots_dirty(RootList& root_list) {
+    root_list.dirty = true;
+}
+
+void update_descendant_depths(entt::registry& registry, Entity entity, uint32_t depth) {
+    auto* h = registry.try_get<Hierarchy>(entity);
+    if (!h) return;
+
+    h->depth = depth;
+    Entity child = h->first_child;
+    while (child != NullEntity) {
+        update_descendant_depths(registry, child, depth + 1);
+        child = registry.get<Hierarchy>(child).next_sibling;
+    }
+}
+
+void detach_from_parent(entt::registry& registry, RootList& root_list, Entity child, Hierarchy& child_h) {
+    Entity old_parent = child_h.parent;
+
+    if (old_parent == NullEntity) {
+        // Detach from root list
+        Entity prev = child_h.prev_sibling;
+        Entity next = child_h.next_sibling;
+
+        if (prev != NullEntity) {
+            registry.get<Hierarchy>(prev).next_sibling = next;
+        } else {
+            root_list.first = next;
+        }
+
+        if (next != NullEntity) {
+            registry.get<Hierarchy>(next).prev_sibling = prev;
+        } else {
+            root_list.last = prev;
+        }
+
+        mark_roots_dirty(root_list);
+    } else {
+        // Detach from old parent
+        auto& parent_h = registry.get<Hierarchy>(old_parent);
+
+        if (child_h.prev_sibling != NullEntity) {
+            registry.get<Hierarchy>(child_h.prev_sibling).next_sibling = child_h.next_sibling;
+        } else {
+            parent_h.first_child = child_h.next_sibling;
+        }
+
+        if (child_h.next_sibling != NullEntity) {
+            registry.get<Hierarchy>(child_h.next_sibling).prev_sibling = child_h.prev_sibling;
+        }
+
+        parent_h.children_dirty = true;
+    }
+
+    child_h.parent = NullEntity;
+    child_h.prev_sibling = NullEntity;
+    child_h.next_sibling = NullEntity;
+}
+
+void attach_to_parent(entt::registry& registry, RootList& root_list, Entity child, Entity parent, Entity before_sibling, Hierarchy& child_h) {
+    if (parent == NullEntity) {
+        // Ensure the before_sibling is a root entity
+        if (before_sibling != NullEntity) {
+            auto* before_h = registry.try_get<Hierarchy>(before_sibling);
+            if (!before_h || before_h->parent != NullEntity) {
+                before_sibling = NullEntity;
+            }
+        }
+
+        child_h.parent = NullEntity;
+        child_h.depth = 0;
+
+        if (before_sibling != NullEntity) {
+            auto& before_h = registry.get<Hierarchy>(before_sibling);
+            child_h.prev_sibling = before_h.prev_sibling;
+            child_h.next_sibling = before_sibling;
+
+            if (before_h.prev_sibling != NullEntity) {
+                registry.get<Hierarchy>(before_h.prev_sibling).next_sibling = child;
+            } else {
+                root_list.first = child;
+            }
+
+            before_h.prev_sibling = child;
+        } else {
+            // Append to end of root list
+            child_h.prev_sibling = root_list.last;
+            child_h.next_sibling = NullEntity;
+
+            if (root_list.last != NullEntity) {
+                registry.get<Hierarchy>(root_list.last).next_sibling = child;
+            } else {
+                root_list.first = child;
+            }
+
+            root_list.last = child;
+        }
+
+        mark_roots_dirty(root_list);
+        return;
+    }
+
+    // Ensure before_sibling belongs to the target parent
+    if (before_sibling != NullEntity) {
+        auto* before_h = registry.try_get<Hierarchy>(before_sibling);
+        if (!before_h || before_h->parent != parent) {
+            before_sibling = NullEntity;
+        }
+    }
+
+    auto& parent_h = registry.get<Hierarchy>(parent);
+
+    child_h.parent = parent;
+    child_h.depth = parent_h.depth + 1;
+
+    if (before_sibling != NullEntity) {
+        auto& before_h = registry.get<Hierarchy>(before_sibling);
+        child_h.prev_sibling = before_h.prev_sibling;
+        child_h.next_sibling = before_sibling;
+
+        if (before_h.prev_sibling != NullEntity) {
+            registry.get<Hierarchy>(before_h.prev_sibling).next_sibling = child;
+        } else {
+            parent_h.first_child = child;
+        }
+
+        before_h.prev_sibling = child;
+    } else {
+        // Append to end of parent's children
+        Entity last_child = parent_h.first_child;
+        if (last_child == NullEntity) {
+            parent_h.first_child = child;
+            child_h.prev_sibling = NullEntity;
+            child_h.next_sibling = NullEntity;
+        } else {
+            while (registry.get<Hierarchy>(last_child).next_sibling != NullEntity) {
+                last_child = registry.get<Hierarchy>(last_child).next_sibling;
+            }
+
+            registry.get<Hierarchy>(last_child).next_sibling = child;
+            child_h.prev_sibling = last_child;
+            child_h.next_sibling = NullEntity;
+        }
+    }
+
+    parent_h.children_dirty = true;
+}
+
+} // namespace
+
 void set_parent(World& world, Entity child, Entity parent) {
     auto& registry = world.registry();
+    auto& root_list = roots(world);
+
+    if (parent == child) {
+        return;
+    }
+
+    // Ensure child has Hierarchy component
+    if (!registry.all_of<Hierarchy>(child)) {
+        registry.emplace<Hierarchy>(child);
+    }
+
+    // For default insertion, place before the current first child/root (Unity-style front insert)
+    Entity before = NullEntity;
+    if (parent != NullEntity) {
+        if (!registry.all_of<Hierarchy>(parent)) {
+            registry.emplace<Hierarchy>(parent);
+        }
+        before = registry.get<Hierarchy>(parent).first_child;
+    } else {
+        before = root_list.first;
+    }
+
+    set_parent(world, child, parent, before);
+}
+
+void set_parent(World& world, Entity child, Entity parent, Entity before_sibling) {
+    auto& registry = world.registry();
+    auto& root_list = roots(world);
+
+    if (child == parent) {
+        return;
+    }
 
     // Ensure child has Hierarchy component
     if (!registry.all_of<Hierarchy>(child)) {
@@ -12,110 +225,57 @@ void set_parent(World& world, Entity child, Entity parent) {
     }
     auto& child_h = registry.get<Hierarchy>(child);
 
-    // If already parented, remove from old parent first
-    if (child_h.parent != NullEntity) {
-        remove_parent(world, child);
-    }
-
-    // If parent is null, we're done (just unparented)
-    if (parent == NullEntity) {
-        return;
+    if (before_sibling == child) {
+        before_sibling = NullEntity;
     }
 
     // Prevent circular hierarchy
-    if (is_ancestor_of(world, child, parent)) {
+    if (parent != NullEntity && is_ancestor_of(world, child, parent)) {
         return;
     }
 
-    // Ensure parent has Hierarchy component
-    if (!registry.all_of<Hierarchy>(parent)) {
+    Entity old_parent = child_h.parent;
+
+    // Ensure target parent has Hierarchy so we can insert
+    if (parent != NullEntity && !registry.all_of<Hierarchy>(parent)) {
         registry.emplace<Hierarchy>(parent);
     }
-    auto& parent_h = registry.get<Hierarchy>(parent);
 
-    // Set child's parent
-    child_h.parent = parent;
-    child_h.depth = parent_h.depth + 1;
+    // Detach from current parent/root list
+    detach_from_parent(registry, root_list, child, child_h);
 
-    // Add child to parent's linked list
-    child_h.next_sibling = parent_h.first_child;
-    child_h.prev_sibling = NullEntity;
+    // Attach to new parent/root at the requested position
+    attach_to_parent(registry, root_list, child, parent, before_sibling, child_h);
 
-    if (parent_h.first_child != NullEntity) {
-        auto& first_child_h = registry.get<Hierarchy>(parent_h.first_child);
-        first_child_h.prev_sibling = child;
-    }
-
-    parent_h.first_child = child;
-    parent_h.children_dirty = true;
-
-    // Update depth for all descendants
-    std::function<void(Entity, uint32_t)> update_depth = [&](Entity e, uint32_t depth) {
-        auto& h = registry.get<Hierarchy>(e);
-        h.depth = depth;
-        Entity c = h.first_child;
-        while (c != NullEntity) {
-            update_depth(c, depth + 1);
-            c = registry.get<Hierarchy>(c).next_sibling;
-        }
-    };
-
+    // Update depth for descendants (child depth already set during attach)
     Entity c = child_h.first_child;
     while (c != NullEntity) {
-        update_depth(c, child_h.depth + 1);
+        update_descendant_depths(registry, c, child_h.depth + 1);
         c = registry.get<Hierarchy>(c).next_sibling;
+    }
+
+    // Mark old parent's cached children dirty if it changed
+    if (old_parent != NullEntity && old_parent != parent) {
+        if (auto* old_parent_h = registry.try_get<Hierarchy>(old_parent)) {
+            old_parent_h->children_dirty = true;
+        }
     }
 }
 
 void remove_parent(World& world, Entity child) {
+    set_parent(world, child, NullEntity, NullEntity);
+}
+
+void detach_from_hierarchy(World& world, Entity child) {
     auto& registry = world.registry();
+    auto& root_list = roots(world);
 
     auto* child_h = registry.try_get<Hierarchy>(child);
-    if (!child_h || child_h->parent == NullEntity) {
+    if (!child_h) {
         return;
     }
 
-    Entity parent = child_h->parent;
-    auto& parent_h = registry.get<Hierarchy>(parent);
-
-    // Remove from siblings linked list
-    if (child_h->prev_sibling != NullEntity) {
-        auto& prev_h = registry.get<Hierarchy>(child_h->prev_sibling);
-        prev_h.next_sibling = child_h->next_sibling;
-    } else {
-        // Child is first child
-        parent_h.first_child = child_h->next_sibling;
-    }
-
-    if (child_h->next_sibling != NullEntity) {
-        auto& next_h = registry.get<Hierarchy>(child_h->next_sibling);
-        next_h.prev_sibling = child_h->prev_sibling;
-    }
-
-    // Clear child's parent info
-    child_h->parent = NullEntity;
-    child_h->prev_sibling = NullEntity;
-    child_h->next_sibling = NullEntity;
-    child_h->depth = 0;
-
-    parent_h.children_dirty = true;
-
-    // Update depth for all descendants
-    std::function<void(Entity, uint32_t)> update_depth = [&](Entity e, uint32_t depth) {
-        auto& h = registry.get<Hierarchy>(e);
-        h.depth = depth;
-        Entity c = h.first_child;
-        while (c != NullEntity) {
-            update_depth(c, depth + 1);
-            c = registry.get<Hierarchy>(c).next_sibling;
-        }
-    };
-
-    Entity c = child_h->first_child;
-    while (c != NullEntity) {
-        update_depth(c, 1);
-        c = registry.get<Hierarchy>(c).next_sibling;
-    }
+    detach_from_parent(registry, root_list, child, *child_h);
 }
 
 const std::vector<Entity>& get_children(World& world, Entity parent) {
@@ -155,18 +315,51 @@ void iterate_children(World& world, Entity parent, std::function<void(Entity)> f
 }
 
 std::vector<Entity> get_root_entities(World& world) {
-    std::vector<Entity> roots;
     auto& registry = world.registry();
+    auto& root_list = roots(world);
 
-    auto view = registry.view<EntityInfo>();
-    for (auto entity : view) {
-        auto* h = registry.try_get<Hierarchy>(entity);
-        if (!h || h->parent == NullEntity) {
-            roots.push_back(entity);
+    // Lazy rebuild for worlds that existed before roots were populated
+    if (root_list.first == NullEntity) {
+        Entity last_root = NullEntity;
+        auto view = registry.view<EntityInfo>();
+        for (auto entity : view) {
+            auto* h = registry.try_get<Hierarchy>(entity);
+            if (!h) {
+                h = &registry.emplace<Hierarchy>(entity);
+            }
+
+            if (h->parent != NullEntity) {
+                continue;
+            }
+
+            h->prev_sibling = last_root;
+            h->next_sibling = NullEntity;
+
+            if (last_root != NullEntity) {
+                registry.get<Hierarchy>(last_root).next_sibling = entity;
+            } else {
+                root_list.first = entity;
+            }
+
+            last_root = entity;
         }
+
+        root_list.last = last_root;
+        root_list.dirty = true;
     }
 
-    return roots;
+    if (root_list.dirty) {
+        root_list.cached.clear();
+        Entity root = root_list.first;
+        while (root != NullEntity) {
+            root_list.cached.push_back(root);
+            auto* h = registry.try_get<Hierarchy>(root);
+            root = h ? h->next_sibling : NullEntity;
+        }
+        root_list.dirty = false;
+    }
+
+    return root_list.cached;
 }
 
 bool is_ancestor_of(World& world, Entity ancestor, Entity descendant) {

@@ -8,6 +8,7 @@ Entity World::create() {
     auto& info = m_registry.emplace<EntityInfo>(e);
     info.uuid = m_next_uuid++;
     info.name = "Entity_" + std::to_string(info.uuid);
+    set_parent(*this, e, NullEntity, NullEntity);
     return e;
 }
 
@@ -16,6 +17,7 @@ Entity World::create(const std::string& name) {
     auto& info = m_registry.emplace<EntityInfo>(e);
     info.uuid = m_next_uuid++;
     info.name = name;
+    set_parent(*this, e, NullEntity, NullEntity);
     return e;
 }
 
@@ -24,10 +26,8 @@ void World::destroy(Entity e) {
 
     // If entity has hierarchy, handle parent/child relationships
     if (auto* hierarchy = m_registry.try_get<Hierarchy>(e)) {
-        // Remove from parent
-        if (hierarchy->parent != NullEntity) {
-            remove_parent(*this, e);
-        }
+        // Unlink from parent or root list
+        detach_from_hierarchy(*this, e);
 
         // Destroy all children recursively
         Entity child = hierarchy->first_child;

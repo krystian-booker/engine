@@ -89,7 +89,13 @@ private:
     AssetBrowser* m_assets = nullptr;
     ConsolePanel* m_console = nullptr;
 
-    // Toolbar actions
+    // Toolbar actions - Transform modes
+    QAction* m_select_action = nullptr;
+    QAction* m_translate_action = nullptr;
+    QAction* m_rotate_action = nullptr;
+    QAction* m_scale_action = nullptr;
+
+    // Toolbar actions - Play controls
     QAction* m_play_action = nullptr;
     QAction* m_pause_action = nullptr;
     QAction* m_stop_action = nullptr;
