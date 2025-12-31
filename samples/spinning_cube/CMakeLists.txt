@@ -16,5 +16,5 @@ target_link_libraries(spinning_cube
 
 set_target_properties(spinning_cube PROPERTIES
     FOLDER "samples"
-    VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
 )

@@ -104,7 +104,7 @@ FetchContent_MakeAvailable(JoltPhysics)
 # bgfx.cmake
 # ============================================================================
 # Configure bgfx.cmake options
-set(BGFX_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+set(BGFX_BUILD_TOOLS ON CACHE BOOL "" FORCE)
 set(BGFX_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(BGFX_INSTALL OFF CACHE BOOL "" FORCE)
 set(BGFX_AMALGAMATED OFF CACHE BOOL "" FORCE)

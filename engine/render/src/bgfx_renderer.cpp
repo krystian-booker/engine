@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <unordered_map>
 #include <cmath>
+#include <fstream>
 
 namespace engine::render {
 
@@ -12,6 +13,24 @@ using namespace engine::core;
 
 // Vertex layout for our Vertex struct
 static bgfx::VertexLayout s_vertex_layout;
+
+// Helper function to load shader binary from file
+static bgfx::ShaderHandle load_shader_from_file(const std::string& path) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) {
+        log(LogLevel::Error, ("Failed to open shader file: " + path).c_str());
+        return BGFX_INVALID_HANDLE;
+    }
+
+    auto size = file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    const bgfx::Memory* mem = bgfx::alloc(static_cast<uint32_t>(size) + 1);
+    file.read(reinterpret_cast<char*>(mem->data), size);
+    mem->data[size] = '\0';
+
+    return bgfx::createShader(mem);
+}
 
 class BGFXRenderer : public IRenderer {
 public:
@@ -25,11 +44,8 @@ public:
         m_width = width;
         m_height = height;
 
-        bgfx::PlatformData pd{};
-        pd.nwh = native_window_handle;
-        bgfx::setPlatformData(pd);
-
         bgfx::Init init;
+        init.platformData.nwh = native_window_handle;
         init.type = bgfx::RendererType::Count;  // Auto-select
         init.resolution.width = width;
         init.resolution.height = height;
@@ -54,11 +70,42 @@ public:
         bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x303030ff, 1.0f, 0);
         bgfx::setViewRect(0, 0, 0, uint16_t(width), uint16_t(height));
 
+        // Load default shader based on renderer type
+        std::string shader_path;
+        auto renderer_type = bgfx::getRendererType();
+        switch (renderer_type) {
+            case bgfx::RendererType::Direct3D11: shader_path = "shaders/dx11/"; break;
+            case bgfx::RendererType::Direct3D12: shader_path = "shaders/dx11/"; break;
+            case bgfx::RendererType::Vulkan:     shader_path = "shaders/spirv/"; break;
+            case bgfx::RendererType::OpenGL:     shader_path = "shaders/glsl/"; break;
+            default:                             shader_path = "shaders/spirv/"; break;
+        }
+
+        bgfx::ShaderHandle vsh = load_shader_from_file(shader_path + "vs_default.sc.bin");
+        bgfx::ShaderHandle fsh = load_shader_from_file(shader_path + "fs_default.sc.bin");
+
+        if (bgfx::isValid(vsh) && bgfx::isValid(fsh)) {
+            m_default_program = bgfx::createProgram(vsh, fsh, true);
+            log(LogLevel::Info, "Default shader program loaded successfully");
+        } else {
+            log(LogLevel::Warn, "Failed to load default shader program");
+        }
+
         m_initialized = true;
         return true;
     }
 
     void shutdown() override {
+        if (!m_initialized) {
+            return;
+        }
+
+        // Destroy default shader program
+        if (bgfx::isValid(m_default_program)) {
+            bgfx::destroy(m_default_program);
+            m_default_program = BGFX_INVALID_HANDLE;
+        }
+
         // Destroy all resources
         for (auto& [id, handle] : m_meshes) {
             bgfx::destroy(handle.vbh);
@@ -313,8 +360,18 @@ public:
 
             bgfx::setState(state);
 
-            // Submit (using view 0, no program for now - debug rendering)
-            bgfx::submit(0, BGFX_INVALID_HANDLE);
+            // Determine which shader program to use
+            bgfx::ProgramHandle program = m_default_program;
+            auto mat_it = m_materials.find(call.material.id);
+            if (mat_it != m_materials.end() && mat_it->second.shader.valid()) {
+                auto shader_it = m_shaders.find(mat_it->second.shader.id);
+                if (shader_it != m_shaders.end()) {
+                    program = shader_it->second;
+                }
+            }
+
+            // Submit draw call
+            bgfx::submit(0, program);
         }
 
         m_draw_queue.clear();
@@ -475,6 +532,9 @@ private:
     bool m_vsync = true;
     uint32_t m_width = 0;
     uint32_t m_height = 0;
+
+    // Default shader program
+    bgfx::ProgramHandle m_default_program = BGFX_INVALID_HANDLE;
 
     // Resources
     uint32_t m_next_mesh_id = 1;
