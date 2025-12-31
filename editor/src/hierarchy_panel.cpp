@@ -12,6 +12,10 @@
 #include <QDragEnterEvent>
 #include <QDragMoveEvent>
 #include <QDropEvent>
+#include <QJsonDocument>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QFileInfo>
 
 namespace editor {
 
@@ -26,12 +30,83 @@ HierarchyTreeWidget::HierarchyTreeWidget(HierarchyPanel* panel, QWidget* parent)
 }
 
 void HierarchyTreeWidget::dragEnterEvent(QDragEnterEvent* event) {
-    // Accept the drag if it's an internal move
+    // Accept the drag if it's an internal move or an asset drop
     if (event->source() == this) {
+        event->acceptProposedAction();
+    } else if (is_asset_drop(event->mimeData())) {
         event->acceptProposedAction();
     } else {
         QTreeWidget::dragEnterEvent(event);
     }
+}
+
+bool HierarchyTreeWidget::is_asset_drop(const QMimeData* mime_data) const {
+    return mime_data->hasFormat("application/x-engine-asset");
+}
+
+void HierarchyTreeWidget::handle_asset_drop(const QMimeData* mime_data, QTreeWidgetItem* target) {
+    if (!mime_data->hasFormat("application/x-engine-asset")) return;
+
+    auto* state = m_panel->state();
+    if (!state || !state->world()) return;
+
+    QByteArray data = mime_data->data("application/x-engine-asset");
+    QJsonDocument doc = QJsonDocument::fromJson(data);
+
+    if (!doc.isArray()) return;
+
+    // Get parent entity if dropping on an item
+    engine::scene::Entity parent = engine::scene::NullEntity;
+    if (target) {
+        parent = m_panel->entity_from_item(target);
+    }
+
+    for (const QJsonValue& val : doc.array()) {
+        QJsonObject obj = val.toObject();
+        QString path = obj["path"].toString();
+        QString type = obj["type"].toString();
+
+        QFileInfo info(path);
+        QString name = info.baseName();
+
+        // Create entity based on asset type
+        if (type == "Mesh") {
+            // Create entity with mesh renderer
+            auto entity = state->world()->create_entity(name.toStdString());
+
+            // Add transform
+            engine::scene::LocalTransform transform;
+            transform.position = {0, 0, 0};
+            transform.rotation = {0, 0, 0, 1};
+            transform.scale = {1, 1, 1};
+            state->world()->add_component(entity, transform);
+
+            // Add mesh renderer with asset path
+            engine::scene::MeshRenderer renderer;
+            renderer.mesh_path = path.toStdString();
+            state->world()->add_component(entity, renderer);
+
+            // Set parent if specified
+            if (parent != engine::scene::NullEntity) {
+                state->world()->set_parent(entity, parent);
+            }
+        } else if (type == "Prefab") {
+            // Create entity from prefab (placeholder - load JSON)
+            auto entity = state->world()->create_entity(name.toStdString());
+
+            engine::scene::LocalTransform transform;
+            transform.position = {0, 0, 0};
+            transform.rotation = {0, 0, 0, 1};
+            transform.scale = {1, 1, 1};
+            state->world()->add_component(entity, transform);
+
+            if (parent != engine::scene::NullEntity) {
+                state->world()->set_parent(entity, parent);
+            }
+        }
+    }
+
+    m_panel->refresh();
 }
 
 void HierarchyTreeWidget::dragMoveEvent(QDragMoveEvent* event) {
@@ -40,6 +115,15 @@ void HierarchyTreeWidget::dragMoveEvent(QDragMoveEvent* event) {
     // Clear previous highlighting
     for (int i = 0; i < topLevelItemCount(); ++i) {
         topLevelItem(i)->setBackground(0, QBrush());
+    }
+
+    // Accept asset drops
+    if (is_asset_drop(event->mimeData())) {
+        if (target) {
+            target->setBackground(0, QBrush(QColor(100, 200, 100, 80)));
+        }
+        event->acceptProposedAction();
+        return;
     }
 
     // Validate drop for all selected items
@@ -68,6 +152,13 @@ void HierarchyTreeWidget::dropEvent(QDropEvent* event) {
     // Clear highlighting
     for (int i = 0; i < topLevelItemCount(); ++i) {
         topLevelItem(i)->setBackground(0, QBrush());
+    }
+
+    // Handle asset drops
+    if (is_asset_drop(event->mimeData())) {
+        handle_asset_drop(event->mimeData(), target);
+        event->acceptProposedAction();
+        return;
     }
 
     // Validate all selected items

@@ -17,6 +17,18 @@ add_executable(editor WIN32
     src/inspector_panel.cpp
     src/asset_browser.hpp
     src/asset_browser.cpp
+    src/breadcrumb_bar.hpp
+    src/breadcrumb_bar.cpp
+    src/asset_item_model.hpp
+    src/asset_item_model.cpp
+    src/asset_item_delegate.hpp
+    src/asset_item_delegate.cpp
+    src/thumbnail_cache.hpp
+    src/thumbnail_cache.cpp
+    src/thumbnail_generator.hpp
+    src/thumbnail_generator.cpp
+    src/asset_field_widget.hpp
+    src/asset_field_widget.cpp
     src/console_panel.hpp
     src/console_panel.cpp
     src/entity_icons.hpp
