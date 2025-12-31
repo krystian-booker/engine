@@ -137,8 +137,8 @@ void ViewportWidget::render_frame() {
             if (!mesh_renderer.visible) continue;
 
             engine::render::DrawCall call;
-            call.mesh = mesh_renderer.mesh;
-            call.material = mesh_renderer.material;
+            call.mesh = engine::render::MeshHandle{mesh_renderer.mesh.id};
+            call.material = engine::render::MaterialHandle{mesh_renderer.material.id};
             call.transform = transform.matrix;
             renderer->queue_draw(call);
         }

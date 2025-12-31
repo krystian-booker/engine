@@ -33,19 +33,9 @@ extern Vec3 get_gravity_impl(PhysicsWorld::Impl* impl);
 extern uint32_t get_body_count_impl(PhysicsWorld::Impl* impl);
 extern CollisionFilter& get_collision_filter_impl(PhysicsWorld::Impl* impl);
 
-PhysicsWorld::PhysicsWorld()
-    : m_impl(create_physics_impl())
-{
-}
+// Constructor and destructor defined in jolt_impl.cpp where Impl is complete
 
-PhysicsWorld::~PhysicsWorld() {
-    if (m_impl) {
-        shutdown_physics_impl(m_impl.get());
-    }
-}
-
-PhysicsWorld::PhysicsWorld(PhysicsWorld&&) noexcept = default;
-PhysicsWorld& PhysicsWorld::operator=(PhysicsWorld&&) noexcept = default;
+// Move operations need to be in jolt_impl.cpp too since they may destroy Impl
 
 void PhysicsWorld::init(const PhysicsSettings& settings) {
     init_physics_impl(m_impl.get(), settings);

@@ -290,7 +290,7 @@ QWidget* InspectorPanel::create_light_editor(engine::scene::Entity entity) {
     type_combo->addItem("Spot");
     type_combo->setCurrentIndex(static_cast<int>(light.type));
     connect(type_combo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            [&light](int index) { light.type = static_cast<engine::scene::Light::Type>(index); });
+            [&light](int index) { light.type = static_cast<engine::scene::LightType>(index); });
     layout->addRow("Type", type_combo);
 
     // Color
@@ -316,9 +316,9 @@ QWidget* InspectorPanel::create_light_editor(engine::scene::Entity entity) {
     // Spot angle (for spot only)
     auto* angle_spin = new QDoubleSpinBox(widget);
     angle_spin->setRange(1.0, 180.0);
-    angle_spin->setValue(light.spot_angle);
+    angle_spin->setValue(light.spot_outer_angle);
     connect(angle_spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
-            [&light](double value) { light.spot_angle = static_cast<float>(value); });
+            [&light](double value) { light.spot_outer_angle = static_cast<float>(value); });
     layout->addRow("Spot Angle", angle_spin);
 
     return widget;

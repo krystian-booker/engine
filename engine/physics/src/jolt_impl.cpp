@@ -106,6 +106,25 @@ struct PhysicsWorld::Impl {
     bool initialized = false;
 };
 
+// Forward declarations for impl functions
+PhysicsWorld::Impl* create_physics_impl();
+void shutdown_physics_impl(PhysicsWorld::Impl* impl);
+
+// Constructor, destructor and move operations must be defined here where Impl is complete
+PhysicsWorld::PhysicsWorld()
+    : m_impl(create_physics_impl())
+{
+}
+
+PhysicsWorld::~PhysicsWorld() {
+    if (m_impl) {
+        shutdown_physics_impl(m_impl.get());
+    }
+}
+
+PhysicsWorld::PhysicsWorld(PhysicsWorld&&) noexcept = default;
+PhysicsWorld& PhysicsWorld::operator=(PhysicsWorld&&) noexcept = default;
+
 // Implementation functions
 PhysicsWorld::Impl* create_physics_impl() {
     // Initialize Jolt allocators

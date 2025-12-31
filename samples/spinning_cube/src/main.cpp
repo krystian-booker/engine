@@ -1,5 +1,14 @@
 // Spinning Cube Demo
-// Milestone 1: Proves the ECS architecture works with rendering
+
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 #include <engine/core/application.hpp>
 #include <engine/core/log.hpp>
@@ -9,7 +18,7 @@
 
 using namespace engine::core;
 using namespace engine::scene;
-using namespace engine::render;
+namespace render = engine::render;
 
 class SpinningCubeApp : public Application {
 public:
@@ -20,7 +29,7 @@ protected:
         log(LogLevel::Info, "Spinning Cube Demo starting...");
 
         // Create renderer
-        m_renderer = create_bgfx_renderer();
+        m_renderer = render::create_bgfx_renderer();
         if (!m_renderer->init(get_native_window_handle(), window_width(), window_height())) {
             log(LogLevel::Error, "Failed to initialize renderer");
             quit();
@@ -28,7 +37,7 @@ protected:
         }
 
         // Create a cube mesh
-        m_cube_mesh = m_renderer->create_primitive(PrimitiveMesh::Cube, 1.0f);
+        m_cube_mesh = m_renderer->create_primitive(render::PrimitiveMesh::Cube, 1.0f);
 
         // Create the ECS world and scheduler
         m_world = std::make_unique<World>();
@@ -43,12 +52,12 @@ protected:
         m_world->emplace<WorldTransform>(m_cube_entity);
         m_world->emplace<PreviousTransform>(m_cube_entity);
         m_world->emplace<MeshRenderer>(m_cube_entity, MeshRenderer{
-            {m_cube_mesh.id},  // MeshHandle
-            {},                // MaterialHandle (none for now)
-            0,                 // render_layer
-            true,              // visible
-            true,              // cast_shadows
-            true               // receive_shadows
+            MeshHandle{m_cube_mesh.id},      // Convert render::MeshHandle to scene::MeshHandle
+            MaterialHandle{},                 // MaterialHandle (none for now)
+            0,                                // render_layer
+            true,                             // visible
+            true,                             // cast_shadows
+            true                              // receive_shadows
         });
 
         // Create a camera entity
@@ -120,9 +129,9 @@ protected:
         for (auto [entity, world_tf, mesh_renderer] : mesh_view.each()) {
             if (!mesh_renderer.visible) continue;
 
-            DrawCall call;
-            call.mesh = {mesh_renderer.mesh.id};
-            call.material = mesh_renderer.material;
+            render::DrawCall call;
+            call.mesh = render::MeshHandle{mesh_renderer.mesh.id};
+            call.material = render::MaterialHandle{mesh_renderer.material.id};
             call.transform = world_tf.matrix;
             call.render_layer = mesh_renderer.render_layer;
             call.cast_shadows = mesh_renderer.cast_shadows;
@@ -137,11 +146,11 @@ protected:
     }
 
 private:
-    std::unique_ptr<IRenderer> m_renderer;
+    std::unique_ptr<render::IRenderer> m_renderer;
     std::unique_ptr<World> m_world;
     std::unique_ptr<Scheduler> m_scheduler;
 
-    MeshHandle m_cube_mesh;
+    render::MeshHandle m_cube_mesh;
     Entity m_cube_entity = NullEntity;
     float m_rotation_angle = 0.0f;
 };

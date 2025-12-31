@@ -10,6 +10,7 @@
 #include <QMenuBar>
 #include <QMenu>
 #include <QAction>
+#include <QActionGroup>
 #include <QStatusBar>
 #include <QToolBar>
 #include <QFileDialog>
@@ -311,7 +312,9 @@ void MainWindow::create_demo_scene() {
     m_world->emplace<engine::scene::WorldTransform>(cube);
 
     auto cube_mesh = m_renderer->create_primitive(engine::render::PrimitiveMesh::Cube, 1.0f);
-    m_world->emplace<engine::scene::MeshRenderer>(cube, cube_mesh);
+    engine::scene::MeshRenderer mesh_renderer;
+    mesh_renderer.mesh = engine::scene::MeshHandle{cube_mesh.id};
+    m_world->emplace<engine::scene::MeshRenderer>(cube, mesh_renderer);
 
     // Create a camera
     auto camera = m_world->create("Main Camera");
@@ -326,7 +329,7 @@ void MainWindow::create_demo_scene() {
     m_world->emplace<engine::scene::LocalTransform>(light, light_tf);
     m_world->emplace<engine::scene::WorldTransform>(light);
     engine::scene::Light dir_light;
-    dir_light.type = engine::scene::Light::Type::Directional;
+    dir_light.type = engine::scene::LightType::Directional;
     m_world->emplace<engine::scene::Light>(light, dir_light);
 
     // Refresh hierarchy
@@ -412,7 +415,9 @@ void MainWindow::on_create_cube() {
     auto entity = cmd->created_entity();
     if (entity != engine::scene::NullEntity) {
         auto mesh = m_renderer->create_primitive(engine::render::PrimitiveMesh::Cube, 1.0f);
-        m_world->emplace<engine::scene::MeshRenderer>(entity, mesh);
+        engine::scene::MeshRenderer renderer;
+        renderer.mesh = engine::scene::MeshHandle{mesh.id};
+        m_world->emplace<engine::scene::MeshRenderer>(entity, renderer);
     }
     m_hierarchy->refresh();
 }
@@ -426,7 +431,9 @@ void MainWindow::on_create_sphere() {
     auto entity = cmd->created_entity();
     if (entity != engine::scene::NullEntity) {
         auto mesh = m_renderer->create_primitive(engine::render::PrimitiveMesh::Sphere, 1.0f);
-        m_world->emplace<engine::scene::MeshRenderer>(entity, mesh);
+        engine::scene::MeshRenderer renderer;
+        renderer.mesh = engine::scene::MeshHandle{mesh.id};
+        m_world->emplace<engine::scene::MeshRenderer>(entity, renderer);
     }
     m_hierarchy->refresh();
 }
@@ -449,7 +456,7 @@ void MainWindow::on_create_directional_light() {
     auto entity = cmd->created_entity();
     if (entity != engine::scene::NullEntity) {
         engine::scene::Light light;
-        light.type = engine::scene::Light::Type::Directional;
+        light.type = engine::scene::LightType::Directional;
         m_world->emplace<engine::scene::Light>(entity, light);
     }
     m_hierarchy->refresh();
@@ -462,7 +469,7 @@ void MainWindow::on_create_point_light() {
     auto entity = cmd->created_entity();
     if (entity != engine::scene::NullEntity) {
         engine::scene::Light light;
-        light.type = engine::scene::Light::Type::Point;
+        light.type = engine::scene::LightType::Point;
         m_world->emplace<engine::scene::Light>(entity, light);
     }
     m_hierarchy->refresh();

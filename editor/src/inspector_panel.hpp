@@ -8,6 +8,7 @@
 #include <QScrollArea>
 #include <QFormLayout>
 #include <QWidget>
+#include <QPushButton>
 #include <functional>
 #include <memory>
 
@@ -73,7 +74,7 @@ public:
 private:
     bool m_collapsed = false;
     QWidget* m_content;
-    class QPushButton* m_toggle_btn;
+    QPushButton* m_toggle_btn;
 };
 
 } // namespace editor

@@ -34,16 +34,7 @@ extern void resume_all_impl(AudioEngine::Impl* impl);
 extern void stop_all_impl(AudioEngine::Impl* impl);
 extern uint32_t get_playing_sound_count_impl(AudioEngine::Impl* impl);
 
-AudioEngine::AudioEngine()
-    : m_impl(create_audio_impl())
-{
-}
-
-AudioEngine::~AudioEngine() {
-    if (m_impl) {
-        shutdown_audio_impl(m_impl.get());
-    }
-}
+// Constructor and destructor defined in miniaudio_impl.cpp where Impl is complete
 
 void AudioEngine::init(const AudioSettings& settings) {
     init_audio_impl(m_impl.get(), settings);

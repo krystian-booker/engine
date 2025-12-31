@@ -3,6 +3,8 @@
 #include <engine/core/math.hpp>
 #include <cstdint>
 #include <vector>
+#include <string>
+#include <utility>
 
 namespace engine::render {
 

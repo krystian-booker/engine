@@ -34,6 +34,22 @@ struct AudioEngine::Impl {
     Vec3 listener_up{0.0f, 1.0f, 0.0f};
 };
 
+// Forward declarations for impl functions
+AudioEngine::Impl* create_audio_impl();
+void shutdown_audio_impl(AudioEngine::Impl* impl);
+
+// Constructor and destructor must be defined here where Impl is complete
+AudioEngine::AudioEngine()
+    : m_impl(create_audio_impl())
+{
+}
+
+AudioEngine::~AudioEngine() {
+    if (m_impl) {
+        shutdown_audio_impl(m_impl.get());
+    }
+}
+
 AudioEngine::Impl* create_audio_impl() {
     return new AudioEngine::Impl();
 }

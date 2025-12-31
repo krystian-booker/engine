@@ -134,7 +134,6 @@ std::string Profiler::get_frame_time_graph(int width) {
     }
 
     std::ostringstream ss;
-    const char* bars = " ▁▂▃▄▅▆▇█";
     int bar_count = 8;
 
     size_t step = s_frame_time_history.size() / static_cast<size_t>(width);

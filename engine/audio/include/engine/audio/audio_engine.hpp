@@ -70,6 +70,33 @@ public:
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;
+
+    // Friend declarations for implementation functions (in miniaudio_impl.cpp)
+    friend Impl* create_audio_impl();
+    friend void destroy_audio_impl(Impl*);
+    friend void init_audio_impl(Impl*, const AudioSettings&);
+    friend void shutdown_audio_impl(Impl*);
+    friend void update_audio_impl(Impl*);
+    friend SoundHandle load_sound_impl(Impl*, const std::string&);
+    friend void unload_sound_impl(Impl*, SoundHandle);
+    friend void play_sound_impl(Impl*, SoundHandle, const SoundConfig&);
+    friend void play_sound_3d_impl(Impl*, SoundHandle, const Vec3&, const SoundConfig&);
+    friend void stop_sound_impl(Impl*, SoundHandle);
+    friend MusicHandle load_music_impl(Impl*, const std::string&);
+    friend void unload_music_impl(Impl*, MusicHandle);
+    friend void play_music_impl(Impl*, MusicHandle, bool);
+    friend void pause_music_impl(Impl*, MusicHandle);
+    friend void resume_music_impl(Impl*, MusicHandle);
+    friend void stop_music_impl(Impl*, MusicHandle);
+    friend void set_music_volume_impl(Impl*, MusicHandle, float);
+    friend void set_master_volume_impl(Impl*, float);
+    friend float get_master_volume_impl(Impl*);
+    friend void set_listener_position_impl(Impl*, const Vec3&);
+    friend void set_listener_orientation_impl(Impl*, const Vec3&, const Vec3&);
+    friend void pause_all_impl(Impl*);
+    friend void resume_all_impl(Impl*);
+    friend void stop_all_impl(Impl*);
+    friend uint32_t get_playing_sound_count_impl(Impl*);
 };
 
 // Global audio engine instance

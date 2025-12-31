@@ -6,7 +6,7 @@ int main(int argc, char* argv[]) {
     app.setApplicationName("Engine Editor");
     app.setOrganizationName("Engine");
 
-    MainWindow window;
+    editor::MainWindow window;
     window.show();
 
     return app.exec();

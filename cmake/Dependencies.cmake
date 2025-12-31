@@ -35,6 +35,7 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/nothings/stb.git
     GIT_TAG master
     GIT_SHALLOW TRUE
+    UPDATE_DISCONNECTED TRUE
 )
 FetchContent_GetProperties(stb)
 if(NOT stb_POPULATED)
@@ -50,8 +51,9 @@ target_include_directories(stb INTERFACE ${stb_SOURCE_DIR})
 FetchContent_Declare(
     cgltf
     GIT_REPOSITORY https://github.com/jkuhlmann/cgltf.git
-    GIT_TAG master
+    GIT_TAG v1.14
     GIT_SHALLOW TRUE
+    UPDATE_DISCONNECTED TRUE
 )
 FetchContent_GetProperties(cgltf)
 if(NOT cgltf_POPULATED)
@@ -67,8 +69,9 @@ target_include_directories(cgltf INTERFACE ${cgltf_SOURCE_DIR})
 FetchContent_Declare(
     miniaudio
     GIT_REPOSITORY https://github.com/mackron/miniaudio.git
-    GIT_TAG master
+    GIT_TAG 0.11.21
     GIT_SHALLOW TRUE
+    UPDATE_DISCONNECTED TRUE
 )
 FetchContent_GetProperties(miniaudio)
 if(NOT miniaudio_POPULATED)
@@ -76,7 +79,7 @@ if(NOT miniaudio_POPULATED)
 endif()
 add_library(miniaudio INTERFACE)
 add_library(miniaudio::miniaudio ALIAS miniaudio)
-target_include_directories(miniaudio INTERFACE ${miniaudio_SOURCE_DIR})
+target_include_directories(miniaudio INTERFACE ${miniaudio_SOURCE_DIR}/extras/miniaudio_split)
 
 # ============================================================================
 # Jolt Physics
@@ -87,10 +90,14 @@ FetchContent_Declare(
     GIT_TAG v5.2.0
     GIT_SHALLOW TRUE
     SOURCE_SUBDIR Build
+    UPDATE_DISCONNECTED TRUE
 )
 set(ENABLE_ALL_WARNINGS OFF CACHE BOOL "" FORCE)
 set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF CACHE BOOL "" FORCE)
 set(ENABLE_OBJECT_STREAM OFF CACHE BOOL "" FORCE)
+set(OVERRIDE_CXX_FLAGS OFF CACHE BOOL "" FORCE)
+set(INTERPROCEDURAL_OPTIMIZATION OFF CACHE BOOL "" FORCE)
+set(CPP_EXCEPTIONS_ENABLED ON CACHE BOOL "" FORCE)  # Enable exceptions to match rest of project
 FetchContent_MakeAvailable(JoltPhysics)
 
 # ============================================================================

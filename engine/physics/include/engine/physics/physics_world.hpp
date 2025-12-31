@@ -103,6 +103,31 @@ public:
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;
+
+    // Friend declarations for implementation functions (in jolt_impl.cpp)
+    friend Impl* create_physics_impl();
+    friend void destroy_physics_impl(Impl*);
+    friend void init_physics_impl(Impl*, const engine::core::PhysicsSettings&);
+    friend void shutdown_physics_impl(Impl*);
+    friend void step_physics_impl(Impl*, double);
+    friend PhysicsBodyId create_body_impl(Impl*, const BodySettings&);
+    friend void destroy_body_impl(Impl*, PhysicsBodyId);
+    friend bool is_valid_impl(Impl*, PhysicsBodyId);
+    friend void set_position_impl(Impl*, PhysicsBodyId, const Vec3&);
+    friend void set_rotation_impl(Impl*, PhysicsBodyId, const Quat&);
+    friend Vec3 get_position_impl(Impl*, PhysicsBodyId);
+    friend Quat get_rotation_impl(Impl*, PhysicsBodyId);
+    friend void set_linear_velocity_impl(Impl*, PhysicsBodyId, const Vec3&);
+    friend void set_angular_velocity_impl(Impl*, PhysicsBodyId, const Vec3&);
+    friend Vec3 get_linear_velocity_impl(Impl*, PhysicsBodyId);
+    friend Vec3 get_angular_velocity_impl(Impl*, PhysicsBodyId);
+    friend void add_force_impl(Impl*, PhysicsBodyId, const Vec3&);
+    friend void add_impulse_impl(Impl*, PhysicsBodyId, const Vec3&);
+    friend RaycastHit raycast_impl(Impl*, const Vec3&, const Vec3&, float, uint16_t);
+    friend void set_gravity_impl(Impl*, const Vec3&);
+    friend Vec3 get_gravity_impl(Impl*);
+    friend uint32_t get_body_count_impl(Impl*);
+    friend CollisionFilter& get_collision_filter_impl(Impl*);
 };
 
 } // namespace engine::physics
