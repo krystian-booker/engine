@@ -1,17 +1,20 @@
 # editor/CMakeLists.txt
 # Qt6 editor application
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
-
-set(CMAKE_AUTOMOC ON)
-set(CMAKE_AUTOUIC ON)
-set(CMAKE_AUTORCC ON)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Widgets)
 
 add_executable(editor WIN32
     src/main.cpp
     src/main_window.cpp
     src/main_window.hpp
     resources/editor.qrc
+)
+
+set_target_properties(editor PROPERTIES
+    FOLDER "editor"
+    AUTOMOC ON
+    AUTOUIC ON
+    AUTORCC ON
 )
 
 target_link_libraries(editor
@@ -23,13 +26,13 @@ target_link_libraries(editor
         Qt6::Widgets
 )
 
-set_target_properties(editor PROPERTIES
-    FOLDER "editor"
-)
-
-# Deploy Qt DLLs and plugins on Windows using windeployqt
+# Deploy Qt DLLs on Windows
 if(WIN32)
-    find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS "${QTDIR}/bin")
+    # Get windeployqt from Qt installation
+    get_target_property(QT6_QMAKE_EXECUTABLE Qt6::qmake IMPORTED_LOCATION)
+    get_filename_component(QT6_BIN_DIR "${QT6_QMAKE_EXECUTABLE}" DIRECTORY)
+    find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS "${QT6_BIN_DIR}")
+
     if(WINDEPLOYQT_EXECUTABLE)
         add_custom_command(TARGET editor POST_BUILD
             COMMAND "${WINDEPLOYQT_EXECUTABLE}"
