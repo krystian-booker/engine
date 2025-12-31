@@ -29,8 +29,6 @@ target_include_directories(engine_core
 )
 
 target_link_libraries(engine_core
-    PUBLIC
-        bgfx::bx
     PRIVATE
         engine_compiler_flags
 )

@@ -1,24 +1,25 @@
 #include <engine/core/time.hpp>
-#include <bx/timer.h>
+#include <chrono>
 
 namespace engine::core {
 
-static int64_t s_start_time = 0;
-static int64_t s_last_time = 0;
+using Clock = std::chrono::steady_clock;
+
+static Clock::time_point s_start_time;
+static Clock::time_point s_last_time;
 static double s_delta_time = 0.0;
 static double s_total_time = 0.0;
 static uint64_t s_frame_count = 0;
 
 void Time::init() {
-    s_start_time = bx::getHPCounter();
+    s_start_time = Clock::now();
     s_last_time = s_start_time;
 }
 
 void Time::update() {
-    int64_t now = bx::getHPCounter();
-    int64_t freq = bx::getHPFrequency();
-    s_delta_time = double(now - s_last_time) / double(freq);
-    s_total_time = double(now - s_start_time) / double(freq);
+    auto now = Clock::now();
+    s_delta_time = std::chrono::duration<double>(now - s_last_time).count();
+    s_total_time = std::chrono::duration<double>(now - s_start_time).count();
     s_last_time = now;
     s_frame_count++;
 }
