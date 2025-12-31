@@ -30,3 +30,10 @@ add_library(bgfx::bimg ALIAS bimg)
 # - bgfx::bx        (base library)
 # - bgfx::bimg      (image library)
 # Tools: shaderc, geometryc, texturec
+
+# EnTT Entity Component System (header-only)
+add_library(entt INTERFACE)
+add_library(entt::entt ALIAS entt)
+target_include_directories(entt INTERFACE
+    ${CMAKE_SOURCE_DIR}/external/entt/single_include
+)
