@@ -2,7 +2,7 @@
 # engine::render - bgfx wrapper, renderer abstraction
 
 # Include bgfx shader compilation utilities
-include(${CMAKE_SOURCE_DIR}/external/bgfx.cmake/cmake/bgfxToolUtils.cmake)
+include(${bgfx_cmake_SOURCE_DIR}/cmake/bgfxToolUtils.cmake)
 
 add_library(engine_render STATIC)
 add_library(engine::render ALIAS engine_render)
@@ -97,7 +97,7 @@ set_target_properties(engine_render PROPERTIES
 
 # Compile shaders at build time
 if(TARGET bgfx::shaderc)
-    set(BGFX_SHADER_INCLUDE_PATH "${CMAKE_SOURCE_DIR}/external/bgfx.cmake/bgfx/src")
+    set(BGFX_SHADER_INCLUDE_PATH "${bgfx_cmake_SOURCE_DIR}/bgfx/src")
     set(SHADER_COMMON_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders/common")
     set(SHADER_OUTPUT_DIR "${CMAKE_BINARY_DIR}/shaders")
     set(RUNTIME_SHADER_DIR "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders")
