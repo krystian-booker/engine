@@ -60,6 +60,13 @@ bool ProjectSettings::load(const std::string& path) {
             window.title = w.value("title", window.title);
         }
 
+        if (j.contains("hot_reload")) {
+            auto& h = j["hot_reload"];
+            hot_reload.enabled = h.value("enabled", hot_reload.enabled);
+            hot_reload.preserve_state = h.value("preserve_state", hot_reload.preserve_state);
+            hot_reload.poll_interval_ms = h.value("poll_interval_ms", hot_reload.poll_interval_ms);
+        }
+
         return true;
     } catch (const json::exception&) {
         return false;
@@ -99,6 +106,12 @@ bool ProjectSettings::save(const std::string& path) const {
         {"fullscreen", window.fullscreen},
         {"borderless", window.borderless},
         {"title", window.title}
+    };
+
+    j["hot_reload"] = {
+        {"enabled", hot_reload.enabled},
+        {"preserve_state", hot_reload.preserve_state},
+        {"poll_interval_ms", hot_reload.poll_interval_ms}
     };
 
     return FileSystem::write_text(path, j.dump(4));

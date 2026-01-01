@@ -9,6 +9,8 @@ target_sources(engine_physics
         src/physics_world.cpp
         src/jolt_impl.cpp
         src/debug_renderer.cpp
+        src/character_controller.cpp
+        src/ragdoll.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -20,6 +22,8 @@ target_sources(engine_physics
             include/engine/physics/shapes.hpp
             include/engine/physics/layers.hpp
             include/engine/physics/debug_renderer.hpp
+            include/engine/physics/character_controller.hpp
+            include/engine/physics/ragdoll.hpp
 )
 
 target_include_directories(engine_physics

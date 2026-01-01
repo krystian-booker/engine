@@ -36,6 +36,7 @@ target_sources(engine_render
         src/instancing.cpp
         src/occlusion_culling.cpp
         src/camera_effects.cpp
+        src/animation_events.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -72,6 +73,7 @@ target_sources(engine_render
             include/engine/render/instancing.hpp
             include/engine/render/occlusion_culling.hpp
             include/engine/render/camera_effects.hpp
+            include/engine/render/animation_events.hpp
 )
 
 target_include_directories(engine_render

@@ -4,6 +4,12 @@
 #include <engine/core/log.hpp>
 #include <engine/core/event_dispatcher.hpp>
 #include <engine/core/events.hpp>
+#include <engine/scene/world.hpp>
+#include <engine/scene/systems.hpp>
+#include <engine/render/renderer.hpp>
+#include <engine/plugin/plugin.hpp>
+
+#include <cstring>
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -19,11 +25,22 @@ Application::Application()
 {
 }
 
-Application::~Application() = default;
+Application::~Application() {
+    // Ensure plugin is unloaded before engine systems are destroyed
+    unload_game_plugin();
+}
 
-int Application::run(int /*argc*/, char** /*argv*/) {
+int Application::run(int argc, char** argv) {
+    // Parse command line arguments
+    parse_args(argc, argv);
+
     // Load project settings
     settings().load("project.json");
+
+    // Apply hot reload setting from project settings if not overridden by command line
+    if (!m_hot_reload_override) {
+        m_hot_reload_enabled = settings().hot_reload.enabled;
+    }
 
     // Update clock timestep from settings
     m_clock.fixed_dt = settings().physics.fixed_timestep;
@@ -38,10 +55,27 @@ int Application::run(int /*argc*/, char** /*argv*/) {
         return 1;
     }
 
+    // Initialize engine systems
+    m_world = std::make_unique<scene::World>();
+    m_engine_scheduler = std::make_unique<scene::Scheduler>();
+    m_system_registry = std::make_unique<plugin::SystemRegistry>();
+    m_system_registry->set_engine_scheduler(m_engine_scheduler.get());
+
+    // TODO: Initialize renderer when render system is ready
+    // m_renderer = std::make_unique<render::Renderer>();
+
     m_initialized = true;
 
-    // Call user init
+    // Call user init (for subclassed applications)
     on_init();
+
+    // Load game plugin if specified
+    if (!m_game_dll_path.empty()) {
+        if (!load_game_plugin(m_game_dll_path)) {
+            log(LogLevel::Error, "Failed to load game plugin: {}", m_game_dll_path.string());
+            // Continue running - allows for reload attempts
+        }
+    }
 
     // Main loop
     while (!m_quit_requested) {
@@ -49,6 +83,11 @@ int Application::run(int /*argc*/, char** /*argv*/) {
         if (!poll_events()) {
             m_quit_requested = true;
             break;
+        }
+
+        // Poll for hot reload
+        if (m_hot_reload_manager) {
+            m_hot_reload_manager->poll();
         }
 
         // Process deferred events from previous frame
@@ -63,18 +102,56 @@ int Application::run(int /*argc*/, char** /*argv*/) {
 
         // Fixed update loop
         while (m_clock.consume_tick()) {
+            // Run engine and game systems for FixedUpdate phase
+            if (m_system_registry) {
+                m_system_registry->run(*m_world, m_clock.fixed_dt, scene::Phase::FixedUpdate);
+            }
             on_fixed_update(m_clock.fixed_dt);
         }
 
-        // Variable update
+        // Run PreUpdate phase
+        if (m_system_registry) {
+            m_system_registry->run(*m_world, dt, scene::Phase::PreUpdate);
+        }
+
+        // Run Update phase
+        if (m_system_registry) {
+            m_system_registry->run(*m_world, dt, scene::Phase::Update);
+        }
+
+        // Variable update callback
         on_update(dt);
+
+        // Run PostUpdate phase
+        if (m_system_registry) {
+            m_system_registry->run(*m_world, dt, scene::Phase::PostUpdate);
+        }
+
+        // Run PreRender phase
+        if (m_system_registry) {
+            m_system_registry->run(*m_world, dt, scene::Phase::PreRender);
+        }
 
         // Rendering
         on_render(m_clock.get_alpha());
+
+        // Run PostRender phase
+        if (m_system_registry) {
+            m_system_registry->run(*m_world, dt, scene::Phase::PostRender);
+        }
     }
 
     // Call user shutdown
     on_shutdown();
+
+    // Unload game plugin
+    unload_game_plugin();
+
+    // Destroy engine systems
+    m_system_registry.reset();
+    m_engine_scheduler.reset();
+    m_renderer.reset();
+    m_world.reset();
 
     // Destroy window
     destroy_window();
@@ -89,6 +166,92 @@ int Application::run(int /*argc*/, char** /*argv*/) {
 
 void Application::quit() {
     m_quit_requested = true;
+}
+
+bool Application::load_game_plugin(const std::filesystem::path& dll_path) {
+    // Unload existing plugin first
+    unload_game_plugin();
+
+    if (!std::filesystem::exists(dll_path)) {
+        log(LogLevel::Error, "Game plugin not found: {}", dll_path.string());
+        return false;
+    }
+
+    // Create game context
+    m_game_context = std::make_unique<plugin::GameContext>();
+    m_game_context->world = m_world.get();
+    m_game_context->scheduler = m_engine_scheduler.get();
+    m_game_context->renderer = m_renderer.get();
+    m_game_context->app = this;
+
+    // Create and initialize hot reload manager
+    m_hot_reload_manager = std::make_unique<plugin::HotReloadManager>();
+
+    plugin::HotReloadConfig config;
+    config.enabled = m_hot_reload_enabled;
+    config.preserve_state = settings().hot_reload.preserve_state;
+    config.poll_interval_ms = settings().hot_reload.poll_interval_ms;
+
+    m_hot_reload_manager->init(dll_path, m_game_context.get(), m_system_registry.get(), config);
+
+    if (!m_hot_reload_manager->is_loaded()) {
+        log(LogLevel::Error, "Failed to load game plugin");
+        m_hot_reload_manager.reset();
+        m_game_context.reset();
+        return false;
+    }
+
+    log(LogLevel::Info, "Game plugin loaded: {}", dll_path.string());
+    return true;
+}
+
+void Application::unload_game_plugin() {
+    if (m_hot_reload_manager) {
+        m_hot_reload_manager->shutdown();
+        m_hot_reload_manager.reset();
+    }
+    m_game_context.reset();
+}
+
+bool Application::has_game_plugin() const {
+    return m_hot_reload_manager && m_hot_reload_manager->is_loaded();
+}
+
+void Application::parse_args(int argc, char** argv) {
+    if (argc <= 0 || argv == nullptr) {
+        return;
+    }
+
+    for (int i = 1; i < argc; ++i) {
+        const char* arg = argv[i];
+        if (!arg) continue;
+
+        // --game-dll=<path> or --game-dll <path>
+        if (std::strncmp(arg, "--game-dll=", 11) == 0) {
+            m_game_dll_path = arg + 11;
+        } else if (std::strcmp(arg, "--game-dll") == 0 && i + 1 < argc) {
+            m_game_dll_path = argv[++i];
+        }
+        // --hot-reload=on/off or --hot-reload on/off
+        else if (std::strncmp(arg, "--hot-reload=", 13) == 0) {
+            const char* value = arg + 13;
+            m_hot_reload_enabled = (std::strcmp(value, "on") == 0 ||
+                                    std::strcmp(value, "true") == 0 ||
+                                    std::strcmp(value, "1") == 0);
+            m_hot_reload_override = true;
+        } else if (std::strcmp(arg, "--hot-reload") == 0 && i + 1 < argc) {
+            const char* value = argv[++i];
+            m_hot_reload_enabled = (std::strcmp(value, "on") == 0 ||
+                                    std::strcmp(value, "true") == 0 ||
+                                    std::strcmp(value, "1") == 0);
+            m_hot_reload_override = true;
+        }
+        // --no-hot-reload
+        else if (std::strcmp(arg, "--no-hot-reload") == 0) {
+            m_hot_reload_enabled = false;
+            m_hot_reload_override = true;
+        }
+    }
 }
 
 // Platform-specific window implementation

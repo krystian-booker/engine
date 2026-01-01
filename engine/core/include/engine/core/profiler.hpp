@@ -13,6 +13,10 @@ namespace engine::core {
 #define PROFILE_SCOPE(name) ::engine::core::ProfileScope _profile_scope_##__LINE__(name)
 #define PROFILE_FUNCTION() PROFILE_SCOPE(__FUNCTION__)
 
+// GPU profiling macros
+#define PROFILE_GPU_SCOPE(name) ::engine::core::GPUProfileScope _gpu_profile_scope_##__LINE__(name)
+#define PROFILE_GPU_PASS(name, view_id) ::engine::core::GPUProfileScope _gpu_profile_scope_##__LINE__(name, view_id)
+
 // Forward declaration
 class IRenderer;
 
@@ -25,15 +29,26 @@ struct ProfileSample {
     uint32_t thread_id;
 };
 
+// GPU sample data
+struct GPUProfileSample {
+    std::string name;
+    uint16_t view_id = 0;
+    double gpu_time_ms = 0.0;
+    uint32_t frame_captured = 0;
+    bool valid = false;
+};
+
 // Frame timing data
 struct FrameStats {
     double frame_time_ms = 0.0;
     double update_time_ms = 0.0;
     double render_time_ms = 0.0;
     double physics_time_ms = 0.0;
+    double gpu_time_ms = 0.0;        // Total GPU frame time
     uint32_t draw_calls = 0;
     uint32_t triangles = 0;
     size_t memory_used = 0;
+    size_t gpu_memory_used = 0;      // GPU memory usage
     int fps = 0;
 };
 
@@ -49,8 +64,17 @@ public:
     static void end_sample();
 
     // GPU profiling
-    static void begin_gpu_sample(const char* name);
+    static void begin_gpu_sample(const char* name, uint16_t view_id = 0);
     static void end_gpu_sample();
+
+    // GPU timing queries (call after frame to get results from previous frame)
+    static double get_gpu_frame_time();
+    static double get_gpu_pass_time(const char* name);
+    static const std::vector<GPUProfileSample>& get_gpu_samples();
+
+    // GPU memory tracking
+    static void set_gpu_memory_usage(size_t bytes);
+    static size_t get_gpu_memory_usage();
 
     // Frame stats
     static const FrameStats& get_frame_stats();
@@ -80,17 +104,29 @@ private:
         std::chrono::high_resolution_clock::time_point start;
     };
 
+    struct GPUSampleStack {
+        std::string name;
+        uint16_t view_id;
+    };
+
     static std::vector<ProfileSample> s_samples;
     static std::vector<SampleStack> s_stack;
     static std::chrono::high_resolution_clock::time_point s_frame_start;
     static FrameStats s_current_stats;
     static FrameStats s_last_stats;
     static std::vector<double> s_frame_time_history;
+    static std::vector<double> s_gpu_time_history;
     static size_t s_history_index;
     static bool s_overlay_visible;
     static std::mutex s_mutex;
     static uint32_t s_frame_count;
     static double s_accumulated_time;
+
+    // GPU profiling state
+    static std::vector<GPUProfileSample> s_gpu_samples;
+    static std::vector<GPUProfileSample> s_gpu_samples_last_frame;
+    static std::vector<GPUSampleStack> s_gpu_stack;
+    static size_t s_gpu_memory_usage;
 };
 
 // RAII profiling scope
@@ -107,6 +143,22 @@ public:
     // Non-copyable
     ProfileScope(const ProfileScope&) = delete;
     ProfileScope& operator=(const ProfileScope&) = delete;
+};
+
+// RAII GPU profiling scope
+class GPUProfileScope {
+public:
+    explicit GPUProfileScope(const char* name, uint16_t view_id = 0) {
+        Profiler::begin_gpu_sample(name, view_id);
+    }
+
+    ~GPUProfileScope() {
+        Profiler::end_gpu_sample();
+    }
+
+    // Non-copyable
+    GPUProfileScope(const GPUProfileScope&) = delete;
+    GPUProfileScope& operator=(const GPUProfileScope&) = delete;
 };
 
 // Memory tracking

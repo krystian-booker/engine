@@ -16,6 +16,7 @@ target_sources(engine_core
         src/input.cpp
         src/profiler.cpp
         src/event_dispatcher.cpp
+        src/allocators.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -35,6 +36,7 @@ target_sources(engine_core
             include/engine/core/core.hpp
             include/engine/core/events.hpp
             include/engine/core/event_dispatcher.hpp
+            include/engine/core/allocators.hpp
 )
 
 target_include_directories(engine_core
@@ -50,6 +52,16 @@ target_link_libraries(engine_core
         bgfx::bx
     PRIVATE
         engine_compiler_flags
+)
+
+# Application class requires additional engine modules
+# These are linked via object library to avoid circular dependencies
+# The umbrella engine::engine target will provide proper linkage
+target_include_directories(engine_core
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../scene/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../render/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../plugin/include
 )
 
 set_target_properties(engine_core PROPERTIES

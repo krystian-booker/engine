@@ -34,6 +34,12 @@ struct WindowSettings {
     std::string title = "Engine";
 };
 
+struct HotReloadSettings {
+    bool enabled = true;           // Master toggle (defaults to true for Debug builds)
+    bool preserve_state = true;    // Serialize/deserialize world state on reload
+    int poll_interval_ms = 500;    // How often to check for DLL changes
+};
+
 struct ProjectSettings {
     std::string project_name = "Untitled";
     std::string asset_directory = "assets/";
@@ -43,6 +49,7 @@ struct ProjectSettings {
     RenderSettings render;
     AudioSettings audio;
     WindowSettings window;
+    HotReloadSettings hot_reload;
 
     // Singleton access
     static ProjectSettings& get();

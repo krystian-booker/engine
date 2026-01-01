@@ -45,3 +45,70 @@ endif()
 if(ENGINE_BUILD_SAMPLES)
     add_subdirectory(samples/spinning_cube)
 endif()
+
+# CLI Tool for game development
+add_subdirectory(tools/engine-cli)
+
+# Installation rules
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
+# Install engine libraries
+install(TARGETS
+    engine_core
+    engine_reflect
+    engine_scene
+    engine_script
+    engine_render
+    engine_asset
+    engine_physics
+    engine_audio
+    engine_navigation
+    engine_ui
+    engine_debug
+    engine_save
+    engine_localization
+    engine_streaming
+    engine_terrain
+    engine_vegetation
+    engine_cinematic
+    engine_plugin
+    engine
+    EXPORT EngineTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    FILE_SET public_headers DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+# Install the export targets
+install(EXPORT EngineTargets
+    FILE EngineTargets.cmake
+    NAMESPACE Engine::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Engine
+)
+
+# Generate package config files
+configure_package_config_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/EngineConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/EngineConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Engine
+)
+
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/EngineConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/EngineConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/EngineConfigVersion.cmake
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/EngineGamePlugin.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Engine
+)
+
+# Install template project
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/templates/game_template/
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/engine/templates/game_template
+)

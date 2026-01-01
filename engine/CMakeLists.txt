@@ -2,7 +2,9 @@
 # Engine umbrella - adds all modules
 
 add_subdirectory(core)
+add_subdirectory(reflect)
 add_subdirectory(scene)
+add_subdirectory(script)
 add_subdirectory(render)
 add_subdirectory(asset)
 add_subdirectory(physics)
@@ -15,6 +17,8 @@ add_subdirectory(localization)
 add_subdirectory(streaming)
 add_subdirectory(terrain)
 add_subdirectory(vegetation)
+add_subdirectory(cinematic)
+add_subdirectory(plugin)
 
 # Umbrella target for convenience
 add_library(engine INTERFACE)
@@ -22,7 +26,9 @@ add_library(engine::engine ALIAS engine)
 
 target_link_libraries(engine INTERFACE
     engine::core
+    engine::reflect
     engine::scene
+    engine::script
     engine::render
     engine::asset
     engine::physics
@@ -35,4 +41,6 @@ target_link_libraries(engine INTERFACE
     engine::streaming
     engine::terrain
     engine::vegetation
+    engine::cinematic
+    engine::plugin
 )

@@ -14,11 +14,18 @@ std::chrono::high_resolution_clock::time_point Profiler::s_frame_start;
 FrameStats Profiler::s_current_stats;
 FrameStats Profiler::s_last_stats;
 std::vector<double> Profiler::s_frame_time_history(120, 0.0);  // 2 seconds at 60fps
+std::vector<double> Profiler::s_gpu_time_history(120, 0.0);
 size_t Profiler::s_history_index = 0;
 bool Profiler::s_overlay_visible = false;
 std::mutex Profiler::s_mutex;
 uint32_t Profiler::s_frame_count = 0;
 double Profiler::s_accumulated_time = 0.0;
+
+// GPU profiling state
+std::vector<GPUProfileSample> Profiler::s_gpu_samples;
+std::vector<GPUProfileSample> Profiler::s_gpu_samples_last_frame;
+std::vector<Profiler::GPUSampleStack> Profiler::s_gpu_stack;
+size_t Profiler::s_gpu_memory_usage = 0;
 
 void Profiler::begin_frame() {
     std::lock_guard<std::mutex> lock(s_mutex);
@@ -38,7 +45,22 @@ void Profiler::end_frame() {
 
     // Update history
     s_frame_time_history[s_history_index] = frame_time;
+
+    // Calculate total GPU time from samples
+    double total_gpu_time = 0.0;
+    for (const auto& sample : s_gpu_samples) {
+        if (sample.valid) {
+            total_gpu_time += sample.gpu_time_ms;
+        }
+    }
+    s_current_stats.gpu_time_ms = total_gpu_time;
+    s_gpu_time_history[s_history_index] = total_gpu_time;
+
     s_history_index = (s_history_index + 1) % s_frame_time_history.size();
+
+    // Swap GPU sample buffers
+    s_gpu_samples_last_frame = std::move(s_gpu_samples);
+    s_gpu_samples.clear();
 
     // Calculate FPS
     s_accumulated_time += frame_time;
@@ -50,6 +72,9 @@ void Profiler::end_frame() {
     } else {
         s_current_stats.fps = s_last_stats.fps;  // Keep previous FPS until update
     }
+
+    // Update GPU memory in stats
+    s_current_stats.gpu_memory_used = s_gpu_memory_usage;
 
     s_last_stats = s_current_stats;
 }
@@ -84,12 +109,81 @@ void Profiler::end_sample() {
     s_stack.pop_back();
 }
 
-void Profiler::begin_gpu_sample(const char* /*name*/) {
-    // TODO: Implement GPU profiling using bgfx queries
+void Profiler::begin_gpu_sample(const char* name, uint16_t view_id) {
+    std::lock_guard<std::mutex> lock(s_mutex);
+
+    GPUSampleStack sample;
+    sample.name = name;
+    sample.view_id = view_id;
+    s_gpu_stack.push_back(sample);
+
+    // In a real implementation, this would start a GPU timing query
+    // using bgfx::createOcclusionQuery() or platform-specific timing queries
+    // bgfx::setViewName(view_id, name);
 }
 
 void Profiler::end_gpu_sample() {
-    // TODO: Implement GPU profiling using bgfx queries
+    std::lock_guard<std::mutex> lock(s_mutex);
+
+    if (s_gpu_stack.empty()) return;
+
+    auto& top = s_gpu_stack.back();
+
+    GPUProfileSample sample;
+    sample.name = std::move(top.name);
+    sample.view_id = top.view_id;
+    sample.frame_captured = s_frame_count;
+
+    // In a real implementation, this would end the GPU timing query
+    // and retrieve results. GPU timing is asynchronous, so results
+    // from queries are typically available 1-2 frames later.
+    //
+    // For bgfx, you would use:
+    // 1. bgfx::createOcclusionQuery() to create a query
+    // 2. bgfx::setCondition() to start timing
+    // 3. bgfx::getResult() to retrieve timing (async)
+    //
+    // Alternatively, use bgfx::Stats from bgfx::getStats() which provides:
+    // - gpuTimeBegin, gpuTimeEnd for frame timing
+    // - gpuTimerFreq for converting to milliseconds
+    //
+    // For now, mark as invalid until real GPU timing is connected
+    sample.valid = false;
+    sample.gpu_time_ms = 0.0;
+
+    s_gpu_samples.push_back(sample);
+    s_gpu_stack.pop_back();
+}
+
+double Profiler::get_gpu_frame_time() {
+    std::lock_guard<std::mutex> lock(s_mutex);
+    return s_last_stats.gpu_time_ms;
+}
+
+double Profiler::get_gpu_pass_time(const char* name) {
+    std::lock_guard<std::mutex> lock(s_mutex);
+
+    for (const auto& sample : s_gpu_samples_last_frame) {
+        if (sample.name == name && sample.valid) {
+            return sample.gpu_time_ms;
+        }
+    }
+    return 0.0;
+}
+
+const std::vector<GPUProfileSample>& Profiler::get_gpu_samples() {
+    // Note: Not thread-safe for reading, caller should ensure no concurrent writes
+    return s_gpu_samples_last_frame;
+}
+
+void Profiler::set_gpu_memory_usage(size_t bytes) {
+    std::lock_guard<std::mutex> lock(s_mutex);
+    s_gpu_memory_usage = bytes;
+}
+
+size_t Profiler::get_gpu_memory_usage() {
+    std::lock_guard<std::mutex> lock(s_mutex);
+    return s_gpu_memory_usage;
 }
 
 const FrameStats& Profiler::get_frame_stats() {
@@ -109,16 +203,32 @@ std::string Profiler::get_report() {
 
     ss << "=== Frame Profile ===\n";
     ss << "Frame Time: " << s_last_stats.frame_time_ms << " ms\n";
+    ss << "GPU Time: " << s_last_stats.gpu_time_ms << " ms\n";
     ss << "FPS: " << s_last_stats.fps << "\n";
     ss << "Draw Calls: " << s_last_stats.draw_calls << "\n";
     ss << "Triangles: " << s_last_stats.triangles << "\n";
-    ss << "\n--- Samples ---\n";
+    if (s_gpu_memory_usage > 0) {
+        ss << "GPU Memory: " << s_gpu_memory_usage / (1024 * 1024) << " MB\n";
+    }
+    ss << "\n--- CPU Samples ---\n";
 
     for (const auto& sample : s_samples) {
         for (uint32_t i = 0; i < sample.depth; ++i) {
             ss << "  ";
         }
         ss << sample.name << ": " << sample.duration_ms << " ms\n";
+    }
+
+    if (!s_gpu_samples_last_frame.empty()) {
+        ss << "\n--- GPU Samples ---\n";
+        for (const auto& sample : s_gpu_samples_last_frame) {
+            if (sample.valid) {
+                ss << "[View " << sample.view_id << "] " << sample.name
+                   << ": " << sample.gpu_time_ms << " ms\n";
+            } else {
+                ss << "[View " << sample.view_id << "] " << sample.name << ": (pending)\n";
+            }
+        }
     }
 
     return ss.str();
@@ -210,11 +320,18 @@ void Profiler::reset() {
     s_samples.clear();
     s_stack.clear();
     std::fill(s_frame_time_history.begin(), s_frame_time_history.end(), 0.0);
+    std::fill(s_gpu_time_history.begin(), s_gpu_time_history.end(), 0.0);
     s_history_index = 0;
     s_current_stats = FrameStats{};
     s_last_stats = FrameStats{};
     s_frame_count = 0;
     s_accumulated_time = 0.0;
+
+    // Reset GPU profiling state
+    s_gpu_samples.clear();
+    s_gpu_samples_last_frame.clear();
+    s_gpu_stack.clear();
+    s_gpu_memory_usage = 0;
 }
 
 // MemoryTracker implementation

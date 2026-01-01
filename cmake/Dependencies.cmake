@@ -160,3 +160,83 @@ add_library(entt::entt ALIAS entt)
 target_include_directories(entt INTERFACE
     ${CMAKE_SOURCE_DIR}/external/entt/single_include
 )
+
+# ============================================================================
+# Lua (scripting runtime)
+# ============================================================================
+FetchContent_Declare(
+    lua
+    GIT_REPOSITORY https://github.com/lua/lua.git
+    GIT_TAG v5.4.7
+    GIT_SHALLOW TRUE
+    UPDATE_DISCONNECTED TRUE
+)
+FetchContent_GetProperties(lua)
+if(NOT lua_POPULATED)
+    FetchContent_Populate(lua)
+endif()
+
+# Build Lua as a static library
+set(LUA_SOURCES
+    ${lua_SOURCE_DIR}/lapi.c
+    ${lua_SOURCE_DIR}/lauxlib.c
+    ${lua_SOURCE_DIR}/lbaselib.c
+    ${lua_SOURCE_DIR}/lcode.c
+    ${lua_SOURCE_DIR}/lcorolib.c
+    ${lua_SOURCE_DIR}/lctype.c
+    ${lua_SOURCE_DIR}/ldblib.c
+    ${lua_SOURCE_DIR}/ldebug.c
+    ${lua_SOURCE_DIR}/ldo.c
+    ${lua_SOURCE_DIR}/ldump.c
+    ${lua_SOURCE_DIR}/lfunc.c
+    ${lua_SOURCE_DIR}/lgc.c
+    ${lua_SOURCE_DIR}/linit.c
+    ${lua_SOURCE_DIR}/liolib.c
+    ${lua_SOURCE_DIR}/llex.c
+    ${lua_SOURCE_DIR}/lmathlib.c
+    ${lua_SOURCE_DIR}/lmem.c
+    ${lua_SOURCE_DIR}/loadlib.c
+    ${lua_SOURCE_DIR}/lobject.c
+    ${lua_SOURCE_DIR}/lopcodes.c
+    ${lua_SOURCE_DIR}/loslib.c
+    ${lua_SOURCE_DIR}/lparser.c
+    ${lua_SOURCE_DIR}/lstate.c
+    ${lua_SOURCE_DIR}/lstring.c
+    ${lua_SOURCE_DIR}/lstrlib.c
+    ${lua_SOURCE_DIR}/ltable.c
+    ${lua_SOURCE_DIR}/ltablib.c
+    ${lua_SOURCE_DIR}/ltm.c
+    ${lua_SOURCE_DIR}/lundump.c
+    ${lua_SOURCE_DIR}/lutf8lib.c
+    ${lua_SOURCE_DIR}/lvm.c
+    ${lua_SOURCE_DIR}/lzio.c
+)
+add_library(lua STATIC ${LUA_SOURCES})
+add_library(lua::lua ALIAS lua)
+target_include_directories(lua PUBLIC ${lua_SOURCE_DIR})
+# Compile as C++
+set_source_files_properties(${LUA_SOURCES} PROPERTIES LANGUAGE CXX)
+target_compile_definitions(lua PRIVATE LUA_USE_WINDOWS)
+
+# ============================================================================
+# sol2 (C++ Lua wrapper - header only)
+# ============================================================================
+FetchContent_Declare(
+    sol2
+    GIT_REPOSITORY https://github.com/ThePhD/sol2.git
+    GIT_TAG v3.3.1
+    GIT_SHALLOW TRUE
+    UPDATE_DISCONNECTED TRUE
+)
+FetchContent_GetProperties(sol2)
+if(NOT sol2_POPULATED)
+    FetchContent_Populate(sol2)
+endif()
+add_library(sol2 INTERFACE)
+add_library(sol2::sol2 ALIAS sol2)
+target_include_directories(sol2 INTERFACE ${sol2_SOURCE_DIR}/include)
+target_link_libraries(sol2 INTERFACE lua::lua)
+target_compile_definitions(sol2 INTERFACE
+    SOL_ALL_SAFETIES_ON=1
+    SOL_USING_CXX_LUA=1
+)

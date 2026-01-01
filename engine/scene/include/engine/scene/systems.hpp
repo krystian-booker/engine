@@ -12,6 +12,7 @@ enum class Phase {
     PreUpdate,      // Before fixed update (input processing, etc.)
     FixedUpdate,    // Fixed timestep update (physics, AI, etc.)
     Update,         // Variable timestep update (animations, etc.)
+    PostUpdate,     // After update (late updates, constraints)
     PreRender,      // Before rendering (transform interpolation, culling)
     Render,         // Rendering
     PostRender      // After rendering (cleanup, debug drawing)
@@ -52,7 +53,7 @@ private:
     };
 
     // One vector of systems per phase
-    std::vector<SystemEntry> m_systems[6];
+    std::vector<SystemEntry> m_systems[7];
 
     // Sort systems by priority after adding
     void sort_phase(Phase phase);
