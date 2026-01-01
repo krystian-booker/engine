@@ -24,8 +24,8 @@ public:
     void init(const AudioSettings& settings);
     void shutdown();
 
-    // Call each frame for 3D audio updates
-    void update();
+    // Call each frame for 3D audio updates and crossfade processing
+    void update(float delta_time);
 
     // Sound effects (short, can have many instances)
     SoundHandle load_sound(const std::string& path);
@@ -33,6 +33,12 @@ public:
     void play_sound(SoundHandle h, const SoundConfig& config = {});
     void play_sound_3d(SoundHandle h, const Vec3& position, const SoundConfig& config = {});
     void stop_sound(SoundHandle h);
+
+    // Update playing sound properties
+    void set_sound_position(SoundHandle h, const Vec3& position);
+    void set_sound_velocity(SoundHandle h, const Vec3& velocity);
+    bool is_sound_playing(SoundHandle h) const;
+    float get_sound_length(SoundHandle h) const;
 
     // Music (streaming, typically one at a time)
     MusicHandle load_music(const std::string& path);
@@ -66,6 +72,15 @@ public:
 
     // Get active sound count
     uint32_t get_playing_sound_count() const;
+
+    // Audio bus management
+    AudioBusHandle get_bus(BuiltinBus bus);
+    AudioBusHandle create_bus(const std::string& name, AudioBusHandle parent = {});
+    void destroy_bus(AudioBusHandle bus);
+    void set_bus_volume(AudioBusHandle bus, float volume);
+    float get_bus_volume(AudioBusHandle bus) const;
+    void set_bus_muted(AudioBusHandle bus, bool muted);
+    bool is_bus_muted(AudioBusHandle bus) const;
 
 private:
     struct Impl;

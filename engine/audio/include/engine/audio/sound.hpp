@@ -16,6 +16,21 @@ struct MusicHandle {
     bool valid() const { return id != UINT32_MAX; }
 };
 
+// Audio bus handle (for mixing groups)
+struct AudioBusHandle {
+    uint32_t id = UINT32_MAX;
+    bool valid() const { return id != UINT32_MAX; }
+};
+
+// Built-in audio bus IDs
+enum class BuiltinBus : uint32_t {
+    Master = 0,
+    Music = 1,
+    SFX = 2,
+    Voice = 3,
+    Ambient = 4
+};
+
 // Sound playback state
 enum class PlaybackState : uint8_t {
     Stopped,
@@ -27,9 +42,11 @@ enum class PlaybackState : uint8_t {
 struct SoundConfig {
     float volume = 1.0f;
     float pitch = 1.0f;
-    float pan = 0.0f;  // -1 = left, 0 = center, 1 = right
+    float pan = 0.0f;           // -1 = left, 0 = center, 1 = right
     bool loop = false;
-    bool spatial = false;  // 3D positioned audio
+    bool spatial = false;       // 3D positioned audio
+    AudioBusHandle bus;         // Output bus (default = SFX bus)
+    float priority = 1.0f;      // Voice priority (higher = less likely to be stolen)
 };
 
 // 3D audio source settings
