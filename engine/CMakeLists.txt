@@ -11,7 +11,7 @@ add_subdirectory(physics)
 add_subdirectory(audio)
 add_subdirectory(navigation)
 add_subdirectory(ui)
-add_subdirectory(debug)
+add_subdirectory(debug-gui)
 add_subdirectory(save)
 add_subdirectory(localization)
 add_subdirectory(streaming)
@@ -35,7 +35,7 @@ target_link_libraries(engine INTERFACE
     engine::audio
     engine::navigation
     engine::ui
-    engine::debug
+    engine::debug-gui
     engine::save
     engine::localization
     engine::streaming

@@ -65,7 +65,7 @@ install(TARGETS
     engine_audio
     engine_navigation
     engine_ui
-    engine_debug
+    engine_debug_gui
     engine_save
     engine_localization
     engine_streaming
