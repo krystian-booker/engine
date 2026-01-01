@@ -6,3 +6,4 @@
 #include <engine/render/render_target.hpp>
 #include <engine/render/renderer.hpp>
 #include <engine/render/debug_draw.hpp>
+#include <engine/render/particle_system.hpp>

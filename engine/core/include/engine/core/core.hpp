@@ -11,3 +11,5 @@
 #include <engine/core/input.hpp>
 #include <engine/core/serialize.hpp>
 #include <engine/core/application.hpp>
+#include <engine/core/events.hpp>
+#include <engine/core/event_dispatcher.hpp>

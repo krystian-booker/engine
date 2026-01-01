@@ -2,6 +2,8 @@
 #include <engine/core/time.hpp>
 #include <engine/core/job_system.hpp>
 #include <engine/core/log.hpp>
+#include <engine/core/event_dispatcher.hpp>
+#include <engine/core/events.hpp>
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -49,6 +51,9 @@ int Application::run(int /*argc*/, char** /*argv*/) {
             break;
         }
 
+        // Process deferred events from previous frame
+        events().flush();
+
         // Update time
         Time::update();
         double dt = Time::delta_time();
@@ -94,6 +99,7 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
 
     switch (msg) {
         case WM_CLOSE:
+            events().dispatch(WindowCloseEvent{});
             if (app) app->quit();
             return 0;
 
@@ -102,6 +108,21 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             return 0;
 
         case WM_SIZE:
+            if (app && wParam != SIZE_MINIMIZED) {
+                uint32_t width = LOWORD(lParam);
+                uint32_t height = HIWORD(lParam);
+                if (width > 0 && height > 0) {
+                    events().dispatch(WindowResizeEvent{width, height});
+                }
+            }
+            return 0;
+
+        case WM_SETFOCUS:
+            events().dispatch(WindowFocusEvent{true});
+            return 0;
+
+        case WM_KILLFOCUS:
+            events().dispatch(WindowFocusEvent{false});
             return 0;
 
         case WM_KEYDOWN:

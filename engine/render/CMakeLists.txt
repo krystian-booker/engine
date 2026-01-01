@@ -19,6 +19,7 @@ target_sources(engine_render
         src/animation.cpp
         src/volumetric.cpp
         src/render_pipeline.cpp
+        src/particle_system.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -38,6 +39,7 @@ target_sources(engine_render
             include/engine/render/render_pipeline.hpp
             include/engine/render/types.hpp
             include/engine/render/debug_draw.hpp
+            include/engine/render/particle_system.hpp
 )
 
 target_include_directories(engine_render

@@ -1,5 +1,7 @@
 #include <engine/scene/world.hpp>
 #include <engine/scene/transform.hpp>
+#include <engine/core/event_dispatcher.hpp>
+#include <engine/core/events.hpp>
 
 namespace engine::scene {
 
@@ -9,6 +11,10 @@ Entity World::create() {
     info.uuid = m_next_uuid++;
     info.name = "Entity_" + std::to_string(info.uuid);
     set_parent(*this, e, NullEntity, NullEntity);
+
+    // Dispatch entity created event
+    core::events().dispatch(core::EntityCreatedEvent{static_cast<uint32_t>(e)});
+
     return e;
 }
 
@@ -18,11 +24,18 @@ Entity World::create(const std::string& name) {
     info.uuid = m_next_uuid++;
     info.name = name;
     set_parent(*this, e, NullEntity, NullEntity);
+
+    // Dispatch entity created event
+    core::events().dispatch(core::EntityCreatedEvent{static_cast<uint32_t>(e)});
+
     return e;
 }
 
 void World::destroy(Entity e) {
     if (!valid(e)) return;
+
+    // Dispatch entity destroyed event before actual destruction
+    core::events().dispatch(core::EntityDestroyedEvent{static_cast<uint32_t>(e)});
 
     // If entity has hierarchy, handle parent/child relationships
     if (auto* hierarchy = m_registry.try_get<Hierarchy>(e)) {

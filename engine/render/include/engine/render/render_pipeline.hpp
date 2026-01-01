@@ -26,16 +26,17 @@ enum class RenderPassFlags : uint32_t {
     MainOpaque    = 1 << 4,
     Volumetric    = 1 << 5,
     Transparent   = 1 << 6,
-    SSR           = 1 << 7,
-    PostProcess   = 1 << 8,
-    TAA           = 1 << 9,
-    Debug         = 1 << 10,
-    UI            = 1 << 11,
-    Final         = 1 << 12,
+    Particles     = 1 << 7,   // Particle systems
+    SSR           = 1 << 8,
+    PostProcess   = 1 << 9,
+    TAA           = 1 << 10,
+    Debug         = 1 << 11,
+    UI            = 1 << 12,
+    Final         = 1 << 13,
 
     // Common combinations
     AllOpaque     = Shadows | DepthPrepass | MainOpaque,
-    AllEffects    = SSAO | Volumetric | SSR | PostProcess | TAA,
+    AllEffects    = SSAO | Volumetric | Particles | SSR | PostProcess | TAA,
     All           = 0xFFFFFFFF
 };
 

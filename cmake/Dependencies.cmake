@@ -101,6 +101,27 @@ set(CPP_EXCEPTIONS_ENABLED ON CACHE BOOL "" FORCE)  # Enable exceptions to match
 FetchContent_MakeAvailable(JoltPhysics)
 
 # ============================================================================
+# Recast Navigation (pathfinding)
+# ============================================================================
+FetchContent_Declare(
+    recastnavigation
+    GIT_REPOSITORY https://github.com/recastnavigation/recastnavigation.git
+    GIT_TAG v1.6.0
+    GIT_SHALLOW TRUE
+    UPDATE_DISCONNECTED TRUE
+)
+set(RECASTNAVIGATION_DEMO OFF CACHE BOOL "" FORCE)
+set(RECASTNAVIGATION_TESTS OFF CACHE BOOL "" FORCE)
+set(RECASTNAVIGATION_EXAMPLES OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(recastnavigation)
+
+# Create namespace aliases for Recast/Detour
+add_library(Recast::Recast ALIAS Recast)
+add_library(Recast::Detour ALIAS Detour)
+add_library(Recast::DetourCrowd ALIAS DetourCrowd)
+add_library(Recast::DetourTileCache ALIAS DetourTileCache)
+
+# ============================================================================
 # bgfx.cmake
 # ============================================================================
 # Configure bgfx.cmake options

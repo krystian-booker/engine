@@ -15,6 +15,7 @@ target_sources(engine_core
         src/serialize.cpp
         src/input.cpp
         src/profiler.cpp
+        src/event_dispatcher.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -32,6 +33,8 @@ target_sources(engine_core
             include/engine/core/serialize.hpp
             include/engine/core/profiler.hpp
             include/engine/core/core.hpp
+            include/engine/core/events.hpp
+            include/engine/core/event_dispatcher.hpp
 )
 
 target_include_directories(engine_core
