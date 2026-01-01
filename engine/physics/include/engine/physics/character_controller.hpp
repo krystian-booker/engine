@@ -143,7 +143,7 @@ public:
     float get_jump_buffer_time() const { return m_jump_buffer_time; }
 
 private:
-    void update_ground_state();
+    void update_ground_state(float dt);
     void apply_movement(float dt);
     void apply_gravity(float dt);
     void handle_step_up();

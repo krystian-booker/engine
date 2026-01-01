@@ -28,8 +28,12 @@ void PhysicsDebugRenderer::draw() {
 }
 
 void PhysicsDebugRenderer::draw_bodies() {
-    // TODO: Iterate all bodies in the physics world and draw them
-    // This requires the PhysicsWorld to expose iteration capability
+    if (!m_world) return;
+
+    auto bodies = m_world->get_all_body_ids();
+    for (const auto& body_id : bodies) {
+        draw_body(body_id);
+    }
 }
 
 void PhysicsDebugRenderer::draw_contacts() {

@@ -96,7 +96,7 @@ void CharacterController::update(float dt) {
     if (!m_initialized || !m_enabled || !m_world) return;
 
     // Update ground state
-    update_ground_state();
+    update_ground_state(dt);
 
     // Handle jump buffering
     m_time_since_jump_pressed += dt;
@@ -243,10 +243,10 @@ void CharacterController::teleport(const Vec3& position, const Quat& rotation) {
 }
 
 void CharacterController::refresh_ground_state() {
-    update_ground_state();
+    update_ground_state(0.016f);  // Default dt for manual refresh
 }
 
-void CharacterController::update_ground_state() {
+void CharacterController::update_ground_state(float dt) {
     if (!m_world) return;
 
     m_ground_state.was_on_ground = m_ground_state.on_ground;
@@ -289,7 +289,7 @@ void CharacterController::update_ground_state() {
 
     // Update time since grounded
     if (!m_ground_state.on_ground) {
-        m_ground_state.time_since_grounded += 0.016f;  // Approximate, should use actual dt
+        m_ground_state.time_since_grounded += dt;
     }
 }
 

@@ -100,6 +100,9 @@ public:
     uint32_t get_body_count() const;
     uint32_t get_active_body_count() const;
 
+    // Body iteration (for debug rendering)
+    std::vector<PhysicsBodyId> get_all_body_ids() const;
+
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;

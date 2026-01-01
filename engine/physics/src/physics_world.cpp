@@ -26,12 +26,26 @@ extern void set_angular_velocity_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id
 extern Vec3 get_linear_velocity_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id);
 extern Vec3 get_angular_velocity_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id);
 extern void add_force_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id, const Vec3& force);
+extern void add_force_at_point_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id, const Vec3& force, const Vec3& point);
+extern void add_torque_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id, const Vec3& torque);
 extern void add_impulse_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id, const Vec3& impulse);
+extern void add_impulse_at_point_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id, const Vec3& impulse, const Vec3& point);
+extern void set_friction_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id, float friction);
+extern void set_restitution_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id, float restitution);
+extern void set_gravity_factor_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id, float factor);
+extern void activate_body_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id);
+extern bool is_active_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id);
 extern RaycastHit raycast_impl(PhysicsWorld::Impl* impl, const Vec3& origin, const Vec3& dir, float max_dist, uint16_t mask);
+extern std::vector<RaycastHit> raycast_all_impl(PhysicsWorld::Impl* impl, const Vec3& origin, const Vec3& dir, float max_dist, uint16_t mask);
+extern std::vector<PhysicsBodyId> overlap_sphere_impl(PhysicsWorld::Impl* impl, const Vec3& center, float radius, uint16_t mask);
+extern std::vector<PhysicsBodyId> overlap_box_impl(PhysicsWorld::Impl* impl, const Vec3& center, const Vec3& half_extents, const Quat& rotation, uint16_t mask);
+extern void set_collision_callback_impl(PhysicsWorld::Impl* impl, CollisionCallback callback);
 extern void set_gravity_impl(PhysicsWorld::Impl* impl, const Vec3& gravity);
 extern Vec3 get_gravity_impl(PhysicsWorld::Impl* impl);
 extern uint32_t get_body_count_impl(PhysicsWorld::Impl* impl);
+extern uint32_t get_active_body_count_impl(PhysicsWorld::Impl* impl);
 extern CollisionFilter& get_collision_filter_impl(PhysicsWorld::Impl* impl);
+extern std::vector<PhysicsBodyId> get_all_body_ids_impl(PhysicsWorld::Impl* impl);
 
 // Constructor and destructor defined in jolt_impl.cpp where Impl is complete
 
@@ -104,41 +118,40 @@ void PhysicsWorld::add_force(PhysicsBodyId id, const Vec3& force) {
     add_force_impl(m_impl.get(), id, force);
 }
 
-void PhysicsWorld::add_force_at_point(PhysicsBodyId id, const Vec3& force, const Vec3& /*point*/) {
-    // Simplified - just add force at center
-    add_force_impl(m_impl.get(), id, force);
+void PhysicsWorld::add_force_at_point(PhysicsBodyId id, const Vec3& force, const Vec3& point) {
+    add_force_at_point_impl(m_impl.get(), id, force, point);
 }
 
-void PhysicsWorld::add_torque(PhysicsBodyId /*id*/, const Vec3& /*torque*/) {
-    // TODO: Implement
+void PhysicsWorld::add_torque(PhysicsBodyId id, const Vec3& torque) {
+    add_torque_impl(m_impl.get(), id, torque);
 }
 
 void PhysicsWorld::add_impulse(PhysicsBodyId id, const Vec3& impulse) {
     add_impulse_impl(m_impl.get(), id, impulse);
 }
 
-void PhysicsWorld::add_impulse_at_point(PhysicsBodyId id, const Vec3& impulse, const Vec3& /*point*/) {
-    add_impulse_impl(m_impl.get(), id, impulse);
+void PhysicsWorld::add_impulse_at_point(PhysicsBodyId id, const Vec3& impulse, const Vec3& point) {
+    add_impulse_at_point_impl(m_impl.get(), id, impulse, point);
 }
 
-void PhysicsWorld::set_gravity_factor(PhysicsBodyId /*id*/, float /*factor*/) {
-    // TODO: Implement per-body gravity
+void PhysicsWorld::set_gravity_factor(PhysicsBodyId id, float factor) {
+    set_gravity_factor_impl(m_impl.get(), id, factor);
 }
 
-void PhysicsWorld::set_friction(PhysicsBodyId /*id*/, float /*friction*/) {
-    // TODO: Implement
+void PhysicsWorld::set_friction(PhysicsBodyId id, float friction) {
+    set_friction_impl(m_impl.get(), id, friction);
 }
 
-void PhysicsWorld::set_restitution(PhysicsBodyId /*id*/, float /*restitution*/) {
-    // TODO: Implement
+void PhysicsWorld::set_restitution(PhysicsBodyId id, float restitution) {
+    set_restitution_impl(m_impl.get(), id, restitution);
 }
 
-void PhysicsWorld::activate_body(PhysicsBodyId /*id*/) {
-    // TODO: Implement
+void PhysicsWorld::activate_body(PhysicsBodyId id) {
+    activate_body_impl(m_impl.get(), id);
 }
 
-bool PhysicsWorld::is_active(PhysicsBodyId /*id*/) const {
-    return true;  // TODO: Implement
+bool PhysicsWorld::is_active(PhysicsBodyId id) const {
+    return is_active_impl(m_impl.get(), id);
 }
 
 RaycastHit PhysicsWorld::raycast(const Vec3& origin, const Vec3& direction,
@@ -148,28 +161,21 @@ RaycastHit PhysicsWorld::raycast(const Vec3& origin, const Vec3& direction,
 
 std::vector<RaycastHit> PhysicsWorld::raycast_all(const Vec3& origin, const Vec3& direction,
                                                    float max_distance, uint16_t layer_mask) const {
-    // Simplified - just return single hit
-    auto hit = raycast(origin, direction, max_distance, layer_mask);
-    if (hit.hit) {
-        return {hit};
-    }
-    return {};
+    return raycast_all_impl(m_impl.get(), origin, direction, max_distance, layer_mask);
 }
 
-std::vector<PhysicsBodyId> PhysicsWorld::overlap_sphere(const Vec3& /*center*/, float /*radius*/,
-                                                        uint16_t /*layer_mask*/) const {
-    // TODO: Implement
-    return {};
+std::vector<PhysicsBodyId> PhysicsWorld::overlap_sphere(const Vec3& center, float radius,
+                                                        uint16_t layer_mask) const {
+    return overlap_sphere_impl(m_impl.get(), center, radius, layer_mask);
 }
 
-std::vector<PhysicsBodyId> PhysicsWorld::overlap_box(const Vec3& /*center*/, const Vec3& /*half_extents*/,
-                                                     const Quat& /*rotation*/, uint16_t /*layer_mask*/) const {
-    // TODO: Implement
-    return {};
+std::vector<PhysicsBodyId> PhysicsWorld::overlap_box(const Vec3& center, const Vec3& half_extents,
+                                                     const Quat& rotation, uint16_t layer_mask) const {
+    return overlap_box_impl(m_impl.get(), center, half_extents, rotation, layer_mask);
 }
 
-void PhysicsWorld::set_collision_callback(CollisionCallback /*callback*/) {
-    // TODO: Implement
+void PhysicsWorld::set_collision_callback(CollisionCallback callback) {
+    set_collision_callback_impl(m_impl.get(), std::move(callback));
 }
 
 CollisionFilter& PhysicsWorld::get_collision_filter() {
@@ -193,7 +199,11 @@ uint32_t PhysicsWorld::get_body_count() const {
 }
 
 uint32_t PhysicsWorld::get_active_body_count() const {
-    return get_body_count();  // TODO: Track active vs sleeping
+    return get_active_body_count_impl(m_impl.get());
+}
+
+std::vector<PhysicsBodyId> PhysicsWorld::get_all_body_ids() const {
+    return get_all_body_ids_impl(m_impl.get());
 }
 
 } // namespace engine::physics
