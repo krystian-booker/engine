@@ -20,6 +20,22 @@ target_sources(engine_render
         src/volumetric.cpp
         src/render_pipeline.cpp
         src/particle_system.cpp
+        src/animation_graph.cpp
+        src/blend_tree.cpp
+        src/animation_state_machine.cpp
+        src/root_motion.cpp
+        src/blend_shapes.cpp
+        src/ik.cpp
+        src/lod.cpp
+        src/decal_system.cpp
+        src/ssr.cpp
+        src/motion_blur.cpp
+        src/dof.cpp
+        src/light_probes.cpp
+        src/reflection_probes.cpp
+        src/instancing.cpp
+        src/occlusion_culling.cpp
+        src/camera_effects.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -35,11 +51,27 @@ target_sources(engine_render
             include/engine/render/post_process.hpp
             include/engine/render/skeleton.hpp
             include/engine/render/animation.hpp
+            include/engine/render/animation_graph.hpp
+            include/engine/render/blend_tree.hpp
+            include/engine/render/animation_state_machine.hpp
+            include/engine/render/root_motion.hpp
+            include/engine/render/blend_shapes.hpp
+            include/engine/render/ik.hpp
+            include/engine/render/lod.hpp
             include/engine/render/volumetric.hpp
             include/engine/render/render_pipeline.hpp
             include/engine/render/types.hpp
             include/engine/render/debug_draw.hpp
             include/engine/render/particle_system.hpp
+            include/engine/render/decal_system.hpp
+            include/engine/render/ssr.hpp
+            include/engine/render/motion_blur.hpp
+            include/engine/render/dof.hpp
+            include/engine/render/light_probes.hpp
+            include/engine/render/reflection_probes.hpp
+            include/engine/render/instancing.hpp
+            include/engine/render/occlusion_culling.hpp
+            include/engine/render/camera_effects.hpp
 )
 
 target_include_directories(engine_render

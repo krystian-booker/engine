@@ -10,6 +10,11 @@ add_subdirectory(audio)
 add_subdirectory(navigation)
 add_subdirectory(ui)
 add_subdirectory(debug)
+add_subdirectory(save)
+add_subdirectory(localization)
+add_subdirectory(streaming)
+add_subdirectory(terrain)
+add_subdirectory(vegetation)
 
 # Umbrella target for convenience
 add_library(engine INTERFACE)
@@ -25,4 +30,9 @@ target_link_libraries(engine INTERFACE
     engine::navigation
     engine::ui
     engine::debug
+    engine::save
+    engine::localization
+    engine::streaming
+    engine::terrain
+    engine::vegetation
 )
