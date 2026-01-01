@@ -82,6 +82,60 @@ add_library(miniaudio::miniaudio ALIAS miniaudio)
 target_include_directories(miniaudio INTERFACE ${miniaudio_SOURCE_DIR}/extras/miniaudio_split)
 
 # ============================================================================
+# dr_libs (audio format parsing - header only: dr_wav, dr_mp3, dr_flac)
+# ============================================================================
+FetchContent_Declare(
+    dr_libs
+    GIT_REPOSITORY https://github.com/mackron/dr_libs.git
+    GIT_TAG da35f9d6c7374a95353fd1df1d394d44ab66cf01
+    GIT_SHALLOW TRUE
+    UPDATE_DISCONNECTED TRUE
+)
+FetchContent_GetProperties(dr_libs)
+if(NOT dr_libs_POPULATED)
+    FetchContent_Populate(dr_libs)
+endif()
+add_library(dr_libs INTERFACE)
+add_library(dr_libs::dr_libs ALIAS dr_libs)
+target_include_directories(dr_libs INTERFACE ${dr_libs_SOURCE_DIR})
+
+# ============================================================================
+# tinyobjloader (OBJ file parsing - header only)
+# ============================================================================
+FetchContent_Declare(
+    tinyobjloader
+    GIT_REPOSITORY https://github.com/tinyobjloader/tinyobjloader.git
+    GIT_TAG v2.0.0rc13
+    GIT_SHALLOW TRUE
+    UPDATE_DISCONNECTED TRUE
+)
+FetchContent_GetProperties(tinyobjloader)
+if(NOT tinyobjloader_POPULATED)
+    FetchContent_Populate(tinyobjloader)
+endif()
+add_library(tinyobjloader INTERFACE)
+add_library(tinyobjloader::tinyobjloader ALIAS tinyobjloader)
+target_include_directories(tinyobjloader INTERFACE ${tinyobjloader_SOURCE_DIR})
+
+# ============================================================================
+# ufbx (FBX file parsing - single header, MIT license)
+# ============================================================================
+FetchContent_Declare(
+    ufbx
+    GIT_REPOSITORY https://github.com/bqqbarbhg/ufbx.git
+    GIT_TAG v0.14.3
+    GIT_SHALLOW TRUE
+    UPDATE_DISCONNECTED TRUE
+)
+FetchContent_GetProperties(ufbx)
+if(NOT ufbx_POPULATED)
+    FetchContent_Populate(ufbx)
+endif()
+add_library(ufbx INTERFACE)
+add_library(ufbx::ufbx ALIAS ufbx)
+target_include_directories(ufbx INTERFACE ${ufbx_SOURCE_DIR})
+
+# ============================================================================
 # Jolt Physics
 # ============================================================================
 FetchContent_Declare(

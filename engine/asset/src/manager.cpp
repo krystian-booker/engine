@@ -1,6 +1,10 @@
 #include <engine/asset/manager.hpp>
 #include <engine/asset/hot_reload.hpp>
 #include <engine/asset/gltf_importer.hpp>
+#include <engine/asset/obj_importer.hpp>
+#include <engine/asset/fbx_importer.hpp>
+#include <engine/asset/audio_loader.hpp>
+#include <engine/asset/material_loader.hpp>
 #include <engine/core/filesystem.hpp>
 #include <engine/core/log.hpp>
 #include <engine/core/job_system.hpp>
@@ -278,8 +282,36 @@ size_t AssetManager::get_loaded_count() const {
 }
 
 size_t AssetManager::get_memory_usage() const {
-    // Rough estimate - would need more detailed tracking
-    return 0;
+    size_t total = 0;
+
+    // Mesh memory: vertices + indices (CPU-side estimate, GPU memory is separate)
+    for (const auto& [path, mesh] : m_meshes) {
+        if (mesh) {
+            // Vertex size: position(12) + normal(12) + texcoord(8) + color(16) + tangent(12) = 60 bytes
+            total += mesh->vertex_count * 60;
+            total += mesh->index_count * sizeof(uint32_t);
+        }
+    }
+
+    // Texture memory: width * height * 4 bytes (RGBA8)
+    for (const auto& [path, tex] : m_textures) {
+        if (tex) {
+            total += tex->width * tex->height * 4;
+        }
+    }
+
+    // Audio memory: raw PCM data
+    for (const auto& [path, audio] : m_audio) {
+        if (audio) {
+            total += audio->data.size();
+        }
+    }
+
+    // Shaders and materials are small, add fixed estimate per instance
+    total += m_shaders.size() * 1024;     // ~1KB per shader program
+    total += m_materials.size() * 256;    // ~256B per material
+
+    return total;
 }
 
 void AssetManager::set_reload_callback(ReloadCallback callback) {
@@ -292,15 +324,19 @@ std::shared_ptr<MeshAsset> AssetManager::load_mesh_internal(const std::string& p
 
     std::string ext = get_extension(path);
 
-    // Use glTF importer for supported formats
+    // Use glTF importer for glTF/glB formats
     if (ext == ".gltf" || ext == ".glb") {
         return GltfImporter::import_mesh(path, m_renderer);
     }
 
-    // TODO: Support for .obj and .fbx formats
-    if (ext == ".obj" || ext == ".fbx") {
-        log(LogLevel::Warn, ("Unsupported mesh format (only glTF supported): " + path).c_str());
-        return nullptr;
+    // Use OBJ importer for Wavefront OBJ format
+    if (ext == ".obj") {
+        return ObjImporter::import_mesh(path, m_renderer);
+    }
+
+    // Use FBX importer for Autodesk FBX format
+    if (ext == ".fbx") {
+        return FbxImporter::import_mesh(path, m_renderer);
     }
 
     log(LogLevel::Error, ("Unknown mesh format: " + path).c_str());
@@ -340,34 +376,88 @@ std::shared_ptr<TextureAsset> AssetManager::load_texture_internal(const std::str
 }
 
 std::shared_ptr<ShaderAsset> AssetManager::load_shader_internal(const std::string& path) {
-    // Load compiled shader binary
-    auto binary = FileSystem::read_binary(path);
-    if (binary.empty()) {
-        log(LogLevel::Error, ("Failed to load shader: " + path).c_str());
+    if (!m_renderer) {
+        log(LogLevel::Error, "Cannot load shader: renderer not initialized");
         return nullptr;
     }
 
-    // TODO: Implement proper shader loading (vs + fs pair)
-    return nullptr;
+    // Shader path convention: "shaders/pbr" loads:
+    //   - shaders/pbr.vs.bin (vertex shader)
+    //   - shaders/pbr.fs.bin (fragment shader)
+    std::string vs_path = path + ".vs.bin";
+    std::string fs_path = path + ".fs.bin";
+
+    auto vs_binary = FileSystem::read_binary(vs_path);
+    if (vs_binary.empty()) {
+        log(LogLevel::Error, ("Failed to load vertex shader: " + vs_path).c_str());
+        return nullptr;
+    }
+
+    auto fs_binary = FileSystem::read_binary(fs_path);
+    if (fs_binary.empty()) {
+        log(LogLevel::Error, ("Failed to load fragment shader: " + fs_path).c_str());
+        return nullptr;
+    }
+
+    render::ShaderData shader_data;
+    shader_data.vertex_binary = std::move(vs_binary);
+    shader_data.fragment_binary = std::move(fs_binary);
+
+    auto asset = std::make_shared<ShaderAsset>();
+    asset->path = path;
+    asset->handle = m_renderer->create_shader(shader_data);
+
+    if (!asset->handle.valid()) {
+        log(LogLevel::Error, ("Failed to create shader program: " + path).c_str());
+        return nullptr;
+    }
+
+    log(LogLevel::Debug, ("Loaded shader: " + path).c_str());
+    return asset;
 }
 
-std::shared_ptr<MaterialAsset> AssetManager::load_material_internal(const std::string& /*path*/) {
-    // TODO: Implement JSON-based material loading
+std::shared_ptr<MaterialAsset> AssetManager::load_material_internal(const std::string& path) {
+    std::string ext = get_extension(path);
+
+    // Check for glTF material reference (path#material0 format)
+    size_t hash_pos = path.find('#');
+    if (hash_pos != std::string::npos) {
+        std::string gltf_path = path.substr(0, hash_pos);
+        std::string suffix = path.substr(hash_pos + 1);
+
+        // Parse material index from suffix like "material0"
+        if (suffix.rfind("material", 0) == 0) {
+            uint32_t mat_index = static_cast<uint32_t>(std::stoul(suffix.substr(8)));
+            return MaterialLoader::load_from_gltf(gltf_path, mat_index, *this, m_renderer);
+        }
+    }
+
+    // JSON-based material file
+    if (ext == ".mat" || ext == ".material" || ext == ".json") {
+        return MaterialLoader::load_from_json(path, *this, m_renderer);
+    }
+
+    log(LogLevel::Error, ("Unknown material format: " + path).c_str());
     return nullptr;
 }
 
 std::shared_ptr<AudioAsset> AssetManager::load_audio_internal(const std::string& path) {
-    auto data = FileSystem::read_binary(path);
-    if (data.empty()) {
-        log(LogLevel::Error, ("Failed to load audio: " + path).c_str());
+    std::vector<uint8_t> pcm_data;
+    AudioFormat format;
+
+    if (!AudioLoader::load(path, pcm_data, format)) {
+        log(LogLevel::Error, ("Failed to load audio: " + path + " - " + AudioLoader::get_last_error()).c_str());
         return nullptr;
     }
 
     auto asset = std::make_shared<AudioAsset>();
     asset->path = path;
-    asset->data = std::move(data);
-    // TODO: Parse audio format for sample_rate, channels, etc.
+    asset->data = std::move(pcm_data);
+    asset->sample_rate = format.sample_rate;
+    asset->channels = format.channels;
+    asset->sample_count = static_cast<uint32_t>(format.total_frames);
 
+    log(LogLevel::Debug, ("Loaded audio: " + path).c_str());
     return asset;
 }
 
