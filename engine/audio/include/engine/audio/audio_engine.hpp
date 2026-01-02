@@ -56,6 +56,19 @@ public:
 
     // Crossfade between two music tracks
     void crossfade_music(MusicHandle from, MusicHandle to, float duration);
+    void fade_in(SoundHandle h, float duration);
+    void fade_out(SoundHandle h, float duration);
+
+    // Reverb control
+    struct ReverbParams {
+        float room_size = 0.5f;     // 0.0 to 1.0 (small to huge)
+        float damping = 0.5f;       // 0.0 to 1.0
+        float width = 1.0f;         // 0.0 to 1.0
+        float wet_volume = 0.3f;    // 0.0 to 1.0
+        float dry_volume = 1.0f;    // 0.0 to 1.0
+        float mode = 0.0f;          // 0.0 = normal, 1.0 = freeze
+    };
+    void set_reverb_params(const ReverbParams& params);
 
     // Global controls
     void set_master_volume(float volume);
@@ -92,16 +105,10 @@ public:
     void resume(SoundHandle h);
     void set_volume(SoundHandle h, float volume);
     void set_pitch(SoundHandle h, float pitch);
-    void fade_in(SoundHandle h, float /*duration*/);
-    void fade_out(SoundHandle h, float /*duration*/);
-
-private:
-    std::unique_ptr<Impl> m_impl;
-
-    // Friend declarations for implementation functions (in miniaudio_impl.cpp)
     friend Impl* create_audio_impl();
     friend void destroy_audio_impl(Impl*);
     friend void init_audio_impl(Impl*, const AudioSettings&);
+    friend void set_reverb_params_impl(Impl*, const ReverbParams&);
     friend void shutdown_audio_impl(Impl*);
     friend void update_audio_impl(Impl*);
     friend SoundHandle load_sound_impl(Impl*, const std::string&);

@@ -11,6 +11,7 @@
 #include <optional>
 #include <algorithm>
 #include <chrono>
+#include <mutex>
 
 namespace engine::audio {
 
@@ -18,7 +19,12 @@ using namespace engine::core;
 
 struct AudioEngine::Impl {
     ma_engine engine;
+    ma_reverb_node reverb_node;
     bool initialized = false;
+    
+    // Global lock for thread safety
+    std::recursive_mutex m_mutex;
+
     float master_volume = 1.0f;
     float sound_volume = 1.0f;   // Global volume for all sounds
     float music_volume = 1.0f;   // Global volume for all music
@@ -29,6 +35,13 @@ struct AudioEngine::Impl {
         bool loaded = false;
         bool was_playing = false;     // For pause_all/resume_all tracking
         ma_uint64 paused_cursor = 0;  // For proper pause/resume position
+        
+        // Fading state
+        bool fading = false;
+        float fade_target_vol = 1.0f;
+        float fade_start_vol = 0.0f;
+        float fade_duration = 0.0f;
+        float fade_elapsed = 0.0f;
     };
 
     std::unordered_map<uint32_t, LoadedSound> sounds;
@@ -44,6 +57,8 @@ struct AudioEngine::Impl {
     // Audio bus system
     struct AudioBus {
         std::string name;
+        ma_sound_group group; // Wraps an ma_node
+        bool initialized = false;
         float volume = 1.0f;
         bool muted = false;
         AudioBusHandle parent;
@@ -61,7 +76,6 @@ struct AudioEngine::Impl {
         float to_start_volume = 0.0f;
     };
     std::optional<CrossfadeState> active_crossfade;
-    float last_update_time = 0.0f;
 
     // ID allocation with overflow protection
     uint32_t allocate_sound_id() {
@@ -122,6 +136,7 @@ void destroy_audio_impl(AudioEngine::Impl* impl) {
 
 void init_audio_impl(AudioEngine::Impl* impl, const AudioSettings& settings) {
     if (!impl || impl->initialized) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
 
     ma_engine_config config = ma_engine_config_init();
     config.channels = settings.channels;
@@ -132,21 +147,69 @@ void init_audio_impl(AudioEngine::Impl* impl, const AudioSettings& settings) {
         return;
     }
 
+    // Init global reverb node (attached to endpoint)
+    // We put it before the endpoint.
+    ma_reverb_node_config reverbConfig = ma_reverb_node_config_init(config.channels, config.sampleRate);
+    if (ma_reverb_node_init(ma_engine_get_node_graph(&impl->engine), &reverbConfig, NULL, &impl->reverb_node) != MA_SUCCESS) {
+         log(LogLevel::Error, "Failed to initialize reverb node");
+    } else {
+        // By default, attach reverb node output to endpoint
+        ma_node_attach_output_bus(&impl->reverb_node, 0, ma_engine_get_endpoint(&impl->engine), 0);
+    }
+
     impl->master_volume = settings.master_volume;
     ma_engine_set_volume(&impl->engine, settings.master_volume);
 
-    // Initialize builtin buses
-    impl->buses[static_cast<uint32_t>(BuiltinBus::Master)] = {"Master", 1.0f, false, {}};
-    impl->buses[static_cast<uint32_t>(BuiltinBus::Music)] = {"Music", 1.0f, false, AudioBusHandle{static_cast<uint32_t>(BuiltinBus::Master)}};
-    impl->buses[static_cast<uint32_t>(BuiltinBus::SFX)] = {"SFX", 1.0f, false, AudioBusHandle{static_cast<uint32_t>(BuiltinBus::Master)}};
-    impl->buses[static_cast<uint32_t>(BuiltinBus::Voice)] = {"Voice", 1.0f, false, AudioBusHandle{static_cast<uint32_t>(BuiltinBus::Master)}};
-    impl->buses[static_cast<uint32_t>(BuiltinBus::Ambient)] = {"Ambient", 1.0f, false, AudioBusHandle{static_cast<uint32_t>(BuiltinBus::Master)}};
+    // Helper to create bus
+    auto create_builtin_bus = [&](BuiltinBus id, const char* name, AudioBusHandle parent) {
+        AudioEngine::Impl::AudioBus bus;
+        bus.name = name;
+        bus.parent = parent;
+        bus.volume = 1.0f;
+        bus.muted = false;
+
+        // Init sound group
+        // If parent is invalid, this is a root bus, effectively master.
+        // We link master bus to engine endpoint (or reverb node input if we wanted internal routing, but let's keep it simple)
+        // Standard: link to engine endpoint.
+        // If parent is valid, link to parent group.
+        
+        if (ma_sound_group_init(&impl->engine, 0, NULL, &bus.group) != MA_SUCCESS) {
+             log(LogLevel::Error, "Failed to init bus group");
+             return;
+        }
+        bus.initialized = true;
+        
+        // Linkage
+        if (parent.valid()) {
+            // Find parent group
+            auto it = impl->buses.find(parent.id);
+            if (it != impl->buses.end() && it->second.initialized) {
+                 ma_node_attach_output_bus(&bus.group, 0, &it->second.group, 0);
+            }
+        } else {
+            // Root bus -> attach to Reverb Node Input? Or Engine Endpoint?
+            // To support global reverb, we attach Master Bus to Reverb Node?
+            // Reverb Node mixes wet and dry.
+            // If we attach Master -> Reverb -> Endpoint.
+            ma_node_attach_output_bus(&bus.group, 0, &impl->reverb_node, 0);
+        }
+
+        impl->buses[static_cast<uint32_t>(id)] = std::move(bus);
+    };
+
+    create_builtin_bus(BuiltinBus::Master, "Master", {});
+    create_builtin_bus(BuiltinBus::Music, "Music", AudioBusHandle{static_cast<uint32_t>(BuiltinBus::Master)});
+    create_builtin_bus(BuiltinBus::SFX, "SFX", AudioBusHandle{static_cast<uint32_t>(BuiltinBus::Master)});
+    create_builtin_bus(BuiltinBus::Voice, "Voice", AudioBusHandle{static_cast<uint32_t>(BuiltinBus::Master)});
+    create_builtin_bus(BuiltinBus::Ambient, "Ambient", AudioBusHandle{static_cast<uint32_t>(BuiltinBus::Master)});
 
     impl->initialized = true;
 }
 
 void shutdown_audio_impl(AudioEngine::Impl* impl) {
     if (!impl || !impl->initialized) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
 
     // Uninit all sounds
     for (auto& [id, sound] : impl->sounds) {
@@ -163,13 +226,23 @@ void shutdown_audio_impl(AudioEngine::Impl* impl) {
         }
     }
     impl->music.clear();
+    
+    // Uninit buses
+    for (auto& [id, bus] : impl->buses) {
+        if (bus.initialized) {
+            ma_sound_group_uninit(&bus.group);
+        }
+    }
+    impl->buses.clear();
 
+    ma_reverb_node_uninit(&impl->reverb_node, NULL);
     ma_engine_uninit(&impl->engine);
     impl->initialized = false;
 }
 
 void update_audio_impl(AudioEngine::Impl* impl, float delta_time) {
     if (!impl || !impl->initialized) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
 
     // Process active crossfade
     if (impl->active_crossfade) {
@@ -200,10 +273,30 @@ void update_audio_impl(AudioEngine::Impl* impl, float delta_time) {
             impl->active_crossfade.reset();
         }
     }
+    
+    // Process fades
+    for (auto& [id, sound] : impl->sounds) {
+        if (sound.loaded && sound.fading) {
+            sound.fade_elapsed += delta_time;
+            float t = std::min(sound.fade_duration > 0 ? sound.fade_elapsed / sound.fade_duration : 1.0f, 1.0f);
+            
+            float current = sound.fade_start_vol + (sound.fade_target_vol - sound.fade_start_vol) * t;
+            // Apply global multipliers
+            ma_sound_set_volume(&sound.sound, current * impl->sound_volume * impl->master_volume);
+            
+            if (t >= 1.0f) {
+                sound.fading = false;
+                if (sound.fade_target_vol <= 0.001f) {
+                    ma_sound_stop(&sound.sound);
+                }
+            }
+        }
+    }
 }
 
 SoundHandle load_sound_impl(AudioEngine::Impl* impl, const std::string& path) {
     if (!impl || !impl->initialized) return SoundHandle{};
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
 
     uint32_t id = impl->allocate_sound_id();
     if (id == UINT32_MAX) {
@@ -215,8 +308,10 @@ SoundHandle load_sound_impl(AudioEngine::Impl* impl, const std::string& path) {
     auto& sound = impl->sounds[handle.id];
     sound.path = path;
 
+    // Load sound but don't attach to a group yet, or attach to engine master by default
+    // We can use flags to decode immediately
     if (ma_sound_init_from_file(&impl->engine, path.c_str(),
-                                 MA_SOUND_FLAG_DECODE, nullptr, nullptr,
+                                 MA_SOUND_FLAG_DECODE, NULL, NULL,
                                  &sound.sound) != MA_SUCCESS) {
         log(LogLevel::Error, ("Failed to load sound: " + path).c_str());
         impl->sounds.erase(handle.id);
@@ -229,6 +324,7 @@ SoundHandle load_sound_impl(AudioEngine::Impl* impl, const std::string& path) {
 
 void unload_sound_impl(AudioEngine::Impl* impl, SoundHandle h) {
     if (!impl) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
     auto it = impl->sounds.find(h.id);
     if (it == impl->sounds.end()) return;
 
@@ -240,6 +336,7 @@ void unload_sound_impl(AudioEngine::Impl* impl, SoundHandle h) {
 
 void play_sound_impl(AudioEngine::Impl* impl, SoundHandle h, const SoundConfig& config) {
     if (!impl || !impl->initialized) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
     auto it = impl->sounds.find(h.id);
     if (it == impl->sounds.end() || !it->second.loaded) return;
 
@@ -248,11 +345,26 @@ void play_sound_impl(AudioEngine::Impl* impl, SoundHandle h, const SoundConfig& 
     ma_sound_set_pitch(&it->second.sound, config.pitch);
     ma_sound_set_pan(&it->second.sound, config.pan);
     ma_sound_set_looping(&it->second.sound, config.loop);
+    
+    // Attach to correct bus
+    AudioBusHandle busHandle = config.bus.valid() ? config.bus : AudioBusHandle{static_cast<uint32_t>(BuiltinBus::SFX)};
+    auto busIt = impl->buses.find(busHandle.id);
+    if (busIt != impl->buses.end() && busIt->second.initialized) {
+        ma_node_attach_output_bus(&it->second.sound, 0, &busIt->second.group, 0);
+    } else {
+        // Fallback to SFX
+        busIt = impl->buses.find((uint32_t)BuiltinBus::SFX);
+         if (busIt != impl->buses.end()) {
+             ma_node_attach_output_bus(&it->second.sound, 0, &busIt->second.group, 0);
+         }
+    }
+
     ma_sound_start(&it->second.sound);
 }
 
 void play_sound_3d_impl(AudioEngine::Impl* impl, SoundHandle h, const Vec3& pos, const SoundConfig& config) {
     if (!impl || !impl->initialized) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
     auto it = impl->sounds.find(h.id);
     if (it == impl->sounds.end() || !it->second.loaded) return;
 
@@ -262,11 +374,20 @@ void play_sound_3d_impl(AudioEngine::Impl* impl, SoundHandle h, const Vec3& pos,
     ma_sound_set_looping(&it->second.sound, config.loop);
     ma_sound_set_position(&it->second.sound, pos.x, pos.y, pos.z);
     ma_sound_set_spatialization_enabled(&it->second.sound, MA_TRUE);
+    
+    // Attach to bus (default SFX)
+    AudioBusHandle busHandle = config.bus.valid() ? config.bus : AudioBusHandle{static_cast<uint32_t>(BuiltinBus::SFX)};
+    auto busIt = impl->buses.find(busHandle.id);
+    if (busIt != impl->buses.end() && busIt->second.initialized) {
+        ma_node_attach_output_bus(&it->second.sound, 0, &busIt->second.group, 0);
+    }
+
     ma_sound_start(&it->second.sound);
 }
 
 void stop_sound_impl(AudioEngine::Impl* impl, SoundHandle h) {
     if (!impl) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
     auto it = impl->sounds.find(h.id);
     if (it == impl->sounds.end() || !it->second.loaded) return;
 
@@ -275,6 +396,7 @@ void stop_sound_impl(AudioEngine::Impl* impl, SoundHandle h) {
 
 void set_sound_position_impl(AudioEngine::Impl* impl, SoundHandle h, const Vec3& pos) {
     if (!impl) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
     auto it = impl->sounds.find(h.id);
     if (it == impl->sounds.end() || !it->second.loaded) return;
 
@@ -283,6 +405,7 @@ void set_sound_position_impl(AudioEngine::Impl* impl, SoundHandle h, const Vec3&
 
 void set_sound_velocity_impl(AudioEngine::Impl* impl, SoundHandle h, const Vec3& vel) {
     if (!impl) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
     auto it = impl->sounds.find(h.id);
     if (it == impl->sounds.end() || !it->second.loaded) return;
 
@@ -291,6 +414,7 @@ void set_sound_velocity_impl(AudioEngine::Impl* impl, SoundHandle h, const Vec3&
 
 bool is_sound_playing_impl(AudioEngine::Impl* impl, SoundHandle h) {
     if (!impl) return false;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
     auto it = impl->sounds.find(h.id);
     if (it == impl->sounds.end() || !it->second.loaded) return false;
 
@@ -299,6 +423,7 @@ bool is_sound_playing_impl(AudioEngine::Impl* impl, SoundHandle h) {
 
 float get_sound_length_impl(AudioEngine::Impl* impl, SoundHandle h) {
     if (!impl || !impl->initialized) return 0.0f;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
     auto it = impl->sounds.find(h.id);
     if (it == impl->sounds.end() || !it->second.loaded) return 0.0f;
 
@@ -310,6 +435,7 @@ float get_sound_length_impl(AudioEngine::Impl* impl, SoundHandle h) {
 
 MusicHandle load_music_impl(AudioEngine::Impl* impl, const std::string& path) {
     if (!impl || !impl->initialized) return MusicHandle{};
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
 
     uint32_t id = impl->allocate_music_id();
     if (id == UINT32_MAX) {
@@ -321,9 +447,8 @@ MusicHandle load_music_impl(AudioEngine::Impl* impl, const std::string& path) {
     auto& music = impl->music[handle.id];
     music.path = path;
 
-    // Stream music instead of decoding all at once
     if (ma_sound_init_from_file(&impl->engine, path.c_str(),
-                                 MA_SOUND_FLAG_STREAM, nullptr, nullptr,
+                                 MA_SOUND_FLAG_STREAM, NULL, NULL,
                                  &music.sound) != MA_SUCCESS) {
         log(LogLevel::Error, ("Failed to load music: " + path).c_str());
         impl->music.erase(handle.id);
@@ -331,11 +456,19 @@ MusicHandle load_music_impl(AudioEngine::Impl* impl, const std::string& path) {
     }
 
     music.loaded = true;
+    
+    // Attach default to Music bus
+    auto busIt = impl->buses.find((uint32_t)BuiltinBus::Music);
+    if (busIt != impl->buses.end()) {
+        ma_node_attach_output_bus(&music.sound, 0, &busIt->second.group, 0);
+    }
+    
     return handle;
 }
 
 void unload_music_impl(AudioEngine::Impl* impl, MusicHandle h) {
     if (!impl) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
     auto it = impl->music.find(h.id);
     if (it == impl->music.end()) return;
 
@@ -347,6 +480,7 @@ void unload_music_impl(AudioEngine::Impl* impl, MusicHandle h) {
 
 void play_music_impl(AudioEngine::Impl* impl, MusicHandle h, bool loop) {
     if (!impl || !impl->initialized) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
     auto it = impl->music.find(h.id);
     if (it == impl->music.end() || !it->second.loaded) return;
 
@@ -356,10 +490,10 @@ void play_music_impl(AudioEngine::Impl* impl, MusicHandle h, bool loop) {
 
 void pause_music_impl(AudioEngine::Impl* impl, MusicHandle h) {
     if (!impl) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
     auto it = impl->music.find(h.id);
     if (it == impl->music.end() || !it->second.loaded) return;
 
-    // Save cursor position before stopping so we can resume from same spot
     ma_sound_get_cursor_in_pcm_frames(&it->second.sound, &it->second.paused_cursor);
     it->second.was_playing = ma_sound_is_playing(&it->second.sound);
     ma_sound_stop(&it->second.sound);
@@ -367,16 +501,17 @@ void pause_music_impl(AudioEngine::Impl* impl, MusicHandle h) {
 
 void resume_music_impl(AudioEngine::Impl* impl, MusicHandle h) {
     if (!impl) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
     auto it = impl->music.find(h.id);
     if (it == impl->music.end() || !it->second.loaded) return;
 
-    // Seek to saved position and resume
     ma_sound_seek_to_pcm_frame(&it->second.sound, it->second.paused_cursor);
     ma_sound_start(&it->second.sound);
 }
 
 void stop_music_impl(AudioEngine::Impl* impl, MusicHandle h) {
     if (!impl) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
     auto it = impl->music.find(h.id);
     if (it == impl->music.end() || !it->second.loaded) return;
 
@@ -386,6 +521,7 @@ void stop_music_impl(AudioEngine::Impl* impl, MusicHandle h) {
 
 void set_music_volume_impl(AudioEngine::Impl* impl, MusicHandle h, float volume) {
     if (!impl) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
     auto it = impl->music.find(h.id);
     if (it == impl->music.end() || !it->second.loaded) return;
 
@@ -395,23 +531,27 @@ void set_music_volume_impl(AudioEngine::Impl* impl, MusicHandle h, float volume)
 
 void set_master_volume_impl(AudioEngine::Impl* impl, float volume) {
     if (!impl || !impl->initialized) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
     impl->master_volume = volume;
     ma_engine_set_volume(&impl->engine, volume);
 }
 
 float get_master_volume_impl(AudioEngine::Impl* impl) {
     if (!impl) return 1.0f;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
     return impl->master_volume;
 }
 
 void set_listener_position_impl(AudioEngine::Impl* impl, const Vec3& pos) {
     if (!impl || !impl->initialized) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
     impl->listener_position = pos;
     ma_engine_listener_set_position(&impl->engine, 0, pos.x, pos.y, pos.z);
 }
 
 void set_listener_orientation_impl(AudioEngine::Impl* impl, const Vec3& forward, const Vec3& up) {
     if (!impl || !impl->initialized) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
     impl->listener_forward = forward;
     impl->listener_up = up;
     ma_engine_listener_set_direction(&impl->engine, 0, forward.x, forward.y, forward.z);
@@ -420,6 +560,7 @@ void set_listener_orientation_impl(AudioEngine::Impl* impl, const Vec3& forward,
 
 void pause_all_impl(AudioEngine::Impl* impl) {
     if (!impl || !impl->initialized) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
 
     // Track which sounds were playing before pausing
     for (auto& [id, sound] : impl->sounds) {
@@ -444,26 +585,28 @@ void pause_all_impl(AudioEngine::Impl* impl) {
 
 void resume_all_impl(AudioEngine::Impl* impl) {
     if (!impl || !impl->initialized) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
 
     // Resume sounds that were playing before pause_all
     for (auto& [id, sound] : impl->sounds) {
         if (sound.loaded && sound.was_playing) {
             ma_sound_seek_to_pcm_frame(&sound.sound, sound.paused_cursor);
             ma_sound_start(&sound.sound);
-            sound.was_playing = false;  // Reset flag
+            sound.was_playing = false;
         }
     }
     for (auto& [id, music] : impl->music) {
         if (music.loaded && music.was_playing) {
             ma_sound_seek_to_pcm_frame(&music.sound, music.paused_cursor);
             ma_sound_start(&music.sound);
-            music.was_playing = false;  // Reset flag
+            music.was_playing = false;
         }
     }
 }
 
 void stop_all_impl(AudioEngine::Impl* impl) {
     if (!impl || !impl->initialized) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
 
     for (auto& [id, sound] : impl->sounds) {
         if (sound.loaded) {
@@ -480,6 +623,7 @@ void stop_all_impl(AudioEngine::Impl* impl) {
 
 uint32_t get_playing_sound_count_impl(AudioEngine::Impl* impl) {
     if (!impl) return 0;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
 
     uint32_t count = 0;
     for (auto& [id, sound] : impl->sounds) {
@@ -490,9 +634,9 @@ uint32_t get_playing_sound_count_impl(AudioEngine::Impl* impl) {
     return count;
 }
 
-// Phase 2: Music position functions
 float get_music_position_impl(AudioEngine::Impl* impl, MusicHandle h) {
     if (!impl || !impl->initialized) return 0.0f;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
     auto it = impl->music.find(h.id);
     if (it == impl->music.end() || !it->second.loaded) return 0.0f;
 
@@ -503,6 +647,7 @@ float get_music_position_impl(AudioEngine::Impl* impl, MusicHandle h) {
 
 void set_music_position_impl(AudioEngine::Impl* impl, MusicHandle h, float seconds) {
     if (!impl || !impl->initialized) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
     auto it = impl->music.find(h.id);
     if (it == impl->music.end() || !it->second.loaded) return;
 
@@ -511,40 +656,39 @@ void set_music_position_impl(AudioEngine::Impl* impl, MusicHandle h, float secon
     ma_sound_seek_to_pcm_frame(&it->second.sound, frame);
 }
 
-// Phase 2: Crossfade functions
 void crossfade_music_impl(AudioEngine::Impl* impl, MusicHandle from, MusicHandle to, float duration) {
     if (!impl || !impl->initialized) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
 
-    // Validate both handles
     auto from_it = impl->music.find(from.id);
     auto to_it = impl->music.find(to.id);
     if (from_it == impl->music.end() || !from_it->second.loaded) return;
     if (to_it == impl->music.end() || !to_it->second.loaded) return;
 
-    // Start the crossfade
     impl->active_crossfade = AudioEngine::Impl::CrossfadeState{};
     impl->active_crossfade->from = from;
     impl->active_crossfade->to = to;
     impl->active_crossfade->duration = std::max(duration, 0.01f);
     impl->active_crossfade->elapsed = 0.0f;
 
-    // Get current volumes
     float from_vol = ma_sound_get_volume(&from_it->second.sound);
     impl->active_crossfade->from_start_volume = from_vol;
     impl->active_crossfade->to_start_volume = 0.0f;
 
-    // Start the 'to' track at zero volume
     ma_sound_set_volume(&to_it->second.sound, 0.0f);
     ma_sound_start(&to_it->second.sound);
 }
 
-// Phase 2: Global volume functions
 void set_sound_volume_impl(AudioEngine::Impl* impl, float volume) {
     if (!impl || !impl->initialized) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
     float prev_volume = impl->sound_volume;
     impl->sound_volume = AudioEngine::Impl::clamp_volume(volume);
 
-    // Adjust all currently loaded sounds by the change in global sound volume.
+    // We can't easily iterate all sounds and set base volume without losing individual adjustments?
+    // ma_sound volume is absolute.
+    // Ideally we should use the bus system for global volumes!
+    // But keeping existing logic: scaling everything.
     float ratio = (prev_volume > 0.0001f) ? (impl->sound_volume / prev_volume) : impl->sound_volume;
     for (auto& [id, sound] : impl->sounds) {
         if (sound.loaded) {
@@ -552,14 +696,15 @@ void set_sound_volume_impl(AudioEngine::Impl* impl, float volume) {
             ma_sound_set_volume(&sound.sound, current_vol * ratio);
         }
     }
+    // Also update SFX bus? No, legacy logic applies manual volume.
 }
 
 void set_music_volume_global_impl(AudioEngine::Impl* impl, float volume) {
     if (!impl || !impl->initialized) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
     float prev_volume = impl->music_volume;
     impl->music_volume = AudioEngine::Impl::clamp_volume(volume);
 
-    // Adjust all currently loaded music by the change in global music volume.
     float ratio = (prev_volume > 0.0001f) ? (impl->music_volume / prev_volume) : impl->music_volume;
     for (auto& [id, music] : impl->music) {
         if (music.loaded) {
@@ -569,14 +714,13 @@ void set_music_volume_global_impl(AudioEngine::Impl* impl, float volume) {
     }
 }
 
-// Phase 2: Listener velocity for Doppler
 void set_listener_velocity_impl(AudioEngine::Impl* impl, const Vec3& vel) {
     if (!impl || !impl->initialized) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
     impl->listener_velocity = vel;
     ma_engine_listener_set_velocity(&impl->engine, 0, vel.x, vel.y, vel.z);
 }
 
-// Phase 3: Audio bus functions
 AudioBusHandle get_bus_impl(AudioEngine::Impl* impl, BuiltinBus bus) {
     if (!impl) return AudioBusHandle{};
     return AudioBusHandle{static_cast<uint32_t>(bus)};
@@ -584,62 +728,162 @@ AudioBusHandle get_bus_impl(AudioEngine::Impl* impl, BuiltinBus bus) {
 
 AudioBusHandle create_bus_impl(AudioEngine::Impl* impl, const std::string& name, AudioBusHandle parent) {
     if (!impl || !impl->initialized) return AudioBusHandle{};
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
 
     uint32_t id = impl->next_bus_id++;
-    impl->buses[id] = AudioEngine::Impl::AudioBus{name, 1.0f, false, parent};
+    AudioEngine::Impl::AudioBus bus;
+    bus.name = name;
+    bus.volume = 1.0f;
+    bus.muted = false;
+    bus.parent = parent;
+
+    if (ma_sound_group_init(&impl->engine, 0, NULL, &bus.group) != MA_SUCCESS) {
+        return AudioBusHandle{};
+    }
+
+    if (parent.valid()) {
+        auto it = impl->buses.find(parent.id);
+        if (it != impl->buses.end()) {
+             ma_node_attach_output_bus(&bus.group, 0, &it->second.group, 0);
+        }
+    } else {
+         ma_node_attach_output_bus(&bus.group, 0, &impl->reverb_node, 0);
+    }
+    
+    bus.initialized = true;
+    impl->buses[id] = std::move(bus);
     return AudioBusHandle{id};
 }
 
 void destroy_bus_impl(AudioEngine::Impl* impl, AudioBusHandle bus) {
     if (!impl) return;
-    // Don't allow destroying builtin buses
     if (bus.id < 100) return;
-    impl->buses.erase(bus.id);
-}
-
-// Compute effective volume of a bus (considering parent hierarchy)
-float compute_bus_volume(AudioEngine::Impl* impl, AudioBusHandle bus) {
-    if (!impl || !bus.valid()) return 1.0f;
-
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
+    
     auto it = impl->buses.find(bus.id);
-    if (it == impl->buses.end()) return 1.0f;
-
-    float vol = it->second.muted ? 0.0f : it->second.volume;
-
-    // Apply parent volume
-    if (it->second.parent.valid()) {
-        vol *= compute_bus_volume(impl, it->second.parent);
+    if (it != impl->buses.end()) {
+        if (it->second.initialized) {
+            ma_sound_group_uninit(&it->second.group);
+        }
+        impl->buses.erase(it);
     }
-
-    return vol;
 }
 
 void set_bus_volume_impl(AudioEngine::Impl* impl, AudioBusHandle bus, float volume) {
     if (!impl) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
     auto it = impl->buses.find(bus.id);
-    if (it == impl->buses.end()) return;
-    it->second.volume = AudioEngine::Impl::clamp_volume(volume);
+    if (it != impl->buses.end() && it->second.initialized) {
+        it->second.volume = AudioEngine::Impl::clamp_volume(volume);
+        ma_sound_group_set_volume(&it->second.group, it->second.volume);
+    }
 }
 
 float get_bus_volume_impl(AudioEngine::Impl* impl, AudioBusHandle bus) {
     if (!impl) return 1.0f;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
     auto it = impl->buses.find(bus.id);
-    if (it == impl->buses.end()) return 1.0f;
-    return it->second.volume;
+    if (it != impl->buses.end()) return it->second.volume;
+    return 1.0f;
 }
 
 void set_bus_muted_impl(AudioEngine::Impl* impl, AudioBusHandle bus, bool muted) {
     if (!impl) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
     auto it = impl->buses.find(bus.id);
-    if (it == impl->buses.end()) return;
-    it->second.muted = muted;
+    if (it != impl->buses.end() && it->second.initialized) {
+        it->second.muted = muted;
+        // Mute logic: volume 0? or separate mute? ma_sound_group has no mute, need to use volume or stop.
+        // Actually miniaudio nodes don't have a mute flag, we simulate it with volume 0,
+        // but restoring is hard if we don't cache.
+        // We cached 'volume'. So if muted, set group volume to 0. If unmuted, set to 'volume'.
+        if (muted) {
+            ma_sound_group_set_volume(&it->second.group, 0.0f);
+        } else {
+            ma_sound_group_set_volume(&it->second.group, it->second.volume);
+        }
+    }
 }
 
 bool is_bus_muted_impl(AudioEngine::Impl* impl, AudioBusHandle bus) {
     if (!impl) return false;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
     auto it = impl->buses.find(bus.id);
-    if (it == impl->buses.end()) return false;
-    return it->second.muted;
+    if (it != impl->buses.end()) return it->second.muted;
+    return false;
+}
+
+// New Sound Controls
+void set_sound_paused_impl(AudioEngine::Impl* impl, SoundHandle h, bool paused) {
+    if (!impl) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
+    auto it = impl->sounds.find(h.id);
+    if (it == impl->sounds.end() || !it->second.loaded) return;
+    
+    if (paused) {
+        ma_sound_stop(&it->second.sound);
+    } else {
+        ma_sound_start(&it->second.sound);
+    }
+}
+
+void set_sound_volume_handle_impl(AudioEngine::Impl* impl, SoundHandle h, float volume) {
+    if (!impl) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
+    auto it = impl->sounds.find(h.id);
+    if (it == impl->sounds.end() || !it->second.loaded) return;
+    
+    ma_sound_set_volume(&it->second.sound, volume * impl->sound_volume * impl->master_volume);
+}
+
+void set_sound_pitch_handle_impl(AudioEngine::Impl* impl, SoundHandle h, float pitch) {
+    if (!impl) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
+    auto it = impl->sounds.find(h.id);
+    if (it == impl->sounds.end() || !it->second.loaded) return;
+    
+    ma_sound_set_pitch(&it->second.sound, pitch);
+}
+
+void fade_in_impl(AudioEngine::Impl* impl, SoundHandle h, float duration) {
+    if (!impl) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
+    auto it = impl->sounds.find(h.id);
+    if (it == impl->sounds.end() || !it->second.loaded) return;
+    
+    it->second.fading = true;
+    it->second.fade_duration = duration;
+    it->second.fade_elapsed = 0.0f;
+    it->second.fade_start_vol = 0.0f;
+    it->second.fade_target_vol = 1.0f; // Target local volume 1.0 (multiplied by globals later)
+    
+    ma_sound_set_volume(&it->second.sound, 0.0f);
+    ma_sound_start(&it->second.sound);
+}
+
+void fade_out_impl(AudioEngine::Impl* impl, SoundHandle h, float duration) {
+    if (!impl) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
+    auto it = impl->sounds.find(h.id);
+    if (it == impl->sounds.end() || !it->second.loaded) return;
+    
+    it->second.fading = true;
+    it->second.fade_duration = duration;
+    it->second.fade_elapsed = 0.0f;
+    it->second.fade_start_vol = ma_sound_get_volume(&it->second.sound) / (impl->sound_volume * impl->master_volume);
+    it->second.fade_target_vol = 0.0f;
+}
+
+void set_reverb_params_impl(AudioEngine::Impl* impl, const AudioEngine::ReverbParams& params) {
+    if (!impl || !impl->initialized) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
+    
+    ma_reverb_node_set_room_size(&impl->reverb_node, params.room_size);
+    ma_reverb_node_set_damping(&impl->reverb_node, params.damping);
+    ma_reverb_node_set_width(&impl->reverb_node, params.width);
+    ma_reverb_node_set_wet(&impl->reverb_node, params.wet_volume);
+    ma_reverb_node_set_dry(&impl->reverb_node, params.dry_volume);
+    // mode is not supported in standard miniaudio reverb, it is a basic verbed.
 }
 
 } // namespace engine::audio

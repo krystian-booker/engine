@@ -50,6 +50,12 @@ extern void set_bus_volume_impl(AudioEngine::Impl* impl, AudioBusHandle bus, flo
 extern float get_bus_volume_impl(AudioEngine::Impl* impl, AudioBusHandle bus);
 extern void set_bus_muted_impl(AudioEngine::Impl* impl, AudioBusHandle bus, bool muted);
 extern bool is_bus_muted_impl(AudioEngine::Impl* impl, AudioBusHandle bus);
+extern void fade_in_impl(AudioEngine::Impl* impl, SoundHandle h, float duration);
+extern void fade_out_impl(AudioEngine::Impl* impl, SoundHandle h, float duration);
+extern void set_reverb_params_impl(AudioEngine::Impl* impl, const AudioEngine::ReverbParams& params);
+extern void set_sound_paused_impl(AudioEngine::Impl* impl, SoundHandle h, bool paused);
+extern void set_sound_volume_handle_impl(AudioEngine::Impl* impl, SoundHandle h, float volume);
+extern void set_sound_pitch_handle_impl(AudioEngine::Impl* impl, SoundHandle h, float pitch);
 
 // Constructor and destructor defined in miniaudio_impl.cpp where Impl is complete
 
@@ -232,28 +238,32 @@ void AudioEngine::stop(SoundHandle h) {
     stop_sound(h);
 }
 
-void AudioEngine::pause(SoundHandle /*h*/) {
-    // Not supported by underlying implementation yet
+void AudioEngine::set_reverb_params(const ReverbParams& params) {
+    set_reverb_params_impl(m_impl.get(), params);
 }
 
-void AudioEngine::resume(SoundHandle /*h*/) {
-    // Not supported by underlying implementation yet
+void AudioEngine::pause(SoundHandle h) {
+    set_sound_paused_impl(m_impl.get(), h, true);
 }
 
-void AudioEngine::set_volume(SoundHandle /*h*/, float /*volume*/) {
-    // Per-sound volume adjustment not exposed; no-op for now
+void AudioEngine::resume(SoundHandle h) {
+    set_sound_paused_impl(m_impl.get(), h, false);
 }
 
-void AudioEngine::set_pitch(SoundHandle /*h*/, float /*pitch*/) {
-    // Per-sound pitch adjustment not exposed; no-op for now
+void AudioEngine::set_volume(SoundHandle h, float volume) {
+    set_sound_volume_handle_impl(m_impl.get(), h, volume);
 }
 
-void AudioEngine::fade_in(SoundHandle /*h*/, float /*duration*/) {
-    // Not implemented; cinematic tracks expect this signature
+void AudioEngine::set_pitch(SoundHandle h, float pitch) {
+    set_sound_pitch_handle_impl(m_impl.get(), h, pitch);
 }
 
-void AudioEngine::fade_out(SoundHandle h, float /*duration*/) {
-    stop_sound(h);
+void AudioEngine::fade_in(SoundHandle h, float duration) {
+    fade_in_impl(m_impl.get(), h, duration);
+}
+
+void AudioEngine::fade_out(SoundHandle h, float duration) {
+    fade_out_impl(m_impl.get(), h, duration);
 }
 
 // Global instance

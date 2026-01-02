@@ -40,3 +40,9 @@ target_link_libraries(engine_audio
 set_target_properties(engine_audio PROPERTIES
     FOLDER "engine"
 )
+
+# Test executable
+add_executable(audio_test tests/audio_manual_test.cpp)
+target_link_libraries(audio_test PRIVATE engine_audio)
+set_target_properties(audio_test PROPERTIES FOLDER "tests")
+

@@ -219,9 +219,26 @@ void AudioSystem::update_reverb_zones(World& world, double /*dt*/) {
         }
     }
 
-    // TODO: Apply reverb parameters to audio engine when effects system is implemented
-    // For now, we just identify which zone is active
-    (void)active_zone;
+    // Apply reverb parameters
+    AudioEngine::ReverbParams params;
+    
+    if (active_zone && best_blend > 0.001f) {
+        // Map zone parameters to engine params (best effort)
+        // Normalize decay time (0-10s -> 0-1)
+        params.room_size = std::clamp(active_zone->decay_time * 0.1f, 0.0f, 1.0f);
+        params.damping = std::clamp(active_zone->high_frequency_decay, 0.0f, 1.0f);
+        params.width = std::clamp(active_zone->diffusion, 0.0f, 1.0f);
+        
+        // Blend wet volume based on distance
+        params.wet_volume = std::clamp(best_blend, 0.0f, 1.0f);
+        params.dry_volume = 1.0f; // Keep dry signal constant for now
+    } else {
+        // No reverb
+        params.wet_volume = 0.0f;
+        params.dry_volume = 1.0f;
+    }
+
+    get_audio_engine().set_reverb_params(params);
 }
 
 void AudioSystem::register_systems(Scheduler& scheduler) {
