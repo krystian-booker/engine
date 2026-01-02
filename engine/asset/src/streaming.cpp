@@ -288,10 +288,29 @@ struct TextureStream::Impl {
     uint32_t width = 0;
     uint32_t height = 0;
     uint32_t mip_count = 0;
-    uint32_t loaded_mip_level = UINT32_MAX;  // Coarsest loaded mip (higher = coarser)
+    uint32_t loaded_mip_level = UINT32_MAX;  // Finest loaded mip (lower = finer)
 
+    // Thread synchronization
+    mutable std::mutex mutex;
+
+    // Mip state tracking
     std::vector<bool> mip_loaded;
     std::vector<bool> mip_requested;
+    std::vector<bool> mip_loading;  // Currently being loaded async
+
+    // Pending mip data from async loads
+    struct PendingMip {
+        uint32_t level;
+        std::vector<uint8_t> data;
+        uint32_t width;
+        uint32_t height;
+    };
+    std::vector<PendingMip> pending_mips;
+    std::mutex pending_mutex;
+
+    // Raw file data for streaming (kept in memory for on-demand mip generation)
+    std::vector<uint8_t> file_data;
+    int original_channels = 0;
 
     bool is_open = false;
 
@@ -300,11 +319,92 @@ struct TextureStream::Impl {
     }
 
     void close() {
+        std::lock_guard<std::mutex> lock(mutex);
         if (renderer && handle.valid()) {
             renderer->destroy_texture(handle);
             handle = {};
         }
+        file_data.clear();
+        mip_loaded.clear();
+        mip_requested.clear();
+        mip_loading.clear();
+        {
+            std::lock_guard<std::mutex> plock(pending_mutex);
+            pending_mips.clear();
+        }
         is_open = false;
+    }
+
+    // Generate a specific mip level from source data
+    std::vector<uint8_t> generate_mip(uint32_t level, uint32_t& out_width, uint32_t& out_height) {
+        // Calculate dimensions for this mip level
+        out_width = std::max(1u, width >> level);
+        out_height = std::max(1u, height >> level);
+
+        // Load base texture from file data
+        int w, h, c;
+        unsigned char* base_data = stbi_load_from_memory(
+            file_data.data(), static_cast<int>(file_data.size()),
+            &w, &h, &c, 4
+        );
+
+        if (!base_data) {
+            return {};
+        }
+
+        std::vector<uint8_t> result;
+
+        if (level == 0) {
+            // Level 0 is the base image
+            result.assign(base_data, base_data + w * h * 4);
+        } else {
+            // Generate downsampled mip using box filter
+            std::vector<uint8_t> current(base_data, base_data + w * h * 4);
+            uint32_t curr_w = static_cast<uint32_t>(w);
+            uint32_t curr_h = static_cast<uint32_t>(h);
+
+            for (uint32_t l = 0; l < level; l++) {
+                uint32_t next_w = std::max(1u, curr_w / 2);
+                uint32_t next_h = std::max(1u, curr_h / 2);
+                std::vector<uint8_t> next(next_w * next_h * 4);
+
+                for (uint32_t y = 0; y < next_h; y++) {
+                    for (uint32_t x = 0; x < next_w; x++) {
+                        uint32_t src_x = x * 2;
+                        uint32_t src_y = y * 2;
+
+                        uint32_t r = 0, g = 0, b = 0, a = 0;
+                        int count = 0;
+
+                        for (uint32_t dy = 0; dy < 2 && (src_y + dy) < curr_h; dy++) {
+                            for (uint32_t dx = 0; dx < 2 && (src_x + dx) < curr_w; dx++) {
+                                size_t idx = ((src_y + dy) * curr_w + (src_x + dx)) * 4;
+                                r += current[idx + 0];
+                                g += current[idx + 1];
+                                b += current[idx + 2];
+                                a += current[idx + 3];
+                                count++;
+                            }
+                        }
+
+                        size_t dst_idx = (y * next_w + x) * 4;
+                        next[dst_idx + 0] = static_cast<uint8_t>(r / count);
+                        next[dst_idx + 1] = static_cast<uint8_t>(g / count);
+                        next[dst_idx + 2] = static_cast<uint8_t>(b / count);
+                        next[dst_idx + 3] = static_cast<uint8_t>(a / count);
+                    }
+                }
+
+                current = std::move(next);
+                curr_w = next_w;
+                curr_h = next_h;
+            }
+
+            result = std::move(current);
+        }
+
+        stbi_image_free(base_data);
+        return result;
     }
 };
 
@@ -322,22 +422,26 @@ bool TextureStream::open(const std::string& path, render::IRenderer* renderer) {
         return false;
     }
 
+    std::lock_guard<std::mutex> lock(m_impl->mutex);
+
     m_impl->path = path;
     m_impl->renderer = renderer;
 
-    // For now, load the texture normally and track it as fully loaded
-    // In a full implementation, this would load only metadata and lowest mips
-    auto file_data = FileSystem::read_binary(path);
-    if (file_data.empty()) {
+    // Load file data into memory for streaming
+    m_impl->file_data = FileSystem::read_binary(path);
+    if (m_impl->file_data.empty()) {
         log(LogLevel::Error, ("Failed to open texture for streaming: " + path).c_str());
         return false;
     }
 
-    // Detect dimensions from the file (simplified - loads entire texture for now)
-    // A proper implementation would parse headers without loading pixel data
+    // Get image dimensions without fully decoding
     int width, height, channels;
-    stbi_info_from_memory(file_data.data(), static_cast<int>(file_data.size()),
-                          &width, &height, &channels);
+    if (!stbi_info_from_memory(m_impl->file_data.data(),
+                               static_cast<int>(m_impl->file_data.size()),
+                               &width, &height, &channels)) {
+        log(LogLevel::Error, ("Failed to read texture info: " + path).c_str());
+        return false;
+    }
 
     if (width == 0 || height == 0) {
         log(LogLevel::Error, ("Invalid texture dimensions: " + path).c_str());
@@ -346,6 +450,7 @@ bool TextureStream::open(const std::string& path, render::IRenderer* renderer) {
 
     m_impl->width = static_cast<uint32_t>(width);
     m_impl->height = static_cast<uint32_t>(height);
+    m_impl->original_channels = channels;
 
     // Calculate mip count
     m_impl->mip_count = 1;
@@ -358,25 +463,25 @@ bool TextureStream::open(const std::string& path, render::IRenderer* renderer) {
 
     m_impl->mip_loaded.resize(m_impl->mip_count, false);
     m_impl->mip_requested.resize(m_impl->mip_count, false);
+    m_impl->mip_loading.resize(m_impl->mip_count, false);
 
-    // Load lowest mip (coarsest) immediately for preview
-    // For simplicity, load full texture for now
-    unsigned char* data = stbi_load_from_memory(
-        file_data.data(), static_cast<int>(file_data.size()),
-        &width, &height, &channels, 4
-    );
+    // Load the coarsest mip level immediately (for quick preview)
+    uint32_t coarsest_level = m_impl->mip_count - 1;
+    uint32_t mip_w, mip_h;
+    auto coarsest_data = m_impl->generate_mip(coarsest_level, mip_w, mip_h);
 
-    if (!data) {
-        log(LogLevel::Error, ("Failed to decode texture for streaming: " + path).c_str());
+    if (coarsest_data.empty()) {
+        log(LogLevel::Error, ("Failed to generate coarsest mip for streaming: " + path).c_str());
         return false;
     }
 
+    // Create initial texture with coarsest mip
     render::TextureData tex_data;
-    tex_data.width = m_impl->width;
-    tex_data.height = m_impl->height;
+    tex_data.width = mip_w;
+    tex_data.height = mip_h;
     tex_data.format = render::TextureFormat::RGBA8;
-    tex_data.pixels.assign(data, data + width * height * 4);
-    stbi_image_free(data);
+    tex_data.pixels = std::move(coarsest_data);
+    tex_data.mip_levels = 1;
 
     m_impl->handle = renderer->create_texture(tex_data);
     if (!m_impl->handle.valid()) {
@@ -384,12 +489,12 @@ bool TextureStream::open(const std::string& path, render::IRenderer* renderer) {
         return false;
     }
 
-    // Mark all mips as loaded (simplified implementation)
-    std::fill(m_impl->mip_loaded.begin(), m_impl->mip_loaded.end(), true);
-    m_impl->loaded_mip_level = 0;
+    m_impl->mip_loaded[coarsest_level] = true;
+    m_impl->loaded_mip_level = coarsest_level;
 
     m_impl->is_open = true;
-    log(LogLevel::Debug, ("Opened texture stream: " + path).c_str());
+    log(LogLevel::Debug, ("Opened texture stream: " + path + " (mip " +
+        std::to_string(coarsest_level) + "/" + std::to_string(m_impl->mip_count - 1) + ")").c_str());
     return true;
 }
 
@@ -398,49 +503,113 @@ void TextureStream::close() {
 }
 
 bool TextureStream::is_open() const {
+    std::lock_guard<std::mutex> lock(m_impl->mutex);
     return m_impl->is_open;
 }
 
 void TextureStream::request_mip(uint32_t level) {
-    if (!m_impl->is_open || level >= m_impl->mip_count) return;
+    std::lock_guard<std::mutex> lock(m_impl->mutex);
 
-    if (!m_impl->mip_loaded[level] && !m_impl->mip_requested[level]) {
-        m_impl->mip_requested[level] = true;
-        // In a full implementation, this would queue an async load
-    }
+    if (!m_impl->is_open || level >= m_impl->mip_count) return;
+    if (m_impl->mip_loaded[level] || m_impl->mip_loading[level]) return;
+
+    m_impl->mip_requested[level] = true;
+    m_impl->mip_loading[level] = true;
+
+    // Capture what we need for the async job
+    auto impl = m_impl.get();
+    uint32_t target_level = level;
+
+    // Use a simple async approach - in production, use job system
+    std::thread([impl, target_level]() {
+        uint32_t mip_w, mip_h;
+        auto mip_data = impl->generate_mip(target_level, mip_w, mip_h);
+
+        if (!mip_data.empty()) {
+            std::lock_guard<std::mutex> plock(impl->pending_mutex);
+            impl->pending_mips.push_back({target_level, std::move(mip_data), mip_w, mip_h});
+        }
+
+        std::lock_guard<std::mutex> lock(impl->mutex);
+        impl->mip_loading[target_level] = false;
+    }).detach();
 }
 
 bool TextureStream::is_mip_loaded(uint32_t level) const {
+    std::lock_guard<std::mutex> lock(m_impl->mutex);
     if (!m_impl->is_open || level >= m_impl->mip_count) return false;
     return m_impl->mip_loaded[level];
 }
 
 uint32_t TextureStream::get_loaded_mip_level() const {
+    std::lock_guard<std::mutex> lock(m_impl->mutex);
     return m_impl->loaded_mip_level;
 }
 
 render::TextureHandle TextureStream::get_handle() const {
+    std::lock_guard<std::mutex> lock(m_impl->mutex);
     return m_impl->handle;
 }
 
 void TextureStream::update() {
-    // In a full implementation, this would check for completed async loads
-    // and update the texture with newly loaded mip levels
+    // Check for completed async mip loads
+    std::vector<Impl::PendingMip> completed;
+    {
+        std::lock_guard<std::mutex> plock(m_impl->pending_mutex);
+        completed = std::move(m_impl->pending_mips);
+        m_impl->pending_mips.clear();
+    }
+
+    if (completed.empty()) return;
+
+    std::lock_guard<std::mutex> lock(m_impl->mutex);
+
+    for (auto& pending : completed) {
+        if (pending.level >= m_impl->mip_count) continue;
+
+        // If this mip is finer than current, recreate texture with all loaded mips
+        if (pending.level < m_impl->loaded_mip_level) {
+            // Create new texture with the finer mip level
+            render::TextureData tex_data;
+            tex_data.width = pending.width;
+            tex_data.height = pending.height;
+            tex_data.format = render::TextureFormat::RGBA8;
+            tex_data.pixels = std::move(pending.data);
+            tex_data.mip_levels = 1;
+
+            // Destroy old texture and create new one with higher resolution
+            if (m_impl->handle.valid()) {
+                m_impl->renderer->destroy_texture(m_impl->handle);
+            }
+            m_impl->handle = m_impl->renderer->create_texture(tex_data);
+
+            m_impl->loaded_mip_level = pending.level;
+
+            log(LogLevel::Debug, ("Texture stream updated to mip " +
+                std::to_string(pending.level) + ": " + m_impl->path).c_str());
+        }
+
+        m_impl->mip_loaded[pending.level] = true;
+    }
 }
 
 uint32_t TextureStream::width() const {
+    std::lock_guard<std::mutex> lock(m_impl->mutex);
     return m_impl->width;
 }
 
 uint32_t TextureStream::height() const {
+    std::lock_guard<std::mutex> lock(m_impl->mutex);
     return m_impl->height;
 }
 
 uint32_t TextureStream::mip_count() const {
+    std::lock_guard<std::mutex> lock(m_impl->mutex);
     return m_impl->mip_count;
 }
 
 const std::string& TextureStream::path() const {
+    std::lock_guard<std::mutex> lock(m_impl->mutex);
     return m_impl->path;
 }
 

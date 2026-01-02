@@ -180,7 +180,7 @@ bool AudioLoader::load(const std::string& path,
     return false;
 }
 
-std::string AudioLoader::get_last_error() {
+const std::string& AudioLoader::get_last_error() {
     return s_last_error;
 }
 

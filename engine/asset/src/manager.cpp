@@ -621,7 +621,68 @@ std::shared_ptr<AnimationAsset> AssetManager::load_animation(const std::string& 
 }
 
 std::vector<std::shared_ptr<AnimationAsset>> AssetManager::load_animations(const std::string& path) {
-    return load_animations_internal(path);
+    // Check cache first
+    {
+        std::shared_lock lock(m_mutex);
+        auto it = m_animation_sets.find(path);
+        if (it != m_animation_sets.end()) return it->second;
+    }
+
+    // Check loading status
+    std::string status_key = path + "#animations";
+    {
+        std::unique_lock lock(m_mutex);
+        if (m_animation_sets.count(path)) return m_animation_sets[path];
+
+        if (m_status[status_key] == AssetStatus::Loading) {
+            m_load_cv.wait(lock, [this, &status_key] {
+                return m_status[status_key] != AssetStatus::Loading;
+            });
+            if (m_animation_sets.count(path)) return m_animation_sets[path];
+            return {};
+        }
+        m_status[status_key] = AssetStatus::Loading;
+    }
+
+    // Load animations
+    auto animations = load_animations_internal(path);
+
+    // Update cache
+    {
+        std::unique_lock lock(m_mutex);
+        if (!animations.empty()) {
+            m_animation_sets[path] = animations;
+            m_status[status_key] = AssetStatus::Loaded;
+
+            if (m_hot_reload_enabled) {
+                auto alive = m_alive;
+                HotReload::watch(path, [this, alive, path](const std::string&) {
+                    if (!*alive) return;
+                    auto new_animations = load_animations_internal(path);
+                    if (!new_animations.empty()) {
+                        ReloadCallback cb;
+                        {
+                            std::unique_lock reload_lock(m_mutex);
+                            // Move old animations to orphans
+                            if (m_animation_sets.count(path)) {
+                                for (auto& anim : m_animation_sets[path]) {
+                                    m_orphans.push_back(anim);
+                                }
+                            }
+                            m_animation_sets[path] = new_animations;
+                            cb = m_reload_callback;
+                        }
+                        if (cb) cb(path);
+                    }
+                });
+            }
+        } else {
+            m_status[status_key] = AssetStatus::Failed;
+        }
+        m_load_cv.notify_all();
+    }
+
+    return animations;
 }
 
 std::shared_ptr<SkeletonAsset> AssetManager::load_skeleton(const std::string& path) {
@@ -820,6 +881,23 @@ void AssetManager::unload_unused() {
     prune(m_animations);
     prune(m_skeletons);
 
+    // Prune animation sets (check if all animations in set are unused)
+    for (auto it = m_animation_sets.begin(); it != m_animation_sets.end();) {
+        bool all_unused = true;
+        for (const auto& anim : it->second) {
+            if (anim.use_count() > 1) {
+                all_unused = false;
+                break;
+            }
+        }
+        if (all_unused) {
+            m_status.erase(it->first + "#animations");
+            it = m_animation_sets.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
     // Prune orphans
     for (auto it = m_orphans.begin(); it != m_orphans.end();) {
         if (it->use_count() == 1) {
@@ -852,6 +930,7 @@ void AssetManager::unload_all() {
     m_prefabs.clear();
     m_animations.clear();
     m_skeletons.clear();
+    m_animation_sets.clear();
 
     for (auto& asset : m_orphans) destroy_asset(asset);
     m_orphans.clear();
@@ -879,10 +958,34 @@ size_t AssetManager::get_memory_usage() const {
         }
     }
 
-    // Texture memory: width * height * 4 bytes (RGBA8)
+    // Texture memory: format-aware calculation
     for (const auto& [path, tex] : m_textures) {
         if (tex) {
-            total += tex->width * tex->height * 4;
+            size_t bytes_per_pixel = 4;  // Default RGBA8
+            switch (tex->format) {
+                case render::TextureFormat::RGBA8:
+                    bytes_per_pixel = 4;
+                    break;
+                case render::TextureFormat::RGBA16F:
+                    bytes_per_pixel = 8;
+                    break;
+                case render::TextureFormat::RGBA32F:
+                    bytes_per_pixel = 16;
+                    break;
+                case render::TextureFormat::BC1:
+                    // 0.5 bytes per pixel (8 bytes per 4x4 block)
+                    total += (tex->width * tex->height) / 2;
+                    continue;
+                case render::TextureFormat::BC3:
+                case render::TextureFormat::BC7:
+                    // 1 byte per pixel (16 bytes per 4x4 block)
+                    total += tex->width * tex->height;
+                    continue;
+                default:
+                    bytes_per_pixel = 4;
+                    break;
+            }
+            total += tex->width * tex->height * bytes_per_pixel;
         }
     }
 
@@ -1116,6 +1219,7 @@ std::shared_ptr<TextureAsset> AssetManager::load_texture_internal(const std::str
         asset->width = dds_data.width;
         asset->height = dds_data.height;
         asset->mip_levels = dds_data.mip_levels;
+        asset->format = dds_data.format;
         asset->is_hdr = (dds_data.format == render::TextureFormat::RGBA16F ||
                          dds_data.format == render::TextureFormat::RGBA32F);
 
@@ -1145,6 +1249,7 @@ std::shared_ptr<TextureAsset> AssetManager::load_texture_internal(const std::str
         asset->width = ktx_data.width;
         asset->height = ktx_data.height;
         asset->mip_levels = ktx_data.mip_levels;
+        asset->format = ktx_data.format;
         asset->is_hdr = (ktx_data.format == render::TextureFormat::RGBA16F ||
                          ktx_data.format == render::TextureFormat::RGBA32F);
 
@@ -1183,6 +1288,7 @@ std::shared_ptr<TextureAsset> AssetManager::load_texture_internal(const std::str
         asset->height = static_cast<uint32_t>(height);
         asset->channels = static_cast<uint32_t>(channels);
         asset->has_alpha = channels == 4;
+        asset->format = render::TextureFormat::RGBA16F;
 
         tex_data.width = asset->width;
         tex_data.height = asset->height;
@@ -1211,6 +1317,7 @@ std::shared_ptr<TextureAsset> AssetManager::load_texture_internal(const std::str
         asset->height = static_cast<uint32_t>(height);
         asset->channels = static_cast<uint32_t>(channels);
         asset->has_alpha = channels == 4;
+        asset->format = render::TextureFormat::RGBA8;
 
         tex_data.width = asset->width;
         tex_data.height = asset->height;

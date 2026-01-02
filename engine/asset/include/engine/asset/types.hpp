@@ -33,6 +33,7 @@ struct TextureAsset : Asset {
     uint32_t height = 0;
     uint32_t channels = 0;
     uint32_t mip_levels = 1;
+    TextureFormat format = TextureFormat::RGBA8;  // Actual texture format for memory calculations
     bool has_alpha = false;
     bool is_hdr = false;
 };

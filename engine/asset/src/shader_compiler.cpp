@@ -5,6 +5,8 @@
 #include <sstream>
 #include <cstdlib>
 #include <filesystem>
+#include <atomic>
+#include <thread>
 
 #ifdef _WIN32
 #define popen _popen
@@ -19,6 +21,56 @@ std::string ShaderCompiler::s_last_error;
 bool ShaderCompiler::s_initialized = false;
 
 namespace {
+
+// Counter for unique temp file names
+std::atomic<uint64_t> g_temp_file_counter{0};
+
+// Validate path contains only safe characters (defense in depth for internal paths)
+bool is_safe_path(const std::string& path) {
+    for (char c : path) {
+        // Allow alphanumeric, path separators, dots, underscores, hyphens, spaces
+        if (!std::isalnum(static_cast<unsigned char>(c)) &&
+            c != '/' && c != '\\' && c != '.' && c != '_' && c != '-' && c != ' ' && c != ':') {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Escape shell special characters in a path
+std::string escape_shell_path(const std::string& path) {
+    std::string result;
+    result.reserve(path.size() + 16);
+    for (char c : path) {
+        // Escape shell metacharacters
+        if (c == '"' || c == '\\' || c == '$' || c == '`' || c == '!' || c == '&' ||
+            c == '|' || c == ';' || c == '<' || c == '>' || c == '(' || c == ')' ||
+            c == '\'' || c == '*' || c == '?' || c == '[' || c == ']' || c == '#') {
+#ifdef _WIN32
+            // On Windows, escape with caret for most, backslash for quotes
+            if (c == '"') {
+                result += "\\\"";
+            } else {
+                result += c;  // Most chars are safe in Windows quoted strings
+            }
+#else
+            // On Unix, escape with backslash
+            result += '\\';
+            result += c;
+#endif
+        } else {
+            result += c;
+        }
+    }
+    return result;
+}
+
+// Generate unique temp file base name
+std::string generate_temp_basename() {
+    auto thread_id = std::hash<std::thread::id>{}(std::this_thread::get_id());
+    auto counter = g_temp_file_counter.fetch_add(1);
+    return "engine_shader_" + std::to_string(thread_id) + "_" + std::to_string(counter);
+}
 
 // Find shaderc executable
 std::string find_shaderc() {
@@ -126,15 +178,27 @@ bool ShaderCompiler::compile(
         return false;
     }
 
-    // Build shaderc command
+    // Validate paths for safety (defense in depth)
+    if (!is_safe_path(source_path)) {
+        s_last_error = "Invalid characters in source path: " + source_path;
+        log(LogLevel::Error, s_last_error.c_str());
+        return false;
+    }
+    if (!is_safe_path(output_path)) {
+        s_last_error = "Invalid characters in output path: " + output_path;
+        log(LogLevel::Error, s_last_error.c_str());
+        return false;
+    }
+
+    // Build shaderc command with escaped paths
     std::ostringstream cmd;
-    cmd << "\"" << g_shaderc_path << "\"";
+    cmd << "\"" << escape_shell_path(g_shaderc_path) << "\"";
 
     // Input file
-    cmd << " -f \"" << source_path << "\"";
+    cmd << " -f \"" << escape_shell_path(source_path) << "\"";
 
     // Output file
-    cmd << " -o \"" << output_path << "\"";
+    cmd << " -o \"" << escape_shell_path(output_path) << "\"";
 
     // Shader type
     switch (stage) {
@@ -158,9 +222,14 @@ bool ShaderCompiler::compile(
     cmd << " --platform linux -p 430";  // OpenGL 4.3 GLSL
 #endif
 
-    // Include paths
+    // Include paths (with validation and escaping)
     for (const auto& inc_path : options.include_paths) {
-        cmd << " -i \"" << inc_path << "\"";
+        if (!is_safe_path(inc_path)) {
+            s_last_error = "Invalid characters in include path: " + inc_path;
+            log(LogLevel::Error, s_last_error.c_str());
+            return false;
+        }
+        cmd << " -i \"" << escape_shell_path(inc_path) << "\"";
     }
 
     // Defines
@@ -229,15 +298,16 @@ std::vector<uint8_t> ShaderCompiler::compile_to_memory(
 {
     s_last_error.clear();
 
-    // Write source to temp file
+    // Generate unique temp file names to avoid race conditions
     std::string temp_dir = std::filesystem::temp_directory_path().string();
-    std::string temp_source = temp_dir + "/engine_shader_temp.sc";
-    std::string temp_output = temp_dir + "/engine_shader_temp.bin";
+    std::string basename = generate_temp_basename();
+    std::string temp_source = temp_dir + "/" + basename + ".sc";
+    std::string temp_output = temp_dir + "/" + basename + ".bin";
 
     {
         std::ofstream ofs(temp_source);
         if (!ofs) {
-            s_last_error = "Failed to create temporary source file";
+            s_last_error = "Failed to create temporary source file: " + temp_source;
             return {};
         }
         ofs << source;
@@ -253,8 +323,9 @@ std::vector<uint8_t> ShaderCompiler::compile_to_memory(
     auto result = FileSystem::read_binary(temp_output);
 
     // Cleanup temp files
-    std::filesystem::remove(temp_source);
-    std::filesystem::remove(temp_output);
+    std::error_code ec;  // Ignore cleanup errors
+    std::filesystem::remove(temp_source, ec);
+    std::filesystem::remove(temp_output, ec);
 
     return result;
 }
@@ -266,9 +337,9 @@ std::vector<uint8_t> ShaderCompiler::compile_file_to_memory(
 {
     s_last_error.clear();
 
-    // Compile to temp file
+    // Compile to temp file with unique name
     std::string temp_dir = std::filesystem::temp_directory_path().string();
-    std::string temp_output = temp_dir + "/engine_shader_temp.bin";
+    std::string temp_output = temp_dir + "/" + generate_temp_basename() + ".bin";
 
     if (!compile(source_path, temp_output, stage, options)) {
         return {};
@@ -278,7 +349,8 @@ std::vector<uint8_t> ShaderCompiler::compile_file_to_memory(
     auto result = FileSystem::read_binary(temp_output);
 
     // Cleanup
-    std::filesystem::remove(temp_output);
+    std::error_code ec;  // Ignore cleanup errors
+    std::filesystem::remove(temp_output, ec);
 
     return result;
 }

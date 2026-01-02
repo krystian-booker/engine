@@ -21,8 +21,8 @@ struct AudioLoader {
         std::vector<uint8_t>& out_pcm_data,
         AudioFormat& out_format);
 
-    // Get last error message
-    static std::string get_last_error();
+    // Get last error message (returns reference to static error string)
+    static const std::string& get_last_error();
 };
 
 } // namespace engine::asset

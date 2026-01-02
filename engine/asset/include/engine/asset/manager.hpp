@@ -40,10 +40,21 @@ public:
     std::shared_ptr<AudioAsset> load_audio(const std::string& path);
     std::shared_ptr<SceneAsset> load_scene(const std::string& path);
     std::shared_ptr<PrefabAsset> load_prefab(const std::string& path);
+    // Load a single animation from a model file
+    // Path format: "model.gltf#animation0" or "model.gltf#AnimationName"
+    // The #suffix specifies which animation to load:
+    //   - #animation0, #animation1, etc. for index-based access
+    //   - #AnimationName for name-based access
+    // If no #suffix is provided, returns the first animation in the file
     std::shared_ptr<AnimationAsset> load_animation(const std::string& path);
+
+    // Load skeleton/armature from a model file (for skeletal animation)
     std::shared_ptr<SkeletonAsset> load_skeleton(const std::string& path);
 
-    // Load all animations from a file (glTF/FBX may contain multiple)
+    // Load all animations from a model file at once
+    // Use this when you need multiple animations from the same file
+    // More efficient than calling load_animation() multiple times
+    // Returns empty vector if file has no animations
     std::vector<std::shared_ptr<AnimationAsset>> load_animations(const std::string& path);
 
     // Asynchronous loading
@@ -115,6 +126,9 @@ private:
     std::unordered_map<std::string, std::shared_ptr<PrefabAsset>> m_prefabs;
     std::unordered_map<std::string, std::shared_ptr<AnimationAsset>> m_animations;
     std::unordered_map<std::string, std::shared_ptr<SkeletonAsset>> m_skeletons;
+
+    // Animation collection cache (for load_animations which returns multiple)
+    std::unordered_map<std::string, std::vector<std::shared_ptr<AnimationAsset>>> m_animation_sets;
     
     // Orphans (replaced assets that might still be in use)
     std::vector<std::shared_ptr<Asset>> m_orphans;
