@@ -17,6 +17,7 @@ target_sources(engine_core
         src/profiler.cpp
         src/event_dispatcher.cpp
         src/allocators.cpp
+        src/uuid.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -37,6 +38,9 @@ target_sources(engine_core
             include/engine/core/events.hpp
             include/engine/core/event_dispatcher.hpp
             include/engine/core/allocators.hpp
+            include/engine/core/string_hash.hpp
+            include/engine/core/uuid.hpp
+            include/engine/core/asset_handle.hpp
 )
 
 target_include_directories(engine_core

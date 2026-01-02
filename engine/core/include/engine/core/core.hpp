@@ -13,3 +13,7 @@
 #include <engine/core/application.hpp>
 #include <engine/core/events.hpp>
 #include <engine/core/event_dispatcher.hpp>
+#include <engine/core/string_hash.hpp>
+#include <engine/core/uuid.hpp>
+#include <engine/core/asset_handle.hpp>
+
