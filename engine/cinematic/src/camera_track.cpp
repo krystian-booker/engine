@@ -53,6 +53,25 @@ void CameraTrack::evaluate(float time, scene::World& world) {
         return;
     }
 
+    // Store world reference for reset
+    m_world = &world;
+
+    // Capture initial state on first evaluation
+    if (!m_has_initial_state && m_target_camera != scene::NullEntity) {
+        if (world.has<scene::LocalTransform>(m_target_camera)) {
+            const auto& t = world.get<scene::LocalTransform>(m_target_camera);
+            m_initial_state.position = t.position;
+            m_initial_state.rotation = t.rotation;
+        }
+        if (world.has<scene::Camera>(m_target_camera)) {
+            const auto& c = world.get<scene::Camera>(m_target_camera);
+            m_initial_state.fov = c.fov;
+            m_initial_state.near_plane = c.near_plane;
+            m_initial_state.far_plane = c.far_plane;
+        }
+        m_has_initial_state = true;
+    }
+
     // Sample camera values at time
     CameraKeyframe sampled = sample(time);
 
@@ -78,9 +97,20 @@ void CameraTrack::evaluate(float time, scene::World& world) {
 }
 
 void CameraTrack::reset() {
-    if (m_has_initial_state && m_target_camera != scene::NullEntity) {
-        // Restore initial camera state
+    if (m_has_initial_state && m_target_camera != scene::NullEntity && m_world) {
+        if (m_world->has<scene::LocalTransform>(m_target_camera)) {
+            auto& transform = m_world->get<scene::LocalTransform>(m_target_camera);
+            transform.position = m_initial_state.position;
+            transform.rotation = m_initial_state.rotation;
+        }
+        if (m_world->has<scene::Camera>(m_target_camera)) {
+            auto& camera = m_world->get<scene::Camera>(m_target_camera);
+            camera.fov = m_initial_state.fov;
+            camera.near_plane = m_initial_state.near_plane;
+            camera.far_plane = m_initial_state.far_plane;
+        }
     }
+    m_has_initial_state = false;
 }
 
 CameraKeyframe CameraTrack::sample(float time) const {
@@ -90,12 +120,21 @@ CameraKeyframe CameraTrack::sample(float time) const {
 
     // Before first keyframe
     if (time <= m_keyframes.front().time) {
-        return m_keyframes.front();
+        CameraKeyframe result = m_keyframes.front();
+        // Apply rail transform if needed
+        if (m_rail_type == CameraRailType::Orbit) {
+            result.position = compute_orbit_position(result.position);
+        }
+        return result;
     }
 
     // After last keyframe
     if (time >= m_keyframes.back().time) {
-        return m_keyframes.back();
+        CameraKeyframe result = m_keyframes.back();
+        if (m_rail_type == CameraRailType::Orbit) {
+            result.position = compute_orbit_position(result.position);
+        }
+        return result;
     }
 
     // Find surrounding keyframes
@@ -113,6 +152,38 @@ CameraKeyframe CameraTrack::sample(float time) const {
     // Interpolate based on mode
     CameraKeyframe result;
     result.time = time;
+
+    // Handle Spline rail type - use Catmull-Rom across all keyframes
+    if (m_rail_type == CameraRailType::Spline && m_keyframes.size() >= 2) {
+        // Calculate global t based on overall duration
+        float duration = m_keyframes.back().time - m_keyframes.front().time;
+        float global_t = (time - m_keyframes.front().time) / duration;
+
+        // Find the segment we're in based on global_t
+        float segment_t = global_t * (m_keyframes.size() - 1);
+        size_t seg_index = static_cast<size_t>(segment_t);
+        seg_index = std::min(seg_index, m_keyframes.size() - 2);
+        float local_t = segment_t - seg_index;
+
+        // Get 4 keyframes for Catmull-Rom
+        size_t i0 = seg_index > 0 ? seg_index - 1 : 0;
+        size_t i1 = seg_index;
+        size_t i2 = seg_index + 1;
+        size_t i3 = std::min(seg_index + 2, m_keyframes.size() - 1);
+
+        result.position = evaluate_catmull_rom(
+            m_keyframes[i0].position,
+            m_keyframes[i1].position,
+            m_keyframes[i2].position,
+            m_keyframes[i3].position,
+            local_t
+        );
+        result.rotation = interpolate_linear(m_keyframes[i1].rotation, m_keyframes[i2].rotation, local_t);
+        result.fov = interpolate_linear(m_keyframes[i1].fov, m_keyframes[i2].fov, local_t);
+        result.near_plane = interpolate_linear(m_keyframes[i1].near_plane, m_keyframes[i2].near_plane, local_t);
+        result.far_plane = interpolate_linear(m_keyframes[i1].far_plane, m_keyframes[i2].far_plane, local_t);
+        return result;
+    }
 
     switch (k0.interpolation) {
         case InterpolationMode::Step:
@@ -155,6 +226,12 @@ CameraKeyframe CameraTrack::sample(float time) const {
             result.fov = interpolate_linear(k0.fov, k1.fov, t);
             break;
         }
+    }
+
+    // Apply Orbit rail transform if active
+    // For Orbit: keyframe position.x = angle (radians), position.y = height, position.z = radius
+    if (m_rail_type == CameraRailType::Orbit) {
+        result.position = compute_orbit_position(result.position);
     }
 
     return result;
@@ -201,6 +278,20 @@ Vec3 CameraTrack::apply_shake(const Vec3& position, float time) const {
     return result;
 }
 
+Vec3 CameraTrack::compute_orbit_position(const Vec3& orbit_params) const {
+    // orbit_params: x = angle (radians), y = height offset, z = radius
+    float angle = orbit_params.x;
+    float height = orbit_params.y;
+    float radius = orbit_params.z;
+
+    Vec3 position;
+    position.x = m_orbit_center.x + radius * std::cos(angle);
+    position.y = m_orbit_center.y + height;
+    position.z = m_orbit_center.z + radius * std::sin(angle);
+
+    return position;
+}
+
 void CameraTrack::serialize(nlohmann::json& j) const {
     j["keyframes"] = nlohmann::json::array();
     for (const auto& kf : m_keyframes) {
@@ -231,6 +322,7 @@ void CameraTrack::serialize(nlohmann::json& j) const {
     }
 
     j["rail_type"] = static_cast<int>(m_rail_type);
+    j["orbit_center"] = {m_orbit_center.x, m_orbit_center.y, m_orbit_center.z};
 }
 
 void CameraTrack::deserialize(const nlohmann::json& j) {
@@ -277,6 +369,11 @@ void CameraTrack::deserialize(const nlohmann::json& j) {
     }
 
     m_rail_type = static_cast<CameraRailType>(j.value("rail_type", 0));
+
+    if (j.contains("orbit_center")) {
+        auto& center = j["orbit_center"];
+        m_orbit_center = Vec3{center[0], center[1], center[2]};
+    }
 }
 
 } // namespace engine::cinematic

@@ -4,6 +4,7 @@
 #include <engine/audio/audio_engine.hpp>
 #include <cassert>
 #include <string>
+#include <unordered_map>
 
 namespace engine::cinematic {
 
@@ -101,8 +102,8 @@ private:
     std::vector<bool> m_event_triggered;
     float m_last_time = -1.0f;
 
-    // Active sound handles for cleanup
-    std::vector<audio::SoundHandle> m_active_sounds;
+    // Active sound handles for cleanup (path -> handle)
+    std::unordered_map<std::string, audio::SoundHandle> m_active_sounds;
 };
 
 // Music track (specialized for background music with crossfading)

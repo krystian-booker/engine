@@ -118,6 +118,7 @@ private:
     std::vector<Keyframe<Vec3>> m_scale_keys;
 
     scene::Entity m_target_entity = scene::NullEntity;
+    scene::World* m_world = nullptr;
 
     // Initial state
     Vec3 m_initial_position{0.0f};

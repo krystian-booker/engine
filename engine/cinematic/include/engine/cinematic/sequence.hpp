@@ -5,6 +5,8 @@
 #include <engine/cinematic/animation_track.hpp>
 #include <engine/cinematic/audio_track.hpp>
 #include <engine/cinematic/event_track.hpp>
+#include <engine/cinematic/light_track.hpp>
+#include <engine/cinematic/postprocess_track.hpp>
 #include <memory>
 #include <vector>
 #include <string>
@@ -53,6 +55,8 @@ public:
     MusicTrack* add_music_track(const std::string& name);
     EventTrack* add_event_track(const std::string& name);
     SubtitleTrack* add_subtitle_track(const std::string& name);
+    LightTrack* add_light_track(const std::string& name);
+    PostProcessTrack* add_postprocess_track(const std::string& name);
 
     // Generic track access
     Track* get_track(const std::string& name);

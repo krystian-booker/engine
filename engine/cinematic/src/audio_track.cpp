@@ -110,7 +110,7 @@ void AudioTrack::evaluate(float time, scene::World& /*world*/) {
 
     // Update volume envelope
     float current_volume = sample_volume(time);
-    for (const auto& handle : m_active_sounds) {
+    for (const auto& [path, handle] : m_active_sounds) {
         if (handle.valid()) {
             m_audio_engine->set_volume(handle, current_volume);
         }
@@ -152,7 +152,7 @@ void AudioTrack::process_event(const AudioEvent& event, float /*current_time*/) 
                 event.loop
             );
             if (handle.valid()) {
-                m_active_sounds.push_back(handle);
+                m_active_sounds[event.sound_path] = handle;
                 if (event.pitch != 1.0f) {
                     m_audio_engine->set_pitch(handle, event.pitch);
                 }
@@ -160,23 +160,24 @@ void AudioTrack::process_event(const AudioEvent& event, float /*current_time*/) 
             break;
         }
 
-        case AudioEventType::Stop:
-            // Stop sounds matching the path
-            for (auto it = m_active_sounds.begin(); it != m_active_sounds.end();) {
-                // Would need to track which handle is for which sound
-                m_audio_engine->stop(*it);
-                it = m_active_sounds.erase(it);
+        case AudioEventType::Stop: {
+            // Stop specific sound by path
+            auto it = m_active_sounds.find(event.sound_path);
+            if (it != m_active_sounds.end()) {
+                m_audio_engine->stop(it->second);
+                m_active_sounds.erase(it);
             }
             break;
+        }
 
         case AudioEventType::Pause:
-            for (const auto& handle : m_active_sounds) {
+            for (const auto& [path, handle] : m_active_sounds) {
                 m_audio_engine->pause(handle);
             }
             break;
 
         case AudioEventType::Resume:
-            for (const auto& handle : m_active_sounds) {
+            for (const auto& [path, handle] : m_active_sounds) {
                 m_audio_engine->resume(handle);
             }
             break;
@@ -188,26 +189,26 @@ void AudioTrack::process_event(const AudioEvent& event, float /*current_time*/) 
                 event.loop
             );
             if (handle.valid()) {
-                m_active_sounds.push_back(handle);
+                m_active_sounds[event.sound_path] = handle;
                 m_audio_engine->fade_in(handle, event.fade_duration);
             }
             break;
         }
 
         case AudioEventType::FadeOut:
-            for (const auto& handle : m_active_sounds) {
+            for (const auto& [path, handle] : m_active_sounds) {
                 m_audio_engine->fade_out(handle, event.fade_duration);
             }
             break;
 
         case AudioEventType::SetVolume:
-            for (const auto& handle : m_active_sounds) {
+            for (const auto& [path, handle] : m_active_sounds) {
                 m_audio_engine->set_volume(handle, event.volume);
             }
             break;
 
         case AudioEventType::SetPitch:
-            for (const auto& handle : m_active_sounds) {
+            for (const auto& [path, handle] : m_active_sounds) {
                 m_audio_engine->set_pitch(handle, event.pitch);
             }
             break;
@@ -216,7 +217,7 @@ void AudioTrack::process_event(const AudioEvent& event, float /*current_time*/) 
 
 void AudioTrack::stop_all_sounds() {
     if (m_audio_engine) {
-        for (const auto& handle : m_active_sounds) {
+        for (const auto& [path, handle] : m_active_sounds) {
             m_audio_engine->stop(handle);
         }
     }

@@ -74,6 +74,10 @@ public:
     void set_rail_type(CameraRailType type) { m_rail_type = type; }
     CameraRailType get_rail_type() const { return m_rail_type; }
 
+    // Orbit rail settings
+    void set_orbit_center(const Vec3& center) { m_orbit_center = center; }
+    const Vec3& get_orbit_center() const { return m_orbit_center; }
+
     // Camera shake
     void add_shake(float start_time, const CameraShake& shake);
 
@@ -93,6 +97,7 @@ private:
     void sort_keyframes();
     size_t find_keyframe_index(float time) const;
     Vec3 apply_shake(const Vec3& position, float time) const;
+    Vec3 compute_orbit_position(const Vec3& orbit_params) const;
 
     std::vector<CameraKeyframe> m_keyframes;
     std::vector<std::pair<float, CameraShake>> m_shakes;
@@ -100,6 +105,8 @@ private:
     scene::Entity m_target_camera = scene::NullEntity;
     scene::Entity m_look_at_target = scene::NullEntity;
     CameraRailType m_rail_type = CameraRailType::None;
+    Vec3 m_orbit_center{0.0f};
+    scene::World* m_world = nullptr;
 
     // Initial state for reset
     CameraKeyframe m_initial_state;

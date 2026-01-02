@@ -7,6 +7,8 @@
 #include <engine/cinematic/animation_track.hpp>
 #include <engine/cinematic/audio_track.hpp>
 #include <engine/cinematic/event_track.hpp>
+#include <engine/cinematic/light_track.hpp>
+#include <engine/cinematic/postprocess_track.hpp>
 #include <engine/cinematic/sequence.hpp>
 #include <engine/cinematic/player.hpp>
 

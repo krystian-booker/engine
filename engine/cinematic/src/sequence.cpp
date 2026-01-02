@@ -80,6 +80,22 @@ SubtitleTrack* Sequence::add_subtitle_track(const std::string& name) {
     return ptr;
 }
 
+LightTrack* Sequence::add_light_track(const std::string& name) {
+    auto track = std::make_unique<LightTrack>(name);
+    LightTrack* ptr = track.get();
+    m_track_lookup[name] = ptr;
+    m_tracks.push_back(std::move(track));
+    return ptr;
+}
+
+PostProcessTrack* Sequence::add_postprocess_track(const std::string& name) {
+    auto track = std::make_unique<PostProcessTrack>(name);
+    PostProcessTrack* ptr = track.get();
+    m_track_lookup[name] = ptr;
+    m_tracks.push_back(std::move(track));
+    return ptr;
+}
+
 Track* Sequence::get_track(const std::string& name) {
     auto it = m_track_lookup.find(name);
     return it != m_track_lookup.end() ? it->second : nullptr;
@@ -283,6 +299,12 @@ bool Sequence::load(const std::string& path) {
                         break;
                     case TrackType::Event:
                         track = add_event_track(name);
+                        break;
+                    case TrackType::Light:
+                        track = add_light_track(name);
+                        break;
+                    case TrackType::PostProcess:
+                        track = add_postprocess_track(name);
                         break;
                     default:
                         break;

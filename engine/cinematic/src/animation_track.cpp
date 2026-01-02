@@ -176,6 +176,9 @@ void TransformTrack::evaluate(float time, scene::World& world) {
         return;
     }
 
+    // Store world reference for reset
+    m_world = &world;
+
     // Store initial state on first evaluation
     if (!m_has_initial_state && world.has<scene::LocalTransform>(m_target_entity)) {
         const auto& t = world.get<scene::LocalTransform>(m_target_entity);
@@ -199,9 +202,15 @@ void TransformTrack::evaluate(float time, scene::World& world) {
 }
 
 void TransformTrack::reset() {
-    if (m_has_initial_state && m_target_entity != scene::NullEntity) {
-        // Restore initial transform
+    if (m_has_initial_state && m_target_entity != scene::NullEntity && m_world) {
+        if (m_world->has<scene::LocalTransform>(m_target_entity)) {
+            auto& transform = m_world->get<scene::LocalTransform>(m_target_entity);
+            transform.position = m_initial_position;
+            transform.rotation = m_initial_rotation;
+            transform.scale = m_initial_scale;
+        }
     }
+    m_has_initial_state = false;
 }
 
 template<typename T>
