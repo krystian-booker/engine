@@ -6,6 +6,14 @@ namespace engine::audio {
 
 float calculate_attenuation(float distance, float min_dist, float max_dist,
                            AttenuationModel model, float rolloff) {
+    // Guard against invalid distance ranges
+    if (max_dist <= min_dist) {
+        return 1.0f;
+    }
+
+    // Ensure min_dist is positive to avoid division by zero in ratio calculations
+    min_dist = std::max(min_dist, 0.001f);
+
     if (distance <= min_dist) {
         return 1.0f;
     }
@@ -36,10 +44,6 @@ float calculate_attenuation(float distance, float min_dist, float max_dist,
             return std::pow(10.0f, db / 20.0f);
         }
 
-        case AttenuationModel::Custom:
-            // Would use a user-provided curve
-            return 1.0f - normalized_dist;
-
         default:
             return 1.0f;
     }
@@ -57,6 +61,11 @@ float calculate_cone_attenuation(const Vec3& source_forward,
 
     float half_inner = inner_angle * 0.5f;
     float half_outer = outer_angle * 0.5f;
+
+    // Guard against degenerate cone (inner >= outer)
+    if (half_outer <= half_inner) {
+        return 1.0f;
+    }
 
     if (angle_degrees <= half_inner) {
         // Inside inner cone - full volume

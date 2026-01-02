@@ -13,8 +13,7 @@ enum class AttenuationModel : uint8_t {
     None,           // No attenuation
     Linear,         // Linear falloff
     InverseSquare,  // 1/d^2 (physically accurate)
-    Logarithmic,    // Log-based (sounds natural)
-    Custom          // User-defined curve
+    Logarithmic     // Log-based (sounds natural)
 };
 
 // 3D audio source component

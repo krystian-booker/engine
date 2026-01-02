@@ -257,6 +257,9 @@ void AudioSystem::update_reverb_zones(World& world, double /*dt*/) {
             float blend;
             if (distance <= zone.min_distance) {
                 blend = 1.0f;  // Full reverb
+            } else if (zone.max_distance <= zone.min_distance) {
+                // Guard against invalid distance range
+                blend = 1.0f;
             } else {
                 blend = 1.0f - (distance - zone.min_distance) / (zone.max_distance - zone.min_distance);
             }

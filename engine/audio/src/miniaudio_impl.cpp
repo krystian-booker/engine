@@ -890,8 +890,7 @@ void set_reverb_params_impl(AudioEngine::Impl* impl, const AudioEngine::ReverbPa
     verblib_set_width(&impl->reverb_node.reverb, params.width);
     verblib_set_wet(&impl->reverb_node.reverb, params.wet_volume);
     verblib_set_dry(&impl->reverb_node.reverb, params.dry_volume);
-    verblib_set_dry(&impl->reverb_node.reverb, params.dry_volume);
-    // mode is not supported in standard miniaudio reverb, it is a basic verbed.
+    // mode is not supported in standard miniaudio reverb, it is a basic verblib.
 }
 
 ma_attenuation_model map_attenuation_model(AttenuationModel model) {

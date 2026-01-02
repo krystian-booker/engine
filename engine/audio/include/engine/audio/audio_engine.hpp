@@ -138,7 +138,6 @@ public:
     friend void pause_all_impl(Impl*);
     friend void resume_all_impl(Impl*);
     friend void stop_all_impl(Impl*);
-    friend void stop_all_impl(Impl*);
     friend uint32_t get_playing_sound_count_impl(Impl*);
     friend void set_sound_attenuation_model_impl(Impl*, SoundHandle, AttenuationModel);
     friend void set_sound_rolloff_impl(Impl*, SoundHandle, float);
