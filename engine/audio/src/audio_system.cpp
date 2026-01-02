@@ -297,15 +297,16 @@ void AudioSystem::update_reverb_zones(World& world, double /*dt*/) {
 }
 
 void AudioSystem::register_systems(Scheduler& scheduler) {
-    // PreUpdate: Update listener position (before other audio processing)
-    scheduler.add(Phase::PreUpdate, update_listener, "audio_listener", 0);
-
-    // Update: Process audio sources and triggers
-    scheduler.add(Phase::Update, update_sources, "audio_sources", 0);
-    scheduler.add(Phase::Update, process_triggers, "audio_triggers", 1);
-
-    // PostUpdate: Update reverb zones
-    scheduler.add(Phase::PostUpdate, update_reverb_zones, "audio_reverb", 0);
+    // NOTE: Engine now auto-registers audio systems via Application::register_engine_systems().
+    // This method is kept for backward compatibility with custom schedulers but should not
+    // be called when using the standard Application class.
+    //
+    // All audio systems now run in PostUpdate phase, after transform_system (priority 10),
+    // ensuring WorldTransform data is fresh for accurate 3D audio positioning.
+    scheduler.add(Phase::PostUpdate, update_listener, "audio_listener", 5);
+    scheduler.add(Phase::PostUpdate, update_sources, "audio_sources", 4);
+    scheduler.add(Phase::PostUpdate, process_triggers, "audio_triggers", 3);
+    scheduler.add(Phase::PostUpdate, update_reverb_zones, "audio_reverb", 2);
 }
 
 } // namespace engine::audio

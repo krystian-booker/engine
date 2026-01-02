@@ -23,26 +23,30 @@ public:
     // Shutdown the audio system
     void shutdown();
 
-    // System functions that can be registered with Scheduler
-    // These process entities with audio components each frame
+    // System functions registered with Scheduler by Application::register_engine_systems()
+    // All audio systems run in PostUpdate phase, after transform_system, to ensure
+    // WorldTransform data is fresh for accurate 3D audio positioning.
 
-    // Update the audio listener position (runs in PreUpdate)
+    // Update the audio listener position (PostUpdate, priority 5)
     // Finds the highest-priority active AudioListener and updates the AudioEngine
     static void update_listener(World& world, double dt);
 
-    // Update audio sources (runs in Update)
+    // Update audio sources (PostUpdate, priority 4)
     // Syncs AudioSource component state with actual audio playback
     static void update_sources(World& world, double dt);
 
-    // Process audio triggers (runs in Update)
+    // Process audio triggers (PostUpdate, priority 3)
     // Plays sounds when entities enter AudioTrigger zones
     static void process_triggers(World& world, double dt);
 
-    // Update reverb zones (runs in PostUpdate)
+    // Update reverb zones (PostUpdate, priority 2)
     // Applies reverb effects based on listener proximity to ReverbZone entities
     static void update_reverb_zones(World& world, double dt);
 
     // Register all audio systems with a Scheduler
+    // DEPRECATED: Audio systems are now auto-registered by Application::register_engine_systems()
+    // This method is kept for backward compatibility with custom schedulers.
+    [[deprecated("Audio systems are now auto-registered by Application")]]
     static void register_systems(Scheduler& scheduler);
 
 private:

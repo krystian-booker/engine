@@ -105,6 +105,9 @@ private:
     std::filesystem::path m_game_dll_path;
     bool m_hot_reload_enabled = true;
     bool m_hot_reload_override = false;  // True if set via command line
+
+    // Register core engine systems (transform, audio, etc.)
+    void register_engine_systems();
 };
 
 } // namespace engine::core

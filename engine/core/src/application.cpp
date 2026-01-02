@@ -6,8 +6,10 @@
 #include <engine/core/events.hpp>
 #include <engine/scene/world.hpp>
 #include <engine/scene/systems.hpp>
+#include <engine/scene/transform.hpp>
 #include <engine/render/renderer.hpp>
 #include <engine/plugin/plugin.hpp>
+#include <engine/audio/audio_system.hpp>
 
 #include <cstring>
 
@@ -60,6 +62,9 @@ int Application::run(int argc, char** argv) {
     m_engine_scheduler = std::make_unique<scene::Scheduler>();
     m_system_registry = std::make_unique<plugin::SystemRegistry>();
     m_system_registry->set_engine_scheduler(m_engine_scheduler.get());
+
+    // Register core engine systems
+    register_engine_systems();
 
     // Initialize renderer
     m_renderer = render::create_bgfx_renderer();
@@ -393,5 +398,21 @@ bool Application::poll_events() {
     return false;
 }
 #endif
+
+void Application::register_engine_systems() {
+    if (!m_engine_scheduler) return;
+
+    // Transform system in FixedUpdate for physics (priority 10 = runs first)
+    m_engine_scheduler->add(scene::Phase::FixedUpdate, scene::transform_system, "transform_fixed", 10);
+
+    // Transform system in PostUpdate for audio/render (priority 10 = runs first)
+    m_engine_scheduler->add(scene::Phase::PostUpdate, scene::transform_system, "transform", 10);
+
+    // Audio systems in PostUpdate, after transform (lower priority = runs later)
+    m_engine_scheduler->add(scene::Phase::PostUpdate, audio::AudioSystem::update_listener, "audio_listener", 5);
+    m_engine_scheduler->add(scene::Phase::PostUpdate, audio::AudioSystem::update_sources, "audio_sources", 4);
+    m_engine_scheduler->add(scene::Phase::PostUpdate, audio::AudioSystem::process_triggers, "audio_triggers", 3);
+    m_engine_scheduler->add(scene::Phase::PostUpdate, audio::AudioSystem::update_reverb_zones, "audio_reverb", 2);
+}
 
 } // namespace engine::core
