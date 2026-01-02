@@ -32,7 +32,14 @@ include(CompilerFlags)
 # Options
 option(ENGINE_BUILD_EDITOR "Build the Qt6 editor application" ON)
 option(ENGINE_BUILD_SAMPLES "Build sample applications" ON)
+option(ENGINE_BUILD_TESTS "Build unit tests" OFF)
 option(ENGINE_INSTALL "Generate install targets (disable for dev builds)" OFF)
+
+# Testing
+if(ENGINE_BUILD_TESTS)
+    enable_testing()
+    include(CTest)
+endif()
 
 # Engine libraries
 add_subdirectory(engine)

@@ -321,3 +321,17 @@ target_compile_definitions(sol2 INTERFACE
     SOL_ALL_SAFETIES_ON=1
     SOL_USING_CXX_LUA=1
 )
+
+# ============================================================================
+# Catch2 (unit testing framework)
+# ============================================================================
+if(ENGINE_BUILD_TESTS)
+    FetchContent_Declare(
+        Catch2
+        GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+        GIT_TAG v3.5.2
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(Catch2)
+    list(APPEND CMAKE_MODULE_PATH ${Catch2_SOURCE_DIR}/extras)
+endif()
