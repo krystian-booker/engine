@@ -155,17 +155,27 @@ std::shared_ptr<MeshAsset> ObjImporter::import_mesh_with_materials(
 
                     // Normal
                     if (idx.normal_index >= 0 && !attrib.normals.empty()) {
-                        vert.normal.x = attrib.normals[3 * idx.normal_index + 0];
-                        vert.normal.y = attrib.normals[3 * idx.normal_index + 1];
-                        vert.normal.z = attrib.normals[3 * idx.normal_index + 2];
+                        size_t ni = static_cast<size_t>(idx.normal_index);
+                        if (ni * 3 + 2 < attrib.normals.size()) {
+                            vert.normal.x = attrib.normals[3 * ni + 0];
+                            vert.normal.y = attrib.normals[3 * ni + 1];
+                            vert.normal.z = attrib.normals[3 * ni + 2];
+                        } else {
+                            vert.normal = Vec3{0.0f, 1.0f, 0.0f};
+                        }
                     } else {
                         vert.normal = Vec3{0.0f, 1.0f, 0.0f};
                     }
 
                     // Texcoord
                     if (idx.texcoord_index >= 0 && !attrib.texcoords.empty()) {
-                        vert.texcoord.x = attrib.texcoords[2 * idx.texcoord_index + 0];
-                        vert.texcoord.y = 1.0f - attrib.texcoords[2 * idx.texcoord_index + 1]; // Flip Y
+                        size_t ti = static_cast<size_t>(idx.texcoord_index);
+                        if (ti * 2 + 1 < attrib.texcoords.size()) {
+                            vert.texcoord.x = attrib.texcoords[2 * ti + 0];
+                            vert.texcoord.y = 1.0f - attrib.texcoords[2 * ti + 1]; // Flip Y
+                        } else {
+                            vert.texcoord = Vec2{0.0f, 0.0f};
+                        }
                     } else {
                         vert.texcoord = Vec2{0.0f, 0.0f};
                     }

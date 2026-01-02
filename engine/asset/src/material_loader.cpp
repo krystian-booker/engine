@@ -7,6 +7,11 @@
 // Note: CGLTF_IMPLEMENTATION is defined in gltf_importer.cpp
 #include <cgltf.h>
 
+// stb_image for decoding embedded textures (implementation is in manager.cpp)
+#include <stb_image.h>
+
+#include <cstring>
+
 namespace engine::asset {
 
 using namespace engine::core;
@@ -187,19 +192,119 @@ std::shared_ptr<MaterialAsset> MaterialLoader::load_from_gltf(
     MaterialData mat_data;
     std::vector<std::pair<std::string, TextureHandle>> texture_bindings;
 
-    // Helper to load texture
+    // Helper to load texture (supports external files, embedded buffers, and data URIs)
     auto load_gltf_texture = [&](const cgltf_texture_view& tex_view, const std::string& slot_name) {
-        if (tex_view.texture && tex_view.texture->image) {
-            std::string tex_path = base_dir + tex_view.texture->image->uri;
+        if (!tex_view.texture || !tex_view.texture->image) return;
+
+        const cgltf_image* image = tex_view.texture->image;
+        TextureHandle tex_handle;
+
+        // Case 1: Embedded in binary buffer (GLB or buffer-referenced)
+        if (image->buffer_view) {
+            const uint8_t* buffer_data = static_cast<const uint8_t*>(image->buffer_view->buffer->data);
+            const uint8_t* image_data = buffer_data + image->buffer_view->offset;
+            size_t image_size = image->buffer_view->size;
+
+            int width, height, channels;
+            unsigned char* pixels = stbi_load_from_memory(
+                image_data,
+                static_cast<int>(image_size),
+                &width, &height, &channels, 4
+            );
+
+            if (pixels) {
+                TextureData tex_data;
+                tex_data.width = static_cast<uint32_t>(width);
+                tex_data.height = static_cast<uint32_t>(height);
+                tex_data.format = TextureFormat::RGBA8;
+                tex_data.pixels.assign(pixels, pixels + width * height * 4);
+                stbi_image_free(pixels);
+
+                tex_handle = renderer->create_texture(tex_data);
+                log(LogLevel::Debug, ("Loaded embedded texture: " + slot_name).c_str());
+            }
+        }
+        // Case 2: Base64 data URI
+        else if (image->uri && std::strncmp(image->uri, "data:", 5) == 0) {
+            // Find the base64 data after "data:image/xxx;base64,"
+            const char* base64_start = std::strstr(image->uri, ";base64,");
+            if (base64_start) {
+                base64_start += 8; // Skip ";base64,"
+
+                // Decode base64
+                size_t encoded_len = std::strlen(base64_start);
+                std::vector<uint8_t> decoded;
+                decoded.reserve((encoded_len * 3) / 4);
+
+                static const unsigned char base64_table[256] = {
+                    255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,
+                    255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,
+                    255,255,255,255,255,255,255,255,255,255,255, 62,255,255,255, 63,
+                     52, 53, 54, 55, 56, 57, 58, 59, 60, 61,255,255,255,  0,255,255,
+                    255,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,
+                     15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,255,255,255,255,255,
+                    255, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
+                     41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51,255,255,255,255,255,
+                    255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,
+                    255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,
+                    255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,
+                    255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,
+                    255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,
+                    255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,
+                    255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,
+                    255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255
+                };
+
+                uint32_t accum = 0;
+                int bits = 0;
+                for (size_t i = 0; i < encoded_len; i++) {
+                    unsigned char c = static_cast<unsigned char>(base64_start[i]);
+                    if (c == '=' || base64_table[c] == 255) continue;
+                    accum = (accum << 6) | base64_table[c];
+                    bits += 6;
+                    if (bits >= 8) {
+                        bits -= 8;
+                        decoded.push_back(static_cast<uint8_t>((accum >> bits) & 0xFF));
+                    }
+                }
+
+                int width, height, channels;
+                unsigned char* pixels = stbi_load_from_memory(
+                    decoded.data(),
+                    static_cast<int>(decoded.size()),
+                    &width, &height, &channels, 4
+                );
+
+                if (pixels) {
+                    TextureData tex_data;
+                    tex_data.width = static_cast<uint32_t>(width);
+                    tex_data.height = static_cast<uint32_t>(height);
+                    tex_data.format = TextureFormat::RGBA8;
+                    tex_data.pixels.assign(pixels, pixels + width * height * 4);
+                    stbi_image_free(pixels);
+
+                    tex_handle = renderer->create_texture(tex_data);
+                    log(LogLevel::Debug, ("Loaded base64 texture: " + slot_name).c_str());
+                }
+            }
+        }
+        // Case 3: External file URI (existing behavior)
+        else if (image->uri) {
+            std::string tex_path = base_dir + image->uri;
             auto texture = asset_manager.load_texture(tex_path);
             if (texture && texture->handle.valid()) {
-                texture_bindings.emplace_back(slot_name, texture->handle);
-
-                MaterialProperty prop;
-                prop.type = MaterialPropertyType::Texture;
-                prop.value.texture = texture->handle;
-                mat_data.properties.emplace_back(slot_name, prop);
+                tex_handle = texture->handle;
             }
+        }
+
+        // Add to material if texture was loaded successfully
+        if (tex_handle.valid()) {
+            texture_bindings.emplace_back(slot_name, tex_handle);
+
+            MaterialProperty prop;
+            prop.type = MaterialPropertyType::Texture;
+            prop.value.texture = tex_handle;
+            mat_data.properties.emplace_back(slot_name, prop);
         }
     };
 

@@ -7,6 +7,8 @@
 #include <string>
 #include <future>
 #include <functional>
+#include <shared_mutex>
+#include <condition_variable>
 
 namespace engine::asset {
 
@@ -34,10 +36,17 @@ public:
     std::shared_ptr<ShaderAsset> load_shader(const std::string& path);
     std::shared_ptr<MaterialAsset> load_material(const std::string& path);
     std::shared_ptr<AudioAsset> load_audio(const std::string& path);
+    std::shared_ptr<SceneAsset> load_scene(const std::string& path);
+    std::shared_ptr<PrefabAsset> load_prefab(const std::string& path);
 
     // Asynchronous loading
     std::future<std::shared_ptr<MeshAsset>> load_mesh_async(const std::string& path);
     std::future<std::shared_ptr<TextureAsset>> load_texture_async(const std::string& path);
+    std::future<std::shared_ptr<ShaderAsset>> load_shader_async(const std::string& path);
+    std::future<std::shared_ptr<MaterialAsset>> load_material_async(const std::string& path);
+    std::future<std::shared_ptr<AudioAsset>> load_audio_async(const std::string& path);
+    std::future<std::shared_ptr<SceneAsset>> load_scene_async(const std::string& path);
+    std::future<std::shared_ptr<PrefabAsset>> load_prefab_async(const std::string& path);
 
     // Generic load by extension
     std::shared_ptr<Asset> load(const std::string& path);
@@ -70,6 +79,9 @@ private:
     std::shared_ptr<ShaderAsset> load_shader_internal(const std::string& path);
     std::shared_ptr<MaterialAsset> load_material_internal(const std::string& path);
     std::shared_ptr<AudioAsset> load_audio_internal(const std::string& path);
+    
+    // Resource cleanup
+    void destroy_asset(std::shared_ptr<Asset> asset);
 
     // File type detection
     static std::string get_extension(const std::string& path);
@@ -84,9 +96,18 @@ private:
     std::unordered_map<std::string, std::shared_ptr<ShaderAsset>> m_shaders;
     std::unordered_map<std::string, std::shared_ptr<MaterialAsset>> m_materials;
     std::unordered_map<std::string, std::shared_ptr<AudioAsset>> m_audio;
+    std::unordered_map<std::string, std::shared_ptr<SceneAsset>> m_scenes;
+    std::unordered_map<std::string, std::shared_ptr<PrefabAsset>> m_prefabs;
+    
+    // Orphans (replaced assets that might still be in use)
+    std::vector<std::shared_ptr<Asset>> m_orphans;
 
     // Loading status tracking
     std::unordered_map<std::string, AssetStatus> m_status;
+
+    // Thread safety
+    mutable std::shared_mutex m_mutex;
+    std::condition_variable_any m_load_cv;
 };
 
 // Global asset manager instance

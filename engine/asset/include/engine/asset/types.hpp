@@ -32,7 +32,9 @@ struct TextureAsset : Asset {
     uint32_t width = 0;
     uint32_t height = 0;
     uint32_t channels = 0;
+    uint32_t mip_levels = 1;
     bool has_alpha = false;
+    bool is_hdr = false;
 };
 
 // Shader asset

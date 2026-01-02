@@ -14,6 +14,10 @@ target_sources(engine_asset
         src/fbx_importer.cpp
         src/audio_loader.cpp
         src/material_loader.cpp
+        src/scene_loader.cpp
+        src/prefab_loader.cpp
+        src/dds_loader.cpp
+        src/ktx_loader.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -29,6 +33,10 @@ target_sources(engine_asset
             include/engine/asset/fbx_importer.hpp
             include/engine/asset/audio_loader.hpp
             include/engine/asset/material_loader.hpp
+            include/engine/asset/scene_loader.hpp
+            include/engine/asset/prefab_loader.hpp
+            include/engine/asset/dds_loader.hpp
+            include/engine/asset/ktx_loader.hpp
 )
 
 target_include_directories(engine_asset

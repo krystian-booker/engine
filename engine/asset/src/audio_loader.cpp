@@ -1,6 +1,7 @@
 #include <engine/asset/audio_loader.hpp>
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 
 // dr_libs implementations
 #define DR_WAV_IMPLEMENTATION
@@ -11,6 +12,9 @@
 
 #define DR_FLAC_IMPLEMENTATION
 #include <dr_flac.h>
+
+// stb_vorbis for OGG support
+#include <stb_vorbis.c>
 
 namespace engine::asset {
 
@@ -125,6 +129,37 @@ static bool load_flac(const std::string& path, std::vector<uint8_t>& out_data, A
     return true;
 }
 
+static bool load_ogg(const std::string& path, std::vector<uint8_t>& out_data, AudioFormat& out_format) {
+    int channels = 0;
+    int sample_rate = 0;
+    short* samples = nullptr;
+
+    int sample_count = stb_vorbis_decode_filename(
+        path.c_str(),
+        &channels,
+        &sample_rate,
+        &samples
+    );
+
+    if (sample_count < 0 || !samples) {
+        s_last_error = "Failed to decode OGG file: " + path;
+        return false;
+    }
+
+    out_format.sample_rate = static_cast<uint32_t>(sample_rate);
+    out_format.channels = static_cast<uint32_t>(channels);
+    out_format.bits_per_sample = 16;
+    out_format.total_frames = static_cast<uint64_t>(sample_count);
+
+    size_t byte_size = static_cast<size_t>(sample_count) * static_cast<size_t>(channels) * sizeof(int16_t);
+    out_data.resize(byte_size);
+    std::memcpy(out_data.data(), samples, byte_size);
+
+    free(samples);
+
+    return true;
+}
+
 bool AudioLoader::load(const std::string& path,
                        std::vector<uint8_t>& out_data,
                        AudioFormat& out_format) {
@@ -138,8 +173,7 @@ bool AudioLoader::load(const std::string& path,
     } else if (ext == ".flac") {
         return load_flac(path, out_data, out_format);
     } else if (ext == ".ogg") {
-        s_last_error = "OGG format not yet supported (consider using stb_vorbis)";
-        return false;
+        return load_ogg(path, out_data, out_format);
     }
 
     s_last_error = "Unsupported audio format: " + ext;

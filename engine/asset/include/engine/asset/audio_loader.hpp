@@ -15,7 +15,7 @@ struct AudioFormat {
 
 struct AudioLoader {
     // Parse and decode audio file to PCM samples (16-bit signed)
-    // Supports: .wav, .mp3, .flac
+    // Supports: .wav, .mp3, .flac, .ogg
     static bool load(
         const std::string& path,
         std::vector<uint8_t>& out_pcm_data,
