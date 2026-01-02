@@ -255,9 +255,9 @@ bool DDSLoader::load(const std::string& path, DDSData& out_data) {
         }
     }
 
-    // Validate remaining data size
+    // Validate remaining data size (check for underflow first)
     size_t header_size = static_cast<size_t>(ptr - file_data.data());
-    if (file_data.size() - header_size < total_size) {
+    if (header_size > file_data.size() || file_data.size() - header_size < total_size) {
         s_last_error = "Invalid DDS file: truncated data";
         log(LogLevel::Error, s_last_error.c_str());
         return false;

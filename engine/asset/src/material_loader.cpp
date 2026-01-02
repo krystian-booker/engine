@@ -200,7 +200,7 @@ std::shared_ptr<MaterialAsset> MaterialLoader::load_from_gltf(
         TextureHandle tex_handle;
 
         // Case 1: Embedded in binary buffer (GLB or buffer-referenced)
-        if (image->buffer_view) {
+        if (image->buffer_view && image->buffer_view->buffer && image->buffer_view->buffer->data) {
             const uint8_t* buffer_data = static_cast<const uint8_t*>(image->buffer_view->buffer->data);
             const uint8_t* image_data = buffer_data + image->buffer_view->offset;
             size_t image_size = image->buffer_view->size;

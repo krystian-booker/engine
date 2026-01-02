@@ -9,12 +9,14 @@
 #include <engine/asset/prefab_loader.hpp>
 #include <engine/asset/dds_loader.hpp>
 #include <engine/asset/ktx_loader.hpp>
+#include <engine/asset/shader_compiler.hpp>
 #include <engine/core/filesystem.hpp>
 #include <engine/core/log.hpp>
 #include <engine/core/job_system.hpp>
 #include <algorithm>
 #include <mutex>
 #include <cstring>
+#include <filesystem>
 
 // STB image implementation
 #define STB_IMAGE_IMPLEMENTATION
@@ -23,6 +25,19 @@
 namespace engine::asset {
 
 using namespace engine::core;
+
+// Helper to get file modification time
+static uint64_t get_file_modification_time(const std::string& path) {
+    try {
+        auto ftime = std::filesystem::last_write_time(path);
+        auto sctp = std::chrono::time_point_cast<std::chrono::seconds>(
+            ftime - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now()
+        );
+        return static_cast<uint64_t>(sctp.time_since_epoch().count());
+    } catch (...) {
+        return 0;
+    }
+}
 
 AssetManager::AssetManager() = default;
 AssetManager::~AssetManager() {
@@ -39,8 +54,11 @@ void AssetManager::init(render::IRenderer* renderer) {
 }
 
 void AssetManager::shutdown() {
+    // Signal that manager is shutting down (prevents hot reload callbacks from accessing invalid state)
+    *m_alive = false;
+
     unload_all();
-    
+
     std::unique_lock lock(m_mutex);
     m_renderer = nullptr;
 }
@@ -110,7 +128,9 @@ std::shared_ptr<MeshAsset> AssetManager::load_mesh(const std::string& path) {
             m_status[path] = AssetStatus::Loaded;
 
             if (m_hot_reload_enabled) {
-                HotReload::watch(path, [this](const std::string& p) {
+                auto alive = m_alive;  // Capture by value for safe lifetime checking
+                HotReload::watch(path, [this, alive](const std::string& p) {
+                    if (!*alive) return;  // Manager was destroyed
                     auto new_asset = load_mesh_internal(p);
                     if (new_asset) {
                         ReloadCallback cb;
@@ -161,7 +181,9 @@ std::shared_ptr<TextureAsset> AssetManager::load_texture(const std::string& path
             m_textures[path] = asset;
             m_status[path] = AssetStatus::Loaded;
             if (m_hot_reload_enabled) {
-                HotReload::watch(path, [this](const std::string& p) {
+                auto alive = m_alive;  // Capture by value for safe lifetime checking
+                HotReload::watch(path, [this, alive](const std::string& p) {
+                    if (!*alive) return;  // Manager was destroyed
                     auto new_asset = load_texture_internal(p);
                     if (new_asset) {
                         ReloadCallback cb;
@@ -212,7 +234,9 @@ std::shared_ptr<ShaderAsset> AssetManager::load_shader(const std::string& path) 
             m_status[path] = AssetStatus::Loaded;
             
             if (m_hot_reload_enabled) {
-                HotReload::watch(path, [this](const std::string& p) {
+                auto alive = m_alive;  // Capture by value for safe lifetime checking
+                HotReload::watch(path, [this, alive](const std::string& p) {
+                    if (!*alive) return;  // Manager was destroyed
                     auto new_asset = load_shader_internal(p);
                     if (new_asset) {
                         ReloadCallback cb;
@@ -262,7 +286,9 @@ std::shared_ptr<MaterialAsset> AssetManager::load_material(const std::string& pa
             m_materials[path] = asset;
             m_status[path] = AssetStatus::Loaded;
             if (m_hot_reload_enabled) {
-                HotReload::watch(path, [this](const std::string& p) {
+                auto alive = m_alive;  // Capture by value for safe lifetime checking
+                HotReload::watch(path, [this, alive](const std::string& p) {
+                    if (!*alive) return;  // Manager was destroyed
                     auto new_asset = load_material_internal(p);
                     if (new_asset) {
                         ReloadCallback cb;
@@ -311,6 +337,24 @@ std::shared_ptr<AudioAsset> AssetManager::load_audio(const std::string& path) {
         if (asset) {
             m_audio[path] = asset;
             m_status[path] = AssetStatus::Loaded;
+
+            if (m_hot_reload_enabled) {
+                auto alive = m_alive;  // Capture by value for safe lifetime checking
+                HotReload::watch(path, [this, alive](const std::string& p) {
+                    if (!*alive) return;  // Manager was destroyed
+                    auto new_asset = load_audio_internal(p);
+                    if (new_asset) {
+                        ReloadCallback cb;
+                        {
+                            std::unique_lock reload_lock(m_mutex);
+                            if (m_audio.count(p)) m_orphans.push_back(m_audio[p]);
+                            m_audio[p] = new_asset;
+                            cb = m_reload_callback;
+                        }
+                        if (cb) cb(p);
+                    }
+                });
+            }
         } else {
             m_status[path] = AssetStatus::Failed;
         }
@@ -348,7 +392,9 @@ std::shared_ptr<SceneAsset> AssetManager::load_scene(const std::string& path) {
             m_status[path] = AssetStatus::Loaded;
 
             if (m_hot_reload_enabled) {
-                HotReload::watch(path, [this](const std::string& p) {
+                auto alive = m_alive;  // Capture by value for safe lifetime checking
+                HotReload::watch(path, [this, alive](const std::string& p) {
+                    if (!*alive) return;  // Manager was destroyed
                     auto new_asset = SceneLoader::load(p);
                     if (new_asset) {
                         ReloadCallback cb;
@@ -399,7 +445,9 @@ std::shared_ptr<PrefabAsset> AssetManager::load_prefab(const std::string& path) 
             m_status[path] = AssetStatus::Loaded;
 
             if (m_hot_reload_enabled) {
-                HotReload::watch(path, [this](const std::string& p) {
+                auto alive = m_alive;  // Capture by value for safe lifetime checking
+                HotReload::watch(path, [this, alive](const std::string& p) {
+                    if (!*alive) return;  // Manager was destroyed
                     auto new_asset = PrefabLoader::load(p);
                     if (new_asset) {
                         ReloadCallback cb;
@@ -461,6 +509,206 @@ std::future<std::shared_ptr<PrefabAsset>> AssetManager::load_prefab_async(const 
     return JobSystem::submit_with_result([this, path]() {
         return load_prefab(path);
     });
+}
+
+std::shared_ptr<AnimationAsset> AssetManager::load_animation(const std::string& path) {
+    // Animation paths use format: "model.gltf#animation0" or "model.gltf#AnimationName"
+    size_t hash_pos = path.find('#');
+    if (hash_pos == std::string::npos) {
+        // No specific animation, load first one
+        auto animations = load_animations(path);
+        return animations.empty() ? nullptr : animations[0];
+    }
+
+    // Check cache first
+    {
+        std::shared_lock lock(m_mutex);
+        auto it = m_animations.find(path);
+        if (it != m_animations.end()) return it->second;
+    }
+
+    // Check loading status
+    {
+        std::unique_lock lock(m_mutex);
+        if (m_animations.count(path)) return m_animations[path];
+
+        if (m_status[path] == AssetStatus::Loading) {
+            m_load_cv.wait(lock, [this, &path] {
+                return m_status[path] != AssetStatus::Loading;
+            });
+            if (m_animations.count(path)) return m_animations[path];
+            return nullptr;
+        }
+        m_status[path] = AssetStatus::Loading;
+    }
+
+    // Load all animations from the file
+    std::string model_path = path.substr(0, hash_pos);
+    std::string anim_ref = path.substr(hash_pos + 1);
+
+    auto all_animations = load_animations_internal(model_path);
+
+    std::shared_ptr<AnimationAsset> target_asset;
+
+    // Find the requested animation
+    if (anim_ref.rfind("animation", 0) == 0) {
+        // Numeric index reference (animation0, animation1, etc.)
+        size_t index = std::stoul(anim_ref.substr(9));
+        if (index < all_animations.size()) {
+            target_asset = all_animations[index];
+        }
+    } else {
+        // Name reference
+        for (auto& anim : all_animations) {
+            if (anim->name == anim_ref) {
+                target_asset = anim;
+                break;
+            }
+        }
+    }
+
+    {
+        std::unique_lock lock(m_mutex);
+        if (target_asset) {
+            target_asset->path = path;
+            m_animations[path] = target_asset;
+            m_status[path] = AssetStatus::Loaded;
+
+            if (m_hot_reload_enabled) {
+                auto alive = m_alive;
+                HotReload::watch(model_path, [this, alive, path, model_path](const std::string&) {
+                    if (!*alive) return;
+                    // Reload animation from the model file
+                    size_t hp = path.find('#');
+                    std::string anim_ref = path.substr(hp + 1);
+                    auto animations = load_animations_internal(model_path);
+
+                    std::shared_ptr<AnimationAsset> new_asset;
+                    if (anim_ref.rfind("animation", 0) == 0) {
+                        size_t index = std::stoul(anim_ref.substr(9));
+                        if (index < animations.size()) {
+                            new_asset = animations[index];
+                        }
+                    } else {
+                        for (auto& a : animations) {
+                            if (a->name == anim_ref) {
+                                new_asset = a;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (new_asset) {
+                        new_asset->path = path;
+                        ReloadCallback cb;
+                        {
+                            std::unique_lock reload_lock(m_mutex);
+                            if (m_animations.count(path)) m_orphans.push_back(m_animations[path]);
+                            m_animations[path] = new_asset;
+                            cb = m_reload_callback;
+                        }
+                        if (cb) cb(path);
+                    }
+                });
+            }
+        } else {
+            m_status[path] = AssetStatus::Failed;
+        }
+        m_load_cv.notify_all();
+    }
+
+    return target_asset;
+}
+
+std::vector<std::shared_ptr<AnimationAsset>> AssetManager::load_animations(const std::string& path) {
+    return load_animations_internal(path);
+}
+
+std::shared_ptr<SkeletonAsset> AssetManager::load_skeleton(const std::string& path) {
+    // Check cache
+    {
+        std::shared_lock lock(m_mutex);
+        auto it = m_skeletons.find(path);
+        if (it != m_skeletons.end()) return it->second;
+    }
+
+    // Check loading status
+    {
+        std::unique_lock lock(m_mutex);
+        if (m_skeletons.count(path)) return m_skeletons[path];
+
+        if (m_status[path] == AssetStatus::Loading) {
+            m_load_cv.wait(lock, [this, &path] {
+                return m_status[path] != AssetStatus::Loading;
+            });
+            if (m_skeletons.count(path)) return m_skeletons[path];
+            return nullptr;
+        }
+        m_status[path] = AssetStatus::Loading;
+    }
+
+    auto asset = load_skeleton_internal(path);
+
+    {
+        std::unique_lock lock(m_mutex);
+        if (asset) {
+            m_skeletons[path] = asset;
+            m_status[path] = AssetStatus::Loaded;
+
+            if (m_hot_reload_enabled) {
+                auto alive = m_alive;
+                HotReload::watch(path, [this, alive](const std::string& p) {
+                    if (!*alive) return;
+                    auto new_asset = load_skeleton_internal(p);
+                    if (new_asset) {
+                        ReloadCallback cb;
+                        {
+                            std::unique_lock reload_lock(m_mutex);
+                            if (m_skeletons.count(p)) m_orphans.push_back(m_skeletons[p]);
+                            m_skeletons[p] = new_asset;
+                            cb = m_reload_callback;
+                        }
+                        if (cb) cb(p);
+                    }
+                });
+            }
+        } else {
+            m_status[path] = AssetStatus::Failed;
+        }
+        m_load_cv.notify_all();
+    }
+
+    return asset;
+}
+
+std::future<std::shared_ptr<AnimationAsset>> AssetManager::load_animation_async(const std::string& path) {
+    return JobSystem::submit_with_result([this, path]() {
+        return load_animation(path);
+    });
+}
+
+std::future<std::vector<std::shared_ptr<AnimationAsset>>> AssetManager::load_animations_async(const std::string& path) {
+    return JobSystem::submit_with_result([this, path]() {
+        return load_animations(path);
+    });
+}
+
+std::unique_ptr<AudioStream> AssetManager::open_audio_stream(const std::string& path) {
+    auto stream = std::make_unique<AudioStream>();
+    if (!stream->open(path)) {
+        return nullptr;
+    }
+    log(LogLevel::Debug, ("Opened audio stream: " + path).c_str());
+    return stream;
+}
+
+std::unique_ptr<TextureStream> AssetManager::open_texture_stream(const std::string& path) {
+    auto stream = std::make_unique<TextureStream>();
+    if (!stream->open(path, m_renderer)) {
+        return nullptr;
+    }
+    log(LogLevel::Debug, ("Opened texture stream: " + path).c_str());
+    return stream;
 }
 
 std::shared_ptr<Asset> AssetManager::load(const std::string& path) {
@@ -540,6 +788,8 @@ void AssetManager::unload(const std::string& path) {
     remove_from(m_audio);
     remove_from(m_scenes);
     remove_from(m_prefabs);
+    remove_from(m_animations);
+    remove_from(m_skeletons);
 
     m_status.erase(path);
     m_load_cv.notify_all();
@@ -567,6 +817,8 @@ void AssetManager::unload_unused() {
     prune(m_audio);
     prune(m_scenes);
     prune(m_prefabs);
+    prune(m_animations);
+    prune(m_skeletons);
 
     // Prune orphans
     for (auto it = m_orphans.begin(); it != m_orphans.end();) {
@@ -598,7 +850,9 @@ void AssetManager::unload_all() {
     m_audio.clear();
     m_scenes.clear();
     m_prefabs.clear();
-    
+    m_animations.clear();
+    m_skeletons.clear();
+
     for (auto& asset : m_orphans) destroy_asset(asset);
     m_orphans.clear();
 
@@ -608,7 +862,8 @@ void AssetManager::unload_all() {
 size_t AssetManager::get_loaded_count() const {
     std::shared_lock lock(m_mutex);
     return m_meshes.size() + m_textures.size() + m_shaders.size() +
-           m_materials.size() + m_audio.size() + m_scenes.size() + m_prefabs.size();
+           m_materials.size() + m_audio.size() + m_scenes.size() + m_prefabs.size() +
+           m_animations.size() + m_skeletons.size();
 }
 
 size_t AssetManager::get_memory_usage() const {
@@ -653,28 +908,34 @@ void AssetManager::set_reload_callback(ReloadCallback callback) {
 // Internal loading implementations
 std::shared_ptr<MeshAsset> AssetManager::load_mesh_internal(const std::string& path) {
     if (!m_renderer) return nullptr;
-    
+
     log(LogLevel::Debug, ("Loading mesh: " + path).c_str());
 
     std::string ext = get_extension(path);
+    std::shared_ptr<MeshAsset> asset;
 
     // Use glTF importer for glTF/glB formats
     if (ext == ".gltf" || ext == ".glb") {
-        return GltfImporter::import_mesh(path, m_renderer);
+        asset = GltfImporter::import_mesh(path, m_renderer);
     }
-
     // Use OBJ importer for Wavefront OBJ format
-    if (ext == ".obj") {
-        return ObjImporter::import_mesh(path, m_renderer);
+    else if (ext == ".obj") {
+        asset = ObjImporter::import_mesh(path, m_renderer);
     }
-
     // Use FBX importer for Autodesk FBX format
-    if (ext == ".fbx") {
-        return FbxImporter::import_mesh(path, m_renderer);
+    else if (ext == ".fbx") {
+        asset = FbxImporter::import_mesh(path, m_renderer);
+    }
+    else {
+        log(LogLevel::Error, ("Unknown mesh format: " + path).c_str());
+        return nullptr;
     }
 
-    log(LogLevel::Error, ("Unknown mesh format: " + path).c_str());
-    return nullptr;
+    // Set last_modified timestamp
+    if (asset) {
+        asset->last_modified = get_file_modification_time(path);
+    }
+    return asset;
 }
 
 // Helper to calculate mip levels for a texture
@@ -758,7 +1019,8 @@ static void generate_mipmaps_rgba16f(
 
     // Convert float to half-float for base level
     auto float_to_half = [](float f) -> uint16_t {
-        uint32_t bits = *reinterpret_cast<uint32_t*>(&f);
+        uint32_t bits;
+        std::memcpy(&bits, &f, sizeof(uint32_t));  // Safe type-punning via memcpy
         uint32_t sign = (bits >> 31) & 0x1;
         int32_t exp = ((bits >> 23) & 0xFF) - 127;
         uint32_t mantissa = bits & 0x7FFFFF;
@@ -967,6 +1229,7 @@ std::shared_ptr<TextureAsset> AssetManager::load_texture_internal(const std::str
     }
 
     asset->handle = m_renderer->create_texture(tex_data);
+    asset->last_modified = get_file_modification_time(path);
 
     return asset;
 }
@@ -980,19 +1243,63 @@ std::shared_ptr<ShaderAsset> AssetManager::load_shader_internal(const std::strin
     // Shader path convention: "shaders/pbr" loads:
     //   - shaders/pbr.vs.bin (vertex shader)
     //   - shaders/pbr.fs.bin (fragment shader)
-    std::string vs_path = path + ".vs.bin";
-    std::string fs_path = path + ".fs.bin";
+    // Falls back to source compilation if binaries not found:
+    //   - shaders/pbr.vs.sc (vertex source)
+    //   - shaders/pbr.fs.sc (fragment source)
+    std::string vs_bin_path = path + ".vs.bin";
+    std::string fs_bin_path = path + ".fs.bin";
+    std::string vs_src_path = path + ".vs.sc";
+    std::string fs_src_path = path + ".fs.sc";
 
-    auto vs_binary = FileSystem::read_binary(vs_path);
-    if (vs_binary.empty()) {
-        log(LogLevel::Error, ("Failed to load vertex shader: " + vs_path).c_str());
-        return nullptr;
-    }
+    auto vs_binary = FileSystem::read_binary(vs_bin_path);
+    auto fs_binary = FileSystem::read_binary(fs_bin_path);
 
-    auto fs_binary = FileSystem::read_binary(fs_path);
-    if (fs_binary.empty()) {
-        log(LogLevel::Error, ("Failed to load fragment shader: " + fs_path).c_str());
-        return nullptr;
+    // Try source compilation if binaries not found
+    if (vs_binary.empty() || fs_binary.empty()) {
+        if (ShaderCompiler::is_available()) {
+            // Extract base directory for include paths
+            std::string base_dir;
+            size_t last_slash = path.find_last_of("/\\");
+            if (last_slash != std::string::npos) {
+                base_dir = path.substr(0, last_slash);
+            }
+
+            ShaderCompiler::CompileOptions options;
+            if (!base_dir.empty()) {
+                options.include_paths.push_back(base_dir);
+            }
+            options.include_paths.push_back("shaders");
+            options.include_paths.push_back("shaders/common");
+
+            // Compile vertex shader from source if needed
+            if (vs_binary.empty()) {
+                log(LogLevel::Debug, ("Compiling vertex shader from source: " + vs_src_path).c_str());
+                vs_binary = ShaderCompiler::compile_file_to_memory(vs_src_path, ShaderStage::Vertex, options);
+                if (vs_binary.empty()) {
+                    log(LogLevel::Error, ("Failed to compile vertex shader: " + vs_src_path + " - " + ShaderCompiler::get_last_error()).c_str());
+                    return nullptr;
+                }
+            }
+
+            // Compile fragment shader from source if needed
+            if (fs_binary.empty()) {
+                log(LogLevel::Debug, ("Compiling fragment shader from source: " + fs_src_path).c_str());
+                fs_binary = ShaderCompiler::compile_file_to_memory(fs_src_path, ShaderStage::Fragment, options);
+                if (fs_binary.empty()) {
+                    log(LogLevel::Error, ("Failed to compile fragment shader: " + fs_src_path + " - " + ShaderCompiler::get_last_error()).c_str());
+                    return nullptr;
+                }
+            }
+        } else {
+            // No compiler available, report which file is missing
+            if (vs_binary.empty()) {
+                log(LogLevel::Error, ("Failed to load vertex shader: " + vs_bin_path + " (no source compiler available)").c_str());
+            }
+            if (fs_binary.empty()) {
+                log(LogLevel::Error, ("Failed to load fragment shader: " + fs_bin_path + " (no source compiler available)").c_str());
+            }
+            return nullptr;
+        }
     }
 
     render::ShaderData shader_data;
@@ -1008,33 +1315,47 @@ std::shared_ptr<ShaderAsset> AssetManager::load_shader_internal(const std::strin
         return nullptr;
     }
 
+    // Set last_modified (use binary path if exists, else source path)
+    asset->last_modified = get_file_modification_time(
+        !FileSystem::read_binary(path + ".vs.bin").empty() ? path + ".vs.bin" : path + ".vs.sc"
+    );
+
     log(LogLevel::Debug, ("Loaded shader: " + path).c_str());
     return asset;
 }
 
 std::shared_ptr<MaterialAsset> AssetManager::load_material_internal(const std::string& path) {
     std::string ext = get_extension(path);
+    std::shared_ptr<MaterialAsset> asset;
+    std::string file_path = path;
 
     // Check for glTF material reference (path#material0 format)
     size_t hash_pos = path.find('#');
     if (hash_pos != std::string::npos) {
         std::string gltf_path = path.substr(0, hash_pos);
         std::string suffix = path.substr(hash_pos + 1);
+        file_path = gltf_path;
 
         // Parse material index from suffix like "material0"
         if (suffix.rfind("material", 0) == 0) {
             uint32_t mat_index = static_cast<uint32_t>(std::stoul(suffix.substr(8)));
-            return MaterialLoader::load_from_gltf(gltf_path, mat_index, *this, m_renderer);
+            asset = MaterialLoader::load_from_gltf(gltf_path, mat_index, *this, m_renderer);
         }
     }
-
     // JSON-based material file
-    if (ext == ".mat" || ext == ".material" || ext == ".json") {
-        return MaterialLoader::load_from_json(path, *this, m_renderer);
+    else if (ext == ".mat" || ext == ".material" || ext == ".json") {
+        asset = MaterialLoader::load_from_json(path, *this, m_renderer);
+    }
+    else {
+        log(LogLevel::Error, ("Unknown material format: " + path).c_str());
+        return nullptr;
     }
 
-    log(LogLevel::Error, ("Unknown material format: " + path).c_str());
-    return nullptr;
+    // Set last_modified timestamp
+    if (asset) {
+        asset->last_modified = get_file_modification_time(file_path);
+    }
+    return asset;
 }
 
 std::shared_ptr<AudioAsset> AssetManager::load_audio_internal(const std::string& path) {
@@ -1052,9 +1373,94 @@ std::shared_ptr<AudioAsset> AssetManager::load_audio_internal(const std::string&
     asset->sample_rate = format.sample_rate;
     asset->channels = format.channels;
     asset->sample_count = static_cast<uint32_t>(format.total_frames);
+    asset->last_modified = get_file_modification_time(path);
 
     log(LogLevel::Debug, ("Loaded audio: " + path).c_str());
     return asset;
+}
+
+std::vector<std::shared_ptr<AnimationAsset>> AssetManager::load_animations_internal(const std::string& path) {
+    std::vector<std::shared_ptr<AnimationAsset>> result;
+
+    std::string ext = get_extension(path);
+
+    if (ext == ".gltf" || ext == ".glb" || ext == ".fbx") {
+        auto model = GltfImporter::import_model(path);
+        if (!model) {
+            log(LogLevel::Error, ("Failed to load animations from: " + path).c_str());
+            return result;
+        }
+
+        uint64_t mod_time = get_file_modification_time(path);
+
+        for (const auto& anim_data : model->animations) {
+            auto asset = std::make_shared<AnimationAsset>();
+            asset->path = path;
+            asset->name = anim_data.name;
+            asset->duration = anim_data.duration;
+            asset->last_modified = mod_time;
+
+            for (const auto& channel : anim_data.channels) {
+                AnimationChannel ch;
+                ch.target_joint = channel.target_joint;
+                ch.times = channel.times;
+                ch.values = channel.values;
+
+                // Parse path string to enum
+                if (channel.path == "translation") {
+                    ch.path = AnimationPath::Translation;
+                } else if (channel.path == "rotation") {
+                    ch.path = AnimationPath::Rotation;
+                } else if (channel.path == "scale") {
+                    ch.path = AnimationPath::Scale;
+                }
+
+                asset->channels.push_back(std::move(ch));
+            }
+
+            result.push_back(std::move(asset));
+        }
+
+        log(LogLevel::Debug, ("Loaded " + std::to_string(result.size()) + " animations from: " + path).c_str());
+    } else {
+        log(LogLevel::Warn, ("Unsupported animation format: " + path).c_str());
+    }
+
+    return result;
+}
+
+std::shared_ptr<SkeletonAsset> AssetManager::load_skeleton_internal(const std::string& path) {
+    std::string ext = get_extension(path);
+
+    if (ext == ".gltf" || ext == ".glb" || ext == ".fbx") {
+        auto model = GltfImporter::import_model(path);
+        if (!model || model->skeletons.empty()) {
+            log(LogLevel::Error, ("Failed to load skeleton from: " + path).c_str());
+            return nullptr;
+        }
+
+        auto asset = std::make_shared<SkeletonAsset>();
+        asset->path = path;
+        asset->last_modified = get_file_modification_time(path);
+
+        // Use the first skeleton
+        const auto& skel_data = model->skeletons[0];
+
+        for (const auto& joint : skel_data.joints) {
+            SkeletonJoint sj;
+            sj.name = joint.name;
+            sj.parent_index = joint.parent_index;
+            sj.inverse_bind_matrix = joint.inverse_bind_matrix;
+            sj.local_transform = joint.local_transform;
+            asset->joints.push_back(std::move(sj));
+        }
+
+        log(LogLevel::Debug, ("Loaded skeleton with " + std::to_string(asset->joints.size()) + " joints from: " + path).c_str());
+        return asset;
+    }
+
+    log(LogLevel::Warn, ("Unsupported skeleton format: " + path).c_str());
+    return nullptr;
 }
 
 std::string AssetManager::get_extension(const std::string& path) {

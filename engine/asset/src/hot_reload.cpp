@@ -76,25 +76,36 @@ void HotReload::unwatch(const std::string& path) {
 }
 
 void HotReload::poll() {
-    std::lock_guard<std::mutex> lock(s_mutex);
+    // Collect callbacks to invoke outside the lock to prevent deadlocks
+    // (callbacks may call watch/unwatch which also need the mutex)
+    std::vector<std::pair<std::string, ReloadCallback>> to_invoke;
 
-    if (!s_initialized) return;
+    {
+        std::lock_guard<std::mutex> lock(s_mutex);
 
-    for (auto& [path, entry] : s_watches) {
-        uint64_t current_time = get_file_time(path);
+        if (!s_initialized) return;
 
-        if (current_time > entry.last_modified && current_time != 0) {
-            entry.last_modified = current_time;
+        for (auto& [path, entry] : s_watches) {
+            uint64_t current_time = get_file_time(path);
 
-            log(LogLevel::Info, ("File changed: " + path).c_str());
+            if (current_time > entry.last_modified && current_time != 0) {
+                entry.last_modified = current_time;
 
-            if (entry.callback) {
-                try {
-                    entry.callback(path);
-                } catch (...) {
-                    log(LogLevel::Error, ("Hot reload callback failed for: " + path).c_str());
+                log(LogLevel::Info, ("File changed: " + path).c_str());
+
+                if (entry.callback) {
+                    to_invoke.emplace_back(path, entry.callback);
                 }
             }
+        }
+    }
+
+    // Invoke callbacks outside the lock
+    for (const auto& [path, callback] : to_invoke) {
+        try {
+            callback(path);
+        } catch (...) {
+            log(LogLevel::Error, ("Hot reload callback failed for: " + path).c_str());
         }
     }
 }

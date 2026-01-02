@@ -18,6 +18,8 @@ target_sources(engine_asset
         src/prefab_loader.cpp
         src/dds_loader.cpp
         src/ktx_loader.cpp
+        src/shader_compiler.cpp
+        src/streaming.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -37,6 +39,8 @@ target_sources(engine_asset
             include/engine/asset/prefab_loader.hpp
             include/engine/asset/dds_loader.hpp
             include/engine/asset/ktx_loader.hpp
+            include/engine/asset/shader_compiler.hpp
+            include/engine/asset/streaming.hpp
 )
 
 target_include_directories(engine_asset

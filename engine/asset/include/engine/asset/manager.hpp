@@ -1,6 +1,7 @@
 #pragma once
 
 #include <engine/asset/types.hpp>
+#include <engine/asset/streaming.hpp>
 #include <engine/render/renderer.hpp>
 #include <memory>
 #include <unordered_map>
@@ -9,6 +10,7 @@
 #include <functional>
 #include <shared_mutex>
 #include <condition_variable>
+#include <atomic>
 
 namespace engine::asset {
 
@@ -38,6 +40,11 @@ public:
     std::shared_ptr<AudioAsset> load_audio(const std::string& path);
     std::shared_ptr<SceneAsset> load_scene(const std::string& path);
     std::shared_ptr<PrefabAsset> load_prefab(const std::string& path);
+    std::shared_ptr<AnimationAsset> load_animation(const std::string& path);
+    std::shared_ptr<SkeletonAsset> load_skeleton(const std::string& path);
+
+    // Load all animations from a file (glTF/FBX may contain multiple)
+    std::vector<std::shared_ptr<AnimationAsset>> load_animations(const std::string& path);
 
     // Asynchronous loading
     std::future<std::shared_ptr<MeshAsset>> load_mesh_async(const std::string& path);
@@ -47,9 +54,15 @@ public:
     std::future<std::shared_ptr<AudioAsset>> load_audio_async(const std::string& path);
     std::future<std::shared_ptr<SceneAsset>> load_scene_async(const std::string& path);
     std::future<std::shared_ptr<PrefabAsset>> load_prefab_async(const std::string& path);
+    std::future<std::shared_ptr<AnimationAsset>> load_animation_async(const std::string& path);
+    std::future<std::vector<std::shared_ptr<AnimationAsset>>> load_animations_async(const std::string& path);
 
     // Generic load by extension
     std::shared_ptr<Asset> load(const std::string& path);
+
+    // Streaming API - for large assets that should be loaded on-demand
+    std::unique_ptr<AudioStream> open_audio_stream(const std::string& path);
+    std::unique_ptr<TextureStream> open_texture_stream(const std::string& path);
 
     // Check if asset is loaded
     bool is_loaded(const std::string& path) const;
@@ -79,6 +92,8 @@ private:
     std::shared_ptr<ShaderAsset> load_shader_internal(const std::string& path);
     std::shared_ptr<MaterialAsset> load_material_internal(const std::string& path);
     std::shared_ptr<AudioAsset> load_audio_internal(const std::string& path);
+    std::vector<std::shared_ptr<AnimationAsset>> load_animations_internal(const std::string& path);
+    std::shared_ptr<SkeletonAsset> load_skeleton_internal(const std::string& path);
     
     // Resource cleanup
     void destroy_asset(std::shared_ptr<Asset> asset);
@@ -98,6 +113,8 @@ private:
     std::unordered_map<std::string, std::shared_ptr<AudioAsset>> m_audio;
     std::unordered_map<std::string, std::shared_ptr<SceneAsset>> m_scenes;
     std::unordered_map<std::string, std::shared_ptr<PrefabAsset>> m_prefabs;
+    std::unordered_map<std::string, std::shared_ptr<AnimationAsset>> m_animations;
+    std::unordered_map<std::string, std::shared_ptr<SkeletonAsset>> m_skeletons;
     
     // Orphans (replaced assets that might still be in use)
     std::vector<std::shared_ptr<Asset>> m_orphans;
@@ -108,6 +125,9 @@ private:
     // Thread safety
     mutable std::shared_mutex m_mutex;
     std::condition_variable_any m_load_cv;
+
+    // Lifetime tracking for hot reload callbacks (prevents use-after-free)
+    std::shared_ptr<std::atomic<bool>> m_alive = std::make_shared<std::atomic<bool>>(true);
 };
 
 // Global asset manager instance
