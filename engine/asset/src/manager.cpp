@@ -99,6 +99,27 @@ void AssetManager::destroy_asset(std::shared_ptr<Asset> asset) {
     // Audio assets don't have GPU resources to destroy
 }
 
+// Maximum number of orphan assets before automatic cleanup
+static constexpr size_t MAX_ORPHANS = 100;
+
+void AssetManager::cleanup_orphans_if_needed() {
+    // Called while holding the mutex
+    // Remove orphans that are only held by us (use_count == 1)
+    if (m_orphans.size() > MAX_ORPHANS) {
+        m_orphans.erase(
+            std::remove_if(m_orphans.begin(), m_orphans.end(),
+                [this](const std::shared_ptr<Asset>& ptr) {
+                    if (ptr.use_count() == 1) {
+                        destroy_asset(ptr);
+                        return true;
+                    }
+                    return false;
+                }),
+            m_orphans.end()
+        );
+    }
+}
+
 std::shared_ptr<MeshAsset> AssetManager::load_mesh(const std::string& path) {
     // Check cache
     {
@@ -556,13 +577,18 @@ std::shared_ptr<AnimationAsset> AssetManager::load_animation(const std::string& 
     std::shared_ptr<AnimationAsset> target_asset;
 
     // Find the requested animation
-    if (anim_ref.rfind("animation", 0) == 0) {
+    if (anim_ref.rfind("animation", 0) == 0 && anim_ref.size() > 9) {
         // Numeric index reference (animation0, animation1, etc.)
-        size_t index = std::stoul(anim_ref.substr(9));
-        if (index < all_animations.size()) {
-            target_asset = all_animations[index];
+        try {
+            size_t index = std::stoul(anim_ref.substr(9));
+            if (index < all_animations.size()) {
+                target_asset = all_animations[index];
+            }
+        } catch (const std::exception&) {
+            // Invalid animation index format, fall through to name lookup
         }
-    } else {
+    }
+    if (!target_asset) {
         // Name reference
         for (auto& anim : all_animations) {
             if (anim->name == anim_ref) {
@@ -585,16 +611,22 @@ std::shared_ptr<AnimationAsset> AssetManager::load_animation(const std::string& 
                     if (!*alive) return;
                     // Reload animation from the model file
                     size_t hp = path.find('#');
+                    if (hp == std::string::npos) return;
                     std::string anim_ref = path.substr(hp + 1);
                     auto animations = load_animations_internal(model_path);
 
                     std::shared_ptr<AnimationAsset> new_asset;
-                    if (anim_ref.rfind("animation", 0) == 0) {
-                        size_t index = std::stoul(anim_ref.substr(9));
-                        if (index < animations.size()) {
-                            new_asset = animations[index];
+                    if (anim_ref.rfind("animation", 0) == 0 && anim_ref.size() > 9) {
+                        try {
+                            size_t index = std::stoul(anim_ref.substr(9));
+                            if (index < animations.size()) {
+                                new_asset = animations[index];
+                            }
+                        } catch (const std::exception&) {
+                            // Invalid index, fall through to name lookup
                         }
-                    } else {
+                    }
+                    if (!new_asset) {
                         for (auto& a : animations) {
                             if (a->name == anim_ref) {
                                 new_asset = a;
@@ -832,9 +864,13 @@ void AssetManager::poll_hot_reload() {
         std::shared_lock lock(m_mutex);
         enabled = m_hot_reload_enabled;
     }
-    
+
     if (enabled) {
         HotReload::poll();
+
+        // Periodically clean up orphan assets that are no longer in use
+        std::unique_lock lock(m_mutex);
+        cleanup_orphans_if_needed();
     }
 }
 

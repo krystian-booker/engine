@@ -109,6 +109,7 @@ private:
     
     // Resource cleanup
     void destroy_asset(std::shared_ptr<Asset> asset);
+    void cleanup_orphans_if_needed();  // Prune orphan list when threshold exceeded
 
     // File type detection
     static std::string get_extension(const std::string& path);

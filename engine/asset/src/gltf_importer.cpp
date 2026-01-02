@@ -116,6 +116,11 @@ void calculate_tangents(std::vector<Vertex>& vertices, const std::vector<uint32_
         uint32_t i1 = indices[i + 1];
         uint32_t i2 = indices[i + 2];
 
+        // Validate indices are within bounds
+        if (i0 >= vertices.size() || i1 >= vertices.size() || i2 >= vertices.size()) {
+            continue;  // Skip invalid triangle
+        }
+
         const Vec3& p0 = vertices[i0].position;
         const Vec3& p1 = vertices[i1].position;
         const Vec3& p2 = vertices[i2].position;
@@ -295,9 +300,12 @@ ImportedMesh process_primitive(const cgltf_primitive* primitive, const cgltf_dat
     // Calculate bounds
     result.mesh_data.bounds = calculate_bounds(result.mesh_data.vertices);
 
-    // Get material index
-    if (primitive->material) {
-        result.material_index = static_cast<int32_t>(primitive->material - data->materials);
+    // Get material index (validate pointer is within materials array)
+    if (primitive->material && data->materials_count > 0) {
+        ptrdiff_t mat_offset = primitive->material - data->materials;
+        if (mat_offset >= 0 && mat_offset < static_cast<ptrdiff_t>(data->materials_count)) {
+            result.material_index = static_cast<int32_t>(mat_offset);
+        }
     }
 
     return result;
