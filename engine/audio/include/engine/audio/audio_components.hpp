@@ -1,14 +1,12 @@
 #pragma once
 
 #include <engine/core/math.hpp>
+#include <engine/audio/sound.hpp>
 #include <cstdint>
 
 namespace engine::audio {
 
 using namespace engine::core;
-
-// Forward declarations
-struct SoundHandle { uint32_t id = UINT32_MAX; bool valid() const { return id != UINT32_MAX; } };
 
 // Distance attenuation models
 enum class AttenuationModel : uint8_t {

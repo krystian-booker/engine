@@ -529,8 +529,7 @@ void crossfade_music_impl(AudioEngine::Impl* impl, MusicHandle from, MusicHandle
     impl->active_crossfade->elapsed = 0.0f;
 
     // Get current volumes
-    float from_vol = 0.0f;
-    ma_sound_get_volume(&from_it->second.sound, &from_vol);
+    float from_vol = ma_sound_get_volume(&from_it->second.sound);
     impl->active_crossfade->from_start_volume = from_vol;
     impl->active_crossfade->to_start_volume = 0.0f;
 
@@ -542,27 +541,30 @@ void crossfade_music_impl(AudioEngine::Impl* impl, MusicHandle from, MusicHandle
 // Phase 2: Global volume functions
 void set_sound_volume_impl(AudioEngine::Impl* impl, float volume) {
     if (!impl || !impl->initialized) return;
+    float prev_volume = impl->sound_volume;
     impl->sound_volume = AudioEngine::Impl::clamp_volume(volume);
 
-    // Update all currently loaded sounds
+    // Adjust all currently loaded sounds by the change in global sound volume.
+    float ratio = (prev_volume > 0.0001f) ? (impl->sound_volume / prev_volume) : impl->sound_volume;
     for (auto& [id, sound] : impl->sounds) {
         if (sound.loaded) {
-            float current_vol = 0.0f;
-            ma_sound_get_volume(&sound.sound, &current_vol);
-            // This is approximate - ideally we'd store the base volume per-sound
+            float current_vol = ma_sound_get_volume(&sound.sound);
+            ma_sound_set_volume(&sound.sound, current_vol * ratio);
         }
     }
 }
 
 void set_music_volume_global_impl(AudioEngine::Impl* impl, float volume) {
     if (!impl || !impl->initialized) return;
+    float prev_volume = impl->music_volume;
     impl->music_volume = AudioEngine::Impl::clamp_volume(volume);
 
-    // Update all currently loaded music
+    // Adjust all currently loaded music by the change in global music volume.
+    float ratio = (prev_volume > 0.0001f) ? (impl->music_volume / prev_volume) : impl->music_volume;
     for (auto& [id, music] : impl->music) {
         if (music.loaded) {
-            // Get current volume and apply new global multiplier
-            // Note: This may need refinement if per-track volumes vary
+            float current_vol = ma_sound_get_volume(&music.sound);
+            ma_sound_set_volume(&music.sound, current_vol * ratio);
         }
     }
 }

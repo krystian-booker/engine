@@ -1,7 +1,6 @@
 #pragma once
 
 #include <engine/core/math.hpp>
-#include <engine/render/material.hpp>
 #include <bgfx/bgfx.h>
 #include <vector>
 #include <memory>
@@ -86,6 +85,11 @@ struct DecalDefinition {
     float distance_fade_start = 50.0f;  // Start distance fade
     float distance_fade_end = 100.0f;   // End distance fade
 
+    // Lifetime defaults (-1 = infinite)
+    float lifetime = -1.0f;
+    float fade_in_time = 0.0f;
+    float fade_out_time = 0.5f;
+
     // Sorting priority (higher = rendered on top)
     int32_t sort_priority = 0;
 
@@ -107,7 +111,7 @@ constexpr DecalDefHandle INVALID_DECAL_DEF = UINT32_MAX;
 struct DecalInstance {
     // Transform
     Vec3 position = Vec3(0.0f);
-    Quat rotation = Quat::identity();
+    Quat rotation = Quat(1, 0, 0, 0);
     Vec3 scale = Vec3(1.0f);
 
     // Definition reference
@@ -155,10 +159,9 @@ struct DecalInstance {
 
     // Get the world transform matrix
     Mat4 get_transform() const {
-        Mat4 result = Mat4::identity();
-        result = Mat4::from_translation(position) *
-                 Mat4::from_rotation(rotation) *
-                 Mat4::from_scale(scale);
+        Mat4 result = glm::translate(Mat4(1.0f), position) *
+                      glm::mat4_cast(rotation) *
+                      glm::scale(Mat4(1.0f), scale);
         return result;
     }
 
@@ -310,7 +313,7 @@ struct DecalComponent {
 
     // Local offset from entity transform
     Vec3 local_offset = Vec3(0.0f);
-    Quat local_rotation = Quat::identity();
+    Quat local_rotation = Quat(1, 0, 0, 0);
 
     // Auto-update transform from entity
     bool follow_entity = true;

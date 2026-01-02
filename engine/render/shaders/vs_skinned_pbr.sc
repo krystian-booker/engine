@@ -31,7 +31,7 @@ vec4 skinPosition(vec3 position, ivec4 indices, vec4 weights)
         if (weight > 0.0)
         {
             mat4 boneMatrix = getBoneMatrix(indices[i]);
-            skinnedPos += weight * (boneMatrix * vec4(position, 1.0));
+            skinnedPos += weight * mul(boneMatrix, vec4(position, 1.0));
         }
     }
 
@@ -50,8 +50,8 @@ vec3 skinDirection(vec3 direction, ivec4 indices, vec4 weights)
         {
             mat4 boneMatrix = getBoneMatrix(indices[i]);
             // Use upper 3x3 for direction transformation
-            mat3 boneMat3 = mat3(boneMatrix);
-            skinnedDir += weight * (boneMat3 * direction);
+            mat3 boneMat3 = mat3(boneMatrix[0].xyz, boneMatrix[1].xyz, boneMatrix[2].xyz);
+            skinnedDir += weight * mul(boneMat3, direction);
         }
     }
 
@@ -91,7 +91,7 @@ void main()
     v_worldPos = vec4(worldPos.xyz, viewSpaceDepth);
 
     // Transform skinned normal and tangent to world space
-    mat3 normalMatrix = mat3(u_model[0]);
+    mat3 normalMatrix = mat3(u_model[0][0].xyz, u_model[0][1].xyz, u_model[0][2].xyz);
     v_normal = normalize(mul(normalMatrix, skinnedNormal));
     v_tangent = normalize(mul(normalMatrix, skinnedTangent));
     v_bitangent = cross(v_normal, v_tangent);

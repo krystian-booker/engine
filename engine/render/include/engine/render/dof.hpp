@@ -2,6 +2,7 @@
 
 #include <engine/core/math.hpp>
 #include <bgfx/bgfx.h>
+#include <algorithm>
 
 namespace engine::render {
 

@@ -66,6 +66,10 @@ enum class RenderView : uint16_t {
     SSAOBlur = 35,
     SSR = 36,
 
+    // Volumetric lighting
+    VolumetricScatter = 37,
+    VolumetricIntegrate = 38,
+
     // Main rendering pass (forward/forward+)
     MainOpaque = 40,
     MainTransparent = 41,
@@ -81,14 +85,26 @@ enum class RenderView : uint16_t {
     Bloom3 = 57,
     Bloom4 = 58,
 
-    // TAA resolve
+    // TAA
+    TAA = 59,
     TAAResolve = 60,
+
+    // Bloom downsample/upsample passes
+    BloomDownsample0 = 70,
+    BloomDownsample1 = 71,
+    BloomDownsample2 = 72,
+    BloomDownsample3 = 73,
+    BloomUpsample0 = 74,
+    BloomUpsample1 = 75,
+    BloomUpsample2 = 76,
+    BloomUpsample3 = 77,
 
     // Tone mapping / final output
     ToneMap = 61,
 
     // Debug visualization
     Debug = 62,
+    DebugOverlay = 65,
 
     // UI overlay
     UI = 63,
@@ -97,7 +113,7 @@ enum class RenderView : uint16_t {
     Final = 64,
 
     // Maximum view count
-    Count = 65
+    Count = 80
 };
 
 // View configuration for a render pass

@@ -2,10 +2,13 @@
 
 #include <engine/scene/world.hpp>
 #include <engine/scene/systems.hpp>
+#include <engine/audio/audio_components.hpp>
+#include <engine/core/math.hpp>
 
 namespace engine::audio {
 
 using namespace engine::scene;
+using namespace engine::core;
 
 // Audio system manages audio playback for entities with audio components.
 // Processes AudioSource, AudioListener, AudioTrigger, and ReverbZone components.

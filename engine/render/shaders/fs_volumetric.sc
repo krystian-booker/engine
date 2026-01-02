@@ -16,7 +16,7 @@ uniform vec4 u_lightDir;           // xyz=light direction, w=intensity
 uniform vec4 u_lightColor;         // rgb=light color, w=unused
 uniform vec4 u_cameraPos;          // xyz=camera position, w=unused
 uniform vec4 u_projParams;         // x=near, y=far, z=unused, w=unused
-uniform mat4 u_invViewProj;        // Inverse view-projection matrix
+// Note: u_invViewProj is provided by bgfx_shader.sh
 uniform mat4 u_shadowMatrix;       // Light space matrix
 
 // Ray march settings
@@ -28,7 +28,7 @@ float henyeyGreenstein(float cosTheta, float g)
 {
     float g2 = g * g;
     float denom = 1.0 + g2 - 2.0 * g * cosTheta;
-    return (1.0 - g2) / (4.0 * 3.14159265 * pow(denom, 1.5));
+    return (1.0 - g2) / (4.0 * 3.14159265 * pow(max(denom, 0.0001), 1.5));
 }
 
 // Reconstruct world position from depth
@@ -56,7 +56,11 @@ float getFogDensity(vec3 worldPos)
     float noiseScale = u_fogHeight.z;
     float noiseIntensity = u_fogHeight.w;
     vec3 noiseCoord = worldPos * noiseScale;
+#if BGFX_SHADER_LANGUAGE_HLSL
+    float noise = bgfxTexture2DLod(s_noise, noiseCoord.xz * 0.01, 0.0).r;
+#else
     float noise = texture2D(s_noise, noiseCoord.xz * 0.01).r;
+#endif
     noise = noise * noiseIntensity + (1.0 - noiseIntensity);
 
     return baseDensity * heightFactor * noise;
@@ -80,7 +84,12 @@ float getShadow(vec3 worldPos)
         return 1.0;
     }
 
-    float shadowDepth = texture2D(s_shadowMap0, shadowCoord.xy).r;
+    float shadowDepth = 
+#if BGFX_SHADER_LANGUAGE_HLSL
+        bgfxTexture2DLod(s_shadowMap0, shadowCoord.xy, 0.0).r;
+#else
+        texture2D(s_shadowMap0, shadowCoord.xy).r;
+#endif
     float bias = 0.005;
     return shadowCoord.z - bias > shadowDepth ? 0.0 : 1.0;
 }
@@ -151,11 +160,7 @@ void main()
             scatteredLight += transmittance * sampleScatter;
             transmittance *= sampleTransmittance;
 
-            // Early exit if fully opaque
-            if (transmittance < 0.01)
-            {
-                break;
-            }
+            // Early exit removed to keep loop iteration count static for HLSL compilation
         }
 
         currentPos += stepVec;

@@ -256,19 +256,19 @@ Mat4 ReflectionProbeSystem::get_face_view_matrix(const Vec3& position, uint32_t 
 
     Vec3 right = cross(up, forward);
 
-    Mat4 view = Mat4::identity();
-    view.m[0][0] = right.x;
-    view.m[1][0] = right.y;
-    view.m[2][0] = right.z;
-    view.m[0][1] = up.x;
-    view.m[1][1] = up.y;
-    view.m[2][1] = up.z;
-    view.m[0][2] = forward.x;
-    view.m[1][2] = forward.y;
-    view.m[2][2] = forward.z;
-    view.m[3][0] = -dot(right, position);
-    view.m[3][1] = -dot(up, position);
-    view.m[3][2] = -dot(forward, position);
+    Mat4 view(1.0f);
+    view[0][0] = right.x;
+    view[0][1] = right.y;
+    view[0][2] = right.z;
+    view[1][0] = up.x;
+    view[1][1] = up.y;
+    view[1][2] = up.z;
+    view[2][0] = forward.x;
+    view[2][1] = forward.y;
+    view[2][2] = forward.z;
+    view[3][0] = -dot(right, position);
+    view[3][1] = -dot(up, position);
+    view[3][2] = -dot(forward, position);
 
     return view;
 }
@@ -282,13 +282,13 @@ Mat4 ReflectionProbeSystem::get_face_projection_matrix() {
 
     float tan_half_fov = std::tan(fov * 0.5f);
 
-    Mat4 proj = Mat4::identity();
-    proj.m[0][0] = 1.0f / (aspect * tan_half_fov);
-    proj.m[1][1] = 1.0f / tan_half_fov;
-    proj.m[2][2] = far_plane / (far_plane - near_plane);
-    proj.m[2][3] = 1.0f;
-    proj.m[3][2] = -(far_plane * near_plane) / (far_plane - near_plane);
-    proj.m[3][3] = 0.0f;
+    Mat4 proj(1.0f);
+    proj[0][0] = 1.0f / (aspect * tan_half_fov);
+    proj[1][1] = 1.0f / tan_half_fov;
+    proj[2][2] = far_plane / (far_plane - near_plane);
+    proj[2][3] = 1.0f;
+    proj[3][2] = -(far_plane * near_plane) / (far_plane - near_plane);
+    proj[3][3] = 0.0f;
 
     return proj;
 }

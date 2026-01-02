@@ -2,6 +2,7 @@
 
 #include <engine/render/render_target.hpp>
 #include <bgfx/bgfx.h>
+#include <imgui.h>
 #include <cstdint>
 
 namespace engine::debug_gui {
@@ -34,9 +35,6 @@ struct ImGuiInputEvent {
     bool shift = false;
     bool alt = false;
 };
-
-// Forward declare ImGui types
-struct ImDrawData;
 
 // ImGui integration layer for bgfx
 class ImGuiLayer {

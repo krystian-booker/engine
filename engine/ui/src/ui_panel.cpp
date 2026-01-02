@@ -28,7 +28,7 @@ Vec2 UIPanel::on_measure(Vec2 available_size) {
         Vec2 content_size{0.0f};
 
         for (auto& child : m_children) {
-            Vec2 child_size = child->on_measure(available_size);
+            Vec2 child_size = child->measure(available_size);
             child_size += child->get_style().margin.total();
 
             if (m_layout_direction == LayoutDirection::Horizontal) {
@@ -69,7 +69,7 @@ void UIPanel::on_layout(const Rect& bounds) {
     float offset = 0.0f;
 
     for (auto& child : m_children) {
-        Vec2 child_size = child->on_measure(bounds.size());
+        Vec2 child_size = child->measure(bounds.size());
         const EdgeInsets& margin = child->get_style().margin;
 
         Rect child_bounds;

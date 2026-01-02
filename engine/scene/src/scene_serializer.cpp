@@ -90,7 +90,7 @@ bool SceneSerializer::deserialize(World& world, const std::string& json) {
             Entity entity = world.create();
 
             // Add EntityInfo
-            EntityInfo& info = world.add<EntityInfo>(entity);
+            EntityInfo& info = world.emplace<EntityInfo>(entity);
             info.name = entity_data.name;
             info.uuid = entity_data.uuid;
             info.enabled = entity_data.enabled;
@@ -115,26 +115,27 @@ bool SceneSerializer::deserialize(World& world, const std::string& json) {
             // Deserialize components
             for (const auto& comp : entity_data.components) {
                 if (comp.type_name == "LocalTransform") {
-                    LocalTransform& transform = world.get_or_add<LocalTransform>(entity);
+                    LocalTransform* existing = world.try_get<LocalTransform>(entity);
+                    LocalTransform& transform = existing ? *existing : world.emplace<LocalTransform>(entity);
                     deserialize_transform(transform, comp.json_data);
                 } else if (comp.type_name == "MeshRenderer") {
-                    MeshRenderer& renderer = world.add<MeshRenderer>(entity);
+                    MeshRenderer& renderer = world.emplace_or_replace<MeshRenderer>(entity);
                     deserialize_mesh_renderer(renderer, comp.json_data);
                 } else if (comp.type_name == "Camera") {
-                    Camera& camera = world.add<Camera>(entity);
+                    Camera& camera = world.emplace_or_replace<Camera>(entity);
                     deserialize_camera(camera, comp.json_data);
                 } else if (comp.type_name == "Light") {
-                    Light& light = world.add<Light>(entity);
+                    Light& light = world.emplace_or_replace<Light>(entity);
                     deserialize_light(light, comp.json_data);
                 } else if (comp.type_name == "ParticleEmitter") {
-                    ParticleEmitter& emitter = world.add<ParticleEmitter>(entity);
+                    ParticleEmitter& emitter = world.emplace_or_replace<ParticleEmitter>(entity);
                     deserialize_particle_emitter(emitter, comp.json_data);
                 } else {
                     // Try custom deserializer
                     auto deserializer_it = m_component_deserializers.find(comp.type_name);
                     if (deserializer_it != m_component_deserializers.end()) {
                         // Custom component - need type registration
-                        log(LogLevel::Warning, "Custom component deserialization not implemented: {}",
+                        log(LogLevel::Warn, "Custom component deserialization not implemented: {}",
                             comp.type_name);
                     }
                 }
@@ -650,14 +651,14 @@ SerializedScene SceneSerializer::parse_scene_json(const std::string& json) {
     SerializedScene scene;
 
     // Parse name
-    std::regex name_re(R"("name"\s*:\s*"([^"]*)")");
+    std::regex name_re(R"REGEX("name"\s*:\s*"([^"]*)")REGEX");
     std::smatch match;
     if (std::regex_search(json, match, name_re)) {
         scene.name = match[1].str();
     }
 
     // Parse version
-    std::regex version_re(R"("version"\s*:\s*"([^"]*)")");
+    std::regex version_re(R"REGEX("version"\s*:\s*"([^"]*)")REGEX");
     if (std::regex_search(json, match, version_re)) {
         scene.version = match[1].str();
     }
@@ -672,7 +673,7 @@ SerializedEntity SceneSerializer::parse_entity_json(const std::string& json) {
     SerializedEntity entity;
 
     std::regex uuid_re(R"("uuid"\s*:\s*(\d+))");
-    std::regex name_re(R"("name"\s*:\s*"([^"]*)")");
+    std::regex name_re(R"REGEX("name"\s*:\s*"([^"]*)")REGEX");
     std::regex enabled_re(R"("enabled"\s*:\s*(true|false))");
     std::regex parent_re(R"("parent_uuid"\s*:\s*(\d+))");
 
@@ -697,7 +698,7 @@ Entity SceneSerializer::create_entity_from_serialized(World& world, const Serial
                                                        Entity parent) {
     Entity entity = world.create();
 
-    EntityInfo& info = world.add<EntityInfo>(entity);
+    EntityInfo& info = world.emplace<EntityInfo>(entity);
     info.name = data.name;
     info.uuid = data.uuid != 0 ? data.uuid : generate_uuid();
     info.enabled = data.enabled;

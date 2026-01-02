@@ -3,6 +3,7 @@
 #include <engine/ui/ui_element.hpp>
 #include <engine/ui/ui_renderer.hpp>
 #include <engine/render/types.hpp>
+#include <engine/render/render_target.hpp>
 #include <memory>
 #include <string>
 

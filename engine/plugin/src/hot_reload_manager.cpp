@@ -2,6 +2,7 @@
 #include <engine/core/log.hpp>
 #include <engine/scene/scene_serializer.hpp>
 #include <nlohmann/json.hpp>
+#include <thread>
 
 namespace engine::plugin {
 
@@ -111,7 +112,7 @@ void HotReloadManager::do_reload() {
     // Step 2: Serialize world state if enabled
     if (m_config.preserve_state) {
         if (!serialize_world_state(world_state)) {
-            core::log(core::LogLevel::Warning, "Failed to serialize world state");
+            core::log(core::LogLevel::Warn, "Failed to serialize world state");
         }
     }
 
@@ -152,7 +153,7 @@ void HotReloadManager::do_reload() {
     // Step 9: Deserialize world state
     if (m_config.preserve_state && !world_state.empty()) {
         if (!deserialize_world_state(world_state)) {
-            core::log(core::LogLevel::Warning, "Failed to deserialize world state");
+            core::log(core::LogLevel::Warn, "Failed to deserialize world state");
         }
     }
 
@@ -178,7 +179,8 @@ bool HotReloadManager::serialize_world_state(nlohmann::json& out) {
     try {
         // Use scene serializer to save world state
         // This captures all entities and components registered with reflection
-        out = scene::SceneSerializer::serialize(*m_context->world);
+        scene::SceneSerializer serializer;
+        out = serializer.serialize(*m_context->world);
         return true;
     } catch (const std::exception& e) {
         core::log(core::LogLevel::Error, "World serialization failed: {}", e.what());
@@ -196,7 +198,8 @@ bool HotReloadManager::deserialize_world_state(const nlohmann::json& state) {
         m_context->world->clear();
 
         // Deserialize saved state
-        scene::SceneSerializer::deserialize(*m_context->world, state);
+        scene::SceneSerializer serializer;
+        serializer.deserialize(*m_context->world, state.dump());
         return true;
     } catch (const std::exception& e) {
         core::log(core::LogLevel::Error, "World deserialization failed: {}", e.what());

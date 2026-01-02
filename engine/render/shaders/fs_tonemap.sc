@@ -151,7 +151,8 @@ void main()
 
     // Gamma correction
     float gamma = u_tonemapParams.y;
-    ldrColor = pow(ldrColor, vec3_splat(1.0 / gamma));
+    float invGamma = 1.0 / max(gamma, 0.0001);
+    ldrColor = pow(max(ldrColor, vec3_splat(0.0)), vec3_splat(invGamma));
 
     // Vignette
     if (u_vignetteParams.x > 0.5)

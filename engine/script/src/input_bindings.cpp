@@ -10,19 +10,16 @@ void register_input_bindings(sol::state& lua) {
     auto input = lua.create_named_table("Input");
 
     // Keyboard
-    input.set_function("is_key_down", [](const std::string& key_name) {
-        Key key = Input::key_from_name(key_name);
-        return Input::key_down(key);
+    input.set_function("is_key_down", [](int key_code) {
+        return Input::key_down(static_cast<Key>(key_code));
     });
 
-    input.set_function("is_key_pressed", [](const std::string& key_name) {
-        Key key = Input::key_from_name(key_name);
-        return Input::key_pressed(key);
+    input.set_function("is_key_pressed", [](int key_code) {
+        return Input::key_pressed(static_cast<Key>(key_code));
     });
 
-    input.set_function("is_key_released", [](const std::string& key_name) {
-        Key key = Input::key_from_name(key_name);
-        return Input::key_released(key);
+    input.set_function("is_key_released", [](int key_code) {
+        return Input::key_released(static_cast<Key>(key_code));
     });
 
     // Mouse
@@ -39,7 +36,7 @@ void register_input_bindings(sol::state& lua) {
     });
 
     input.set_function("mouse_position", []() {
-        auto pos = Input::mouse_position();
+        auto pos = Input::mouse_pos();
         return std::make_tuple(pos.x, pos.y);
     });
 
@@ -48,7 +45,7 @@ void register_input_bindings(sol::state& lua) {
         return std::make_tuple(delta.x, delta.y);
     });
 
-    input.set_function("mouse_scroll", &Input::mouse_scroll);
+    input.set_function("mouse_scroll", &Input::scroll_delta);
 
     input.set_function("set_mouse_captured", &Input::set_mouse_captured);
     input.set_function("is_mouse_captured", &Input::is_mouse_captured);
@@ -85,9 +82,8 @@ void register_input_bindings(sol::state& lua) {
     });
 
     // Action system
-    input.set_function("bind_action", [](const std::string& action, const std::string& key) {
-        Key k = Input::key_from_name(key);
-        Input::bind_action(action, k);
+    input.set_function("bind_action", [](const std::string& action, int key_code) {
+        Input::bind(action, static_cast<Key>(key_code));
     });
 
     input.set_function("is_action_down", [](const std::string& action) {

@@ -72,36 +72,26 @@ void HierarchyTreeWidget::handle_asset_drop(const QMimeData* mime_data, QTreeWid
         // Create entity based on asset type
         if (type == "Mesh") {
             // Create entity with mesh renderer
-            auto entity = state->world()->create_entity(name.toStdString());
+            auto* world = state->world();
+            auto entity = world->create(name.toStdString());
 
-            // Add transform
-            engine::scene::LocalTransform transform;
-            transform.position = {0, 0, 0};
-            transform.rotation = {0, 0, 0, 1};
-            transform.scale = {1, 1, 1};
-            state->world()->add_component(entity, transform);
-
-            // Add mesh renderer with asset path
-            engine::scene::MeshRenderer renderer;
-            renderer.mesh_path = path.toStdString();
-            state->world()->add_component(entity, renderer);
+            // Add transform and renderer components
+            world->emplace<engine::scene::LocalTransform>(entity);
+            world->emplace<engine::scene::MeshRenderer>(entity);
 
             // Set parent if specified
             if (parent != engine::scene::NullEntity) {
-                state->world()->set_parent(entity, parent);
+                engine::scene::set_parent(*world, entity, parent);
             }
         } else if (type == "Prefab") {
             // Create entity from prefab (placeholder - load JSON)
-            auto entity = state->world()->create_entity(name.toStdString());
+            auto* world = state->world();
+            auto entity = world->create(name.toStdString());
 
-            engine::scene::LocalTransform transform;
-            transform.position = {0, 0, 0};
-            transform.rotation = {0, 0, 0, 1};
-            transform.scale = {1, 1, 1};
-            state->world()->add_component(entity, transform);
+            world->emplace<engine::scene::LocalTransform>(entity);
 
             if (parent != engine::scene::NullEntity) {
-                state->world()->set_parent(entity, parent);
+                engine::scene::set_parent(*world, entity, parent);
             }
         }
     }

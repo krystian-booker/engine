@@ -200,9 +200,9 @@ void MotionBlurSystem::generate_camera_velocity(bgfx::ViewId view_id,
     bgfx::setViewRect(view_id, 0, 0, m_width, m_height);
 
     // Set matrices
-    bgfx::setUniform(u_view_proj, &current_view_proj.m[0][0]);
-    bgfx::setUniform(u_prev_view_proj, &prev_view_proj.m[0][0]);
-    bgfx::setUniform(u_inv_view_proj, &inv_view_proj.m[0][0]);
+    bgfx::setUniform(u_view_proj, glm::value_ptr(current_view_proj));
+    bgfx::setUniform(u_prev_view_proj, glm::value_ptr(prev_view_proj));
+    bgfx::setUniform(u_inv_view_proj, glm::value_ptr(inv_view_proj));
 
     // Motion params: shutter_fraction, max_velocity, 0, 0
     float params[4] = {
@@ -224,7 +224,7 @@ void MotionBlurSystem::generate_camera_velocity(bgfx::ViewId view_id,
     // Bind depth texture
     bgfx::setTexture(0, s_depth, depth_texture);
 
-    bgfx::setState(BGFX_STATE_WRITE_RG);
+    bgfx::setState(BGFX_STATE_WRITE_R | BGFX_STATE_WRITE_G);
     bgfx::submit(view_id, m_camera_velocity_program);
 }
 
@@ -250,7 +250,7 @@ void MotionBlurSystem::generate_tile_max(bgfx::ViewId view_id) {
 
         bgfx::setTexture(0, s_velocity, m_velocity_texture);
 
-        bgfx::setState(BGFX_STATE_WRITE_RG);
+        bgfx::setState(BGFX_STATE_WRITE_R | BGFX_STATE_WRITE_G);
         bgfx::submit(view_id, m_tile_max_program);
     }
 
@@ -272,7 +272,7 @@ void MotionBlurSystem::generate_tile_max(bgfx::ViewId view_id) {
 
         bgfx::setTexture(0, s_tile_max, m_tile_max_texture);
 
-        bgfx::setState(BGFX_STATE_WRITE_RG);
+        bgfx::setState(BGFX_STATE_WRITE_R | BGFX_STATE_WRITE_G);
         bgfx::submit(view_id + 1, m_neighbor_max_program);
     }
 }

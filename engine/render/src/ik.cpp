@@ -4,6 +4,31 @@
 
 namespace engine::render {
 
+// Helper: Create quaternion that rotates from one vector to another
+static Quat rotation_between_vectors(const Vec3& from, const Vec3& to) {
+    Vec3 from_n = glm::normalize(from);
+    Vec3 to_n = glm::normalize(to);
+
+    float dot = glm::dot(from_n, to_n);
+
+    if (dot > 0.9999f) {
+        return Quat(1, 0, 0, 0);  // Identity - no rotation needed
+    }
+
+    if (dot < -0.9999f) {
+        // Opposite vectors - need 180 degree rotation around any perpendicular axis
+        Vec3 axis = glm::cross(Vec3(1, 0, 0), from_n);
+        if (glm::dot(axis, axis) < 0.0001f) {
+            axis = glm::cross(Vec3(0, 1, 0), from_n);
+        }
+        return glm::angleAxis(glm::pi<float>(), glm::normalize(axis));
+    }
+
+    Vec3 axis = glm::cross(from_n, to_n);
+    float angle = std::acos(std::clamp(dot, -1.0f, 1.0f));
+    return glm::angleAxis(angle, glm::normalize(axis));
+}
+
 // BoneConstraint implementation
 
 Quat BoneConstraint::constrain(const Quat& rotation) const {
@@ -290,14 +315,14 @@ void IKSolver::solve_two_bone(
     Vec3 original_upper_dir = glm::normalize(mid_pos - root_pos);
     Vec3 new_upper_dir = glm::normalize(new_mid_pos - root_pos);
     if (glm::length(glm::cross(original_upper_dir, new_upper_dir)) > 0.001f) {
-        Quat upper_rotation = glm::rotation(original_upper_dir, new_upper_dir);
+        Quat upper_rotation = rotation_between_vectors(original_upper_dir, new_upper_dir);
         pose[settings.root_bone].rotation = upper_rotation * pose[settings.root_bone].rotation;
     }
 
     Vec3 original_lower_dir = glm::normalize(end_pos - mid_pos);
     Vec3 new_lower_dir = glm::normalize(new_end_pos - new_mid_pos);
     if (glm::length(glm::cross(original_lower_dir, new_lower_dir)) > 0.001f) {
-        Quat lower_rotation = glm::rotation(original_lower_dir, new_lower_dir);
+        Quat lower_rotation = rotation_between_vectors(original_lower_dir, new_lower_dir);
         pose[settings.mid_bone].rotation = lower_rotation * pose[settings.mid_bone].rotation;
     }
 
@@ -503,14 +528,14 @@ void FootIKProcessor::process(
 
     if (left_hit.hit && settings.left_foot_bone >= 0 &&
         settings.left_foot_bone < static_cast<int32_t>(pose.size())) {
-        Quat target_rot = glm::rotation(Vec3{0.0f, 1.0f, 0.0f}, left_hit.normal);
+        Quat target_rot = rotation_between_vectors(Vec3{0.0f, 1.0f, 0.0f}, left_hit.normal);
         m_left_foot_rotation = glm::slerp(m_left_foot_rotation, target_rot, rot_lerp);
         pose[settings.left_foot_bone].rotation = m_left_foot_rotation * pose[settings.left_foot_bone].rotation;
     }
 
     if (right_hit.hit && settings.right_foot_bone >= 0 &&
         settings.right_foot_bone < static_cast<int32_t>(pose.size())) {
-        Quat target_rot = glm::rotation(Vec3{0.0f, 1.0f, 0.0f}, right_hit.normal);
+        Quat target_rot = rotation_between_vectors(Vec3{0.0f, 1.0f, 0.0f}, right_hit.normal);
         m_right_foot_rotation = glm::slerp(m_right_foot_rotation, target_rot, rot_lerp);
         pose[settings.right_foot_bone].rotation = m_right_foot_rotation * pose[settings.right_foot_bone].rotation;
     }

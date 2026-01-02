@@ -19,10 +19,7 @@ uniform vec4 u_emissiveColor;  // xyz = emissive color, w = emissive intensity
 uniform vec4 u_lights[32];     // 8 lights * 4 vec4s each
 uniform vec4 u_lightCount;     // x = active light count
 
-// Shadow uniforms
-uniform mat4 u_shadowMat[4];   // Shadow matrices for cascades
-uniform vec4 u_shadowParams;   // x = shadow bias, y = normal bias, z = cascade count, w = unused
-uniform vec4 u_cascadeSplits;  // Cascade split distances
+// Shadow uniforms are declared in shadow.sh (u_shadowParams, u_cascadeSplits, u_shadowMatrix0-3)
 
 // IBL uniforms
 uniform vec4 u_iblParams;      // x = intensity, y = rotation, z = max mip level, w = unused

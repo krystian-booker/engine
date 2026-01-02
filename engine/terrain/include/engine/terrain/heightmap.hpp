@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <functional>
 #include <engine/core/math.hpp>
 
 namespace engine::terrain {

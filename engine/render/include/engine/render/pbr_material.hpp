@@ -78,8 +78,8 @@ inline GPULightData packLightForGPU(const LightData& light) {
     gpu.direction_range = Vec4(light.direction, light.range);
     gpu.color_intensity = Vec4(light.color, light.intensity);
     gpu.spot_params = Vec4(
-        light.spot_angle * 0.5f,    // Inner angle (half of spot angle)
-        light.spot_angle,           // Outer angle
+        light.inner_angle,          // Inner angle
+        light.outer_angle,          // Outer angle
         light.cast_shadows ? 0.0f : -1.0f,  // Shadow index (-1 = no shadow)
         0.0f
     );

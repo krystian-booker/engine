@@ -260,10 +260,10 @@ void DOFSystem::calculate_coc(bgfx::ViewId view_id,
 
     // Projection params for depth linearization
     float proj_params[4] = {
-        proj_matrix.m[2][2],
-        proj_matrix.m[3][2],
-        proj_matrix.m[2][3],
-        proj_matrix.m[3][3]
+        proj_matrix[2][2],
+        proj_matrix[3][2],
+        proj_matrix[2][3],
+        proj_matrix[3][3]
     };
     bgfx::setUniform(u_proj_params, proj_params);
 

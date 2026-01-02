@@ -180,11 +180,7 @@ void CameraEffects::apply_to_transform(Vec3& position, Quat& rotation) const {
 
     // Apply rotation shake
     if (length(m_shake_rotation) > 0.001f) {
-        Quat shake_rot = Quat::from_euler(
-            m_shake_rotation.x * 0.0174533f,  // Convert to radians
-            m_shake_rotation.y * 0.0174533f,
-            m_shake_rotation.z * 0.0174533f
-        );
+        Quat shake_rot = glm::quat(glm::radians(m_shake_rotation));
         rotation = shake_rot * rotation;
     }
 }

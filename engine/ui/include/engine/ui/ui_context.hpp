@@ -4,6 +4,7 @@
 #include <engine/ui/ui_font.hpp>
 #include <engine/ui/ui_renderer.hpp>
 #include <engine/ui/ui_style.hpp>
+#include <engine/render/render_target.hpp>
 #include <memory>
 #include <string>
 #include <unordered_map>

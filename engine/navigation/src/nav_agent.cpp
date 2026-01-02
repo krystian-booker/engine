@@ -1,7 +1,7 @@
 #include <engine/navigation/nav_agent.hpp>
 #include <engine/scene/world.hpp>
 #include <engine/scene/components.hpp>
-#include <engine/core/logging.hpp>
+#include <engine/core/log.hpp>
 
 #include <algorithm>
 
@@ -12,7 +12,7 @@ NavAgentSystem::~NavAgentSystem() = default;
 
 void NavAgentSystem::init(Pathfinder* pathfinder) {
     m_pathfinder = pathfinder;
-    core::log_info("NavAgentSystem initialized");
+    core::log(core::LogLevel::Info, "NavAgentSystem initialized");
 }
 
 void NavAgentSystem::shutdown() {
@@ -31,12 +31,12 @@ void NavAgentSystem::set_destination(scene::World& world, uint32_t entity_id, co
     }
 
     // Get current position
-    auto* transform = world.registry().try_get<scene::Transform>(entity);
+    auto* transform = world.registry().try_get<scene::LocalTransform>(entity);
     if (!transform) {
         return;
     }
 
-    Vec3 position = transform->get_world_position();
+    Vec3 position = transform->position;
 
     agent->target = target;
     agent->has_target = true;
@@ -70,9 +70,9 @@ void NavAgentSystem::warp(scene::World& world, uint32_t entity_id, const Vec3& p
         return;
     }
 
-    auto* transform = world.registry().try_get<scene::Transform>(entity);
+    auto* transform = world.registry().try_get<scene::LocalTransform>(entity);
     if (transform) {
-        transform->set_position(position);
+        transform->position = position;
     }
 
     auto* agent = world.registry().try_get<NavAgentComponent>(entity);
@@ -94,15 +94,15 @@ void NavAgentSystem::update(scene::World& world, float dt) {
         return;
     }
 
-    auto view = world.registry().view<NavAgentComponent, scene::Transform>();
+    auto view = world.registry().view<NavAgentComponent, scene::LocalTransform>();
 
     for (auto entity : view) {
         auto& agent = view.get<NavAgentComponent>(entity);
-        auto& transform = view.get<scene::Transform>(entity);
+        auto& transform = view.get<scene::LocalTransform>(entity);
 
-        Vec3 position = transform.get_world_position();
+        Vec3 position = transform.position;
         update_agent(agent, position, dt);
-        transform.set_position(position);
+        transform.position = position;
     }
 }
 
@@ -321,7 +321,7 @@ void NavAgentSystem::set_max_agents(int max_agents) {
 void register_nav_agent_system(scene::World& /*world*/, NavAgentSystem& /*system*/) {
     // TODO: Register with scheduler when available
     // For now, manual update call is required
-    core::log_info("NavAgentSystem registered - call update() manually each frame");
+    core::log(core::LogLevel::Info, "NavAgentSystem registered - call update() manually each frame");
 }
 
 } // namespace engine::navigation

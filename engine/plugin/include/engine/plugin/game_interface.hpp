@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <nlohmann/json_fwd.hpp>
 
 // Platform-specific export macro
 #ifdef _WIN32
@@ -23,11 +24,6 @@ namespace engine::render {
 
 namespace engine::core {
     class Application;
-}
-
-namespace nlohmann {
-    template<typename, typename, typename> class basic_json;
-    using json = basic_json<void, void, void>;
 }
 
 namespace engine::plugin {

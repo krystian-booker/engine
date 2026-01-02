@@ -723,6 +723,48 @@ public:
         m_shadows_enabled = enabled;
     }
 
+    void submit_mesh(RenderView view, MeshHandle mesh, MaterialHandle material, const Mat4& transform) override {
+        DrawCall call;
+        call.mesh = mesh;
+        call.material = material;
+        call.transform = transform;
+        queue_draw(call, view);
+    }
+
+    void submit_skinned_mesh(RenderView view, MeshHandle mesh, MaterialHandle material,
+                              const Mat4& transform, const Mat4* bone_matrices, uint32_t bone_count) override {
+        // For now, submit as regular mesh (skinning requires additional shader setup)
+        DrawCall call;
+        call.mesh = mesh;
+        call.material = material;
+        call.transform = transform;
+        queue_draw(call, view);
+        // TODO: Implement proper skinned mesh rendering with bone matrices
+    }
+
+    void flush_debug_draw(RenderView view) override {
+        // Debug draw is handled separately - stub for now
+        // TODO: Implement debug line/shape rendering
+    }
+
+    void blit_to_screen(RenderView view, TextureHandle source) override {
+        // Blit a texture to the final backbuffer
+        auto it = m_textures.find(source.id);
+        if (it != m_textures.end()) {
+            bgfx::setTexture(0, bgfx::createUniform("s_texture", bgfx::UniformType::Sampler), it->second);
+            bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+            // Submit fullscreen quad to blit
+            // TODO: Use proper fullscreen blit program
+        }
+    }
+
+    void set_ao_texture(TextureHandle texture) override {
+        auto it = m_textures.find(texture.id);
+        if (it != m_textures.end()) {
+            m_ao_texture = it->second;
+        }
+    }
+
     void flush() override {
         // Process legacy draw queue (view 0)
         if (!m_draw_queue.empty()) {
@@ -1086,12 +1128,13 @@ private:
 
     // Shadow system data
     bool m_shadows_enabled = false;
+
+    // SSAO texture
+    bgfx::TextureHandle m_ao_texture = BGFX_INVALID_HANDLE;
     std::array<Mat4, 4> m_shadow_matrices{Mat4(1.0f), Mat4(1.0f), Mat4(1.0f), Mat4(1.0f)};
     Vec4 m_cascade_splits{10.0f, 30.0f, 100.0f, 500.0f};
     Vec4 m_shadow_params{0.001f, 0.01f, 0.1f, 1.0f};  // bias, normalBias, cascadeBlend, pcfRadius
-    std::array<bgfx::TextureHandle, 4> m_shadow_textures{
-        BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE
-    };
+    std::array<bgfx::TextureHandle, 4> m_shadow_textures{};
 
     // Total time for shader animations
     float m_total_time = 0.0f;

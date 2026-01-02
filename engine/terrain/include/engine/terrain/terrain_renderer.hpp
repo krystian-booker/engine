@@ -3,9 +3,11 @@
 #include <engine/terrain/heightmap.hpp>
 #include <engine/terrain/terrain_lod.hpp>
 #include <engine/core/math.hpp>
+#include <array>
 #include <vector>
 #include <memory>
 #include <string>
+#include <algorithm>
 
 namespace engine::terrain {
 

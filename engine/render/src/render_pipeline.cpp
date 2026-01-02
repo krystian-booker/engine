@@ -37,7 +37,10 @@ void RenderPipeline::init(IRenderer* renderer, const RenderPipelineConfig& confi
     }
 
     if (has_flag(config.enabled_passes, RenderPassFlags::PostProcess)) {
-        m_post_process_system.init(renderer, config.bloom_config, config.tonemap_config);
+        PostProcessConfig pp_config;
+        pp_config.bloom = config.bloom_config;
+        pp_config.tonemapping = config.tonemap_config;
+        m_post_process_system.init(renderer, pp_config);
     }
 
     if (has_flag(config.enabled_passes, RenderPassFlags::TAA)) {
@@ -86,8 +89,10 @@ void RenderPipeline::set_config(const RenderPipelineConfig& config) {
     }
 
     if (has_flag(config.enabled_passes, RenderPassFlags::PostProcess)) {
-        m_post_process_system.set_bloom_config(config.bloom_config);
-        m_post_process_system.set_tonemap_config(config.tonemap_config);
+        PostProcessConfig pp_config;
+        pp_config.bloom = config.bloom_config;
+        pp_config.tonemapping = config.tonemap_config;
+        m_post_process_system.set_config(pp_config);
     }
 
     if (has_flag(config.enabled_passes, RenderPassFlags::TAA)) {
@@ -110,7 +115,7 @@ void RenderPipeline::apply_quality_preset(RenderQuality quality) {
     switch (quality) {
         case RenderQuality::Low:
             config.render_scale = 0.75f;
-            config.shadow_config.resolution = 1024;
+            config.shadow_config.cascade_resolution = 1024;
             config.shadow_config.cascade_count = 2;
             config.ssao_config.sample_count = 8;
             config.ssao_config.half_resolution = true;
@@ -125,7 +130,7 @@ void RenderPipeline::apply_quality_preset(RenderQuality quality) {
 
         case RenderQuality::Medium:
             config.render_scale = 1.0f;
-            config.shadow_config.resolution = 2048;
+            config.shadow_config.cascade_resolution = 2048;
             config.shadow_config.cascade_count = 3;
             config.ssao_config.sample_count = 16;
             config.ssao_config.half_resolution = true;
@@ -144,7 +149,7 @@ void RenderPipeline::apply_quality_preset(RenderQuality quality) {
 
         case RenderQuality::High:
             config.render_scale = 1.0f;
-            config.shadow_config.resolution = 2048;
+            config.shadow_config.cascade_resolution = 2048;
             config.shadow_config.cascade_count = 4;
             config.ssao_config.sample_count = 32;
             config.ssao_config.half_resolution = false;
@@ -157,9 +162,9 @@ void RenderPipeline::apply_quality_preset(RenderQuality quality) {
 
         case RenderQuality::Ultra:
             config.render_scale = 1.0f;
-            config.shadow_config.resolution = 4096;
+            config.shadow_config.cascade_resolution = 4096;
             config.shadow_config.cascade_count = 4;
-            config.shadow_config.pcf_size = 7;
+            config.shadow_config.pcf_samples = 49;  // 7x7
             config.ssao_config.sample_count = 64;
             config.ssao_config.half_resolution = false;
             config.bloom_config.enabled = true;
@@ -314,7 +319,11 @@ TextureHandle RenderPipeline::get_depth_texture() const {
 }
 
 TextureHandle RenderPipeline::get_shadow_debug_texture() const {
-    return m_shadow_system.get_cascade_texture(0);
+    RenderTargetHandle rt = m_shadow_system.get_cascade_render_target(0);
+    if (rt.valid()) {
+        return m_renderer->get_render_target_texture(rt, 0);
+    }
+    return TextureHandle{};
 }
 
 TextureHandle RenderPipeline::get_ssao_debug_texture() const {
@@ -337,7 +346,7 @@ void RenderPipeline::create_render_targets() {
         desc.height = m_internal_height;
         desc.color_attachment_count = 0;
         desc.has_depth = true;
-        desc.depth_format = TextureFormat::D32F;
+        desc.depth_format = TextureFormat::Depth32F;
         desc.samplable = true;
         desc.debug_name = "Pipeline_Depth";
 
@@ -352,7 +361,7 @@ void RenderPipeline::create_render_targets() {
         desc.color_attachment_count = 1;
         desc.color_format = TextureFormat::RGBA16F;
         desc.has_depth = true;
-        desc.depth_format = TextureFormat::D32F;
+        desc.depth_format = TextureFormat::Depth32F;
         desc.samplable = true;
         desc.debug_name = "Pipeline_HDR";
 
@@ -390,7 +399,7 @@ void RenderPipeline::create_render_targets() {
         view_config.clear_color = 0x000000FF;  // Black
         view_config.clear_depth_enabled = true;
         view_config.clear_depth = 1.0f;
-        m_renderer->configure_view(RenderView::Main, view_config);
+        m_renderer->configure_view(RenderView::MainOpaque, view_config);
     }
 
     {
@@ -398,7 +407,7 @@ void RenderPipeline::create_render_targets() {
         view_config.render_target = m_hdr_target;
         view_config.clear_color_enabled = false;
         view_config.clear_depth_enabled = false;
-        m_renderer->configure_view(RenderView::Transparent, view_config);
+        m_renderer->configure_view(RenderView::MainTransparent, view_config);
     }
 
     {
@@ -434,7 +443,8 @@ void RenderPipeline::destroy_render_targets() {
 }
 
 void RenderPipeline::update_camera_uniforms(const CameraData& camera) {
-    m_renderer->set_view_transform(camera.view_matrix, camera.projection_matrix);
+    m_renderer->set_view_transform(RenderView::MainOpaque, camera.view_matrix, camera.projection_matrix);
+    m_renderer->set_view_transform(RenderView::MainTransparent, camera.view_matrix, camera.projection_matrix);
 }
 
 void RenderPipeline::update_light_uniforms(const std::vector<LightData>& lights) {
@@ -444,10 +454,7 @@ void RenderPipeline::update_light_uniforms(const std::vector<LightData>& lights)
     int light_count = std::min(static_cast<int>(lights.size()), MAX_LIGHTS);
 
     for (int i = 0; i < light_count; ++i) {
-        const auto& light = lights[i];
-        m_renderer->set_light(i, light.position, light.direction, light.color,
-                              light.intensity, light.range,
-                              light.inner_angle, light.outer_angle, light.type);
+        m_renderer->set_light(static_cast<uint32_t>(i), lights[i]);
     }
 }
 
@@ -502,7 +509,7 @@ void RenderPipeline::shadow_pass(const CameraData& camera,
     // Find directional light for CSM
     const LightData* sun_light = nullptr;
     for (const auto& light : lights) {
-        if (light.type == 0 && light.casts_shadows) {
+        if (light.type == 0 && light.cast_shadows) {
             sun_light = &light;
             break;
         }
@@ -511,8 +518,8 @@ void RenderPipeline::shadow_pass(const CameraData& camera,
     if (!sun_light) return;
 
     // Update shadow system
-    m_shadow_system.update(camera.view_matrix, camera.projection_matrix,
-                           sun_light->direction, camera.near_plane, camera.far_plane);
+    m_shadow_system.update_cascades(camera.view_matrix, camera.projection_matrix,
+                                     sun_light->direction, camera.near_plane, camera.far_plane);
 
     // Render shadow casters to each cascade
     for (uint32_t cascade = 0; cascade < m_config.shadow_config.cascade_count; ++cascade) {
@@ -544,7 +551,9 @@ void RenderPipeline::ssao_pass(const CameraData& camera) {
     TextureHandle depth_tex = get_depth_texture();
     if (!depth_tex.valid()) return;
 
-    m_ssao_system.update(camera.view_matrix, camera.projection_matrix, depth_tex);
+    // SSAO requires depth and normal textures
+    TextureHandle normal_tex; // TODO: Get normal texture from GBuffer
+    m_ssao_system.render(depth_tex, normal_tex, camera.projection_matrix, camera.view_matrix);
 }
 
 void RenderPipeline::main_pass(const CameraData& camera,
@@ -559,13 +568,15 @@ void RenderPipeline::main_pass(const CameraData& camera,
         auto cascade_splits = m_shadow_system.get_cascade_splits();
 
         m_renderer->set_shadow_data(shadow_matrices, cascade_splits,
-                                     Vec4(m_config.shadow_config.bias,
+                                     Vec4(m_config.shadow_config.shadow_bias,
                                           m_config.shadow_config.normal_bias,
-                                          static_cast<float>(m_config.shadow_config.pcf_size),
+                                          static_cast<float>(m_config.shadow_config.pcf_samples),
                                           1.0f));
 
         for (uint32_t i = 0; i < m_config.shadow_config.cascade_count; ++i) {
-            m_renderer->set_shadow_texture(i, m_shadow_system.get_cascade_texture(i));
+            auto rt = m_shadow_system.get_cascade_render_target(i);
+            TextureHandle shadow_tex = m_renderer->get_render_target_texture(rt, UINT32_MAX);
+            m_renderer->set_shadow_texture(i, shadow_tex);
         }
 
         m_renderer->enable_shadows(true);
@@ -582,10 +593,10 @@ void RenderPipeline::main_pass(const CameraData& camera,
     // Render opaque objects
     for (const auto* obj : m_visible_opaque) {
         if (obj->skinned && obj->bone_matrices) {
-            m_renderer->submit_skinned_mesh(RenderView::Main, obj->mesh, obj->material,
+            m_renderer->submit_skinned_mesh(RenderView::MainOpaque, obj->mesh, obj->material,
                                              obj->transform, obj->bone_matrices, obj->bone_count);
         } else {
-            m_renderer->submit_mesh(RenderView::Main, obj->mesh, obj->material, obj->transform);
+            m_renderer->submit_mesh(RenderView::MainOpaque, obj->mesh, obj->material, obj->transform);
         }
         m_stats.draw_calls++;
     }
@@ -597,7 +608,8 @@ void RenderPipeline::volumetric_pass(const CameraData& camera,
     auto shadow_matrices = m_shadow_system.get_cascade_matrices();
     std::array<TextureHandle, 4> shadow_maps;
     for (uint32_t i = 0; i < 4; ++i) {
-        shadow_maps[i] = m_shadow_system.get_cascade_texture(i);
+        auto rt = m_shadow_system.get_cascade_render_target(i);
+        shadow_maps[i] = m_renderer->get_render_target_texture(rt, UINT32_MAX);
     }
 
     TextureHandle depth_tex = get_depth_texture();
@@ -629,10 +641,10 @@ void RenderPipeline::transparent_pass(const CameraData& camera,
                                        const std::vector<LightData>& lights) {
     for (const auto* obj : m_visible_transparent) {
         if (obj->skinned && obj->bone_matrices) {
-            m_renderer->submit_skinned_mesh(RenderView::Transparent, obj->mesh, obj->material,
+            m_renderer->submit_skinned_mesh(RenderView::MainTransparent, obj->mesh, obj->material,
                                              obj->transform, obj->bone_matrices, obj->bone_count);
         } else {
-            m_renderer->submit_mesh(RenderView::Transparent, obj->mesh, obj->material, obj->transform);
+            m_renderer->submit_mesh(RenderView::MainTransparent, obj->mesh, obj->material, obj->transform);
         }
         m_stats.draw_calls++;
     }
@@ -646,21 +658,22 @@ void RenderPipeline::post_process_pass(const CameraData& camera) {
     if (has_flag(m_config.enabled_passes, RenderPassFlags::Volumetric)) {
         TextureHandle vol_tex = m_volumetric_system.get_volumetric_texture();
         if (vol_tex.valid()) {
-            m_post_process_system.apply_volumetric(hdr_tex, vol_tex);
+            // TODO: Volumetric fog compositing
         }
     }
 
     // Apply TAA
     if (has_flag(m_config.enabled_passes, RenderPassFlags::TAA) && m_config.taa_config.enabled) {
         TextureHandle depth_tex = get_depth_texture();
-        m_taa_system.update(hdr_tex, depth_tex,
-                            camera.view_projection, camera.prev_view_projection,
-                            camera.jitter);
-        hdr_tex = m_taa_system.get_output_texture();
+        TextureHandle motion_tex; // TODO: Motion vector texture
+        TextureHandle resolved = m_taa_system.resolve(hdr_tex, depth_tex, motion_tex);
+        if (resolved.valid()) {
+            hdr_tex = resolved;
+        }
     }
 
     // Render bloom and tonemapping to LDR target
-    m_post_process_system.render(hdr_tex, m_ldr_target);
+    m_post_process_system.process(hdr_tex, m_ldr_target);
 }
 
 void RenderPipeline::debug_pass(const CameraData& camera) {
@@ -707,7 +720,7 @@ CameraData make_camera_data(
     camera.inverse_view = inverse(camera.view_matrix);
 
     // Calculate projection matrix
-    camera.projection_matrix = perspective(
+    camera.projection_matrix = glm::perspective(
         fov_y * 3.14159f / 180.0f,
         aspect_ratio,
         near_plane,
@@ -733,7 +746,7 @@ LightData make_directional_light(
     light.direction = normalize(direction);
     light.color = color;
     light.intensity = intensity;
-    light.casts_shadows = casts_shadows;
+    light.cast_shadows = casts_shadows;
     light.range = 0.0f;  // Infinite
     return light;
 }
@@ -751,7 +764,7 @@ LightData make_point_light(
     light.color = color;
     light.intensity = intensity;
     light.range = range;
-    light.casts_shadows = casts_shadows;
+    light.cast_shadows = casts_shadows;
     return light;
 }
 
@@ -774,7 +787,7 @@ LightData make_spot_light(
     light.range = range;
     light.inner_angle = inner_angle;
     light.outer_angle = outer_angle;
-    light.casts_shadows = casts_shadows;
+    light.cast_shadows = casts_shadows;
     return light;
 }
 

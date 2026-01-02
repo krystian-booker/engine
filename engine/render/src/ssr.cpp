@@ -282,10 +282,10 @@ void SSRSystem::trace(bgfx::ViewId view_id,
     bgfx::setViewRect(view_id, 0, 0, m_trace_width, m_trace_height);
 
     // Set matrices
-    bgfx::setUniform(u_view_matrix, &view_matrix.m[0][0]);
-    bgfx::setUniform(u_proj_matrix, &proj_matrix.m[0][0]);
-    bgfx::setUniform(u_inv_proj_matrix, &inv_proj_matrix.m[0][0]);
-    bgfx::setUniform(u_inv_view_matrix, &inv_view_matrix.m[0][0]);
+    bgfx::setUniform(u_view_matrix, glm::value_ptr(view_matrix));
+    bgfx::setUniform(u_proj_matrix, glm::value_ptr(proj_matrix));
+    bgfx::setUniform(u_inv_proj_matrix, glm::value_ptr(inv_proj_matrix));
+    bgfx::setUniform(u_inv_view_matrix, glm::value_ptr(inv_view_matrix));
 
     // SSR params: max_steps, max_distance, thickness, stride
     float params[4] = {
@@ -340,7 +340,7 @@ void SSRSystem::temporal_resolve(bgfx::ViewId view_id,
     bgfx::setViewRect(view_id, 0, 0, m_trace_width, m_trace_height);
 
     // Previous view-proj for reprojection
-    bgfx::setUniform(u_prev_view_proj, &prev_view_proj.m[0][0]);
+    bgfx::setUniform(u_prev_view_proj, glm::value_ptr(prev_view_proj));
 
     // Temporal weight
     float params[4] = {

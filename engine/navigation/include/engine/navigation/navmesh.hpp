@@ -5,10 +5,7 @@
 #include <string>
 #include <vector>
 #include <cstdint>
-
-// Forward declarations for Detour types
-class dtNavMesh;
-class dtNavMeshQuery;
+#include <DetourNavMesh.h>
 
 namespace engine::navigation {
 
@@ -47,7 +44,7 @@ struct NavMeshSettings {
 };
 
 // Polygon reference type
-using NavPolyRef = uint64_t;
+using NavPolyRef = dtPolyRef;
 
 // Invalid polygon reference
 constexpr NavPolyRef INVALID_NAV_POLY_REF = 0;

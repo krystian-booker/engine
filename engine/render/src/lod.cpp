@@ -114,7 +114,7 @@ float LODSelector::calculate_screen_ratio(
     // Using: screen_height = (object_height * screen_height) / (2 * distance * tan(fov/2))
     // Simplified to ratio: object_height / (2 * distance * tan(fov/2))
 
-    float half_fov_tan = std::tan(camera.fov * 0.5f);
+    float half_fov_tan = std::tan(glm::radians(camera.fov_y * 0.5f));
     float screen_ratio = radius / (distance * half_fov_tan);
 
     return std::clamp(screen_ratio, 0.0f, 1.0f);
@@ -222,46 +222,6 @@ bool LODComponent::get_crossfade_meshes(
     weight_b = progress;
 
     return true;
-}
-
-// LOD system update function
-
-void lod_system_update(
-    entt::registry& registry,
-    const CameraData& camera,
-    const LODSelector& selector,
-    float dt
-) {
-    auto view = registry.view<LODComponent>();
-
-    for (auto entity : view) {
-        auto& lod = view.get<LODComponent>(entity);
-
-        if (!lod.enabled) continue;
-
-        // Get world bounds for this entity
-        // In a real implementation, you'd get this from a BoundsComponent or similar
-        AABB bounds;
-        // bounds = ... get from entity
-
-        // Apply custom bias if set
-        LODGroup adjusted_group = lod.lod_group;
-        if (lod.use_custom_bias) {
-            adjusted_group.lod_bias = lod.custom_bias;
-        }
-
-        // Select LOD
-        LODSelectionResult result = selector.select(adjusted_group, bounds, camera);
-        lod.last_result = result;
-
-        // Start transition if LOD changed
-        if (result.target_lod != lod.state.target_lod && !result.is_culled) {
-            lod.state.start_transition(result.target_lod, lod.lod_group.fade_duration);
-        }
-
-        // Update transition state
-        lod.state.update(dt);
-    }
 }
 
 // LOD presets

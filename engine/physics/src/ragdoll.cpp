@@ -16,13 +16,13 @@ RagdollDefinition RagdollDefinition::load(const std::string& path) {
     RagdollDefinition def;
 
     auto content = core::FileSystem::read_text(path);
-    if (!content) {
+    if (content.empty()) {
         core::log(core::LogLevel::Error, "Failed to load ragdoll definition: {}", path);
         return def;
     }
 
     try {
-        json j = json::parse(*content);
+        json j = json::parse(content);
 
         def.name = j.value("name", "");
         def.root_body = j.value("root_body", "");
@@ -446,22 +446,39 @@ void Ragdoll::create_bodies(PhysicsWorld& world, const render::Skeleton& skeleto
         // Set shape based on type
         switch (body_def.shape) {
             case RagdollShapeType::Capsule:
-                settings.shape_type = ShapeType::Capsule;
-                settings.half_extents = body_def.dimensions;  // x = radius, y = half-height
+            {
+                CapsuleShapeSettings shape(body_def.dimensions.x, body_def.dimensions.y);
+                shape.center_offset = body_def.offset;
+                shape.rotation_offset = body_def.rotation_offset;
+                settings.shape = &shape;
+                PhysicsBodyId body_id = world.create_body(settings);
+                m_bone_to_body[body_def.bone_name] = body_id;
+                m_bone_to_index[body_def.bone_name] = static_cast<int>(i);
                 break;
+            }
             case RagdollShapeType::Box:
-                settings.shape_type = ShapeType::Box;
-                settings.half_extents = body_def.dimensions;
+            {
+                BoxShapeSettings shape(body_def.dimensions);
+                shape.center_offset = body_def.offset;
+                shape.rotation_offset = body_def.rotation_offset;
+                settings.shape = &shape;
+                PhysicsBodyId body_id = world.create_body(settings);
+                m_bone_to_body[body_def.bone_name] = body_id;
+                m_bone_to_index[body_def.bone_name] = static_cast<int>(i);
                 break;
+            }
             case RagdollShapeType::Sphere:
-                settings.shape_type = ShapeType::Sphere;
-                settings.radius = body_def.dimensions.x;
+            {
+                SphereShapeSettings shape(body_def.dimensions.x);
+                shape.center_offset = body_def.offset;
+                shape.rotation_offset = body_def.rotation_offset;
+                settings.shape = &shape;
+                PhysicsBodyId body_id = world.create_body(settings);
+                m_bone_to_body[body_def.bone_name] = body_id;
+                m_bone_to_index[body_def.bone_name] = static_cast<int>(i);
                 break;
+            }
         }
-
-        PhysicsBodyId body_id = world.create_body(settings);
-        m_bone_to_body[body_def.bone_name] = body_id;
-        m_bone_to_index[body_def.bone_name] = static_cast<int>(i);
     }
 }
 

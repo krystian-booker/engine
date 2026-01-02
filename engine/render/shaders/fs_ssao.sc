@@ -73,12 +73,13 @@ void main()
     float radius = u_ssaoParams.x;
     float bias = u_ssaoParams.y;
     float occlusion = 0.0;
-    int sampleCount = 32;
+    const int sampleCount = 32;
 
-    for (int i = 0; i < sampleCount && i < 64; i++)
+    for (int i = 0; i < sampleCount; i++)
     {
         // Get sample position in kernel space
-        int idx = i / 4;
+        float fi = float(i);
+        int idx = int(fi * 0.25);
         int comp = i - idx * 4;
         vec3 sampleDir;
         if (comp == 0) sampleDir = u_samples[idx].xyz;
@@ -87,7 +88,7 @@ void main()
         else sampleDir = u_samples[idx + 2].yzw;
 
         // Transform to view space
-        vec3 samplePos = TBN * sampleDir;
+        vec3 samplePos = mul(TBN, sampleDir);
         samplePos = fragPos + samplePos * radius;
 
         // Project to screen space
@@ -96,7 +97,12 @@ void main()
         offset.xy = offset.xy * 0.5 + 0.5;  // To UV space
 
         // Get depth at sample point
-        float sampleDepth = texture2D(s_depth, offset.xy).r;
+        float sampleDepth =
+#if BGFX_SHADER_LANGUAGE_HLSL
+            bgfxTexture2DLod(s_depth, offset.xy, 0.0).r;
+#else
+            texture2D(s_depth, offset.xy).r;
+#endif
         vec3 sampleViewPos = getViewPos(offset.xy, sampleDepth);
 
         // Range check & accumulate
@@ -108,7 +114,7 @@ void main()
 
     // Normalize and apply intensity/power
     occlusion = 1.0 - (occlusion / float(sampleCount));
-    occlusion = pow(occlusion, u_ssaoParams.w) * u_ssaoParams.z;
+    occlusion = pow(max(occlusion, 0.0), u_ssaoParams.w) * u_ssaoParams.z;
 
     // Output ambient occlusion
     gl_FragColor = vec4(vec3_splat(occlusion), 1.0);

@@ -14,7 +14,19 @@ SequencePlayer::~SequencePlayer() = default;
 
 void SequencePlayer::load(std::unique_ptr<Sequence> sequence) {
     stop();
-    m_sequence = std::move(sequence);
+    m_owned_sequence = std::move(sequence);
+    m_sequence = m_owned_sequence.get();
+    m_current_time = 0.0f;
+
+    if (m_sequence) {
+        m_frame_rate = m_sequence->get_info().frame_rate;
+    }
+}
+
+void SequencePlayer::load(Sequence* sequence) {
+    stop();
+    m_owned_sequence.reset();
+    m_sequence = sequence;
     m_current_time = 0.0f;
 
     if (m_sequence) {
@@ -33,7 +45,8 @@ void SequencePlayer::load(const std::string& path) {
 
 void SequencePlayer::unload() {
     stop();
-    m_sequence.reset();
+    m_owned_sequence.reset();
+    m_sequence = nullptr;
 }
 
 void SequencePlayer::play() {
@@ -301,14 +314,12 @@ Sequence* CinematicManager::get_sequence(const std::string& name) {
 SequencePlayer* CinematicManager::play_sequence(const std::string& name) {
     Sequence* seq = get_sequence(name);
     if (!seq) {
-        core::log(core::LogLevel::Warning, "Sequence not found: {}", name);
+        core::log(core::LogLevel::Warn, "Sequence not found: {}", name);
         return nullptr;
     }
 
-    // Create a copy for playback
-    auto sequence_copy = std::make_unique<Sequence>(*seq);
     m_active_player = std::make_unique<SequencePlayer>();
-    m_active_player->load(std::move(sequence_copy));
+    m_active_player->load(seq);
     m_active_player->play();
 
     return m_active_player.get();

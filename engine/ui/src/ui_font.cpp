@@ -1,5 +1,5 @@
 #include <engine/ui/ui_font.hpp>
-#include <engine/core/logging.hpp>
+#include <engine/core/log.hpp>
 
 #define STB_TRUETYPE_IMPLEMENTATION
 #include <stb_truetype.h>
@@ -19,7 +19,7 @@ bool FontAtlas::load_from_ttf(const std::string& path, float size_pixels, const 
     // Read TTF file
     std::ifstream file(path, std::ios::binary);
     if (!file) {
-        core::log_error("FontAtlas: Failed to open font file: {}", path);
+        core::log(core::LogLevel::Error, "FontAtlas: Failed to open font file: {}", path);
         return false;
     }
 
@@ -33,7 +33,7 @@ bool FontAtlas::load_from_ttf(const std::string& path, float size_pixels, const 
     // Initialize stb_truetype
     stbtt_fontinfo font_info;
     if (!stbtt_InitFont(&font_info, m_ttf_data.data(), 0)) {
-        core::log_error("FontAtlas: Failed to initialize font");
+        core::log(core::LogLevel::Error, "FontAtlas: Failed to initialize font");
         return false;
     }
 
@@ -71,7 +71,7 @@ bool FontAtlas::load_from_ttf(const std::string& path, float size_pixels, const 
 
     stbtt_pack_context pack_ctx;
     if (!stbtt_PackBegin(&pack_ctx, atlas_data.data(), m_width, m_height, 0, 1, nullptr)) {
-        core::log_error("FontAtlas: Failed to begin packing");
+        core::log(core::LogLevel::Error, "FontAtlas: Failed to begin packing");
         return false;
     }
 
@@ -94,7 +94,7 @@ bool FontAtlas::load_from_ttf(const std::string& path, float size_pixels, const 
 
     if (!stbtt_PackFontRanges(&pack_ctx, m_ttf_data.data(), 0, &range, 1)) {
         stbtt_PackEnd(&pack_ctx);
-        core::log_error("FontAtlas: Failed to pack font ranges");
+        core::log(core::LogLevel::Error, "FontAtlas: Failed to pack font ranges");
         return false;
     }
 
@@ -132,11 +132,11 @@ bool FontAtlas::load_from_ttf(const std::string& path, float size_pixels, const 
         bgfx::copy(atlas_data.data(), static_cast<uint32_t>(atlas_data.size())));
 
     if (!bgfx::isValid(m_texture)) {
-        core::log_error("FontAtlas: Failed to create texture");
+        core::log(core::LogLevel::Error, "FontAtlas: Failed to create texture");
         return false;
     }
 
-    core::log_info("FontAtlas: Loaded {} with {} glyphs", path, m_glyphs.size());
+    core::log(core::LogLevel::Info, "FontAtlas: Loaded {} with {} glyphs", path, m_glyphs.size());
     return true;
 }
 

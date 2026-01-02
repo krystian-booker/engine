@@ -1,7 +1,7 @@
 #pragma once
 
 #include <engine/core/math.hpp>
-#include <engine/scene/entity.hpp>
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <functional>
@@ -10,6 +10,7 @@
 namespace engine::render {
 
 using namespace engine::core;
+namespace scene { using Entity = uint32_t; }
 
 // Standard animation event types
 namespace AnimEvents {
@@ -67,7 +68,7 @@ private:
 };
 
 // Handler callback type
-using AnimationEventHandler = std::function<void(scene::Entity, const AnimationEventData&)>;
+using AnimationEventHandler = std::function<void(uint32_t, const AnimationEventData&)>;
 
 // Global event handler registry
 class AnimationEventDispatcher {
@@ -82,7 +83,7 @@ public:
     void unregister_all(const std::string& event_type);
 
     // Dispatch event (called by animation system)
-    void dispatch(scene::Entity entity, const AnimationEventData& event);
+    void dispatch(uint32_t entity, const AnimationEventData& event);
 
     // Clear all handlers
     void clear();

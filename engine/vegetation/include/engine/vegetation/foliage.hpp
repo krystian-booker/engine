@@ -6,6 +6,7 @@
 #include <functional>
 #include <unordered_map>
 #include <engine/core/math.hpp>
+#include <engine/vegetation/grass.hpp>
 
 namespace engine::vegetation {
 
@@ -77,7 +78,7 @@ struct FoliageType {
 // Foliage instance data
 struct FoliageInstance {
     Vec3 position;
-    Quat rotation = Quat::identity();
+    Quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
     float scale = 1.0f;
     uint32_t type_index = 0;
     uint32_t random_seed = 0;
@@ -175,7 +176,7 @@ public:
 
     // Instance management
     uint32_t add_instance(const std::string& type_id, const Vec3& position,
-                          const Quat& rotation = Quat::identity(), float scale = 1.0f);
+                          const Quat& rotation = Quat{1.0f, 0.0f, 0.0f, 0.0f}, float scale = 1.0f);
     void remove_instance(uint32_t index);
     void clear_instances();
 

@@ -7,6 +7,7 @@
 namespace engine::audio {
 
 using namespace engine::scene;
+using namespace engine::core;
 
 // Static member initialization
 Vec3 AudioSystem::s_listener_position{0.0f};

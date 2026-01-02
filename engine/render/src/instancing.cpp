@@ -166,50 +166,50 @@ void InstancingSystem::set_frustum(const Mat4& view_proj) {
     // Extract frustum planes from view-projection matrix
     // Left plane
     m_frustum_planes[0] = Vec4(
-        view_proj.m[0][3] + view_proj.m[0][0],
-        view_proj.m[1][3] + view_proj.m[1][0],
-        view_proj.m[2][3] + view_proj.m[2][0],
-        view_proj.m[3][3] + view_proj.m[3][0]
+        view_proj[0][3] + view_proj[0][0],
+        view_proj[1][3] + view_proj[1][0],
+        view_proj[2][3] + view_proj[2][0],
+        view_proj[3][3] + view_proj[3][0]
     );
 
     // Right plane
     m_frustum_planes[1] = Vec4(
-        view_proj.m[0][3] - view_proj.m[0][0],
-        view_proj.m[1][3] - view_proj.m[1][0],
-        view_proj.m[2][3] - view_proj.m[2][0],
-        view_proj.m[3][3] - view_proj.m[3][0]
+        view_proj[0][3] - view_proj[0][0],
+        view_proj[1][3] - view_proj[1][0],
+        view_proj[2][3] - view_proj[2][0],
+        view_proj[3][3] - view_proj[3][0]
     );
 
     // Bottom plane
     m_frustum_planes[2] = Vec4(
-        view_proj.m[0][3] + view_proj.m[0][1],
-        view_proj.m[1][3] + view_proj.m[1][1],
-        view_proj.m[2][3] + view_proj.m[2][1],
-        view_proj.m[3][3] + view_proj.m[3][1]
+        view_proj[0][3] + view_proj[0][1],
+        view_proj[1][3] + view_proj[1][1],
+        view_proj[2][3] + view_proj[2][1],
+        view_proj[3][3] + view_proj[3][1]
     );
 
     // Top plane
     m_frustum_planes[3] = Vec4(
-        view_proj.m[0][3] - view_proj.m[0][1],
-        view_proj.m[1][3] - view_proj.m[1][1],
-        view_proj.m[2][3] - view_proj.m[2][1],
-        view_proj.m[3][3] - view_proj.m[3][1]
+        view_proj[0][3] - view_proj[0][1],
+        view_proj[1][3] - view_proj[1][1],
+        view_proj[2][3] - view_proj[2][1],
+        view_proj[3][3] - view_proj[3][1]
     );
 
     // Near plane
     m_frustum_planes[4] = Vec4(
-        view_proj.m[0][2],
-        view_proj.m[1][2],
-        view_proj.m[2][2],
-        view_proj.m[3][2]
+        view_proj[0][2],
+        view_proj[1][2],
+        view_proj[2][2],
+        view_proj[3][2]
     );
 
     // Far plane
     m_frustum_planes[5] = Vec4(
-        view_proj.m[0][3] - view_proj.m[0][2],
-        view_proj.m[1][3] - view_proj.m[1][2],
-        view_proj.m[2][3] - view_proj.m[2][2],
-        view_proj.m[3][3] - view_proj.m[3][2]
+        view_proj[0][3] - view_proj[0][2],
+        view_proj[1][3] - view_proj[1][2],
+        view_proj[2][3] - view_proj[2][2],
+        view_proj[3][3] - view_proj[3][2]
     );
 
     // Normalize planes

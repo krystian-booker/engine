@@ -9,6 +9,10 @@ namespace engine::streaming {
 static SceneStreamingSystem* s_scene_streaming = nullptr;
 static StreamingVolumeManager* s_volume_manager = nullptr;
 
+static Vec3 closest_point_on_aabb(const AABB& box, const Vec3& point) {
+    return glm::clamp(point, box.min, box.max);
+}
+
 SceneStreamingSystem& get_scene_streaming() {
     if (!s_scene_streaming) {
         static SceneStreamingSystem instance;
@@ -165,7 +169,7 @@ void SceneStreamingSystem::force_unload_sync(const std::string& cell_name) {
 
 void SceneStreamingSystem::load_cells_in_radius(const Vec3& center, float radius) {
     for (auto& [name, cell] : m_cells) {
-        Vec3 closest = cell.bounds.closest_point(center);
+        Vec3 closest = closest_point_on_aabb(cell.bounds, center);
         float dist = length(closest - center);
 
         if (dist <= radius && cell.state == CellState::Unloaded) {
@@ -176,7 +180,7 @@ void SceneStreamingSystem::load_cells_in_radius(const Vec3& center, float radius
 
 void SceneStreamingSystem::unload_cells_outside_radius(const Vec3& center, float radius) {
     for (auto& [name, cell] : m_cells) {
-        Vec3 closest = cell.bounds.closest_point(center);
+        Vec3 closest = closest_point_on_aabb(cell.bounds, center);
         float dist = length(closest - center);
 
         if (dist > radius && (cell.state == CellState::Loaded || cell.state == CellState::Visible)) {
@@ -270,7 +274,7 @@ CellState SceneStreamingSystem::get_cell_state(const std::string& name) const {
 
 void SceneStreamingSystem::update_cell_distances(const Vec3& origin) {
     for (auto& [name, cell] : m_cells) {
-        Vec3 closest = cell.bounds.closest_point(origin);
+        Vec3 closest = closest_point_on_aabb(cell.bounds, origin);
         cell.distance_to_player = length(closest - origin);
     }
 }

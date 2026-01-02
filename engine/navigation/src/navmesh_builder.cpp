@@ -1,12 +1,12 @@
 #include <engine/navigation/navmesh_builder.hpp>
-#include <engine/core/logging.hpp>
-#include <engine/core/time.hpp>
+#include <engine/core/log.hpp>
 
 #include <Recast.h>
 #include <DetourNavMesh.h>
 #include <DetourNavMeshBuilder.h>
 
 #include <thread>
+#include <chrono>
 
 namespace engine::navigation {
 
@@ -15,13 +15,13 @@ static void recast_log(void* /*ctx*/, rcLogCategory category, const char* msg, i
     std::string message(msg, len);
     switch (category) {
         case RC_LOG_ERROR:
-            core::log_error("Recast: {}", message);
+            core::log(core::LogLevel::Error, "Recast: {}", message);
             break;
         case RC_LOG_WARNING:
-            core::log_warn("Recast: {}", message);
+            core::log(core::LogLevel::Warn, "Recast: {}", message);
             break;
         case RC_LOG_PROGRESS:
-            core::log_debug("Recast: {}", message);
+            core::log(core::LogLevel::Debug, "Recast: {}", message);
             break;
     }
 }
@@ -101,7 +101,7 @@ NavMeshBuildResult NavMeshBuilder::build_from_world(
     // This would iterate through entities with MeshRenderer and Transform components
     // and extract their geometry into NavMeshInputGeometry
 
-    core::log_warn("NavMeshBuilder::build_from_world not fully implemented - use build() with explicit geometry");
+    core::log(core::LogLevel::Warn, "NavMeshBuilder::build_from_world not fully implemented - use build() with explicit geometry");
 
     return build(geometry, settings, progress);
 }
@@ -129,7 +129,7 @@ NavMeshBuildResult NavMeshBuilder::build_internal(
     result.input_vertices = static_cast<int>(geometry.vertices.size());
     result.input_triangles = static_cast<int>(geometry.indices.size() / 3);
 
-    auto start_time = core::Time::now();
+    auto start_time = std::chrono::steady_clock::now();
 
     if (geometry.vertices.empty() || geometry.indices.empty()) {
         result.error_message = "Empty geometry";
@@ -450,10 +450,10 @@ NavMeshBuildResult NavMeshBuilder::build_internal(
     result.success = true;
     result.output_polygons = result.navmesh->get_polygon_count();
     result.output_tiles = result.navmesh->get_tile_count();
-    result.build_time_ms = static_cast<float>(core::Time::elapsed_ms(start_time));
+    result.build_time_ms = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - start_time).count();
 
-    core::log_info("NavMesh built: {} polygons, {} tiles, {:.1f}ms",
-                   result.output_polygons, result.output_tiles, result.build_time_ms);
+    core::log(core::LogLevel::Info, "NavMesh built: {} polygons, {} tiles, {:.1f}ms",
+              result.output_polygons, result.output_tiles, result.build_time_ms);
 
     return result;
 }

@@ -254,6 +254,10 @@ void UIElement::layout(const Rect& parent_bounds) {
     m_layout_dirty = false;
 }
 
+Vec2 UIElement::measure(Vec2 available_size) {
+    return on_measure(available_size);
+}
+
 void UIElement::mark_layout_dirty() {
     m_layout_dirty = true;
     if (m_parent) {

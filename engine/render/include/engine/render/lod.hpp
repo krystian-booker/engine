@@ -6,6 +6,8 @@
 #include <memory>
 #include <functional>
 
+namespace entt { class registry; }
+
 namespace engine::render {
 
 using namespace engine::core;
@@ -162,14 +164,6 @@ struct LODComponent {
         MeshHandle& mesh_b, MaterialHandle& mat_b, float& weight_b
     ) const;
 };
-
-// LOD system function (to be called in PreRender phase)
-void lod_system_update(
-    entt::registry& registry,
-    const CameraData& camera,
-    const LODSelector& selector,
-    float dt
-);
 
 // LOD group presets for common configurations
 namespace LODPresets {

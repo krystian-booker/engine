@@ -39,7 +39,7 @@ entt::meta_any ComponentFactory::create(entt::registry& registry, entt::entity e
 
     // Add to entity via storage
     if (!storage->contains(entity)) {
-        storage->push(entity, instance.data());
+        storage->push(entity);
     }
 
     return instance;

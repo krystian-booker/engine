@@ -14,7 +14,7 @@ UIImage::UIImage(render::TextureHandle texture) : UIImage() {
 void UIImage::on_render(UIRenderContext& ctx) {
     render_background(ctx, m_bounds);
 
-    if (m_texture.idx != bgfx::kInvalidHandle) {
+    if (m_texture.valid()) {
         ctx.draw_image(m_content_bounds, m_texture, m_tint);
     }
 }

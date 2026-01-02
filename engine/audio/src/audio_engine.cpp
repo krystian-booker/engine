@@ -215,6 +215,47 @@ bool AudioEngine::is_bus_muted(AudioBusHandle bus) const {
     return is_bus_muted_impl(m_impl.get(), bus);
 }
 
+SoundHandle AudioEngine::play(const std::string& path, float volume, bool loop) {
+    SoundHandle handle = load_sound(path);
+    if (!handle.valid()) {
+        return {};
+    }
+
+    SoundConfig config;
+    config.volume = volume;
+    config.loop = loop;
+    play_sound(handle, config);
+    return handle;
+}
+
+void AudioEngine::stop(SoundHandle h) {
+    stop_sound(h);
+}
+
+void AudioEngine::pause(SoundHandle /*h*/) {
+    // Not supported by underlying implementation yet
+}
+
+void AudioEngine::resume(SoundHandle /*h*/) {
+    // Not supported by underlying implementation yet
+}
+
+void AudioEngine::set_volume(SoundHandle /*h*/, float /*volume*/) {
+    // Per-sound volume adjustment not exposed; no-op for now
+}
+
+void AudioEngine::set_pitch(SoundHandle /*h*/, float /*pitch*/) {
+    // Per-sound pitch adjustment not exposed; no-op for now
+}
+
+void AudioEngine::fade_in(SoundHandle /*h*/, float /*duration*/) {
+    // Not implemented; cinematic tracks expect this signature
+}
+
+void AudioEngine::fade_out(SoundHandle h, float /*duration*/) {
+    stop_sound(h);
+}
+
 // Global instance
 static AudioEngine s_audio_engine;
 

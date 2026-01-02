@@ -3,6 +3,8 @@
 #include <engine/ui/ui_types.hpp>
 #include <engine/ui/ui_font.hpp>
 #include <engine/render/types.hpp>
+#include <engine/render/render_target.hpp>
+#include <bgfx/bgfx.h>
 #include <vector>
 
 namespace engine::ui {
@@ -79,11 +81,15 @@ public:
     void render(const UIRenderContext& ctx, render::RenderView view);
 
     // White texture for solid colors
-    render::TextureHandle get_white_texture() const { return m_white_texture; }
+    render::TextureHandle get_white_texture() const {
+        render::TextureHandle handle;
+        handle.id = bgfx::isValid(m_white_texture) ? m_white_texture.idx : UINT32_MAX;
+        return handle;
+    }
 
 private:
-    render::ShaderHandle m_shader;
-    render::TextureHandle m_white_texture;
+    bgfx::ProgramHandle m_shader = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle m_white_texture = BGFX_INVALID_HANDLE;
 
     bgfx::VertexLayout m_vertex_layout;
     bgfx::DynamicVertexBufferHandle m_vertex_buffer;

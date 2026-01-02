@@ -1,5 +1,5 @@
 #include <engine/ui/ui_context.hpp>
-#include <engine/core/logging.hpp>
+#include <engine/core/log.hpp>
 #include <algorithm>
 
 namespace engine::ui {
@@ -29,7 +29,7 @@ bool UIContext::init(render::IRenderer* renderer) {
 
     // Initialize renderer
     if (!m_renderer.init()) {
-        core::log_error("UIContext: Failed to initialize renderer");
+        core::log(core::LogLevel::Error, "UIContext: Failed to initialize renderer");
         return false;
     }
 
@@ -43,7 +43,7 @@ bool UIContext::init(render::IRenderer* renderer) {
     m_theme = UITheme::dark();
 
     m_initialized = true;
-    core::log_info("UIContext initialized");
+    core::log(core::LogLevel::Info, "UIContext initialized");
 
     return true;
 }
@@ -60,12 +60,12 @@ void UIContext::shutdown() {
     m_render = nullptr;
     m_initialized = false;
 
-    core::log_info("UIContext shutdown");
+    core::log(core::LogLevel::Info, "UIContext shutdown");
 }
 
 UICanvas* UIContext::create_canvas(const std::string& name) {
     if (m_canvases.find(name) != m_canvases.end()) {
-        core::log_warn("UIContext: Canvas '{}' already exists", name);
+        core::log(core::LogLevel::Warn, "UIContext: Canvas '{}' already exists", name);
         return m_canvases[name].get();
     }
 

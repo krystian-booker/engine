@@ -210,10 +210,10 @@ void FoliageSystem::generate_in_region(const AABB& region, const FoliagePlacemen
             if (rule.custom_filter && !rule.custom_filter(pos, normal)) continue;
 
             // Calculate rotation
-            Quat rotation = Quat::identity();
+            Quat rotation(1.0f, 0.0f, 0.0f, 0.0f);
             if (type->random_rotation) {
                 float angle = type->min_rotation + pos_dist(gen) * (type->max_rotation - type->min_rotation);
-                rotation = Quat::from_axis_angle(Vec3(0.0f, 1.0f, 0.0f), angle * 0.0174533f);
+                rotation = glm::angleAxis(angle * 0.0174533f, Vec3(0.0f, 1.0f, 0.0f));
             }
 
             // Align to terrain
@@ -222,7 +222,7 @@ void FoliageSystem::generate_in_region(const AABB& region, const FoliagePlacemen
                 Vec3 axis = cross(up, normal);
                 if (length(axis) > 0.001f) {
                     float angle = std::acos(dot(up, normal));
-                    Quat align = Quat::from_axis_angle(normalize(axis), angle);
+                    Quat align = glm::angleAxis(angle, normalize(axis));
                     rotation = align * rotation;
                 }
             }
@@ -249,7 +249,7 @@ void FoliageSystem::generate_in_region(const AABB& region, const FoliagePlacemen
 
                     float cluster_scale = scale * (0.7f + pos_dist(gen) * 0.6f);
                     float cluster_angle = pos_dist(gen) * 360.0f;
-                    Quat cluster_rot = Quat::from_axis_angle(Vec3(0.0f, 1.0f, 0.0f), cluster_angle * 0.0174533f);
+                    Quat cluster_rot = glm::angleAxis(cluster_angle * 0.0174533f, Vec3(0.0f, 1.0f, 0.0f));
 
                     add_instance(rule.type_id, Vec3(cx, cy + type->terrain_offset, cz), cluster_rot, cluster_scale);
                 }
@@ -493,7 +493,7 @@ void FoliageSystem::update_visibility(const Vec3& camera_position, const Frustum
 
     for (auto& chunk : m_chunks) {
         chunk.distance_to_camera = length((chunk.bounds.min + chunk.bounds.max) * 0.5f - camera_position);
-        chunk.visible = frustum.intersects(chunk.bounds);
+        chunk.visible = frustum.contains_aabb(chunk.bounds);
 
         if (chunk.visible) {
             m_stats.visible_chunks++;

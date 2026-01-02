@@ -272,7 +272,7 @@ void GrassSystem::update_chunk_visibility(const Vec3& camera_pos, const Frustum&
         }
 
         // Frustum check
-        chunk.visible = frustum.intersects(chunk.bounds);
+        chunk.visible = frustum.contains_aabb(chunk.bounds);
 
         // LOD level
         if (chunk.distance_to_camera < m_settings.lod_start_distance) {

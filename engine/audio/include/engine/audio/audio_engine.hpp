@@ -13,6 +13,9 @@ using namespace engine::core;
 // Audio engine - manages all audio playback
 class AudioEngine {
 public:
+    // Forward declaration for pimpl (defined in miniaudio_impl.cpp)
+    struct Impl;
+
     AudioEngine();
     ~AudioEngine();
 
@@ -82,8 +85,17 @@ public:
     void set_bus_muted(AudioBusHandle bus, bool muted);
     bool is_bus_muted(AudioBusHandle bus) const;
 
+    // Convenience helpers used by cinematic tracks (minimal implementations)
+    SoundHandle play(const std::string& path, float volume = 1.0f, bool loop = false);
+    void stop(SoundHandle h);
+    void pause(SoundHandle h);
+    void resume(SoundHandle h);
+    void set_volume(SoundHandle h, float volume);
+    void set_pitch(SoundHandle h, float pitch);
+    void fade_in(SoundHandle h, float /*duration*/);
+    void fade_out(SoundHandle h, float /*duration*/);
+
 private:
-    struct Impl;
     std::unique_ptr<Impl> m_impl;
 
     // Friend declarations for implementation functions (in miniaudio_impl.cpp)

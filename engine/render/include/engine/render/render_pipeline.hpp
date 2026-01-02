@@ -119,20 +119,6 @@ struct CameraData {
     Vec2 prev_jitter{0.0f};
 };
 
-// Light data for rendering
-struct LightData {
-    Vec3 position{0.0f};
-    Vec3 direction{0.0f, -1.0f, 0.0f};
-    Vec3 color{1.0f};
-    float intensity = 1.0f;
-    float range = 10.0f;
-    float inner_angle = 30.0f;  // Degrees
-    float outer_angle = 45.0f;  // Degrees
-    uint8_t type = 0;  // 0=directional, 1=point, 2=spot
-    bool casts_shadows = false;
-    int shadow_map_index = -1;
-};
-
 // Renderable object
 struct RenderObject {
     MeshHandle mesh;

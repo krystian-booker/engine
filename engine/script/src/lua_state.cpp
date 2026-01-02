@@ -19,17 +19,8 @@ LuaState::LuaState() {
     // Setup sandboxed environment (disable dangerous functions)
     setup_sandbox();
 
-    // Set default error handler
-    m_state.set_exception_handler([this](lua_State* L, sol::optional<const std::exception&> maybe_exception, sol::string_view description) -> int {
-        std::string error_msg;
-        if (maybe_exception) {
-            error_msg = maybe_exception->what();
-        } else {
-            error_msg = std::string(description.data(), description.size());
-        }
-        report_error(error_msg);
-        return sol::stack::push(L, error_msg);
-    });
+    // Note: Using sol's default exception handler
+    // Custom handlers require function pointers without captures
 }
 
 LuaState::~LuaState() = default;
@@ -69,12 +60,12 @@ void LuaState::setup_sandbox() {
 
 bool LuaState::execute_file(const std::string& path) {
     auto content = core::FileSystem::read_text(path);
-    if (!content) {
+    if (content.empty()) {
         report_error("Failed to read script file: " + path);
         return false;
     }
 
-    return execute_string(*content, path);
+    return execute_string(content, path);
 }
 
 bool LuaState::execute_string(const std::string& code, const std::string& chunk_name) {
@@ -92,12 +83,12 @@ bool LuaState::execute_string(const std::string& code, const std::string& chunk_
 
 sol::object LuaState::load_script(const std::string& path) {
     auto content = core::FileSystem::read_text(path);
-    if (!content) {
+    if (content.empty()) {
         report_error("Failed to read script file: " + path);
         return sol::nil;
     }
 
-    sol::load_result loaded = m_state.load(*content, path);
+    sol::load_result loaded = m_state.load(content, path);
     if (!loaded.valid()) {
         sol::error err = loaded;
         report_error(err.what());

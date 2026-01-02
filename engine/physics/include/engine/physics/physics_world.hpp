@@ -25,6 +25,8 @@ using CollisionCallback = std::function<void(const CollisionEvent&)>;
 // Physics world - manages all physics simulation
 class PhysicsWorld {
 public:
+    struct Impl;
+
     PhysicsWorld();
     ~PhysicsWorld();
 
@@ -104,7 +106,6 @@ public:
     std::vector<PhysicsBodyId> get_all_body_ids() const;
 
 private:
-    struct Impl;
     std::unique_ptr<Impl> m_impl;
 
     // Friend declarations for implementation functions (in jolt_impl.cpp)

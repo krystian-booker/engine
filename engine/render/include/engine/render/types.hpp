@@ -116,15 +116,22 @@ enum class MaterialPropertyType : uint8_t {
 
 // Material property
 struct MaterialProperty {
-    MaterialPropertyType type;
-    union {
+    MaterialPropertyType type = MaterialPropertyType::Float;
+
+    union Value {
         float f;
         float v2[2];
         float v3[3];
         float v4[4];
         float m4[16];
         TextureHandle texture;
+
+        constexpr Value() : f(0.0f) {}
+        constexpr Value(const Value&) = default;
+        constexpr Value& operator=(const Value&) = default;
     } value;
+
+    constexpr MaterialProperty() : type(MaterialPropertyType::Float), value() {}
 };
 
 // Material data for creating materials
@@ -146,14 +153,16 @@ struct DrawCall {
 
 // Light data for rendering
 struct LightData {
-    Vec3 position;
-    Vec3 direction;
-    Vec3 color;
-    float intensity;
-    float range;
-    float spot_angle;
-    uint8_t type;  // 0=directional, 1=point, 2=spot
-    bool cast_shadows;
+    Vec3 position{0.0f};
+    Vec3 direction{0.0f, -1.0f, 0.0f};
+    Vec3 color{1.0f};
+    float intensity = 1.0f;
+    float range = 10.0f;
+    float inner_angle = 30.0f;  // Degrees (for spot lights)
+    float outer_angle = 45.0f;  // Degrees (for spot lights)
+    uint8_t type = 0;           // 0=directional, 1=point, 2=spot
+    bool cast_shadows = false;
+    int shadow_map_index = -1;
 };
 
 // Primitive mesh types for quick creation

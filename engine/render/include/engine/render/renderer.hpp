@@ -69,6 +69,20 @@ public:
     virtual void set_shadow_texture(uint32_t cascade, TextureHandle texture) = 0;
     virtual void enable_shadows(bool enabled) = 0;
 
+    // Direct mesh submission for specific views
+    virtual void submit_mesh(RenderView view, MeshHandle mesh, MaterialHandle material, const Mat4& transform) = 0;
+    virtual void submit_skinned_mesh(RenderView view, MeshHandle mesh, MaterialHandle material,
+                                      const Mat4& transform, const Mat4* bone_matrices, uint32_t bone_count) = 0;
+
+    // Debug drawing
+    virtual void flush_debug_draw(RenderView view) = 0;
+
+    // Screen output
+    virtual void blit_to_screen(RenderView view, TextureHandle source) = 0;
+
+    // SSAO texture
+    virtual void set_ao_texture(TextureHandle texture) = 0;
+
     // Sorts queued draws by material/mesh and submits to GPU
     virtual void flush() = 0;
 

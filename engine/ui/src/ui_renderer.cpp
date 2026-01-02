@@ -1,5 +1,5 @@
 #include <engine/ui/ui_renderer.hpp>
-#include <engine/core/logging.hpp>
+#include <engine/core/log.hpp>
 #include <bgfx/bgfx.h>
 #include <cmath>
 
@@ -108,7 +108,7 @@ void UIRenderContext::draw_image(const Rect& rect, render::TextureHandle texture
 
 void UIRenderContext::draw_image_uv(const Rect& rect, render::TextureHandle texture,
                                      Vec2 uv_min, Vec2 uv_max, const Vec4& tint) {
-    new_command(texture.idx, false);
+    new_command(texture.id, false);
 
     uint32_t packed_color = pack_color(tint);
     uint32_t base = static_cast<uint32_t>(m_vertices.size());
@@ -169,7 +169,7 @@ void UIRenderContext::draw_text_layout(const TextLayout& layout, Vec2 position,
     FontAtlas* atlas = m_font_manager->get_font(font);
     if (!atlas) return;
 
-    new_command(atlas->get_texture().idx, true);
+    new_command(atlas->get_texture().id, true);
 
     uint32_t packed_color = pack_color(color);
 
@@ -341,7 +341,7 @@ bool UIRenderer::init() {
     // m_shader = load shader...
 
     m_initialized = true;
-    core::log_info("UIRenderer initialized");
+    core::log(core::LogLevel::Info, "UIRenderer initialized");
 
     return true;
 }
@@ -375,7 +375,7 @@ void UIRenderer::shutdown() {
     }
 
     m_initialized = false;
-    core::log_info("UIRenderer shutdown");
+    core::log(core::LogLevel::Info, "UIRenderer shutdown");
 }
 
 void UIRenderer::render(const UIRenderContext& ctx, render::RenderView view) {

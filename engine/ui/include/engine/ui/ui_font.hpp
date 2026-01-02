@@ -2,6 +2,7 @@
 
 #include <engine/ui/ui_types.hpp>
 #include <engine/render/types.hpp>
+#include <bgfx/bgfx.h>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -36,7 +37,11 @@ public:
     bool load_from_ttf(const std::string& path, float size_pixels, const std::string& charset = "");
     void shutdown();
 
-    render::TextureHandle get_texture() const { return m_texture; }
+    render::TextureHandle get_texture() const {
+        render::TextureHandle handle;
+        handle.id = bgfx::isValid(m_texture) ? m_texture.idx : UINT32_MAX;
+        return handle;
+    }
     int get_texture_width() const { return m_width; }
     int get_texture_height() const { return m_height; }
 
@@ -47,7 +52,7 @@ public:
     float get_font_size() const { return m_font_size; }
 
 private:
-    render::TextureHandle m_texture;
+    bgfx::TextureHandle m_texture = BGFX_INVALID_HANDLE;
     int m_width = 0;
     int m_height = 0;
     float m_font_size = 0.0f;

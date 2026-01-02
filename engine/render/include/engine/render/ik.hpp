@@ -167,7 +167,6 @@ public:
         const Mat4& world_transform = Mat4{1.0f}
     );
 
-private:
     // Helper to get world position of a bone
     Vec3 get_bone_world_position(
         int32_t bone_index,
@@ -176,6 +175,7 @@ private:
         const Mat4& world_transform
     ) const;
 
+private:
     // Helper to set bone world position (updates local transform)
     void set_bone_world_position(
         int32_t bone_index,

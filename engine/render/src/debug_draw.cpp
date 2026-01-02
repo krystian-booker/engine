@@ -13,10 +13,7 @@ float DebugDraw::s_current_duration = 0.0f;
 bool DebugDraw::s_depth_test = true;
 float DebugDraw::s_current_time = 0.0f;
 
-// GPU resources (initialized lazily)
-static bool s_gpu_initialized = false;
-static VertexBufferHandle s_line_vb;
-static ProgramHandle s_line_program;
+// GPU resources configuration
 static constexpr uint32_t MAX_DEBUG_LINES = 65536;
 
 void DebugDraw::line(const Vec3& a, const Vec3& b, uint32_t color) {
@@ -416,14 +413,12 @@ void DebugDraw::flush(IRenderer* renderer) {
 
         // Submit depth-tested lines
         if (!depth_lines.empty()) {
-            renderer->submit_debug_lines(RenderView::Debug, depth_lines.data(),
-                                          static_cast<uint32_t>(depth_lines.size()), true);
+            renderer->flush_debug_draw(RenderView::Debug);
         }
 
         // Submit overlay lines (no depth test)
         if (!overlay_lines.empty()) {
-            renderer->submit_debug_lines(RenderView::DebugOverlay, overlay_lines.data(),
-                                          static_cast<uint32_t>(overlay_lines.size()), false);
+            renderer->flush_debug_draw(RenderView::DebugOverlay);
         }
     }
 
@@ -446,7 +441,6 @@ void DebugDraw::flush(IRenderer* renderer) {
 
 void DebugDraw::shutdown(IRenderer* renderer) {
     clear();
-    s_gpu_initialized = false;
 }
 
 } // namespace engine::render

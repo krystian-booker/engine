@@ -263,10 +263,10 @@ PhysicsBodyId create_body_impl(PhysicsWorld::Impl* impl, const BodySettings& set
             case ShapeType::ConvexHull: {
                 auto* hull = static_cast<ConvexHullShapeSettings*>(settings.shape);
                 if (!hull->points.empty()) {
-                    JPH::Array<Vec3> jolt_points;
+                    JPH::Array<JPH::Vec3> jolt_points;
                     jolt_points.reserve(hull->points.size());
                     for (const auto& p : hull->points) {
-                        jolt_points.push_back(Vec3(p.x, p.y, p.z));
+                        jolt_points.push_back(JPH::Vec3(p.x, p.y, p.z));
                     }
                     JPH::ConvexHullShapeSettings hull_settings(jolt_points.data(), static_cast<int>(jolt_points.size()));
                     auto result = hull_settings.Create();

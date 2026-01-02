@@ -95,8 +95,11 @@ set_target_properties(engine_render PROPERTIES
     FOLDER "engine"
 )
 
+# Option to skip shader compilation (for debugging C++ build issues)
+option(ENGINE_COMPILE_SHADERS "Compile bgfx shaders at build time" ON)
+
 # Compile shaders at build time
-if(TARGET bgfx::shaderc)
+if(TARGET bgfx::shaderc AND ENGINE_COMPILE_SHADERS)
     set(BGFX_SHADER_INCLUDE_PATH "${bgfx_cmake_SOURCE_DIR}/bgfx/src")
     set(SHADER_COMMON_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders/common")
     set(SHADER_OUTPUT_DIR "${CMAKE_BINARY_DIR}/shaders")

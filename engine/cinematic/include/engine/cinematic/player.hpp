@@ -43,12 +43,13 @@ public:
 
     // Load sequence
     void load(std::unique_ptr<Sequence> sequence);
+    void load(Sequence* sequence);
     void load(const std::string& path);
     void unload();
 
     bool has_sequence() const { return m_sequence != nullptr; }
-    Sequence* get_sequence() { return m_sequence.get(); }
-    const Sequence* get_sequence() const { return m_sequence.get(); }
+    Sequence* get_sequence() { return m_sequence; }
+    const Sequence* get_sequence() const { return m_sequence; }
 
     // Playback control
     void play();
@@ -113,7 +114,8 @@ private:
     void check_markers(float old_time, float new_time);
     void check_sections(float old_time, float new_time);
 
-    std::unique_ptr<Sequence> m_sequence;
+    Sequence* m_sequence = nullptr;                // Non-owning pointer to current sequence
+    std::unique_ptr<Sequence> m_owned_sequence;    // Owned sequence when loaded from file
     PlaybackState m_state = PlaybackState::Stopped;
     PlaybackDirection m_direction = PlaybackDirection::Forward;
 

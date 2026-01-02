@@ -38,6 +38,30 @@ static Mat4 to_mat4(const ufbx_matrix& m) {
     return result;
 }
 
+static Mat4 to_mat4(const ufbx_transform& t) {
+    Mat4 translate = glm::translate(Mat4(1.0f), Vec3{
+        static_cast<float>(t.translation.x),
+        static_cast<float>(t.translation.y),
+        static_cast<float>(t.translation.z)
+    });
+
+    Quat rot{
+        static_cast<float>(t.rotation.x),
+        static_cast<float>(t.rotation.y),
+        static_cast<float>(t.rotation.z),
+        static_cast<float>(t.rotation.w)
+    };
+
+    Mat4 rotation = glm::mat4_cast(rot);
+    Mat4 scale = glm::scale(Mat4(1.0f), Vec3{
+        static_cast<float>(t.scale.x),
+        static_cast<float>(t.scale.y),
+        static_cast<float>(t.scale.z)
+    });
+
+    return translate * rotation * scale;
+}
+
 static void compute_tangent(
     const Vec3& p0, const Vec3& p1, const Vec3& p2,
     const Vec2& uv0, const Vec2& uv1, const Vec2& uv2,
@@ -109,17 +133,17 @@ std::shared_ptr<MeshAsset> FbxImporter::import_mesh(
             transform = to_mat4(mesh->instances.data[0]->geometry_to_world);
         }
 
-        uint32_t base_vertex = static_cast<uint32_t>(all_vertices.size());
+    uint32_t base_vertex = static_cast<uint32_t>(all_vertices.size());
 
-        // Triangulate each face
-        size_t num_triangles = mesh->num_triangles;
-        std::vector<uint32_t> tri_indices(num_triangles * 3);
-        ufbx_generate_indices(mesh->faces.data, mesh->faces.count,
-                               tri_indices.data(), num_triangles * 3,
-                               nullptr, nullptr);
+    // Triangulate each face
+    size_t num_triangles = mesh->num_triangles;
+    std::vector<uint32_t> tri_indices(mesh->num_indices);
+    for (size_t i = 0; i < mesh->num_indices; ++i) {
+        tri_indices[i] = static_cast<uint32_t>(i);
+    }
 
         // Process each triangle
-        for (size_t i = 0; i < num_triangles * 3; i++) {
+        for (size_t i = 0; i < tri_indices.size(); i++) {
             uint32_t idx = tri_indices[i];
             if (idx >= mesh->num_indices) continue;
 
@@ -279,19 +303,19 @@ std::unique_ptr<ImportedModel> FbxImporter::import_model(const std::string& path
         Vec3 bounds_min{std::numeric_limits<float>::max()};
         Vec3 bounds_max{std::numeric_limits<float>::lowest()};
 
-        // Triangulate
-        size_t num_triangles = fbx_mesh->num_triangles;
-        std::vector<uint32_t> tri_indices(num_triangles * 3);
-        ufbx_generate_indices(fbx_mesh->faces.data, fbx_mesh->faces.count,
-                               tri_indices.data(), num_triangles * 3,
-                               nullptr, nullptr);
+    // Triangulate
+    size_t num_triangles = fbx_mesh->num_triangles;
+    std::vector<uint32_t> tri_indices(fbx_mesh->num_indices);
+    for (size_t i = 0; i < fbx_mesh->num_indices; ++i) {
+        tri_indices[i] = static_cast<uint32_t>(i);
+    }
 
         std::vector<Vertex> vertices;
         std::vector<uint32_t> indices;
         std::vector<IVec4> bone_indices_vec;
         std::vector<Vec4> bone_weights_vec;
 
-        for (size_t i = 0; i < num_triangles * 3; i++) {
+        for (size_t i = 0; i < tri_indices.size(); i++) {
             uint32_t idx = tri_indices[i];
             if (idx >= fbx_mesh->num_indices) continue;
 
@@ -409,7 +433,7 @@ std::unique_ptr<ImportedModel> FbxImporter::import_model(const std::string& path
 
             // Local transform
             if (cluster->bone_node) {
-                joint.local_transform = to_mat4(cluster->bone_node->local_transform.matrix);
+                joint.local_transform = to_mat4(cluster->bone_node->local_transform);
             }
 
             skeleton.joints.push_back(joint);
@@ -444,14 +468,14 @@ std::unique_ptr<ImportedModel> FbxImporter::import_model(const std::string& path
                 bool has_scale = false;
 
                 for (size_t prop_idx = 0; prop_idx < layer->anim_props.count; prop_idx++) {
-                    const ufbx_anim_prop* prop = layer->anim_props.data[prop_idx];
-                    if (prop->element != &node->element) continue;
+                    const ufbx_anim_prop& prop = layer->anim_props.data[prop_idx];
+                    if (prop.element != &node->element) continue;
 
-                    if (prop->prop_name.data && strstr(prop->prop_name.data, "Lcl Translation")) {
+                    if (prop.prop_name.data && strstr(prop.prop_name.data, "Lcl Translation")) {
                         has_translation = true;
-                    } else if (prop->prop_name.data && strstr(prop->prop_name.data, "Lcl Rotation")) {
+                    } else if (prop.prop_name.data && strstr(prop.prop_name.data, "Lcl Rotation")) {
                         has_rotation = true;
-                    } else if (prop->prop_name.data && strstr(prop->prop_name.data, "Lcl Scaling")) {
+                    } else if (prop.prop_name.data && strstr(prop.prop_name.data, "Lcl Scaling")) {
                         has_scale = true;
                     }
                 }
@@ -481,7 +505,7 @@ std::unique_ptr<ImportedModel> FbxImporter::import_model(const std::string& path
                         double time = stack->time_begin + (s / sample_rate);
                         channel.times.push_back(static_cast<float>(time - stack->time_begin));
 
-                        ufbx_transform transform = ufbx_evaluate_transform(&stack->anim, node, time);
+                        ufbx_transform transform = ufbx_evaluate_transform(stack->anim, node, time);
                         channel.values.push_back(static_cast<float>(transform.translation.x));
                         channel.values.push_back(static_cast<float>(transform.translation.y));
                         channel.values.push_back(static_cast<float>(transform.translation.z));
@@ -500,7 +524,7 @@ std::unique_ptr<ImportedModel> FbxImporter::import_model(const std::string& path
                         double time = stack->time_begin + (s / sample_rate);
                         channel.times.push_back(static_cast<float>(time - stack->time_begin));
 
-                        ufbx_transform transform = ufbx_evaluate_transform(&stack->anim, node, time);
+                        ufbx_transform transform = ufbx_evaluate_transform(stack->anim, node, time);
                         channel.values.push_back(static_cast<float>(transform.rotation.x));
                         channel.values.push_back(static_cast<float>(transform.rotation.y));
                         channel.values.push_back(static_cast<float>(transform.rotation.z));
@@ -520,7 +544,7 @@ std::unique_ptr<ImportedModel> FbxImporter::import_model(const std::string& path
                         double time = stack->time_begin + (s / sample_rate);
                         channel.times.push_back(static_cast<float>(time - stack->time_begin));
 
-                        ufbx_transform transform = ufbx_evaluate_transform(&stack->anim, node, time);
+                        ufbx_transform transform = ufbx_evaluate_transform(stack->anim, node, time);
                         channel.values.push_back(static_cast<float>(transform.scale.x));
                         channel.values.push_back(static_cast<float>(transform.scale.y));
                         channel.values.push_back(static_cast<float>(transform.scale.z));

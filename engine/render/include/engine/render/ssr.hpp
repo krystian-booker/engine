@@ -2,6 +2,7 @@
 
 #include <engine/core/math.hpp>
 #include <bgfx/bgfx.h>
+#include <vector>
 
 namespace engine::render {
 
@@ -233,11 +234,7 @@ inline Vec3 get_reflection_ray(const Vec3& view_pos,
                                 const Vec3& world_normal,
                                 const Mat4& view_matrix) {
     Vec3 view_dir = normalize(view_pos);
-    Vec3 view_normal = normalize(Vec3(
-        view_matrix.m[0][0] * world_normal.x + view_matrix.m[1][0] * world_normal.y + view_matrix.m[2][0] * world_normal.z,
-        view_matrix.m[0][1] * world_normal.x + view_matrix.m[1][1] * world_normal.y + view_matrix.m[2][1] * world_normal.z,
-        view_matrix.m[0][2] * world_normal.x + view_matrix.m[1][2] * world_normal.y + view_matrix.m[2][2] * world_normal.z
-    ));
+    Vec3 view_normal = normalize(Mat3(view_matrix) * world_normal);
     return reflect(view_dir, view_normal);
 }
 

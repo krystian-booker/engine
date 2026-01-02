@@ -93,7 +93,7 @@ struct Occluder {
     bgfx::IndexBufferHandle mesh_ib = BGFX_INVALID_HANDLE;
     uint32_t index_count = 0;
 
-    Mat4 transform = Mat4::identity();
+    Mat4 transform = Mat4(1.0f);
     bool enabled = true;
     bool is_static = true;
 };

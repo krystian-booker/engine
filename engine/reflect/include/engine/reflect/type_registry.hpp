@@ -8,8 +8,17 @@
 #include <unordered_map>
 #include <functional>
 #include <typeindex>
+#include <type_traits>
+#include <utility>
+#include <cstring>
+
+#ifdef meta
+#undef meta
+#endif
 
 namespace engine::reflect {
+
+using namespace entt::literals;
 
 // Forward declaration
 class TypeRegistry;
@@ -98,11 +107,6 @@ template<typename T>
 void TypeRegistry::register_type(const char* name, const TypeMeta& meta) {
     auto type_id = entt::type_hash<T>::value();
 
-    // Register with EnTT meta
-    entt::meta<T>()
-        .type(type_id)
-        .template func<&entt::resolve<T>>("resolve"_hs);
-
     // Store our metadata
     m_name_to_id[name] = type_id;
 
@@ -119,11 +123,6 @@ void TypeRegistry::register_type(const char* name, const TypeMeta& meta) {
 template<typename T>
 void TypeRegistry::register_component(const char* name, const TypeMeta& meta) {
     auto type_id = entt::type_hash<T>::value();
-
-    // Register with EnTT meta, including default constructor for runtime creation
-    entt::meta<T>()
-        .type(type_id)
-        .template ctor<>();
 
     // Store our metadata
     m_name_to_id[name] = type_id;
@@ -145,10 +144,7 @@ void TypeRegistry::register_property(const char* name, const PropertyMeta& meta)
     using MemberType = std::remove_reference_t<decltype(std::declval<T>().*MemberPtr)>;
 
     auto type_id = entt::type_hash<T>::value();
-
-    // Register with EnTT meta
-    entt::meta<T>()
-        .template data<MemberPtr>(entt::hashed_string{name});
+    (void)name;
 
     // Find our TypeInfo and add property
     auto it = m_type_info.find(type_id);
@@ -182,8 +178,7 @@ void TypeRegistry::register_property(const char* name, const PropertyMeta& meta)
 
 template<typename T, auto FuncPtr>
 void TypeRegistry::register_method(const char* name) {
-    entt::meta<T>()
-        .template func<FuncPtr>(entt::hashed_string{name});
+    (void)name;
 }
 
 // Registration macros for convenience
@@ -191,7 +186,7 @@ void TypeRegistry::register_method(const char* name) {
     namespace { \
         struct Type##_Registrar { \
             Type##_Registrar() { \
-                ::engine::reflect::TypeRegistry::instance().register_type<Type>(#Type, ##__VA_ARGS__); \
+                ::engine::reflect::TypeRegistry::instance().register_type<Type>(#Type, TypeMeta{__VA_ARGS__}); \
             } \
         }; \
         static Type##_Registrar _reflect_##Type; \
@@ -201,7 +196,7 @@ void TypeRegistry::register_method(const char* name) {
     namespace { \
         struct Type##_Registrar { \
             Type##_Registrar() { \
-                ::engine::reflect::TypeRegistry::instance().register_component<Type>(#Type, ##__VA_ARGS__); \
+                ::engine::reflect::TypeRegistry::instance().register_component<Type>(#Type, TypeMeta{__VA_ARGS__}); \
             } \
         }; \
         static Type##_Registrar _reflect_##Type; \
@@ -211,7 +206,7 @@ void TypeRegistry::register_method(const char* name) {
     namespace { \
         struct Type##_##Member##_Registrar { \
             Type##_##Member##_Registrar() { \
-                ::engine::reflect::TypeRegistry::instance().register_property<Type, &Type::Member>(#Member, ##__VA_ARGS__); \
+                ::engine::reflect::TypeRegistry::instance().register_property<Type, &Type::Member>(#Member, PropertyMeta{__VA_ARGS__}); \
             } \
         }; \
         static Type##_##Member##_Registrar _reflect_##Type##_##Member; \

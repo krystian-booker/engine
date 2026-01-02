@@ -1,5 +1,5 @@
 #include <engine/navigation/pathfinder.hpp>
-#include <engine/core/logging.hpp>
+#include <engine/core/log.hpp>
 
 #include <DetourNavMesh.h>
 #include <DetourNavMeshQuery.h>
@@ -8,6 +8,16 @@
 #include <random>
 
 namespace engine::navigation {
+
+namespace {
+float random_unit()
+{
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    static std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+    return dist(gen);
+}
+} // namespace
 
 // Deleter implementations
 void Pathfinder::QueryDeleter::operator()(dtNavMeshQuery* query) const {
@@ -41,7 +51,7 @@ Pathfinder::~Pathfinder() {
 
 bool Pathfinder::init(NavMesh* navmesh, int max_nodes) {
     if (!navmesh || !navmesh->is_valid()) {
-        core::log_error("Pathfinder: Invalid navmesh");
+        core::log(core::LogLevel::Error, "Pathfinder: Invalid navmesh");
         return false;
     }
 
@@ -50,14 +60,14 @@ bool Pathfinder::init(NavMesh* navmesh, int max_nodes) {
     // Create query object
     dtNavMeshQuery* query = dtAllocNavMeshQuery();
     if (!query) {
-        core::log_error("Pathfinder: Failed to allocate query object");
+        core::log(core::LogLevel::Error, "Pathfinder: Failed to allocate query object");
         return false;
     }
 
     dtStatus status = query->init(navmesh->get_detour_navmesh(), max_nodes);
     if (dtStatusFailed(status)) {
         dtFreeNavMeshQuery(query);
-        core::log_error("Pathfinder: Failed to initialize query");
+        core::log(core::LogLevel::Error, "Pathfinder: Failed to initialize query");
         return false;
     }
 
@@ -67,7 +77,7 @@ bool Pathfinder::init(NavMesh* navmesh, int max_nodes) {
     m_filter.reset(new dtQueryFilter());
     update_filter();
 
-    core::log_info("Pathfinder initialized with {} nodes", max_nodes);
+    core::log(core::LogLevel::Info, "Pathfinder initialized with {} nodes", max_nodes);
     return true;
 }
 
@@ -268,17 +278,9 @@ NavPointResult Pathfinder::find_random_point() {
         return result;
     }
 
-    // Use random number generator
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-
-    auto frand = [&]() -> float {
-        return std::uniform_real_distribution<float>(0.0f, 1.0f)(gen);
-    };
-
     float random_pt[3];
     dtStatus status = m_query->findRandomPoint(
-        m_filter.get(), frand,
+        m_filter.get(), random_unit,
         &result.poly, random_pt);
 
     if (dtStatusFailed(status)) {
@@ -303,18 +305,10 @@ NavPointResult Pathfinder::find_random_point_around(const Vec3& center, float ra
         return result;
     }
 
-    // Use random number generator
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-
-    auto frand = [&]() -> float {
-        return std::uniform_real_distribution<float>(0.0f, 1.0f)(gen);
-    };
-
     float random_pt[3];
     dtStatus status = m_query->findRandomPointAroundCircle(
         center_pt.poly, &center_pt.point[0], radius,
-        m_filter.get(), frand,
+        m_filter.get(), random_unit,
         &result.poly, random_pt);
 
     if (dtStatusFailed(status)) {

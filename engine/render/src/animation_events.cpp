@@ -89,7 +89,7 @@ void AnimationEventDispatcher::unregister_all(const std::string& event_type) {
     m_handlers.erase(event_type);
 }
 
-void AnimationEventDispatcher::dispatch(scene::Entity entity, const AnimationEventData& event) {
+void AnimationEventDispatcher::dispatch(uint32_t entity, const AnimationEventData& event) {
     auto it = m_handlers.find(event.event_type);
     if (it != m_handlers.end()) {
         for (const auto& entry : it->second) {

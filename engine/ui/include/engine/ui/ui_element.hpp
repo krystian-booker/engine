@@ -93,6 +93,7 @@ public:
 
     // Layout
     void layout(const Rect& parent_bounds);
+    Vec2 measure(Vec2 available_size);
     void mark_layout_dirty();
     void mark_dirty();
 

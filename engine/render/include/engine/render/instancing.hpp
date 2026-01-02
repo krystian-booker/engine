@@ -19,8 +19,8 @@ struct InstanceData {
     Mat4 prev_transform;     // For motion vectors
     Vec4 custom_data;        // User-defined per-instance data (color tint, etc.)
 
-    InstanceData() : transform(Mat4::identity()),
-                     prev_transform(Mat4::identity()),
+    InstanceData() : transform(Mat4(1.0f)),
+                     prev_transform(Mat4(1.0f)),
                      custom_data(1.0f, 1.0f, 1.0f, 1.0f) {}
 };
 
@@ -28,7 +28,7 @@ struct InstanceData {
 struct InstanceDataCompact {
     Mat4 transform;
 
-    InstanceDataCompact() : transform(Mat4::identity()) {}
+    InstanceDataCompact() : transform(Mat4(1.0f)) {}
 };
 
 // Instance batch - a group of instances sharing mesh and material
@@ -257,7 +257,7 @@ inline void generate_grid(std::vector<Mat4>& out_transforms,
                     y * spacing.y,
                     z * spacing.z
                 );
-                out_transforms.push_back(Mat4::from_translation(pos));
+                out_transforms.push_back(glm::translate(Mat4(1.0f), pos));
             }
         }
     }
@@ -280,16 +280,16 @@ inline void generate_random(std::vector<Mat4>& out_transforms,
             min_bounds.z + (max_bounds.z - min_bounds.z) * (static_cast<float>(rand()) / RAND_MAX)
         );
 
-        Mat4 transform = Mat4::from_translation(pos);
+        Mat4 transform = glm::translate(Mat4(1.0f), pos);
 
         if (random_rotation) {
             float angle = (static_cast<float>(rand()) / RAND_MAX) * 6.28318f;
-            transform = transform * Mat4::from_rotation(Quat::from_axis_angle(Vec3(0, 1, 0), angle));
+            transform = transform * glm::mat4_cast(glm::angleAxis(angle, Vec3(0, 1, 0)));
         }
 
         if (scale_range.x != 1.0f || scale_range.y != 1.0f || scale_range.z != 1.0f) {
             float scale = 1.0f + (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 2.0f * (scale_range.x - 1.0f);
-            transform = transform * Mat4::from_scale(Vec3(scale));
+            transform = transform * glm::scale(Mat4(1.0f), Vec3(scale));
         }
 
         out_transforms.push_back(transform);

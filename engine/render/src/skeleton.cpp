@@ -1,5 +1,6 @@
 #include <engine/render/skeleton.hpp>
 #include <engine/core/log.hpp>
+#include <glm/gtx/matrix_decompose.hpp>
 
 namespace engine::render {
 

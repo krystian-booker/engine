@@ -214,9 +214,9 @@ void OcclusionCullingSystem::rasterize_occluders() {
         // Simplified: just project AABB
         OcclusionBounds world_bounds = occluder.bounds;
         world_bounds.center = Vec3(
-            occluder.transform.m[3][0],
-            occluder.transform.m[3][1],
-            occluder.transform.m[3][2]
+            occluder.transform[3][0],
+            occluder.transform[3][1],
+            occluder.transform[3][2]
         ) + occluder.bounds.center;
 
         Vec4 screen_rect = OcclusionUtils::calculate_screen_aabb(

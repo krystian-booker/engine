@@ -4,6 +4,8 @@
 #include <engine/core/math.hpp>
 #include <memory>
 
+namespace scene { class World; }
+
 namespace engine::physics {
 
 using namespace engine::core;

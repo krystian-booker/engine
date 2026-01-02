@@ -24,7 +24,7 @@ struct StreamingVolume {
 
     // Transform
     Vec3 position;
-    Quat rotation = Quat::identity();
+    Quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
     Vec3 scale = Vec3(1.0f);
 
     // Shape parameters

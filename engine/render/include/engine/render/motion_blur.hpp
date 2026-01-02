@@ -293,9 +293,9 @@ inline float soft_depth_compare(float depth_a, float depth_b, float falloff) {
 
 // Component for per-object motion vectors
 struct MotionVectorComponent {
-    Mat4 prev_transform = Mat4::identity();  // Previous frame's world transform
-    bool first_frame = true;                 // Skip first frame (no previous data)
-    bool enabled = true;                     // Enable motion vectors for this object
+    Mat4 prev_transform = Mat4(1.0f);  // Previous frame's world transform
+    bool first_frame = true;           // Skip first frame (no previous data)
+    bool enabled = true;               // Enable motion vectors for this object
 };
 
 } // namespace engine::render

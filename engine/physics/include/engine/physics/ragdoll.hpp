@@ -2,15 +2,11 @@
 
 #include <engine/physics/physics_world.hpp>
 #include <engine/core/math.hpp>
+#include <engine/render/skeleton.hpp>
 #include <string>
 #include <vector>
 #include <memory>
 #include <unordered_map>
-
-namespace engine::render {
-struct Skeleton;
-struct BoneTransform;
-}
 
 namespace engine::physics {
 

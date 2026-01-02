@@ -13,7 +13,13 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 set(GLM_ENABLE_CXX_20 ON CACHE BOOL "" FORCE)
+set(GLM_ENABLE_EXPERIMENTAL ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(glm)
+
+# Add GLM_ENABLE_EXPERIMENTAL as compile definition to glm target
+if(TARGET glm)
+    target_compile_definitions(glm INTERFACE GLM_ENABLE_EXPERIMENTAL)
+endif()
 
 # ============================================================================
 # nlohmann/json (serialization)
@@ -87,7 +93,7 @@ target_include_directories(miniaudio INTERFACE ${miniaudio_SOURCE_DIR}/extras/mi
 FetchContent_Declare(
     dr_libs
     GIT_REPOSITORY https://github.com/mackron/dr_libs.git
-    GIT_TAG da35f9d6c7374a95353fd1df1d394d44ab66cf01
+    GIT_TAG master
     GIT_SHALLOW TRUE
     UPDATE_DISCONNECTED TRUE
 )
@@ -157,6 +163,8 @@ FetchContent_MakeAvailable(JoltPhysics)
 # ============================================================================
 # Recast Navigation (pathfinding)
 # ============================================================================
+# Set policy version minimum to handle older cmake_minimum_required in recastnavigation
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
 FetchContent_Declare(
     recastnavigation
     GIT_REPOSITORY https://github.com/recastnavigation/recastnavigation.git
@@ -228,6 +236,11 @@ FetchContent_Declare(
     UPDATE_DISCONNECTED TRUE
 )
 FetchContent_MakeAvailable(entt)
+
+# Create lowercase alias for EnTT
+if(NOT TARGET entt::entt)
+    add_library(entt::entt ALIAS EnTT)
+endif()
 
 # ============================================================================
 # Lua (scripting runtime)

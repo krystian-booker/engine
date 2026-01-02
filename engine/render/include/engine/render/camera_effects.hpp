@@ -181,9 +181,9 @@ private:
     // Follow
     CameraFollowSettings m_follow;
     Vec3 m_follow_target_pos = Vec3(0.0f);
-    Quat m_follow_target_rot = Quat::identity();
+    Quat m_follow_target_rot = Quat(1, 0, 0, 0);
     Vec3 m_follow_current_pos = Vec3(0.0f);
-    Quat m_follow_current_rot = Quat::identity();
+    Quat m_follow_current_rot = Quat(1, 0, 0, 0);
     Vec3 m_follow_velocity = Vec3(0.0f);
 
     // Orbit
@@ -273,18 +273,18 @@ inline Quat look_at(const Vec3& from, const Vec3& to, const Vec3& up = Vec3(0, 1
     Vec3 right = normalize(cross(up, forward));
     Vec3 actual_up = cross(forward, right);
 
-    Mat4 rot_mat = Mat4::identity();
-    rot_mat.m[0][0] = right.x;
-    rot_mat.m[1][0] = right.y;
-    rot_mat.m[2][0] = right.z;
-    rot_mat.m[0][1] = actual_up.x;
-    rot_mat.m[1][1] = actual_up.y;
-    rot_mat.m[2][1] = actual_up.z;
-    rot_mat.m[0][2] = forward.x;
-    rot_mat.m[1][2] = forward.y;
-    rot_mat.m[2][2] = forward.z;
+    Mat4 rot_mat(1.0f);
+    rot_mat[0][0] = right.x;
+    rot_mat[0][1] = right.y;
+    rot_mat[0][2] = right.z;
+    rot_mat[1][0] = actual_up.x;
+    rot_mat[1][1] = actual_up.y;
+    rot_mat[1][2] = actual_up.z;
+    rot_mat[2][0] = forward.x;
+    rot_mat[2][1] = forward.y;
+    rot_mat[2][2] = forward.z;
 
-    return Quat::from_rotation_matrix(rot_mat);
+    return glm::quat_cast(rot_mat);
 }
 
 // Spherical interpolation for camera positions

@@ -308,7 +308,7 @@ void TerrainRenderer::update_visibility(const Frustum& frustum) {
     m_visible_chunk_count = 0;
 
     for (auto& chunk : m_chunks) {
-        chunk.in_frustum = frustum.intersects(chunk.bounds);
+        chunk.in_frustum = frustum.contains_aabb(chunk.bounds);
         chunk.visible = chunk.in_frustum;
 
         if (chunk.visible) {

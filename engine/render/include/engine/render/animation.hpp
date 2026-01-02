@@ -2,7 +2,9 @@
 
 #include <engine/render/skeleton.hpp>
 #include <engine/core/math.hpp>
+#include <array>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include <memory>
 #include <functional>

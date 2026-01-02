@@ -74,14 +74,14 @@ const PrefabData* PrefabManager::load_prefab(const std::string& path) {
 
     // Load from file
     auto content = core::FileSystem::read_text(path);
-    if (!content) {
+    if (content.empty()) {
         core::log(core::LogLevel::Error, "PrefabManager: Failed to load prefab '{}'", path);
         return nullptr;
     }
 
     PrefabData data;
     data.path = path;
-    data.json_data = *content;
+    data.json_data = content;
 
     // TODO: Parse JSON to extract root_uuid and entity_uuids
     // For now, we'll parse these when instantiating

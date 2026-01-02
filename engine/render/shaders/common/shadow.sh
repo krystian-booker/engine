@@ -17,25 +17,27 @@ SAMPLER2DSHADOW(s_shadowMap1, 9);
 SAMPLER2DSHADOW(s_shadowMap2, 10);
 SAMPLER2DSHADOW(s_shadowMap3, 11);
 
-// Poisson disk for PCF sampling
-vec2 poissonDisk[16] = vec2[](
-    vec2(-0.94201624, -0.39906216),
-    vec2(0.94558609, -0.76890725),
-    vec2(-0.094184101, -0.92938870),
-    vec2(0.34495938, 0.29387760),
-    vec2(-0.91588581, 0.45771432),
-    vec2(-0.81544232, -0.87912464),
-    vec2(-0.38277543, 0.27676845),
-    vec2(0.97484398, 0.75648379),
-    vec2(0.44323325, -0.97511554),
-    vec2(0.53742981, -0.47373420),
-    vec2(-0.26496911, -0.41893023),
-    vec2(0.79197514, 0.19090188),
-    vec2(-0.24188840, 0.99706507),
-    vec2(-0.81409955, 0.91437590),
-    vec2(0.19984126, 0.78641367),
-    vec2(0.14383161, -0.14100790)
-);
+// Poisson disk sample lookup to avoid cross-language initializer quirks
+vec2 poissonSample(int i)
+{
+    int idx = i - (i / 16) * 16;
+    if (idx == 0) return vec2(-0.94201624, -0.39906216);
+    else if (idx == 1) return vec2(0.94558609, -0.76890725);
+    else if (idx == 2) return vec2(-0.094184101, -0.92938870);
+    else if (idx == 3) return vec2(0.34495938, 0.29387760);
+    else if (idx == 4) return vec2(-0.91588581, 0.45771432);
+    else if (idx == 5) return vec2(-0.81544232, -0.87912464);
+    else if (idx == 6) return vec2(-0.38277543, 0.27676845);
+    else if (idx == 7) return vec2(0.97484398, 0.75648379);
+    else if (idx == 8) return vec2(0.44323325, -0.97511554);
+    else if (idx == 9) return vec2(0.53742981, -0.47373420);
+    else if (idx == 10) return vec2(-0.26496911, -0.41893023);
+    else if (idx == 11) return vec2(0.79197514, 0.19090188);
+    else if (idx == 12) return vec2(-0.24188840, 0.99706507);
+    else if (idx == 13) return vec2(-0.81409955, 0.91437590);
+    else if (idx == 14) return vec2(0.19984126, 0.78641367);
+    return vec2(0.14383161, -0.14100790);
+}
 
 // Sample a single shadow map with hardware PCF
 float sampleShadowMapPCF(sampler2DShadow shadowMap, vec3 shadowCoord, float bias)
@@ -57,7 +59,7 @@ float sampleShadowMapSoftPCF(sampler2DShadow shadowMap, vec3 shadowCoord, float 
 
     for (int i = 0; i < samples; i++)
     {
-        vec2 offset = poissonDisk[i] * radius * texelSize;
+        vec2 offset = poissonSample(i) * radius * texelSize;
         shadow += shadow2D(shadowMap, vec3(shadowCoord.xy + offset, shadowCoord.z));
     }
 
@@ -169,7 +171,7 @@ float calculateShadow(vec3 worldPos, vec3 normal, vec3 lightDir, float viewSpace
     float bias = calculateBias(normal, lightDir);
 
     // Texel size (assuming 2048 resolution, can be made uniform)
-    vec2 texelSize = vec2(1.0 / 2048.0);
+    vec2 texelSize = vec2_splat(1.0 / 2048.0);
 
     // Sample shadow
     float shadow = sampleCascade(cascade, shadowCoord, bias, texelSize);
@@ -220,7 +222,7 @@ float calculateShadowSimple(vec3 worldPos, vec3 normal, vec3 lightDir, float vie
     }
 
     float bias = calculateBias(normal, lightDir);
-    vec2 texelSize = vec2(1.0 / 2048.0);
+    vec2 texelSize = vec2_splat(1.0 / 2048.0);
 
     return sampleCascade(cascade, shadowCoord, bias, texelSize);
 }

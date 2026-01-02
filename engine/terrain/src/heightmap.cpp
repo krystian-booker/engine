@@ -191,7 +191,7 @@ Vec3 Heightmap::calculate_normal(float u, float v, float terrain_scale_xz, float
     float dx = (h_right - h_left) * terrain_scale_y / (2.0f * step * terrain_scale_xz);
     float dz = (h_up - h_down) * terrain_scale_y / (2.0f * step * terrain_scale_xz);
 
-    return normalize(Vec3(-dx, 1.0f, -dz));
+    return glm::normalize(Vec3(-dx, 1.0f, -dz));
 }
 
 Vec3 Heightmap::calculate_normal_world(float x, float z, const Vec3& terrain_scale) const {

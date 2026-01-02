@@ -1,5 +1,5 @@
 #include <engine/navigation/navmesh.hpp>
-#include <engine/core/logging.hpp>
+#include <engine/core/log.hpp>
 
 #include <DetourNavMesh.h>
 #include <DetourCommon.h>
@@ -46,7 +46,7 @@ NavMesh& NavMesh::operator=(NavMesh&& other) noexcept {
 bool NavMesh::load(const std::string& path) {
     std::ifstream file(path, std::ios::binary);
     if (!file) {
-        core::log_error("NavMesh: Failed to open file: {}", path);
+        core::log(core::LogLevel::Error, "NavMesh: Failed to open file: {}", path);
         return false;
     }
 
@@ -64,32 +64,32 @@ bool NavMesh::load(const std::string& path) {
 
 bool NavMesh::load_from_memory(const uint8_t* data, size_t size) {
     if (size < sizeof(NavMeshFileHeader)) {
-        core::log_error("NavMesh: File too small");
+        core::log(core::LogLevel::Error, "NavMesh: File too small");
         return false;
     }
 
     const NavMeshFileHeader* header = reinterpret_cast<const NavMeshFileHeader*>(data);
 
     if (header->magic != NAVMESH_MAGIC) {
-        core::log_error("NavMesh: Invalid file magic");
+        core::log(core::LogLevel::Error, "NavMesh: Invalid file magic");
         return false;
     }
 
     if (header->version != NAVMESH_VERSION) {
-        core::log_error("NavMesh: Unsupported version {}", header->version);
+        core::log(core::LogLevel::Error, "NavMesh: Unsupported version {}", header->version);
         return false;
     }
 
     // Create navmesh
     dtNavMesh* navmesh = dtAllocNavMesh();
     if (!navmesh) {
-        core::log_error("NavMesh: Failed to allocate navmesh");
+        core::log(core::LogLevel::Error, "NavMesh: Failed to allocate navmesh");
         return false;
     }
 
     dtStatus status = navmesh->init(&header->params);
     if (dtStatusFailed(status)) {
-        core::log_error("NavMesh: Failed to initialize navmesh");
+        core::log(core::LogLevel::Error, "NavMesh: Failed to initialize navmesh");
         dtFreeNavMesh(navmesh);
         return false;
     }
@@ -100,7 +100,7 @@ bool NavMesh::load_from_memory(const uint8_t* data, size_t size) {
 
     for (int i = 0; i < header->num_tiles; ++i) {
         if (remaining < sizeof(dtMeshHeader)) {
-            core::log_error("NavMesh: Unexpected end of file");
+            core::log(core::LogLevel::Error, "NavMesh: Unexpected end of file");
             dtFreeNavMesh(navmesh);
             return false;
         }
@@ -116,7 +116,7 @@ bool NavMesh::load_from_memory(const uint8_t* data, size_t size) {
         remaining -= sizeof(TileHeader);
 
         if (remaining < static_cast<size_t>(tile_header->data_size)) {
-            core::log_error("NavMesh: Unexpected end of file in tile data");
+            core::log(core::LogLevel::Error, "NavMesh: Unexpected end of file in tile data");
             dtFreeNavMesh(navmesh);
             return false;
         }
@@ -124,7 +124,7 @@ bool NavMesh::load_from_memory(const uint8_t* data, size_t size) {
         // Allocate and copy tile data (Detour will own this memory)
         uint8_t* nav_data = static_cast<uint8_t*>(dtAlloc(tile_header->data_size, DT_ALLOC_PERM));
         if (!nav_data) {
-            core::log_error("NavMesh: Failed to allocate tile data");
+            core::log(core::LogLevel::Error, "NavMesh: Failed to allocate tile data");
             dtFreeNavMesh(navmesh);
             return false;
         }
@@ -134,7 +134,7 @@ bool NavMesh::load_from_memory(const uint8_t* data, size_t size) {
         status = navmesh->addTile(nav_data, tile_header->data_size, DT_TILE_FREE_DATA, 0, nullptr);
         if (dtStatusFailed(status)) {
             dtFree(nav_data);
-            core::log_error("NavMesh: Failed to add tile");
+            core::log(core::LogLevel::Error, "NavMesh: Failed to add tile");
             dtFreeNavMesh(navmesh);
             return false;
         }
@@ -144,13 +144,13 @@ bool NavMesh::load_from_memory(const uint8_t* data, size_t size) {
     }
 
     m_navmesh.reset(navmesh);
-    core::log_info("NavMesh: Loaded {} tiles", header->num_tiles);
+    core::log(core::LogLevel::Info, "NavMesh: Loaded {} tiles", header->num_tiles);
     return true;
 }
 
 bool NavMesh::save(const std::string& path) const {
     if (!m_navmesh) {
-        core::log_error("NavMesh: Cannot save - no navmesh");
+        core::log(core::LogLevel::Error, "NavMesh: Cannot save - no navmesh");
         return false;
     }
 
@@ -161,12 +161,12 @@ bool NavMesh::save(const std::string& path) const {
 
     std::ofstream file(path, std::ios::binary);
     if (!file) {
-        core::log_error("NavMesh: Failed to create file: {}", path);
+        core::log(core::LogLevel::Error, "NavMesh: Failed to create file: {}", path);
         return false;
     }
 
     file.write(reinterpret_cast<const char*>(data.data()), data.size());
-    core::log_info("NavMesh: Saved to {}", path);
+    core::log(core::LogLevel::Info, "NavMesh: Saved to {}", path);
     return true;
 }
 
@@ -219,9 +219,10 @@ std::vector<uint8_t> NavMesh::get_binary_data() const {
 int NavMesh::get_tile_count() const {
     if (!m_navmesh) return 0;
 
+    const dtNavMesh* mesh = m_navmesh.get();
     int count = 0;
-    for (int i = 0; i < m_navmesh->getMaxTiles(); ++i) {
-        const dtMeshTile* tile = m_navmesh->getTile(i);
+    for (int i = 0; i < mesh->getMaxTiles(); ++i) {
+        const dtMeshTile* tile = mesh->getTile(i);
         if (tile && tile->header) count++;
     }
     return count;
@@ -230,9 +231,10 @@ int NavMesh::get_tile_count() const {
 int NavMesh::get_polygon_count() const {
     if (!m_navmesh) return 0;
 
+    const dtNavMesh* mesh = m_navmesh.get();
     int count = 0;
-    for (int i = 0; i < m_navmesh->getMaxTiles(); ++i) {
-        const dtMeshTile* tile = m_navmesh->getTile(i);
+    for (int i = 0; i < mesh->getMaxTiles(); ++i) {
+        const dtMeshTile* tile = mesh->getTile(i);
         if (tile && tile->header) {
             count += tile->header->polyCount;
         }
@@ -243,9 +245,10 @@ int NavMesh::get_polygon_count() const {
 int NavMesh::get_vertex_count() const {
     if (!m_navmesh) return 0;
 
+    const dtNavMesh* mesh = m_navmesh.get();
     int count = 0;
-    for (int i = 0; i < m_navmesh->getMaxTiles(); ++i) {
-        const dtMeshTile* tile = m_navmesh->getTile(i);
+    for (int i = 0; i < mesh->getMaxTiles(); ++i) {
+        const dtMeshTile* tile = mesh->getTile(i);
         if (tile && tile->header) {
             count += tile->header->vertCount;
         }
@@ -257,9 +260,10 @@ AABB NavMesh::get_bounds() const {
     AABB bounds;
     if (!m_navmesh) return bounds;
 
+    const dtNavMesh* mesh = m_navmesh.get();
     bool first = true;
-    for (int i = 0; i < m_navmesh->getMaxTiles(); ++i) {
-        const dtMeshTile* tile = m_navmesh->getTile(i);
+    for (int i = 0; i < mesh->getMaxTiles(); ++i) {
+        const dtMeshTile* tile = mesh->getTile(i);
         if (!tile || !tile->header) continue;
 
         Vec3 tile_min(tile->header->bmin[0], tile->header->bmin[1], tile->header->bmin[2]);

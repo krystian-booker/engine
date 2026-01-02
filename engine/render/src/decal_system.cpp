@@ -215,18 +215,18 @@ Quat DecalSystem::calculate_rotation(const Vec3& direction, const Vec3& up, bool
     Vec3 actual_up = cross(forward, right);
 
     // Build rotation matrix
-    Mat4 rot_mat = Mat4::identity();
-    rot_mat.m[0][0] = right.x;
-    rot_mat.m[1][0] = right.y;
-    rot_mat.m[2][0] = right.z;
-    rot_mat.m[0][1] = actual_up.x;
-    rot_mat.m[1][1] = actual_up.y;
-    rot_mat.m[2][1] = actual_up.z;
-    rot_mat.m[0][2] = forward.x;
-    rot_mat.m[1][2] = forward.y;
-    rot_mat.m[2][2] = forward.z;
+    Mat4 rot_mat(1.0f);
+    rot_mat[0][0] = right.x;
+    rot_mat[0][1] = right.y;
+    rot_mat[0][2] = right.z;
+    rot_mat[1][0] = actual_up.x;
+    rot_mat[1][1] = actual_up.y;
+    rot_mat[1][2] = actual_up.z;
+    rot_mat[2][0] = forward.x;
+    rot_mat[2][1] = forward.y;
+    rot_mat[2][2] = forward.z;
 
-    Quat result = Quat::from_rotation_matrix(rot_mat);
+    Quat result = glm::quat_cast(rot_mat);
 
     if (random_rotation) {
         // Add random rotation around forward axis
@@ -235,7 +235,7 @@ Quat DecalSystem::calculate_rotation(const Vec3& direction, const Vec3& up, bool
         static std::uniform_real_distribution<float> dist(0.0f, 2.0f * 3.14159265f);
 
         float angle = dist(gen);
-        Quat random_rot = Quat::from_axis_angle(forward, angle);
+        Quat random_rot = glm::angleAxis(angle, forward);
         result = random_rot * result;
     }
 
@@ -404,7 +404,7 @@ void DecalSystem::render(bgfx::ViewId view_id,
     );
 
     // Set inverse view-projection matrix
-    bgfx::setUniform(u_inv_view_proj, &inv_view_proj.m[0][0]);
+    bgfx::setUniform(u_inv_view_proj, glm::value_ptr(inv_view_proj));
 
     // Bind G-buffer textures
     bgfx::setTexture(0, s_depth, depth_texture);
@@ -420,11 +420,11 @@ void DecalSystem::render(bgfx::ViewId view_id,
         Mat4 world = instance.get_transform();
 
         // Apply definition size
-        Mat4 scale_mat = Mat4::from_scale(def->size);
+        Mat4 scale_mat = glm::scale(Mat4(1.0f), def->size);
         world = world * scale_mat;
 
         // Set transform
-        bgfx::setTransform(&world.m[0][0]);
+        bgfx::setTransform(glm::value_ptr(world));
 
         // Set decal parameters
         float current_opacity = instance.get_current_opacity();

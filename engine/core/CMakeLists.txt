@@ -64,6 +64,12 @@ target_include_directories(engine_core
         ${CMAKE_CURRENT_SOURCE_DIR}/../plugin/include
 )
 
+# Scene headers require EnTT
+target_link_libraries(engine_core
+    PRIVATE
+        entt::entt
+)
+
 set_target_properties(engine_core PROPERTIES
     FOLDER "engine"
 )

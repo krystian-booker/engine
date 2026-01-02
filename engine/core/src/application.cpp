@@ -194,7 +194,7 @@ bool Application::load_game_plugin(const std::filesystem::path& dll_path) {
 
     m_hot_reload_manager->init(dll_path, m_game_context.get(), m_system_registry.get(), config);
 
-    if (!m_hot_reload_manager->is_loaded()) {
+    if (!m_hot_reload_manager->get_loader().is_loaded()) {
         log(LogLevel::Error, "Failed to load game plugin");
         m_hot_reload_manager.reset();
         m_game_context.reset();
@@ -214,7 +214,7 @@ void Application::unload_game_plugin() {
 }
 
 bool Application::has_game_plugin() const {
-    return m_hot_reload_manager && m_hot_reload_manager->is_loaded();
+    return m_hot_reload_manager && m_hot_reload_manager->get_loader().is_loaded();
 }
 
 void Application::parse_args(int argc, char** argv) {

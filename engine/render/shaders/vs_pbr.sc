@@ -16,7 +16,7 @@ void main()
 
     // Transform normal, tangent, bitangent to world space
     // Using the upper 3x3 of the model matrix (assumes uniform scale)
-    mat3 normalMatrix = mat3(u_model[0]);
+    mat3 normalMatrix = mat3(u_model[0][0].xyz, u_model[0][1].xyz, u_model[0][2].xyz);
     v_normal = normalize(mul(normalMatrix, a_normal));
     v_tangent = normalize(mul(normalMatrix, a_tangent));
     v_bitangent = cross(v_normal, v_tangent);
