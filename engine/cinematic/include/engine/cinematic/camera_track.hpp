@@ -2,6 +2,7 @@
 
 #include <engine/cinematic/track.hpp>
 #include <engine/scene/entity.hpp>
+#include <cassert>
 
 namespace engine::cinematic {
 
@@ -52,8 +53,14 @@ public:
     void clear_keyframes();
 
     size_t keyframe_count() const { return m_keyframes.size(); }
-    CameraKeyframe& get_keyframe(size_t index) { return m_keyframes[index]; }
-    const CameraKeyframe& get_keyframe(size_t index) const { return m_keyframes[index]; }
+    CameraKeyframe& get_keyframe(size_t index) {
+        assert(index < m_keyframes.size() && "Keyframe index out of bounds");
+        return m_keyframes[index];
+    }
+    const CameraKeyframe& get_keyframe(size_t index) const {
+        assert(index < m_keyframes.size() && "Keyframe index out of bounds");
+        return m_keyframes[index];
+    }
 
     // Set target camera entity
     void set_target_camera(scene::Entity camera) { m_target_camera = camera; }
@@ -72,8 +79,12 @@ public:
 
     // Track interface
     float get_duration() const override;
-    void evaluate(float time) override;
+    void evaluate(float time, scene::World& world) override;
     void reset() override;
+
+    // Serialization
+    void serialize(nlohmann::json& j) const override;
+    void deserialize(const nlohmann::json& j) override;
 
     // Get interpolated values
     CameraKeyframe sample(float time) const;

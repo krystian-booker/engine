@@ -152,9 +152,13 @@ LoadResult PluginLoader::load(const std::filesystem::path& dll_path, bool copy_b
 void PluginLoader::unload() {
     if (m_handle) {
 #ifdef _WIN32
-        FreeLibrary(static_cast<HMODULE>(m_handle));
+        if (!FreeLibrary(static_cast<HMODULE>(m_handle))) {
+            core::log(core::LogLevel::Warn, "FreeLibrary failed for plugin (error {})", GetLastError());
+        }
 #else
-        dlclose(m_handle);
+        if (dlclose(m_handle) != 0) {
+            core::log(core::LogLevel::Warn, "dlclose failed: {}", dlerror());
+        }
 #endif
         m_handle = nullptr;
 
@@ -162,8 +166,8 @@ void PluginLoader::unload() {
         if (m_loaded_path != m_dll_path && std::filesystem::exists(m_loaded_path)) {
             try {
                 std::filesystem::remove(m_loaded_path);
-            } catch (...) {
-                // Ignore cleanup errors
+            } catch (const std::exception& e) {
+                core::log(core::LogLevel::Warn, "Failed to cleanup temp DLL: {}", e.what());
             }
         }
     }

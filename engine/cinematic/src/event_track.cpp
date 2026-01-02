@@ -1,4 +1,6 @@
 #include <engine/cinematic/event_track.hpp>
+#include <engine/scene/world.hpp>
+#include <nlohmann/json.hpp>
 #include <algorithm>
 
 namespace engine::cinematic {
@@ -47,7 +49,7 @@ float EventTrack::get_duration() const {
     return m_events.back().time;
 }
 
-void EventTrack::evaluate(float time) {
+void EventTrack::evaluate(float time, scene::World& /*world*/) {
     if (!m_enabled) {
         return;
     }
@@ -162,7 +164,7 @@ float SubtitleTrack::get_duration() const {
     return duration;
 }
 
-void SubtitleTrack::evaluate(float time) {
+void SubtitleTrack::evaluate(float time, scene::World& /*world*/) {
     if (!m_enabled) {
         return;
     }
@@ -188,6 +190,124 @@ void SubtitleTrack::reset() {
         m_callback(m_current_subtitle, false);
     }
     m_current_subtitle = nullptr;
+}
+
+// ============================================================================
+// EventTrack Serialization
+// ============================================================================
+
+// Helper to serialize variant payload
+static nlohmann::json serialize_payload(const EventPayload& payload) {
+    nlohmann::json j;
+    std::visit([&j](auto&& arg) {
+        using T = std::decay_t<decltype(arg)>;
+        if constexpr (std::is_same_v<T, std::monostate>) {
+            j["type"] = "none";
+        } else if constexpr (std::is_same_v<T, bool>) {
+            j["type"] = "bool";
+            j["value"] = arg;
+        } else if constexpr (std::is_same_v<T, int>) {
+            j["type"] = "int";
+            j["value"] = arg;
+        } else if constexpr (std::is_same_v<T, float>) {
+            j["type"] = "float";
+            j["value"] = arg;
+        } else if constexpr (std::is_same_v<T, std::string>) {
+            j["type"] = "string";
+            j["value"] = arg;
+        } else if constexpr (std::is_same_v<T, Vec3>) {
+            j["type"] = "vec3";
+            j["value"] = {arg.x, arg.y, arg.z};
+        } else if constexpr (std::is_same_v<T, scene::Entity>) {
+            j["type"] = "entity";
+            j["value"] = static_cast<uint32_t>(arg);
+        }
+    }, payload);
+    return j;
+}
+
+// Helper to deserialize variant payload
+static EventPayload deserialize_payload(const nlohmann::json& j) {
+    std::string type = j.value("type", "none");
+    if (type == "bool") {
+        return j.value("value", false);
+    } else if (type == "int") {
+        return j.value("value", 0);
+    } else if (type == "float") {
+        return j.value("value", 0.0f);
+    } else if (type == "string") {
+        return j.value("value", std::string{});
+    } else if (type == "vec3") {
+        auto& v = j["value"];
+        return Vec3{v[0], v[1], v[2]};
+    } else if (type == "entity") {
+        return scene::Entity{j.value("value", 0u)};
+    }
+    return std::monostate{};
+}
+
+void EventTrack::serialize(nlohmann::json& j) const {
+    j["events"] = nlohmann::json::array();
+    for (const auto& event : m_events) {
+        j["events"].push_back({
+            {"time", event.time},
+            {"event_name", event.event_name},
+            {"payload", serialize_payload(event.payload)},
+            {"target", static_cast<uint32_t>(event.target)}
+        });
+    }
+}
+
+void EventTrack::deserialize(const nlohmann::json& j) {
+    m_events.clear();
+    m_event_fired.clear();
+
+    if (j.contains("events")) {
+        for (const auto& event_json : j["events"]) {
+            SequenceEvent event;
+            event.time = event_json.value("time", 0.0f);
+            event.event_name = event_json.value("event_name", "");
+            if (event_json.contains("payload")) {
+                event.payload = deserialize_payload(event_json["payload"]);
+            }
+            event.target = scene::Entity{event_json.value("target", 0u)};
+            m_events.push_back(event);
+            m_event_fired.push_back(false);
+        }
+    }
+}
+
+// ============================================================================
+// SubtitleTrack Serialization
+// ============================================================================
+
+void SubtitleTrack::serialize(nlohmann::json& j) const {
+    j["subtitles"] = nlohmann::json::array();
+    for (const auto& subtitle : m_subtitles) {
+        j["subtitles"].push_back({
+            {"start_time", subtitle.start_time},
+            {"duration", subtitle.duration},
+            {"text", subtitle.text},
+            {"speaker", subtitle.speaker},
+            {"style", subtitle.style}
+        });
+    }
+}
+
+void SubtitleTrack::deserialize(const nlohmann::json& j) {
+    m_subtitles.clear();
+
+    if (j.contains("subtitles")) {
+        for (const auto& sub_json : j["subtitles"]) {
+            Subtitle subtitle;
+            subtitle.start_time = sub_json.value("start_time", 0.0f);
+            subtitle.duration = sub_json.value("duration", 0.0f);
+            subtitle.text = sub_json.value("text", "");
+            subtitle.speaker = sub_json.value("speaker", "");
+            subtitle.style = sub_json.value("style", "");
+            m_subtitles.push_back(subtitle);
+        }
+    }
 }
 
 } // namespace engine::cinematic

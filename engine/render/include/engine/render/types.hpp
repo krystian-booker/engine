@@ -138,6 +138,22 @@ struct MaterialProperty {
 struct MaterialData {
     ShaderHandle shader;
     std::vector<std::pair<std::string, MaterialProperty>> properties;
+    
+    // PBR standard properties
+    Vec4 albedo{1.0f};
+    Vec3 emissive{0.0f};
+    float metallic = 0.0f;
+    float roughness = 0.5f;
+    float ao = 1.0f;
+    float alpha_cutoff = 0.5f;
+
+    // Textures
+    TextureHandle albedo_map;
+    TextureHandle normal_map;
+    TextureHandle metallic_roughness_map;
+    TextureHandle ao_map;
+    TextureHandle emissive_map;
+    
     bool double_sided = false;
     bool transparent = false;
 };

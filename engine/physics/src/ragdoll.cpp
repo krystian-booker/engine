@@ -3,6 +3,7 @@
 #include <engine/core/filesystem.hpp>
 #include <nlohmann/json.hpp>
 #include <algorithm>
+#include <functional>
 
 namespace engine::physics {
 
@@ -204,6 +205,19 @@ void Ragdoll::init(PhysicsWorld& world, const RagdollDefinition& def,
         shutdown();
     }
 
+    // Validate inputs
+    if (!def.is_valid()) {
+        core::log(core::LogLevel::Error,
+            "Ragdoll::init failed: invalid definition (empty bodies or missing root)");
+        return;
+    }
+
+    if (skeleton.get_bone_count() == 0) {
+        core::log(core::LogLevel::Error,
+            "Ragdoll::init failed: skeleton has no bones");
+        return;
+    }
+
     m_world = &world;
     m_definition = def;
     m_skeleton = &skeleton;
@@ -237,33 +251,62 @@ bool Ragdoll::is_initialized() const {
 
 void Ragdoll::set_state(RagdollState state) {
     if (m_state == state) return;
+    if (!m_initialized || !m_world) {
+        core::log(core::LogLevel::Warn, "Ragdoll::set_state called on uninitialized ragdoll");
+        return;
+    }
 
     RagdollState old_state = m_state;
     m_state = state;
 
     switch (state) {
         case RagdollState::Disabled:
-            // Set all bodies to kinematic
+            // Set all bodies to kinematic - animation controls them
             for (auto& [name, body_id] : m_bone_to_body) {
-                // Would set body to kinematic mode
+                m_world->set_motion_type(body_id, BodyType::Kinematic);
+            }
+            // Disable motors on joints
+            for (uint32_t joint_id : m_joint_ids) {
+                m_world->set_constraint_motor_state(ConstraintId{joint_id}, false);
             }
             break;
 
         case RagdollState::Active:
-            // Set all bodies to dynamic
+            // Set all bodies to dynamic - physics controls them
             for (auto& [name, body_id] : m_bone_to_body) {
+                m_world->set_motion_type(body_id, BodyType::Dynamic);
                 m_world->activate_body(body_id);
+            }
+            // Disable motors for pure ragdoll
+            for (uint32_t joint_id : m_joint_ids) {
+                m_world->set_constraint_motor_state(ConstraintId{joint_id}, false);
             }
             break;
 
         case RagdollState::Blending:
             m_blend_time = 0.0f;
+            // Keep bodies dynamic during blend
+            for (auto& [name, body_id] : m_bone_to_body) {
+                m_world->set_motion_type(body_id, BodyType::Dynamic);
+            }
             break;
 
         case RagdollState::Powered:
-            // Enable motor-driven mode
+            // Set bodies to dynamic with motors enabled
+            for (auto& [name, body_id] : m_bone_to_body) {
+                m_world->set_motion_type(body_id, BodyType::Dynamic);
+                m_world->activate_body(body_id);
+            }
+            // Enable motors on all joints
+            for (uint32_t joint_id : m_joint_ids) {
+                m_world->set_constraint_motor_state(ConstraintId{joint_id}, true);
+                m_world->set_constraint_motor_strength(ConstraintId{joint_id}, m_motor_strength * 1000.0f);
+            }
             break;
     }
+
+    core::log(core::LogLevel::Debug, "Ragdoll state changed: {} -> {}",
+              static_cast<int>(old_state), static_cast<int>(state));
 }
 
 RagdollState Ragdoll::get_state() const {
@@ -300,24 +343,108 @@ void Ragdoll::blend_to_animation(float duration) {
 }
 
 void Ragdoll::apply_impulse(const std::string& bone_name, const Vec3& impulse, const Vec3& point) {
-    auto it = m_bone_to_body.find(bone_name);
-    if (it != m_bone_to_body.end()) {
-        m_world->add_impulse_at_point(it->second, impulse, point);
+    if (!m_initialized || !m_world) {
+        core::log(core::LogLevel::Warn,
+            "Ragdoll::apply_impulse called on uninitialized ragdoll");
+        return;
     }
+
+    // Validate impulse magnitude (prevent physics explosion)
+    float impulse_mag = glm::length(impulse);
+    if (impulse_mag > 10000.0f) {
+        core::log(core::LogLevel::Warn,
+            "Ragdoll::apply_impulse: impulse magnitude {} exceeds safe limit, clamping",
+            impulse_mag);
+    }
+
+    auto it = m_bone_to_body.find(bone_name);
+    if (it == m_bone_to_body.end()) {
+        core::log(core::LogLevel::Warn,
+            "Ragdoll::apply_impulse: bone '{}' not found", bone_name);
+        return;
+    }
+
+    // Clamp impulse to safe range
+    Vec3 safe_impulse = impulse;
+    if (impulse_mag > 10000.0f) {
+        safe_impulse = glm::normalize(impulse) * 10000.0f;
+    }
+
+    m_world->add_impulse_at_point(it->second, safe_impulse, point);
 }
 
 void Ragdoll::apply_force(const Vec3& force) {
+    if (!m_initialized || !m_world) {
+        core::log(core::LogLevel::Warn,
+            "Ragdoll::apply_force called on uninitialized ragdoll");
+        return;
+    }
+
     for (auto& [name, body_id] : m_bone_to_body) {
         m_world->add_force(body_id, force);
     }
 }
 
 void Ragdoll::get_pose(std::vector<render::BoneTransform>& out_pose) const {
-    // This would read positions/rotations from physics bodies
-    // and convert them to BoneTransform format
+    if (!m_skeleton || !m_world) {
+        out_pose.clear();
+        return;
+    }
 
-    out_pose.clear();
-    // Would populate with actual bone transforms from physics bodies
+    const int bone_count = m_skeleton->get_bone_count();
+    out_pose.resize(bone_count);
+
+    // Start with bind pose as default
+    std::vector<render::BoneTransform> bind_pose = m_skeleton->get_bind_pose();
+    out_pose = bind_pose;
+
+    // Override bones that have physics bodies
+    for (const auto& [bone_name, body_id] : m_bone_to_body) {
+        int32_t bone_index = m_skeleton->find_bone(bone_name);
+        if (bone_index < 0 || bone_index >= bone_count) continue;
+
+        Vec3 world_pos = m_world->get_position(body_id);
+        Quat world_rot = m_world->get_rotation(body_id);
+
+        // Get the body def to apply offset correction
+        auto it = m_bone_to_index.find(bone_name);
+        if (it != m_bone_to_index.end() && it->second < static_cast<int>(m_definition.bodies.size())) {
+            const auto& body_def = m_definition.bodies[it->second];
+            // Remove offset to get bone position
+            Vec3 offset_world = world_rot * body_def.offset;
+            world_pos -= offset_world;
+            // Apply rotation offset inverse
+            world_rot = world_rot * glm::inverse(body_def.rotation_offset);
+        }
+
+        // Convert world transform to local (relative to parent bone)
+        const render::Bone& bone = m_skeleton->get_bone(bone_index);
+        if (bone.parent_index >= 0 && bone.parent_index < bone_count) {
+            // Get parent world transform - for simplicity, use physics body if available
+            auto parent_it = m_bone_to_body.find(m_skeleton->get_bone(bone.parent_index).name);
+            if (parent_it != m_bone_to_body.end()) {
+                Vec3 parent_pos = m_world->get_position(parent_it->second);
+                Quat parent_rot = m_world->get_rotation(parent_it->second);
+
+                // Convert to local space
+                Quat inv_parent_rot = glm::inverse(parent_rot);
+                Vec3 local_pos = inv_parent_rot * (world_pos - parent_pos);
+                Quat local_rot = inv_parent_rot * world_rot;
+
+                out_pose[bone_index].position = local_pos;
+                out_pose[bone_index].rotation = local_rot;
+            } else {
+                // No parent body, use world transform directly
+                out_pose[bone_index].position = world_pos;
+                out_pose[bone_index].rotation = world_rot;
+            }
+        } else {
+            // Root bone - use world transform
+            out_pose[bone_index].position = world_pos;
+            out_pose[bone_index].rotation = world_rot;
+        }
+        out_pose[bone_index].scale = Vec3{1.0f};
+    }
 }
 
 void Ragdoll::update(float dt, const std::vector<render::BoneTransform>* anim_pose) {
@@ -348,19 +475,84 @@ void Ragdoll::update(float dt, const std::vector<render::BoneTransform>* anim_po
 }
 
 void Ragdoll::set_bone_kinematic(const std::string& bone_name, bool kinematic) {
+    if (!m_initialized || !m_world) {
+        core::log(core::LogLevel::Warn,
+            "Ragdoll::set_bone_kinematic called on uninitialized ragdoll");
+        return;
+    }
+
     auto it = m_bone_to_body.find(bone_name);
-    if (it != m_bone_to_body.end()) {
-        // Would set body to kinematic/dynamic mode
+    if (it == m_bone_to_body.end()) {
+        core::log(core::LogLevel::Warn,
+            "Ragdoll::set_bone_kinematic: bone '{}' not found", bone_name);
+        return;
+    }
+
+    BodyType type = kinematic ? BodyType::Kinematic : BodyType::Dynamic;
+    m_world->set_motion_type(it->second, type);
+
+    if (!kinematic) {
+        m_world->activate_body(it->second);
     }
 }
 
 void Ragdoll::set_bones_kinematic_below(const std::string& bone_name, bool kinematic) {
-    // Would recursively set all children to kinematic
-    // This enables partial ragdoll (e.g., upper body ragdoll, lower body animation)
+    if (!m_initialized || !m_world || !m_skeleton) {
+        core::log(core::LogLevel::Warn,
+            "Ragdoll::set_bones_kinematic_below called on uninitialized ragdoll");
+        return;
+    }
+
+    int32_t bone_index = m_skeleton->find_bone(bone_name);
+    if (bone_index < 0) {
+        core::log(core::LogLevel::Warn,
+            "Ragdoll::set_bones_kinematic_below: bone '{}' not found", bone_name);
+        return;
+    }
+
+    // Recursive helper to process bone and children
+    std::function<void(int32_t)> process_bone = [&](int32_t idx) {
+        if (idx < 0 || idx >= m_skeleton->get_bone_count()) return;
+
+        const render::Bone& bone = m_skeleton->get_bone(idx);
+        set_bone_kinematic(bone.name, kinematic);
+
+        for (int32_t child_idx : bone.children) {
+            process_bone(child_idx);
+        }
+    };
+
+    process_bone(bone_index);
 }
 
 void Ragdoll::set_motor_targets(const std::vector<render::BoneTransform>& target_pose) {
-    // Would set motor target poses for powered ragdoll
+    if (!m_initialized || !m_world || !m_skeleton || target_pose.empty()) {
+        return;
+    }
+
+    // For each joint, calculate target rotation from pose
+    for (size_t i = 0; i < m_definition.joints.size() && i < m_joint_ids.size(); ++i) {
+        const auto& joint_def = m_definition.joints[i];
+
+        int32_t bone_a_idx = m_skeleton->find_bone(joint_def.body_a);
+        int32_t bone_b_idx = m_skeleton->find_bone(joint_def.body_b);
+
+        if (bone_a_idx < 0 || bone_b_idx < 0) continue;
+        if (bone_b_idx >= static_cast<int32_t>(target_pose.size())) continue;
+
+        // Get relative rotation from parent to child in target pose
+        Quat parent_rot = (bone_a_idx < static_cast<int32_t>(target_pose.size()))
+            ? target_pose[bone_a_idx].rotation
+            : Quat{1, 0, 0, 0};
+        Quat child_rot = target_pose[bone_b_idx].rotation;
+
+        Quat relative_rot = glm::inverse(parent_rot) * child_rot;
+
+        // Set motor target with strength scaling
+        float effective_torque = m_motor_strength * 1000.0f;
+        m_world->set_constraint_motor_target(ConstraintId{m_joint_ids[i]}, relative_rot);
+        m_world->set_constraint_motor_strength(ConstraintId{m_joint_ids[i]}, effective_torque);
+    }
 }
 
 void Ragdoll::set_motor_strength(float strength) {
@@ -483,8 +675,69 @@ void Ragdoll::create_bodies(PhysicsWorld& world, const render::Skeleton& skeleto
 }
 
 void Ragdoll::create_joints(PhysicsWorld& world) {
-    // Joint creation would use Jolt's constraint system
-    // This is a placeholder for the full implementation
+    m_joint_ids.clear();
+    m_joint_ids.reserve(m_definition.joints.size());
+
+    for (const auto& joint_def : m_definition.joints) {
+        auto it_a = m_bone_to_body.find(joint_def.body_a);
+        auto it_b = m_bone_to_body.find(joint_def.body_b);
+
+        if (it_a == m_bone_to_body.end() || it_b == m_bone_to_body.end()) {
+            core::log(core::LogLevel::Warn,
+                "Ragdoll joint creation failed: bodies '{}' or '{}' not found",
+                joint_def.body_a, joint_def.body_b);
+            continue;
+        }
+
+        ConstraintId constraint_id;
+
+        switch (joint_def.type) {
+            case RagdollJointType::Fixed: {
+                FixedConstraintSettings settings;
+                settings.body_a = it_a->second;
+                settings.body_b = it_b->second;
+                settings.local_anchor_a = joint_def.local_anchor_a;
+                settings.local_anchor_b = joint_def.local_anchor_b;
+                constraint_id = world.create_fixed_constraint(settings);
+                break;
+            }
+            case RagdollJointType::Hinge: {
+                HingeConstraintSettings settings;
+                settings.body_a = it_a->second;
+                settings.body_b = it_b->second;
+                settings.local_anchor_a = joint_def.local_anchor_a;
+                settings.local_anchor_b = joint_def.local_anchor_b;
+                settings.hinge_axis = joint_def.hinge_axis;
+                settings.limit_min = joint_def.twist_min;
+                settings.limit_max = joint_def.twist_max;
+                settings.enable_limits = true;
+                constraint_id = world.create_hinge_constraint(settings);
+                break;
+            }
+            case RagdollJointType::Cone:
+            case RagdollJointType::Twist: {
+                SwingTwistConstraintSettings settings;
+                settings.body_a = it_a->second;
+                settings.body_b = it_b->second;
+                settings.local_anchor_a = joint_def.local_anchor_a;
+                settings.local_anchor_b = joint_def.local_anchor_b;
+                settings.twist_axis = Vec3{0.0f, 1.0f, 0.0f};
+                settings.plane_axis = Vec3{1.0f, 0.0f, 0.0f};
+                settings.swing_limit_y = joint_def.swing_limit_1;
+                settings.swing_limit_z = joint_def.swing_limit_2;
+                settings.twist_min = joint_def.twist_min;
+                settings.twist_max = joint_def.twist_max;
+                constraint_id = world.create_swing_twist_constraint(settings);
+                break;
+            }
+        }
+
+        if (constraint_id.valid()) {
+            m_joint_ids.push_back(constraint_id.id);
+        }
+    }
+
+    core::log(core::LogLevel::Debug, "Created {} ragdoll joints", m_joint_ids.size());
 }
 
 void Ragdoll::destroy_bodies() {
@@ -497,16 +750,22 @@ void Ragdoll::destroy_bodies() {
 }
 
 void Ragdoll::destroy_joints() {
-    // Would destroy Jolt constraints
+    if (!m_world) return;
+
+    for (uint32_t joint_id : m_joint_ids) {
+        m_world->destroy_constraint(ConstraintId{joint_id});
+    }
     m_joint_ids.clear();
 }
 
 void Ragdoll::update_blend(float dt, const std::vector<render::BoneTransform>& anim_pose) {
+    if (!m_initialized || !m_world || !m_skeleton) return;
+
     m_blend_time += dt;
     float t = m_blend_time / m_blend_duration;
 
     if (t >= 1.0f) {
-        // Blend complete
+        // Blend complete - switch to disabled (animation controlled)
         set_state(RagdollState::Disabled);
         return;
     }
@@ -514,7 +773,41 @@ void Ragdoll::update_blend(float dt, const std::vector<render::BoneTransform>& a
     // Smooth blend using ease-out curve
     float blend_factor = 1.0f - (1.0f - t) * (1.0f - t);
 
-    // Would interpolate between ragdoll pose and animation pose
+    // Get current ragdoll pose
+    std::vector<render::BoneTransform> ragdoll_pose;
+    get_pose(ragdoll_pose);
+
+    // For each body, interpolate position/rotation toward animation target
+    for (const auto& [bone_name, body_id] : m_bone_to_body) {
+        int32_t bone_index = m_skeleton->find_bone(bone_name);
+        if (bone_index < 0 || bone_index >= static_cast<int32_t>(anim_pose.size())) continue;
+        if (bone_index >= static_cast<int32_t>(ragdoll_pose.size())) continue;
+
+        const auto& anim_xform = anim_pose[bone_index];
+        const auto& phys_xform = ragdoll_pose[bone_index];
+
+        // Interpolate transform
+        Vec3 blended_pos = glm::mix(phys_xform.position, anim_xform.position, blend_factor);
+        Quat blended_rot = glm::slerp(phys_xform.rotation, anim_xform.rotation, blend_factor);
+
+        // Get body offset from definition
+        auto idx_it = m_bone_to_index.find(bone_name);
+        Vec3 offset{0.0f};
+        Quat rot_offset{1, 0, 0, 0};
+        if (idx_it != m_bone_to_index.end() && idx_it->second < static_cast<int>(m_definition.bodies.size())) {
+            const auto& body_def = m_definition.bodies[idx_it->second];
+            offset = body_def.offset;
+            rot_offset = body_def.rotation_offset;
+        }
+
+        // Apply offset to get body position
+        Vec3 body_pos = blended_pos + blended_rot * offset;
+        Quat body_rot = blended_rot * rot_offset;
+
+        // Apply blended transform
+        m_world->set_position(body_id, body_pos);
+        m_world->set_rotation(body_id, body_rot);
+    }
 }
 
 } // namespace engine::physics

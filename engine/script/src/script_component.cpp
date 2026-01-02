@@ -6,6 +6,26 @@
 
 namespace engine::script {
 
+// Thread-local World context for script execution
+static thread_local scene::World* s_current_world = nullptr;
+
+// Set of registered worlds for hot reload
+static std::unordered_set<scene::World*> s_registered_worlds;
+
+scene::World* get_current_script_world() {
+    return s_current_world;
+}
+
+void register_script_world(scene::World* world) {
+    if (world) {
+        s_registered_worlds.insert(world);
+    }
+}
+
+void unregister_script_world(scene::World* world) {
+    s_registered_worlds.erase(world);
+}
+
 void script_system_init() {
     init_lua();
 }
@@ -93,6 +113,9 @@ void script_unload(scene::World& world, scene::Entity entity) {
 }
 
 void script_system_update(scene::World& world, float dt) {
+    // Set world context for component operations in Lua
+    s_current_world = &world;
+
     auto view = world.view<ScriptComponent>();
 
     for (auto entity : view) {
@@ -117,9 +140,15 @@ void script_system_update(scene::World& world, float dt) {
             }
         }
     }
+
+    // Clear world context
+    s_current_world = nullptr;
 }
 
 void script_system_fixed_update(scene::World& world, float dt) {
+    // Set world context for component operations in Lua
+    s_current_world = &world;
+
     auto view = world.view<ScriptComponent>();
 
     for (auto entity : view) {
@@ -137,9 +166,15 @@ void script_system_fixed_update(scene::World& world, float dt) {
             }
         }
     }
+
+    // Clear world context
+    s_current_world = nullptr;
 }
 
 void script_system_late_update(scene::World& world, float dt) {
+    // Set world context for component operations in Lua
+    s_current_world = &world;
+
     auto view = world.view<ScriptComponent>();
 
     for (auto entity : view) {
@@ -157,22 +192,78 @@ void script_system_late_update(scene::World& world, float dt) {
             }
         }
     }
+
+    // Clear world context
+    s_current_world = nullptr;
 }
 
 void script_reload(const std::string& path) {
     core::log(core::LogLevel::Info, "Reloading script: {}", path);
 
-    // Note: This would be called from the hot reload system
-    // We need access to the world to iterate entities, which would typically
-    // be provided via an event or callback system
+    for (auto* world : s_registered_worlds) {
+        auto view = world->view<ScriptComponent>();
+        for (auto entity : view) {
+            auto& script = view.get<ScriptComponent>(entity);
 
-    // For now, this is a placeholder - the actual implementation would
-    // iterate all worlds and reload scripts that match the path
+            if (script.script_path == path && script.loaded) {
+                // Preserve current property values from the running instance
+                std::unordered_map<std::string, sol::object> saved_props;
+                if (script.instance.valid()) {
+                    for (const auto& [key, _] : script.properties) {
+                        sol::object val = script.instance[key];
+                        if (val.valid()) {
+                            saved_props[key] = val;
+                        }
+                    }
+                }
+
+                // Unload the script (calls on_destroy)
+                script_unload(*world, entity);
+
+                // Restore saved property values
+                script.properties = std::move(saved_props);
+
+                // Reload the script (calls on_create)
+                script_load(*world, entity);
+
+                core::log(core::LogLevel::Debug, "Reloaded script instance for entity {}",
+                          static_cast<uint32_t>(entity));
+            }
+        }
+    }
 }
 
 void script_reload_all() {
     core::log(core::LogLevel::Info, "Reloading all scripts");
-    // Similar to above - would require world access
+
+    for (auto* world : s_registered_worlds) {
+        auto view = world->view<ScriptComponent>();
+        for (auto entity : view) {
+            auto& script = view.get<ScriptComponent>(entity);
+
+            if (script.loaded) {
+                // Preserve current property values from the running instance
+                std::unordered_map<std::string, sol::object> saved_props;
+                if (script.instance.valid()) {
+                    for (const auto& [key, _] : script.properties) {
+                        sol::object val = script.instance[key];
+                        if (val.valid()) {
+                            saved_props[key] = val;
+                        }
+                    }
+                }
+
+                // Unload the script (calls on_destroy)
+                script_unload(*world, entity);
+
+                // Restore saved property values
+                script.properties = std::move(saved_props);
+
+                // Reload the script (calls on_create)
+                script_load(*world, entity);
+            }
+        }
+    }
 }
 
 void script_set_property(scene::World& world, scene::Entity entity,

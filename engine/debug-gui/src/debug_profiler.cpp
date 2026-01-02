@@ -1,6 +1,7 @@
 #include <engine/debug-gui/debug_profiler.hpp>
 #include <engine/core/profiler.hpp>
 #include <engine/core/input.hpp>
+#include <engine/core/log.hpp>
 
 #include <imgui.h>
 #include <cstdio>
@@ -23,23 +24,22 @@ void DebugProfiler::draw() {
     if (!m_pause_updates) {
         const auto& stats = core::Profiler::get_frame_stats();
 
-        if (m_frame_times.size() >= HISTORY_SIZE) {
-            m_frame_times.erase(m_frame_times.begin());
+        m_frame_times[m_write_index] = static_cast<float>(stats.frame_time_ms);
+        m_gpu_times[m_write_index] = static_cast<float>(stats.gpu_time_ms);
+        m_write_index = (m_write_index + 1) % HISTORY_SIZE;
+        if (m_sample_count < HISTORY_SIZE) {
+            m_sample_count++;
         }
-        m_frame_times.push_back(static_cast<float>(stats.frame_time_ms));
-
-        if (m_gpu_times.size() >= HISTORY_SIZE) {
-            m_gpu_times.erase(m_gpu_times.begin());
-        }
-        m_gpu_times.push_back(static_cast<float>(stats.gpu_time_ms));
     }
 
     // Controls
     ImGui::Checkbox("Pause", &m_pause_updates);
     ImGui::SameLine();
     if (ImGui::Button("Reset")) {
-        m_frame_times.clear();
-        m_gpu_times.clear();
+        m_frame_times.fill(0.0f);
+        m_gpu_times.fill(0.0f);
+        m_write_index = 0;
+        m_sample_count = 0;
         core::Profiler::reset();
     }
 
@@ -92,9 +92,19 @@ void DebugProfiler::draw_frame_time_graph() {
     ImGui::Text("Frame Time (ms)");
     ImGui::SliderFloat("Scale", &m_max_frame_time, 16.6f, 100.0f, "%.1f ms");
 
-    if (!m_frame_times.empty()) {
-        ImGui::PlotLines("##FrameTime", m_frame_times.data(),
-            static_cast<int>(m_frame_times.size()), 0, nullptr,
+    if (m_sample_count > 0) {
+        // Getter for circular buffer access
+        auto frame_time_getter = [](void* data, int idx) -> float {
+            auto* profiler = static_cast<DebugProfiler*>(data);
+            size_t count = profiler->m_sample_count;
+            size_t write_idx = profiler->m_write_index;
+            // Calculate the actual index in circular buffer (oldest sample first)
+            size_t start = (count < HISTORY_SIZE) ? 0 : write_idx;
+            size_t actual_idx = (start + static_cast<size_t>(idx)) % HISTORY_SIZE;
+            return profiler->m_frame_times[actual_idx];
+        };
+        ImGui::PlotLines("##FrameTime", frame_time_getter, this,
+            static_cast<int>(m_sample_count), 0, nullptr,
             0.0f, m_max_frame_time, ImVec2(-1, 80));
     }
 
@@ -158,7 +168,7 @@ void DebugProfiler::draw_memory_stats() {
     ImGui::SameLine();
     if (ImGui::Button("Get Report")) {
         std::string report = core::MemoryTracker::get_usage_report();
-        // TODO: Show in a popup or log
+        core::log(core::LogLevel::Info, report.c_str());
     }
 }
 
@@ -170,9 +180,17 @@ void DebugProfiler::draw_gpu_stats() {
     ImGui::Text("GPU Frame Time: %.2f ms", gpu_time);
 
     // GPU time graph
-    if (!m_gpu_times.empty()) {
-        ImGui::PlotLines("##GPUTime", m_gpu_times.data(),
-            static_cast<int>(m_gpu_times.size()), 0, nullptr,
+    if (m_sample_count > 0) {
+        auto gpu_time_getter = [](void* data, int idx) -> float {
+            auto* profiler = static_cast<DebugProfiler*>(data);
+            size_t count = profiler->m_sample_count;
+            size_t write_idx = profiler->m_write_index;
+            size_t start = (count < HISTORY_SIZE) ? 0 : write_idx;
+            size_t actual_idx = (start + static_cast<size_t>(idx)) % HISTORY_SIZE;
+            return profiler->m_gpu_times[actual_idx];
+        };
+        ImGui::PlotLines("##GPUTime", gpu_time_getter, this,
+            static_cast<int>(m_sample_count), 0, nullptr,
             0.0f, m_max_frame_time, ImVec2(-1, 60));
     }
 

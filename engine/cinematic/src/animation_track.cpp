@@ -1,4 +1,8 @@
 #include <engine/cinematic/animation_track.hpp>
+#include <engine/scene/world.hpp>
+#include <engine/scene/transform.hpp>
+#include <engine/render/animation_state_machine.hpp>
+#include <nlohmann/json.hpp>
 #include <algorithm>
 
 namespace engine::cinematic {
@@ -46,7 +50,7 @@ float AnimationTrack::get_duration() const {
     return duration;
 }
 
-void AnimationTrack::evaluate(float time) {
+void AnimationTrack::evaluate(float time, scene::World& world) {
     if (!m_enabled || m_clips.empty() || m_target_entity == scene::NullEntity) {
         return;
     }
@@ -75,9 +79,18 @@ void AnimationTrack::evaluate(float time) {
         blend_weight = clip_remaining / active->blend_out;
     }
 
-    // Would apply to Animator component
-    // auto& animator = world.get<Animator>(m_target_entity);
-    // animator.set_animation(active->clip_name, local_time, blend_weight);
+    // Apply to AnimatorComponent
+    if (world.has<render::AnimatorComponent>(m_target_entity)) {
+        auto& animator_comp = world.get<render::AnimatorComponent>(m_target_entity);
+        if (animator_comp.state_machine) {
+            auto* state = animator_comp.state_machine->get_state(active->clip_name);
+            if (state) {
+                state->speed = active->playback_speed;
+                state->loop = active->loop;
+                animator_comp.state_machine->set_state(active->clip_name);
+            }
+        }
+    }
 
     m_current_clip = active->clip_name;
     m_current_clip_time = local_time;
@@ -158,14 +171,17 @@ float TransformTrack::get_duration() const {
     return duration;
 }
 
-void TransformTrack::evaluate(float time) {
+void TransformTrack::evaluate(float time, scene::World& world) {
     if (!m_enabled || m_target_entity == scene::NullEntity) {
         return;
     }
 
     // Store initial state on first evaluation
-    if (!m_has_initial_state) {
-        // Would get from LocalTransform component
+    if (!m_has_initial_state && world.has<scene::LocalTransform>(m_target_entity)) {
+        const auto& t = world.get<scene::LocalTransform>(m_target_entity);
+        m_initial_position = t.position;
+        m_initial_rotation = t.rotation;
+        m_initial_scale = t.scale;
         m_has_initial_state = true;
     }
 
@@ -173,11 +189,13 @@ void TransformTrack::evaluate(float time) {
     Quat rotation = sample_rotation(time);
     Vec3 scale = sample_scale(time);
 
-    // Would apply to LocalTransform component
-    // auto& transform = world.get<LocalTransform>(m_target_entity);
-    // transform.position = position;
-    // transform.rotation = rotation;
-    // transform.scale = scale;
+    // Apply to LocalTransform component
+    if (world.has<scene::LocalTransform>(m_target_entity)) {
+        auto& transform = world.get<scene::LocalTransform>(m_target_entity);
+        transform.position = position;
+        transform.rotation = rotation;
+        transform.scale = scale;
+    }
 }
 
 void TransformTrack::reset() {
@@ -223,6 +241,145 @@ Quat TransformTrack::sample_rotation(float time) const {
 
 Vec3 TransformTrack::sample_scale(float time) const {
     return sample_keys(m_scale_keys, time, m_initial_scale);
+}
+
+// ============================================================================
+// AnimationTrack Serialization
+// ============================================================================
+
+void AnimationTrack::serialize(nlohmann::json& j) const {
+    j["clips"] = nlohmann::json::array();
+    for (const auto& clip : m_clips) {
+        j["clips"].push_back({
+            {"clip_name", clip.clip_name},
+            {"start_time", clip.start_time},
+            {"duration", clip.duration},
+            {"clip_start", clip.clip_start},
+            {"playback_speed", clip.playback_speed},
+            {"blend_in", clip.blend_in},
+            {"blend_out", clip.blend_out},
+            {"loop", clip.loop}
+        });
+    }
+
+    j["blends"] = nlohmann::json::array();
+    for (const auto& blend : m_blends) {
+        j["blends"].push_back({
+            {"time", blend.time},
+            {"duration", blend.duration},
+            {"from_clip", blend.from_clip},
+            {"to_clip", blend.to_clip}
+        });
+    }
+}
+
+void AnimationTrack::deserialize(const nlohmann::json& j) {
+    m_clips.clear();
+    m_blends.clear();
+
+    if (j.contains("clips")) {
+        for (const auto& clip_json : j["clips"]) {
+            AnimationClipRef clip;
+            clip.clip_name = clip_json.value("clip_name", "");
+            clip.start_time = clip_json.value("start_time", 0.0f);
+            clip.duration = clip_json.value("duration", -1.0f);
+            clip.clip_start = clip_json.value("clip_start", 0.0f);
+            clip.playback_speed = clip_json.value("playback_speed", 1.0f);
+            clip.blend_in = clip_json.value("blend_in", 0.0f);
+            clip.blend_out = clip_json.value("blend_out", 0.0f);
+            clip.loop = clip_json.value("loop", false);
+            m_clips.push_back(clip);
+        }
+    }
+
+    if (j.contains("blends")) {
+        for (const auto& blend_json : j["blends"]) {
+            AnimationBlend blend;
+            blend.time = blend_json.value("time", 0.0f);
+            blend.duration = blend_json.value("duration", 0.3f);
+            blend.from_clip = blend_json.value("from_clip", "");
+            blend.to_clip = blend_json.value("to_clip", "");
+            m_blends.push_back(blend);
+        }
+    }
+}
+
+// ============================================================================
+// TransformTrack Serialization
+// ============================================================================
+
+void TransformTrack::serialize(nlohmann::json& j) const {
+    j["position_keys"] = nlohmann::json::array();
+    for (const auto& key : m_position_keys) {
+        j["position_keys"].push_back({
+            {"time", key.time},
+            {"value", {key.value.x, key.value.y, key.value.z}},
+            {"easing", static_cast<int>(key.easing)}
+        });
+    }
+
+    j["rotation_keys"] = nlohmann::json::array();
+    for (const auto& key : m_rotation_keys) {
+        j["rotation_keys"].push_back({
+            {"time", key.time},
+            {"value", {key.value.w, key.value.x, key.value.y, key.value.z}},
+            {"easing", static_cast<int>(key.easing)}
+        });
+    }
+
+    j["scale_keys"] = nlohmann::json::array();
+    for (const auto& key : m_scale_keys) {
+        j["scale_keys"].push_back({
+            {"time", key.time},
+            {"value", {key.value.x, key.value.y, key.value.z}},
+            {"easing", static_cast<int>(key.easing)}
+        });
+    }
+}
+
+void TransformTrack::deserialize(const nlohmann::json& j) {
+    m_position_keys.clear();
+    m_rotation_keys.clear();
+    m_scale_keys.clear();
+
+    if (j.contains("position_keys")) {
+        for (const auto& key_json : j["position_keys"]) {
+            Keyframe<Vec3> key;
+            key.time = key_json.value("time", 0.0f);
+            if (key_json.contains("value")) {
+                auto& v = key_json["value"];
+                key.value = Vec3{v[0], v[1], v[2]};
+            }
+            key.easing = static_cast<EaseType>(key_json.value("easing", 0));
+            m_position_keys.push_back(key);
+        }
+    }
+
+    if (j.contains("rotation_keys")) {
+        for (const auto& key_json : j["rotation_keys"]) {
+            Keyframe<Quat> key;
+            key.time = key_json.value("time", 0.0f);
+            if (key_json.contains("value")) {
+                auto& v = key_json["value"];
+                key.value = Quat{v[0], v[1], v[2], v[3]};
+            }
+            key.easing = static_cast<EaseType>(key_json.value("easing", 0));
+            m_rotation_keys.push_back(key);
+        }
+    }
+
+    if (j.contains("scale_keys")) {
+        for (const auto& key_json : j["scale_keys"]) {
+            Keyframe<Vec3> key;
+            key.time = key_json.value("time", 0.0f);
+            if (key_json.contains("value")) {
+                auto& v = key_json["value"];
+                key.value = Vec3{v[0], v[1], v[2]};
+            }
+            key.easing = static_cast<EaseType>(key_json.value("easing", 0));
+            m_scale_keys.push_back(key);
+        }
+    }
 }
 
 } // namespace engine::cinematic

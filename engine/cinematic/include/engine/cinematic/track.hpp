@@ -6,6 +6,10 @@
 #include <memory>
 #include <cstdint>
 
+// Forward declarations
+namespace engine::scene { class World; }
+#include <nlohmann/json_fwd.hpp>
+
 namespace engine::cinematic {
 
 using namespace engine::core;
@@ -93,10 +97,14 @@ public:
     virtual float get_duration() const = 0;
 
     // Update track at time (applies effects to world)
-    virtual void evaluate(float time) = 0;
+    virtual void evaluate(float time, scene::World& world) = 0;
 
     // Reset track to initial state
     virtual void reset() = 0;
+
+    // Serialization
+    virtual void serialize(nlohmann::json& j) const = 0;
+    virtual void deserialize(const nlohmann::json& j) = 0;
 
 protected:
     std::string m_name;

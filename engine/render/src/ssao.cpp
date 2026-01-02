@@ -1,12 +1,157 @@
 #include <engine/render/ssao.hpp>
 #include <engine/render/renderer.hpp>
 #include <engine/core/log.hpp>
+#include <bgfx/bgfx.h>
 #include <random>
 #include <cmath>
+#include <fstream>
 
 namespace engine::render {
 
 using namespace engine::core;
+
+// SSAO shader programs and uniforms
+struct SSAOShaders {
+    bgfx::ProgramHandle ssao = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle blur = BGFX_INVALID_HANDLE;
+
+    // Uniforms
+    bgfx::UniformHandle u_ssaoParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_projParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_noiseScale = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_samples = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_depth = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_normal = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_noise = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_aoInput = BGFX_INVALID_HANDLE;
+
+    // Fullscreen quad resources
+    bgfx::VertexBufferHandle fullscreen_vb = BGFX_INVALID_HANDLE;
+    bgfx::IndexBufferHandle fullscreen_ib = BGFX_INVALID_HANDLE;
+    bgfx::VertexLayout fullscreen_layout;
+
+    void create();
+    void destroy();
+    void draw_fullscreen(uint16_t view_id, bgfx::ProgramHandle program);
+};
+
+static SSAOShaders s_ssao_shaders;
+
+static bgfx::ShaderHandle load_ssao_shader(const std::string& path) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) return BGFX_INVALID_HANDLE;
+
+    std::streampos pos = file.tellg();
+    if (pos <= 0) return BGFX_INVALID_HANDLE;
+
+    auto size = static_cast<std::streamsize>(pos);
+    file.seekg(0, std::ios::beg);
+
+    const bgfx::Memory* mem = bgfx::alloc(static_cast<uint32_t>(size) + 1);
+    file.read(reinterpret_cast<char*>(mem->data), size);
+    if (file.gcount() != size) return BGFX_INVALID_HANDLE;
+
+    mem->data[size] = '\0';
+    return bgfx::createShader(mem);
+}
+
+static std::string get_ssao_shader_path() {
+    auto type = bgfx::getRendererType();
+    switch (type) {
+        case bgfx::RendererType::Direct3D11:
+        case bgfx::RendererType::Direct3D12: return "shaders/dx11/";
+        case bgfx::RendererType::Vulkan: return "shaders/spirv/";
+        case bgfx::RendererType::OpenGL: return "shaders/glsl/";
+        default: return "shaders/spirv/";
+    }
+}
+
+void SSAOShaders::create() {
+    std::string path = get_ssao_shader_path();
+
+    // Load fullscreen vertex shader
+    bgfx::ShaderHandle vs = load_ssao_shader(path + "vs_fullscreen.sc.bin");
+
+    // Load fragment shaders
+    bgfx::ShaderHandle fs_ssao = load_ssao_shader(path + "fs_ssao.sc.bin");
+    bgfx::ShaderHandle fs_blur = load_ssao_shader(path + "fs_ssao_blur.sc.bin");
+
+    // Create programs
+    if (bgfx::isValid(vs)) {
+        if (bgfx::isValid(fs_ssao)) {
+            ssao = bgfx::createProgram(vs, fs_ssao, false);
+        }
+        if (bgfx::isValid(fs_blur)) {
+            blur = bgfx::createProgram(vs, fs_blur, false);
+        }
+    }
+
+    // Destroy individual shaders
+    if (bgfx::isValid(vs)) bgfx::destroy(vs);
+    if (bgfx::isValid(fs_ssao)) bgfx::destroy(fs_ssao);
+    if (bgfx::isValid(fs_blur)) bgfx::destroy(fs_blur);
+
+    // Create uniforms
+    u_ssaoParams = bgfx::createUniform("u_ssaoParams", bgfx::UniformType::Vec4);
+    u_projParams = bgfx::createUniform("u_projParams", bgfx::UniformType::Vec4);
+    u_noiseScale = bgfx::createUniform("u_noiseScale", bgfx::UniformType::Vec4);
+    u_samples = bgfx::createUniform("u_samples", bgfx::UniformType::Vec4, 16);
+    s_depth = bgfx::createUniform("s_depth", bgfx::UniformType::Sampler);
+    s_normal = bgfx::createUniform("s_normal", bgfx::UniformType::Sampler);
+    s_noise = bgfx::createUniform("s_noise", bgfx::UniformType::Sampler);
+    s_aoInput = bgfx::createUniform("s_aoInput", bgfx::UniformType::Sampler);
+
+    // Create fullscreen quad
+    fullscreen_layout
+        .begin()
+        .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+        .add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
+        .end();
+
+    struct FSVertex { float x, y, z, u, v; };
+    static const FSVertex vertices[] = {
+        { -1.0f,  1.0f, 0.0f, 0.0f, 0.0f },
+        {  1.0f,  1.0f, 0.0f, 1.0f, 0.0f },
+        {  1.0f, -1.0f, 0.0f, 1.0f, 1.0f },
+        { -1.0f, -1.0f, 0.0f, 0.0f, 1.0f },
+    };
+
+    static const uint16_t indices[] = { 0, 1, 2, 0, 2, 3 };
+
+    fullscreen_vb = bgfx::createVertexBuffer(bgfx::makeRef(vertices, sizeof(vertices)), fullscreen_layout);
+    fullscreen_ib = bgfx::createIndexBuffer(bgfx::makeRef(indices, sizeof(indices)));
+
+    log(LogLevel::Info, "SSAO shaders initialized");
+}
+
+void SSAOShaders::destroy() {
+    if (bgfx::isValid(ssao)) bgfx::destroy(ssao);
+    if (bgfx::isValid(blur)) bgfx::destroy(blur);
+
+    if (bgfx::isValid(u_ssaoParams)) bgfx::destroy(u_ssaoParams);
+    if (bgfx::isValid(u_projParams)) bgfx::destroy(u_projParams);
+    if (bgfx::isValid(u_noiseScale)) bgfx::destroy(u_noiseScale);
+    if (bgfx::isValid(u_samples)) bgfx::destroy(u_samples);
+    if (bgfx::isValid(s_depth)) bgfx::destroy(s_depth);
+    if (bgfx::isValid(s_normal)) bgfx::destroy(s_normal);
+    if (bgfx::isValid(s_noise)) bgfx::destroy(s_noise);
+    if (bgfx::isValid(s_aoInput)) bgfx::destroy(s_aoInput);
+
+    if (bgfx::isValid(fullscreen_vb)) bgfx::destroy(fullscreen_vb);
+    if (bgfx::isValid(fullscreen_ib)) bgfx::destroy(fullscreen_ib);
+
+    ssao = BGFX_INVALID_HANDLE;
+    blur = BGFX_INVALID_HANDLE;
+}
+
+void SSAOShaders::draw_fullscreen(uint16_t view_id, bgfx::ProgramHandle program) {
+    if (!bgfx::isValid(program) || !bgfx::isValid(fullscreen_vb)) return;
+
+    bgfx::setVertexBuffer(0, fullscreen_vb);
+    bgfx::setIndexBuffer(fullscreen_ib);
+    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+    bgfx::submit(view_id, program);
+}
 
 SSAOSystem::~SSAOSystem() {
     if (m_initialized) {
@@ -19,6 +164,13 @@ void SSAOSystem::init(IRenderer* renderer, const SSAOConfig& config) {
     m_config = config;
     m_width = renderer->get_width();
     m_height = renderer->get_height();
+
+    // Create shaders (shared across all SSAOSystem instances)
+    static bool shaders_created = false;
+    if (!shaders_created) {
+        s_ssao_shaders.create();
+        shaders_created = true;
+    }
 
     // Generate hemisphere sample kernel
     generate_kernel();
@@ -178,18 +330,90 @@ void SSAOSystem::destroy_render_targets() {
 }
 
 TextureHandle SSAOSystem::render(
-    TextureHandle /*depth_texture*/,
-    TextureHandle /*normal_texture*/,
-    const Mat4& /*projection*/,
+    TextureHandle depth_texture,
+    TextureHandle normal_texture,
+    const Mat4& projection,
     const Mat4& /*view*/
 ) {
-    // Note: This method sets up uniforms and queues the SSAO fullscreen pass
-    // The actual shader execution happens in the renderer's flush() call
+    if (!m_initialized || !bgfx::isValid(s_ssao_shaders.ssao)) {
+        return get_ao_texture();
+    }
 
-    // TODO: Set SSAO uniforms (kernel samples, noise scale, projection params)
-    // TODO: Bind depth and normal textures
-    // TODO: Queue fullscreen quad draw to SSAO view
-    // TODO: If blur enabled, queue blur passes
+    uint16_t view_id = static_cast<uint16_t>(RenderView::SSAO);
+
+    // Get native texture handles
+    uint16_t depth_idx = m_renderer->get_native_texture_handle(depth_texture);
+    uint16_t noise_idx = m_renderer->get_native_texture_handle(m_noise_texture);
+
+    if (depth_idx == bgfx::kInvalidHandle) {
+        return get_ao_texture();
+    }
+
+    bgfx::TextureHandle depth_handle = { depth_idx };
+    bgfx::TextureHandle noise_handle = { noise_idx };
+
+    // Extract projection parameters
+    // Assuming standard perspective projection matrix
+    float near_plane = projection[3][2] / (projection[2][2] - 1.0f);
+    float far_plane = projection[3][2] / (projection[2][2] + 1.0f);
+    float aspect = projection[1][1] / projection[0][0];
+    float tan_half_fov = 1.0f / projection[1][1];
+
+    Vec4 ssao_params(m_config.radius, m_config.bias, m_config.intensity, m_config.power);
+    Vec4 proj_params(near_plane, far_plane, aspect, tan_half_fov);
+
+    uint32_t ao_width = m_config.half_resolution ? m_width / 2 : m_width;
+    uint32_t ao_height = m_config.half_resolution ? m_height / 2 : m_height;
+    Vec4 noise_scale(
+        float(ao_width) / 4.0f,
+        float(ao_height) / 4.0f,
+        float(ao_width),
+        float(ao_height)
+    );
+
+    // Set uniforms
+    bgfx::setUniform(s_ssao_shaders.u_ssaoParams, &ssao_params);
+    bgfx::setUniform(s_ssao_shaders.u_projParams, &proj_params);
+    bgfx::setUniform(s_ssao_shaders.u_noiseScale, &noise_scale);
+    bgfx::setUniform(s_ssao_shaders.u_samples, m_kernel.data(), 16);
+
+    // Bind textures
+    bgfx::setTexture(0, s_ssao_shaders.s_depth, depth_handle);
+
+    if (normal_texture.valid()) {
+        uint16_t normal_idx = m_renderer->get_native_texture_handle(normal_texture);
+        if (normal_idx != bgfx::kInvalidHandle) {
+            bgfx::TextureHandle normal_handle = { normal_idx };
+            bgfx::setTexture(1, s_ssao_shaders.s_normal, normal_handle);
+        }
+    }
+
+    if (noise_idx != bgfx::kInvalidHandle) {
+        bgfx::setTexture(2, s_ssao_shaders.s_noise, noise_handle);
+    }
+
+    // Draw SSAO fullscreen pass
+    s_ssao_shaders.draw_fullscreen(view_id, s_ssao_shaders.ssao);
+
+    // Bilateral blur passes if enabled
+    if (m_config.blur_enabled && bgfx::isValid(s_ssao_shaders.blur) && m_blur_temp_target.valid()) {
+        uint16_t blur_view_id = static_cast<uint16_t>(RenderView::SSAOBlur);
+
+        TextureHandle ao_tex = m_renderer->get_render_target_texture(m_ao_target, 0);
+        uint16_t ao_idx = m_renderer->get_native_texture_handle(ao_tex);
+
+        if (ao_idx != bgfx::kInvalidHandle) {
+            bgfx::TextureHandle ao_handle = { ao_idx };
+
+            for (int pass = 0; pass < m_config.blur_passes; ++pass) {
+                // Bind AO texture as input
+                bgfx::setTexture(0, s_ssao_shaders.s_aoInput, ao_handle);
+
+                // Draw blur pass
+                s_ssao_shaders.draw_fullscreen(blur_view_id, s_ssao_shaders.blur);
+            }
+        }
+    }
 
     return get_ao_texture();
 }

@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <functional>
+#include <shared_mutex>
 
 namespace engine::plugin {
 
@@ -46,6 +47,9 @@ private:
 
     // Track which systems are game systems for clear operation
     std::vector<std::string> m_game_system_names;
+
+    // Thread safety for concurrent run/clear operations
+    mutable std::shared_mutex m_systems_mutex;
 };
 
 } // namespace engine::plugin

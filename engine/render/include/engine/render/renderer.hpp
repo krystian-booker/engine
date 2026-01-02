@@ -96,6 +96,10 @@ public:
     // VSync control
     virtual void set_vsync(bool enabled) = 0;
     virtual bool get_vsync() const = 0;
+
+    // Native handle access (for post-process effects that need direct GPU access)
+    // Returns the native texture handle as uint16_t (bgfx::TextureHandle::idx)
+    virtual uint16_t get_native_texture_handle(TextureHandle h) const = 0;
 };
 
 // Factory function to create BGFX renderer

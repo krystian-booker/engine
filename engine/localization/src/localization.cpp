@@ -1,22 +1,33 @@
 #include <engine/localization/localization.hpp>
+#include <engine/core/log.hpp>
 #include <fstream>
 #include <sstream>
-#include <regex>
+#include <cctype>
 #include <nlohmann/json.hpp>
 
 namespace engine::localization {
 
 using json = nlohmann::json;
 
-// Global instance
-static LocalizationManager* s_localization_manager = nullptr;
+namespace {
+
+// Validate language code to prevent path traversal attacks
+// Allows: a-z, A-Z, 0-9, underscore, hyphen (e.g., "en", "en_US", "zh-CN")
+bool is_valid_language_code(const std::string& code) {
+    if (code.empty()) return false;
+    for (char c : code) {
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_' && c != '-') {
+            return false;
+        }
+    }
+    return true;
+}
+
+} // anonymous namespace
 
 LocalizationManager& get_localization() {
-    if (!s_localization_manager) {
-        static LocalizationManager instance;
-        s_localization_manager = &instance;
-    }
-    return *s_localization_manager;
+    static LocalizationManager instance;
+    return instance;
 }
 
 // LocalizationTable implementation
@@ -38,18 +49,41 @@ bool LocalizationTable::load_from_csv(const std::string& path) {
     while (std::getline(file, line)) {
         if (line.empty() || line[0] == '#') continue;
 
-        size_t comma = line.find(',');
-        if (comma == std::string::npos) continue;
+        std::string key;
+        std::string value;
 
-        std::string key = line.substr(0, comma);
-        std::string value = line.substr(comma + 1);
+        // Find the separator - handle quoted values
+        size_t pos = 0;
 
-        // Remove quotes if present
-        if (!value.empty() && value.front() == '"' && value.back() == '"') {
-            value = value.substr(1, value.size() - 2);
+        // Parse key (may be quoted)
+        if (!line.empty() && line[0] == '"') {
+            size_t end_quote = line.find('"', 1);
+            if (end_quote == std::string::npos) continue;
+            key = line.substr(1, end_quote - 1);
+            pos = end_quote + 1;
+            if (pos < line.size() && line[pos] == ',') pos++;
+        } else {
+            size_t comma = line.find(',');
+            if (comma == std::string::npos) continue;
+            key = line.substr(0, comma);
+            pos = comma + 1;
         }
 
-        set(key, value);
+        // Parse value (may be quoted and contain commas)
+        if (pos < line.size() && line[pos] == '"') {
+            size_t end_quote = line.find('"', pos + 1);
+            if (end_quote != std::string::npos) {
+                value = line.substr(pos + 1, end_quote - pos - 1);
+            } else {
+                value = line.substr(pos + 1);
+            }
+        } else {
+            value = line.substr(pos);
+        }
+
+        if (!key.empty()) {
+            set(key, value);
+        }
     }
 
     return true;
@@ -72,7 +106,7 @@ bool LocalizationTable::load_from_string(const std::string& content, const std::
 
         // Load strings
         for (auto& [key, value] : j.items()) {
-            if (key[0] == '_') continue;  // Skip metadata
+            if (key.empty() || key[0] == '_') continue;  // Skip metadata
 
             LocalizedString ls;
             ls.key = key;
@@ -98,7 +132,11 @@ bool LocalizationTable::load_from_string(const std::string& content, const std::
         }
 
         return true;
+    } catch (const std::exception& e) {
+        core::log(core::LogLevel::Error, "Localization: Failed to parse JSON - {}", e.what());
+        return false;
     } catch (...) {
+        core::log(core::LogLevel::Error, "Localization: Failed to parse JSON - unknown error");
         return false;
     }
 }
@@ -138,7 +176,7 @@ bool LocalizationTable::save_to_json(const std::string& path) const {
     if (!file.is_open()) return false;
 
     file << j.dump(2);
-    return true;
+    return file.good();
 }
 
 const LocalizedString* LocalizationTable::get(const std::string& key) const {
@@ -172,6 +210,7 @@ void LocalizationTable::clear() {
 // LocalizationManager implementation
 
 void LocalizationManager::init(const LocalizationConfig& config) {
+    std::unique_lock lock(m_mutex);
     if (m_initialized) return;
 
     m_config = config;
@@ -188,16 +227,19 @@ void LocalizationManager::init(const LocalizationConfig& config) {
     m_plural_rules["ar"] = PluralRules::arabic;
     m_plural_rules["pl"] = PluralRules::polish;
 
+    // Mark initialized before auto-load; fallback behavior handles missing strings
+    m_initialized = true;
+    lock.unlock();
+
     // Load default language if auto_load enabled
     if (config.auto_load && !config.default_language.empty()) {
         load_language(config.default_language);
         set_language(config.default_language);
     }
-
-    m_initialized = true;
 }
 
 void LocalizationManager::shutdown() {
+    std::unique_lock lock(m_mutex);
     if (!m_initialized) return;
 
     m_tables.clear();
@@ -213,26 +255,41 @@ bool LocalizationManager::set_language(const std::string& code) {
 }
 
 bool LocalizationManager::set_language(const LanguageCode& lang) {
+    std::unique_lock lock(m_mutex);
+
     // Check if language is loaded
     std::string code = lang.code;
     if (m_tables.find(code) == m_tables.end()) {
+        lock.unlock();
         if (!load_language(lang)) {
             return false;
         }
+        lock.lock();
     }
 
     LanguageCode old_lang = m_current_language;
     m_current_language = lang;
 
-    // Notify callbacks
-    for (const auto& [name, callback] : m_callbacks) {
-        callback(old_lang, lang);
+    // Copy callbacks to avoid holding lock during invocation
+    auto callbacks_copy = m_callbacks;
+    lock.unlock();
+
+    // Notify callbacks with exception safety
+    for (const auto& [name, callback] : callbacks_copy) {
+        try {
+            callback(old_lang, lang);
+        } catch (const std::exception& e) {
+            core::log(core::LogLevel::Error, "Localization: Callback '{}' threw exception: {}", name, e.what());
+        } catch (...) {
+            core::log(core::LogLevel::Error, "Localization: Callback '{}' threw unknown exception", name);
+        }
     }
 
     return true;
 }
 
 std::vector<LanguageCode> LocalizationManager::get_available_languages() const {
+    std::shared_lock lock(m_mutex);
     std::vector<LanguageCode> languages;
     for (const auto& [code, table] : m_tables) {
         languages.push_back(table->get_language());
@@ -241,6 +298,7 @@ std::vector<LanguageCode> LocalizationManager::get_available_languages() const {
 }
 
 bool LocalizationManager::is_language_available(const std::string& code) const {
+    std::shared_lock lock(m_mutex);
     return m_tables.find(code) != m_tables.end();
 }
 
@@ -253,19 +311,36 @@ bool LocalizationManager::load_language(const std::string& code) {
 bool LocalizationManager::load_language(const LanguageCode& lang) {
     std::string code = lang.code;
 
-    // Already loaded?
-    if (m_tables.find(code) != m_tables.end()) {
-        return true;
+    // Validate language code to prevent path traversal
+    if (!is_valid_language_code(code)) {
+        core::log(core::LogLevel::Error, "Localization: Invalid language code '{}'", code);
+        return false;
     }
 
-    // Construct path
-    std::string path = m_config.localization_path + "/" + code + m_config.file_extension;
+    std::string path;
 
+    {
+        std::shared_lock lock(m_mutex);
+        // Already loaded?
+        if (m_tables.find(code) != m_tables.end()) {
+            return true;
+        }
+        path = m_config.localization_path + "/" + code + m_config.file_extension;
+    }
+
+    // Load file outside of lock
     auto table = std::make_unique<LocalizationTable>();
     table->set_language(lang);
 
     if (!table->load_from_json(path)) {
+        core::log(core::LogLevel::Warn, "Localization: Failed to load language file '{}'", path);
         return false;
+    }
+
+    std::unique_lock lock(m_mutex);
+    // Check again in case another thread loaded it
+    if (m_tables.find(code) != m_tables.end()) {
+        return true;
     }
 
     m_tables[code] = std::move(table);
@@ -276,6 +351,7 @@ bool LocalizationManager::load_language(const LanguageCode& lang) {
 }
 
 void LocalizationManager::unload_language(const std::string& code) {
+    std::unique_lock lock(m_mutex);
     auto it = m_tables.find(code);
     if (it != m_tables.end()) {
         m_stats.total_strings -= it->second->size();
@@ -285,16 +361,19 @@ void LocalizationManager::unload_language(const std::string& code) {
 }
 
 std::string LocalizationManager::get(const std::string& key) const {
-    return resolve_key(key);
+    std::shared_lock lock(m_mutex);
+    return resolve_key_unlocked(key);
 }
 
 std::string LocalizationManager::get(const std::string& key, int64_t count) const {
+    std::shared_lock lock(m_mutex);
+
     // Find in current language
     auto table_it = m_tables.find(m_current_language.code);
     if (table_it != m_tables.end()) {
         const LocalizedString* ls = table_it->second->get(key);
         if (ls) {
-            PluralForm form = get_plural_form(m_current_language.code, count);
+            PluralForm form = get_plural_form_unlocked(m_current_language.code, count);
             auto form_it = ls->forms.find(form);
             if (form_it != ls->forms.end()) {
                 return form_it->second;
@@ -314,7 +393,7 @@ std::string LocalizationManager::get(const std::string& key, int64_t count) cons
             const LocalizedString* ls = table_it->second->get(key);
             if (ls) {
                 return ls->get(count, [this](int64_t n) {
-                    return get_plural_form(m_config.fallback_language, n);
+                    return get_plural_form_unlocked(m_config.fallback_language, n);
                 });
             }
         }
@@ -331,6 +410,8 @@ std::string LocalizationManager::get_formatted(const std::string& key,
 }
 
 bool LocalizationManager::has(const std::string& key) const {
+    std::shared_lock lock(m_mutex);
+
     auto table_it = m_tables.find(m_current_language.code);
     if (table_it != m_tables.end() && table_it->second->has(key)) {
         return true;
@@ -364,28 +445,33 @@ std::string LocalizationManager::format(const std::string& str,
 }
 
 void LocalizationManager::add_callback(const std::string& name, LanguageChangeCallback callback) {
+    std::unique_lock lock(m_mutex);
     m_callbacks[name] = callback;
 }
 
 void LocalizationManager::remove_callback(const std::string& name) {
+    std::unique_lock lock(m_mutex);
     m_callbacks.erase(name);
 }
 
 void LocalizationManager::set_plural_rule(const std::string& language, PluralRuleFunc rule) {
+    std::unique_lock lock(m_mutex);
     m_plural_rules[language] = rule;
 }
 
 LocalizationTable* LocalizationManager::get_table(const std::string& code) {
+    std::unique_lock lock(m_mutex);
     auto it = m_tables.find(code);
     return it != m_tables.end() ? it->second.get() : nullptr;
 }
 
 const LocalizationTable* LocalizationManager::get_table(const std::string& code) const {
+    std::shared_lock lock(m_mutex);
     auto it = m_tables.find(code);
     return it != m_tables.end() ? it->second.get() : nullptr;
 }
 
-std::string LocalizationManager::resolve_key(const std::string& key) const {
+std::string LocalizationManager::resolve_key_unlocked(const std::string& key) const {
     // Find in current language
     auto table_it = m_tables.find(m_current_language.code);
     if (table_it != m_tables.end()) {
@@ -410,7 +496,7 @@ std::string LocalizationManager::resolve_key(const std::string& key) const {
     return m_config.show_missing_keys ? m_config.missing_prefix + key : "";
 }
 
-PluralForm LocalizationManager::get_plural_form(const std::string& language, int64_t count) const {
+PluralForm LocalizationManager::get_plural_form_unlocked(const std::string& language, int64_t count) const {
     auto it = m_plural_rules.find(language);
     if (it != m_plural_rules.end()) {
         return it->second(count);

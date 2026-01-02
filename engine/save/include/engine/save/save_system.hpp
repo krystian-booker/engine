@@ -55,6 +55,7 @@ public:
 using ComponentSerializeFunc = std::function<void(JsonArchive&, void*)>;
 using ComponentDeserializeFunc = std::function<void(JsonArchive&, void*)>;
 using ComponentCreateFunc = std::function<void*(Entity, World&)>;
+using ComponentGetFunc = std::function<void*(Entity, World&)>;  // Returns nullptr if not present
 
 // Component serializer registration
 struct ComponentSerializer {
@@ -62,6 +63,7 @@ struct ComponentSerializer {
     ComponentSerializeFunc serialize;
     ComponentDeserializeFunc deserialize;
     ComponentCreateFunc create;
+    ComponentGetFunc get;  // Get existing component (nullptr if not present)
     std::type_index type_id;
 };
 
@@ -90,8 +92,6 @@ struct SaveSystemConfig {
     std::string autosave_slot = "autosave";
     float autosave_interval = 300.0f;  // 5 minutes
     int max_autosaves = 3;             // Rotate through autosave slots
-    bool compress_saves = false;
-    bool encrypt_saves = false;
 };
 
 // Save system manager
@@ -146,6 +146,8 @@ public:
     std::string get_save_path(const std::string& slot_name) const;
 
     // Async save/load
+    // IMPORTANT: Caller must ensure `world` remains valid until the future completes.
+    // These operations capture `world` by reference for efficiency.
     std::future<SaveResult> save_game_async(World& world, const std::string& slot_name);
     std::future<LoadResult> load_game_async(World& world, const std::string& slot_name);
 
@@ -224,6 +226,14 @@ void SaveSystem::register_component(
 
     cs.create = [](Entity e, World& world) -> void* {
         return &world.emplace<T>(e);
+    };
+
+    cs.get = [](Entity e, World& world) -> void* {
+        auto& registry = world.registry();
+        if (auto* component = registry.try_get<T>(e)) {
+            return component;
+        }
+        return nullptr;
     };
 
     m_component_serializers[type_name] = cs;

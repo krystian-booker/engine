@@ -4,12 +4,32 @@
 #include <engine/core/math.hpp>
 #include <engine/core/project_settings.hpp>
 #include <engine/audio/audio_components.hpp>
+#include <functional>
 #include <memory>
 #include <string>
 
 namespace engine::audio {
 
 using namespace engine::core;
+
+// Error callback function type
+using AudioErrorCallback = std::function<void(AudioError error, const std::string& message)>;
+
+// Common reverb environment presets
+enum class ReverbPreset : uint8_t {
+    None,           // No reverb (dry signal only)
+    SmallRoom,      // Small acoustic room
+    MediumRoom,     // Medium-sized room
+    LargeRoom,      // Large room or studio
+    Hall,           // Concert hall
+    Cathedral,      // Large cathedral/church
+    Cave,           // Rocky cave with long echoes
+    Underwater,     // Muffled underwater effect
+    Bathroom,       // Small tiled bathroom
+    Arena,          // Large sports arena
+    Forest,         // Outdoor forest (subtle)
+    Custom          // User-defined parameters
+};
 
 // Audio engine - manages all audio playback
 class AudioEngine {
@@ -78,6 +98,24 @@ public:
     };
     void set_reverb_params(const ReverbParams& params);
 
+    // Reverb presets
+    static ReverbParams get_reverb_preset(ReverbPreset preset);
+    void set_reverb_preset(ReverbPreset preset);
+
+    // Filter parameters for audio buses
+    struct FilterParams {
+        float lowpass_cutoff = 20000.0f;   // Hz (20000 = effectively disabled)
+        float highpass_cutoff = 20.0f;     // Hz (20 = effectively disabled)
+        bool lowpass_enabled = false;
+        bool highpass_enabled = false;
+    };
+
+    // Bus filter controls
+    void set_bus_lowpass(AudioBusHandle bus, float cutoff_hz, bool enabled = true);
+    void set_bus_highpass(AudioBusHandle bus, float cutoff_hz, bool enabled = true);
+    void set_bus_filters(AudioBusHandle bus, const FilterParams& params);
+    FilterParams get_bus_filters(AudioBusHandle bus) const;
+
     // Global controls
     void set_master_volume(float volume);
     float get_master_volume() const;
@@ -97,6 +135,10 @@ public:
     // Get active sound count
     uint32_t get_playing_sound_count() const;
 
+    // Voice management (for priority-based stealing)
+    void set_max_voices(uint32_t count);
+    uint32_t get_max_voices() const;
+
     // Audio bus management
     AudioBusHandle get_bus(BuiltinBus bus);
     AudioBusHandle create_bus(const std::string& name, AudioBusHandle parent = {});
@@ -105,6 +147,15 @@ public:
     float get_bus_volume(AudioBusHandle bus) const;
     void set_bus_muted(AudioBusHandle bus, bool muted);
     bool is_bus_muted(AudioBusHandle bus) const;
+
+    // Error handling
+    void set_error_callback(AudioErrorCallback callback);
+    AudioResult get_last_error() const;
+
+    // Handle validation
+    bool is_valid(SoundHandle h) const;
+    bool is_valid(MusicHandle h) const;
+    bool is_valid(AudioBusHandle h) const;
 
     // Convenience helpers used by cinematic tracks (minimal implementations)
     SoundHandle play(const std::string& path, float volume = 1.0f, bool loop = false);

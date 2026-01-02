@@ -122,7 +122,4 @@ private:
     int m_max_agents = 128;
 };
 
-// Convenience function to register nav agent system with scheduler
-void register_nav_agent_system(scene::World& world, NavAgentSystem& system);
-
 } // namespace engine::navigation

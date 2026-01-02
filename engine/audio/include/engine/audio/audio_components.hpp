@@ -101,4 +101,8 @@ float calculate_cone_attenuation(const Vec3& source_forward,
                                   float outer_angle,
                                   float outer_volume);
 
+// Validate and normalize AudioSource parameters
+// Returns true if any values were corrected
+bool validate_audio_source(AudioSource& source);
+
 } // namespace engine::audio

@@ -127,6 +127,7 @@ struct RenderObject {
     Mat4 prev_transform{1.0f};  // For motion vectors
     AABB bounds;
     uint32_t layer_mask = 0xFFFFFFFF;
+    uint8_t blend_mode = 0;  // 0=Opaque, 1=AlphaTest, 2=AlphaBlend, 3=Additive, 4=Multiply
     bool visible = true;
     bool casts_shadows = true;
     bool receives_shadows = true;

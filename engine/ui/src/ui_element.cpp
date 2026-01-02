@@ -68,7 +68,6 @@ UIElement* UIElement::find_child(const std::string& name) {
 }
 
 void UIElement::request_focus() {
-    // TODO: Implement through canvas focus management
     m_focused = true;
     on_focus_changed(true);
 }

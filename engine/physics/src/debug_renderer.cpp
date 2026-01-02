@@ -37,11 +37,49 @@ void PhysicsDebugRenderer::draw_bodies() {
 }
 
 void PhysicsDebugRenderer::draw_contacts() {
-    // TODO: Draw contact points from the physics world
+    if (!m_world) return;
+
+    auto contacts = m_world->get_contact_points();
+
+    for (const auto& contact : contacts) {
+        // Draw contact point
+        DebugDraw::sphere(contact.position, 0.02f, DebugDraw::RED);
+
+        // Draw contact normal
+        Vec3 normal_end = contact.position + contact.normal * 0.2f;
+        DebugDraw::arrow(contact.position, normal_end, DebugDraw::YELLOW, 0.02f);
+
+        // Draw penetration depth visualization
+        if (contact.penetration_depth > 0.0f) {
+            Vec3 penetration_end = contact.position - contact.normal * contact.penetration_depth;
+            DebugDraw::line(contact.position, penetration_end, 0xFFA500FF);  // Orange
+        }
+    }
 }
 
 void PhysicsDebugRenderer::draw_constraints() {
-    // TODO: Draw constraints/joints from the physics world
+    if (!m_world) return;
+
+    auto constraints = m_world->get_all_constraints();
+
+    for (const auto& constraint : constraints) {
+        // Draw constraint anchor points
+        DebugDraw::cross(constraint.world_anchor_a, 0.05f, 0xFF00FFFF);  // Purple
+        DebugDraw::cross(constraint.world_anchor_b, 0.05f, 0xFF00FFFF);
+
+        // Draw line connecting the two anchor points
+        DebugDraw::line(constraint.world_anchor_a, constraint.world_anchor_b, 0xFF00FFFF);
+
+        // Draw lines from body centers to anchors
+        if (constraint.body_a.valid()) {
+            Vec3 body_pos_a = m_world->get_position(constraint.body_a);
+            DebugDraw::line(body_pos_a, constraint.world_anchor_a, 0x8000FFFF);  // Light purple
+        }
+        if (constraint.body_b.valid()) {
+            Vec3 body_pos_b = m_world->get_position(constraint.body_b);
+            DebugDraw::line(body_pos_b, constraint.world_anchor_b, 0x8000FFFF);
+        }
+    }
 }
 
 void PhysicsDebugRenderer::draw_body(PhysicsBodyId body_id) {
@@ -64,24 +102,62 @@ void PhysicsDebugRenderer::draw_body(PhysicsBodyId body_id) {
         }
     }
 
-    // TODO: Get shape info from body and draw appropriate shape
-    // For now, draw a generic box as placeholder
+    // Get actual shape info and draw appropriate shape
     if (m_flags.shapes) {
-        draw_box_shape(pos, rot, Vec3{0.5f}, color);
+        BodyShapeInfo shape_info = m_world->get_body_shape_info(body_id);
+        Vec3 shape_pos = pos + rot * shape_info.center_offset;
+
+        switch (shape_info.type) {
+            case ShapeType::Box:
+                draw_box_shape(shape_pos, rot, shape_info.dimensions, color);
+                break;
+            case ShapeType::Sphere:
+                draw_sphere_shape(shape_pos, shape_info.dimensions.x, color);
+                break;
+            case ShapeType::Capsule:
+                draw_capsule_shape(shape_pos, rot,
+                                   shape_info.dimensions.x,  // radius
+                                   shape_info.dimensions.y * 2.0f,  // full height
+                                   color);
+                break;
+            case ShapeType::Cylinder:
+                // Draw cylinder similar to capsule (approximate visualization)
+                draw_capsule_shape(shape_pos, rot,
+                                   shape_info.dimensions.x,
+                                   shape_info.dimensions.y * 2.0f,
+                                   color);
+                break;
+            default:
+                // Fallback for complex shapes - draw bounding box
+                draw_box_shape(shape_pos, rot, shape_info.dimensions, color);
+                break;
+        }
     }
 }
 
-uint32_t PhysicsDebugRenderer::get_body_color(PhysicsBodyId /*body_id*/) const {
-    // TODO: Get actual body type from physics world
-    // For now return a default color
-    return DebugDraw::GREEN;
+uint32_t PhysicsDebugRenderer::get_body_color(PhysicsBodyId body_id) const {
+    if (!m_world) return DebugDraw::WHITE;
 
-    // Color scheme:
-    // - Static bodies: Gray (0x808080FF)
-    // - Kinematic bodies: Blue (0x0080FFFF)
-    // - Dynamic active: Green (0x00FF00FF)
-    // - Dynamic sleeping: Dark green (0x008000FF)
-    // - Triggers: Purple (0xFF00FFFF)
+    BodyType type = m_world->get_body_type(body_id);
+    bool is_active = m_world->is_active(body_id);
+
+    // Color scheme based on body type and state
+    switch (type) {
+        case BodyType::Static:
+            return 0x808080FF;  // Gray
+
+        case BodyType::Kinematic:
+            return 0x0080FFFF;  // Blue
+
+        case BodyType::Dynamic:
+            if (is_active) {
+                return 0x00FF00FF;  // Green (active)
+            } else {
+                return 0x008000FF;  // Dark green (sleeping)
+            }
+    }
+
+    return DebugDraw::WHITE;
 }
 
 void PhysicsDebugRenderer::draw_box_shape(const Vec3& pos, const Quat& rot,

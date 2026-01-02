@@ -75,8 +75,10 @@ void UICanvas::layout_root() {
     float scale_y = 1.0f;
 
     if (m_scale_mode == ScaleMode::ScaleWithScreen) {
-        scale_x = static_cast<float>(m_width) / m_reference_width;
-        scale_y = static_cast<float>(m_height) / m_reference_height;
+        if (m_reference_width > 0 && m_reference_height > 0) {
+            scale_x = static_cast<float>(m_width) / m_reference_width;
+            scale_y = static_cast<float>(m_height) / m_reference_height;
+        }
     }
 
     // Create root bounds

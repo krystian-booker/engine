@@ -35,7 +35,10 @@ target_include_directories(engine_physics
 target_link_libraries(engine_physics
     PUBLIC
         engine::core
+        engine::core
         engine::render
+        engine::scene
+        Jolt
         Jolt
     PRIVATE
         engine_compiler_flags

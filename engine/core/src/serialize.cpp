@@ -3,6 +3,10 @@
 
 namespace engine::core {
 
+namespace {
+    constexpr uint32_t MAX_SERIALIZED_SIZE = 256 * 1024 * 1024; // 256MB limit
+}
+
 // JsonArchive implementation
 JsonArchive::JsonArchive()
     : m_writing(true)
@@ -217,12 +221,12 @@ void JsonArchive::end_object() {
     }
 }
 
-size_t JsonArchive::begin_array(const char* name) {
+size_t JsonArchive::begin_array(const char* name, size_t count) {
     if (m_writing) {
         current()[name] = json::array();
         m_stack.push_back(&current()[name]);
         m_array_index = 0;
-        return 0;
+        return count;  // JSON doesn't need to store count, but return it for consistency
     } else {
         if (current().contains(name) && current()[name].is_array()) {
             m_stack.push_back(&current()[name]);
@@ -334,6 +338,10 @@ void BinaryArchive::serialize(const char*, std::string& value) {
     } else {
         uint32_t len;
         read_bytes(&len, sizeof(len));
+        if (len > MAX_SERIALIZED_SIZE) {
+            value.clear();
+            return;
+        }
         value.resize(len);
         read_bytes(value.data(), len);
     }
@@ -387,12 +395,15 @@ void BinaryArchive::end_object() {
     // No-op for binary
 }
 
-size_t BinaryArchive::begin_array(const char*) {
+size_t BinaryArchive::begin_array(const char*, size_t count) {
     if (m_writing) {
-        return 0;
+        uint32_t size = static_cast<uint32_t>(count);
+        write_bytes(&size, sizeof(size));
+        return count;
     } else {
         uint32_t size;
         read_bytes(&size, sizeof(size));
+        if (size > MAX_SERIALIZED_SIZE) return 0;
         return size;
     }
 }

@@ -1,12 +1,151 @@
 #include <engine/render/volumetric.hpp>
 #include <engine/render/renderer.hpp>
 #include <engine/core/log.hpp>
+#include <bgfx/bgfx.h>
 #include <random>
 #include <cmath>
+#include <fstream>
 
 namespace engine::render {
 
 using namespace engine::core;
+
+// Volumetric shader resources
+struct VolumetricShaders {
+    bgfx::ProgramHandle volumetric = BGFX_INVALID_HANDLE;
+
+    bgfx::UniformHandle u_volumetricParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_fogColor = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_fogHeight = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_lightDir = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_lightColor = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_cameraPos = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_projParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_shadowMatrix = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_depth = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_shadowMap0 = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_shadowMap1 = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_noise = BGFX_INVALID_HANDLE;
+
+    bgfx::VertexBufferHandle fullscreen_vb = BGFX_INVALID_HANDLE;
+    bgfx::IndexBufferHandle fullscreen_ib = BGFX_INVALID_HANDLE;
+    bgfx::VertexLayout fullscreen_layout;
+
+    void create();
+    void destroy();
+    void draw_fullscreen(uint16_t view_id);
+};
+
+static VolumetricShaders s_vol_shaders;
+
+static bgfx::ShaderHandle load_vol_shader(const std::string& path) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) return BGFX_INVALID_HANDLE;
+
+    std::streampos pos = file.tellg();
+    if (pos <= 0) return BGFX_INVALID_HANDLE;
+
+    auto size = static_cast<std::streamsize>(pos);
+    file.seekg(0, std::ios::beg);
+
+    const bgfx::Memory* mem = bgfx::alloc(static_cast<uint32_t>(size) + 1);
+    file.read(reinterpret_cast<char*>(mem->data), size);
+    if (file.gcount() != size) return BGFX_INVALID_HANDLE;
+
+    mem->data[size] = '\0';
+    return bgfx::createShader(mem);
+}
+
+static std::string get_vol_shader_path() {
+    auto type = bgfx::getRendererType();
+    switch (type) {
+        case bgfx::RendererType::Direct3D11:
+        case bgfx::RendererType::Direct3D12: return "shaders/dx11/";
+        case bgfx::RendererType::Vulkan: return "shaders/spirv/";
+        case bgfx::RendererType::OpenGL: return "shaders/glsl/";
+        default: return "shaders/spirv/";
+    }
+}
+
+void VolumetricShaders::create() {
+    std::string path = get_vol_shader_path();
+
+    bgfx::ShaderHandle vs = load_vol_shader(path + "vs_fullscreen.sc.bin");
+    bgfx::ShaderHandle fs = load_vol_shader(path + "fs_volumetric.sc.bin");
+
+    if (bgfx::isValid(vs) && bgfx::isValid(fs)) {
+        volumetric = bgfx::createProgram(vs, fs, false);
+    }
+
+    if (bgfx::isValid(vs)) bgfx::destroy(vs);
+    if (bgfx::isValid(fs)) bgfx::destroy(fs);
+
+    // Create uniforms
+    u_volumetricParams = bgfx::createUniform("u_volumetricParams", bgfx::UniformType::Vec4);
+    u_fogColor = bgfx::createUniform("u_fogColor", bgfx::UniformType::Vec4);
+    u_fogHeight = bgfx::createUniform("u_fogHeight", bgfx::UniformType::Vec4);
+    u_lightDir = bgfx::createUniform("u_lightDir", bgfx::UniformType::Vec4);
+    u_lightColor = bgfx::createUniform("u_lightColor", bgfx::UniformType::Vec4);
+    u_cameraPos = bgfx::createUniform("u_cameraPos", bgfx::UniformType::Vec4);
+    u_projParams = bgfx::createUniform("u_projParams", bgfx::UniformType::Vec4);
+    u_shadowMatrix = bgfx::createUniform("u_shadowMatrix", bgfx::UniformType::Mat4);
+    s_depth = bgfx::createUniform("s_depth", bgfx::UniformType::Sampler);
+    s_shadowMap0 = bgfx::createUniform("s_shadowMap0", bgfx::UniformType::Sampler);
+    s_shadowMap1 = bgfx::createUniform("s_shadowMap1", bgfx::UniformType::Sampler);
+    s_noise = bgfx::createUniform("s_noise", bgfx::UniformType::Sampler);
+
+    // Create fullscreen quad
+    fullscreen_layout
+        .begin()
+        .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+        .add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
+        .end();
+
+    struct FSVertex { float x, y, z, u, v; };
+    static const FSVertex vertices[] = {
+        { -1.0f,  1.0f, 0.0f, 0.0f, 0.0f },
+        {  1.0f,  1.0f, 0.0f, 1.0f, 0.0f },
+        {  1.0f, -1.0f, 0.0f, 1.0f, 1.0f },
+        { -1.0f, -1.0f, 0.0f, 0.0f, 1.0f },
+    };
+    static const uint16_t indices[] = { 0, 1, 2, 0, 2, 3 };
+
+    fullscreen_vb = bgfx::createVertexBuffer(bgfx::makeRef(vertices, sizeof(vertices)), fullscreen_layout);
+    fullscreen_ib = bgfx::createIndexBuffer(bgfx::makeRef(indices, sizeof(indices)));
+
+    log(LogLevel::Info, "Volumetric shaders initialized");
+}
+
+void VolumetricShaders::destroy() {
+    if (bgfx::isValid(volumetric)) bgfx::destroy(volumetric);
+
+    if (bgfx::isValid(u_volumetricParams)) bgfx::destroy(u_volumetricParams);
+    if (bgfx::isValid(u_fogColor)) bgfx::destroy(u_fogColor);
+    if (bgfx::isValid(u_fogHeight)) bgfx::destroy(u_fogHeight);
+    if (bgfx::isValid(u_lightDir)) bgfx::destroy(u_lightDir);
+    if (bgfx::isValid(u_lightColor)) bgfx::destroy(u_lightColor);
+    if (bgfx::isValid(u_cameraPos)) bgfx::destroy(u_cameraPos);
+    if (bgfx::isValid(u_projParams)) bgfx::destroy(u_projParams);
+    if (bgfx::isValid(u_shadowMatrix)) bgfx::destroy(u_shadowMatrix);
+    if (bgfx::isValid(s_depth)) bgfx::destroy(s_depth);
+    if (bgfx::isValid(s_shadowMap0)) bgfx::destroy(s_shadowMap0);
+    if (bgfx::isValid(s_shadowMap1)) bgfx::destroy(s_shadowMap1);
+    if (bgfx::isValid(s_noise)) bgfx::destroy(s_noise);
+
+    if (bgfx::isValid(fullscreen_vb)) bgfx::destroy(fullscreen_vb);
+    if (bgfx::isValid(fullscreen_ib)) bgfx::destroy(fullscreen_ib);
+
+    volumetric = BGFX_INVALID_HANDLE;
+}
+
+void VolumetricShaders::draw_fullscreen(uint16_t view_id) {
+    if (!bgfx::isValid(volumetric) || !bgfx::isValid(fullscreen_vb)) return;
+
+    bgfx::setVertexBuffer(0, fullscreen_vb);
+    bgfx::setIndexBuffer(fullscreen_ib);
+    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_BLEND_ALPHA);
+    bgfx::submit(view_id, volumetric);
+}
 
 VolumetricSystem::~VolumetricSystem() {
     if (m_initialized) {
@@ -19,6 +158,13 @@ void VolumetricSystem::init(IRenderer* renderer, const VolumetricConfig& config)
     m_config = config;
     m_width = renderer->get_width();
     m_height = renderer->get_height();
+
+    // Create shaders (shared across instances)
+    static bool shaders_created = false;
+    if (!shaders_created) {
+        s_vol_shaders.create();
+        shaders_created = true;
+    }
 
     // Create noise textures
     create_noise_texture();
@@ -145,17 +291,28 @@ void VolumetricSystem::create_noise_texture() {
 }
 
 void VolumetricSystem::update(
-    const Mat4& /*view_matrix*/,
-    const Mat4& /*proj_matrix*/,
+    const Mat4& view_matrix,
+    const Mat4& proj_matrix,
     const Mat4& prev_view_proj,
-    TextureHandle /*depth_texture*/,
-    const std::array<TextureHandle, 4>& /*shadow_maps*/,
-    const std::array<Mat4, 4>& /*shadow_matrices*/
+    TextureHandle depth_texture,
+    const std::array<TextureHandle, 4>& shadow_maps,
+    const std::array<Mat4, 4>& shadow_matrices
 ) {
     if (!m_initialized) return;
 
-    // Store previous frame data for reprojection
+    // Store current frame data for use in passes
+    m_depth_texture = depth_texture;
+    m_shadow_maps = shadow_maps;
+    m_shadow_matrices = shadow_matrices;
     m_prev_view_proj = prev_view_proj;
+
+    // Extract camera position from inverse view matrix
+    Mat4 inv_view = glm::inverse(view_matrix);
+    m_camera_pos = Vec3(inv_view[3]);
+
+    // Get near/far from projection matrix (assuming perspective)
+    m_near_plane = m_config.near_plane;
+    m_far_plane = m_config.far_plane;
 
     // Volumetric rendering passes
     // 1. Inject density into froxel volume
@@ -237,9 +394,89 @@ void VolumetricSystem::spatial_filter_pass() {
 }
 
 void VolumetricSystem::integration_pass() {
-    // TODO: Front-to-back ray marching integration
-    // - Accumulate opacity and in-scattered light
-    // - Output final volumetric contribution
+    if (!bgfx::isValid(s_vol_shaders.volumetric)) return;
+
+    uint16_t view_id = static_cast<uint16_t>(RenderView::VolumetricScatter);
+
+    // Get depth texture
+    uint16_t depth_idx = m_renderer->get_native_texture_handle(m_depth_texture);
+    if (depth_idx == bgfx::kInvalidHandle) return;
+
+    bgfx::TextureHandle depth_handle = { depth_idx };
+
+    // Set volumetric parameters
+    Vec4 vol_params(
+        m_config.fog_density,
+        m_config.scattering_intensity,
+        m_config.anisotropy,
+        m_config.extinction_coefficient
+    );
+
+    Vec4 fog_color(
+        m_config.fog_albedo.x,
+        m_config.fog_albedo.y,
+        m_config.fog_albedo.z,
+        m_config.fog_height_falloff
+    );
+
+    Vec4 fog_height(
+        m_config.fog_base_height,
+        m_config.fog_height_falloff,
+        m_config.noise_scale,
+        m_config.noise_intensity
+    );
+
+    // Find directional light
+    Vec4 light_dir(0.0f, -1.0f, 0.0f, 1.0f);
+    Vec4 light_color(1.0f, 1.0f, 1.0f, 1.0f);
+
+    for (const auto& light : m_lights) {
+        if (light.type == 0) {  // Directional
+            light_dir = Vec4(light.direction, light.intensity);
+            light_color = Vec4(light.color, 1.0f);
+            break;
+        }
+    }
+
+    Vec4 cam_pos(m_camera_pos, 1.0f);
+    Vec4 proj_params(m_near_plane, m_far_plane, 0.0f, 0.0f);
+
+    // Set uniforms
+    bgfx::setUniform(s_vol_shaders.u_volumetricParams, &vol_params);
+    bgfx::setUniform(s_vol_shaders.u_fogColor, &fog_color);
+    bgfx::setUniform(s_vol_shaders.u_fogHeight, &fog_height);
+    bgfx::setUniform(s_vol_shaders.u_lightDir, &light_dir);
+    bgfx::setUniform(s_vol_shaders.u_lightColor, &light_color);
+    bgfx::setUniform(s_vol_shaders.u_cameraPos, &cam_pos);
+    bgfx::setUniform(s_vol_shaders.u_projParams, &proj_params);
+    bgfx::setUniform(s_vol_shaders.u_shadowMatrix, &m_shadow_matrices[0]);
+
+    // Bind textures
+    bgfx::setTexture(0, s_vol_shaders.s_depth, depth_handle);
+
+    // Bind shadow maps if available
+    for (int i = 0; i < 2; ++i) {
+        if (m_shadow_maps[i].valid()) {
+            uint16_t shadow_idx = m_renderer->get_native_texture_handle(m_shadow_maps[i]);
+            if (shadow_idx != bgfx::kInvalidHandle) {
+                bgfx::TextureHandle shadow_handle = { shadow_idx };
+                if (i == 0) bgfx::setTexture(1, s_vol_shaders.s_shadowMap0, shadow_handle);
+                else bgfx::setTexture(2, s_vol_shaders.s_shadowMap1, shadow_handle);
+            }
+        }
+    }
+
+    // Bind noise texture
+    if (m_noise_texture.valid()) {
+        uint16_t noise_idx = m_renderer->get_native_texture_handle(m_noise_texture);
+        if (noise_idx != bgfx::kInvalidHandle) {
+            bgfx::TextureHandle noise_handle = { noise_idx };
+            bgfx::setTexture(3, s_vol_shaders.s_noise, noise_handle);
+        }
+    }
+
+    // Draw fullscreen volumetric pass
+    s_vol_shaders.draw_fullscreen(view_id);
 }
 
 // ============================================================================

@@ -139,16 +139,14 @@ void JobSystem::parallel_for(size_t count, std::function<void(size_t, size_t)> c
     }
 
     size_t batch_size = (count + num_threads - 1) / num_threads;
-    std::atomic<int> completed{0};
 
     for (int i = 0; i < num_threads; ++i) {
         size_t start = i * batch_size;
         size_t end = std::min(start + batch_size, count);
         if (start >= count) break;
 
-        g_pool.submit([&callback, start, end, &completed] {
+        g_pool.submit([&callback, start, end] {
             callback(start, end);
-            completed++;
         });
     }
 

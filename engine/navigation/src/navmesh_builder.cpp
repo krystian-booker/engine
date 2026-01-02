@@ -1,5 +1,8 @@
 #include <engine/navigation/navmesh_builder.hpp>
 #include <engine/core/log.hpp>
+#include <engine/scene/world.hpp>
+#include <engine/scene/transform.hpp>
+#include <engine/scene/render_components.hpp>
 
 #include <Recast.h>
 #include <DetourNavMesh.h>
@@ -89,19 +92,45 @@ NavMeshBuildResult NavMeshBuilder::build(
 }
 
 NavMeshBuildResult NavMeshBuilder::build_from_world(
-    scene::World& /*world*/,
+    scene::World& world,
     const NavMeshSettings& settings,
-    uint32_t /*layer_mask*/,
+    uint32_t layer_mask,
     BuildProgressCallback progress)
 {
-    // TODO: Extract geometry from World's MeshRenderer components
-    // For now, return a placeholder
     NavMeshInputGeometry geometry;
 
-    // This would iterate through entities with MeshRenderer and Transform components
-    // and extract their geometry into NavMeshInputGeometry
+    // Iterate entities with NavMeshSource and WorldTransform
+    auto view = world.view<NavMeshSource, scene::WorldTransform>();
+    for (auto entity : view) {
+        auto& source = world.get<NavMeshSource>(entity);
+        auto& transform = world.get<scene::WorldTransform>(entity);
 
-    core::log(core::LogLevel::Warn, "NavMeshBuilder::build_from_world not fully implemented - use build() with explicit geometry");
+        if (!source.enabled || source.vertices.empty()) {
+            continue;
+        }
+
+        // Filter by layer if MeshRenderer present
+        if (layer_mask != 0xFFFFFFFF) {
+            auto* renderer = world.try_get<scene::MeshRenderer>(entity);
+            if (renderer && !((1u << renderer->render_layer) & layer_mask)) {
+                continue;
+            }
+        }
+
+        geometry.add_mesh(
+            source.vertices.data(), source.vertices.size(),
+            source.indices.data(), source.indices.size(),
+            transform.matrix,
+            source.area_type
+        );
+    }
+
+    if (geometry.vertices.empty()) {
+        NavMeshBuildResult result;
+        result.success = false;
+        result.error_message = "No NavMeshSource components found in world";
+        return result;
+    }
 
     return build(geometry, settings, progress);
 }

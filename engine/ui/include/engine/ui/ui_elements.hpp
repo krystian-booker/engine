@@ -79,9 +79,6 @@ public:
     void set_tint(const Vec4& tint) { m_tint = tint; mark_dirty(); }
     const Vec4& get_tint() const { return m_tint; }
 
-    void set_preserve_aspect(bool preserve) { m_preserve_aspect = preserve; mark_layout_dirty(); }
-    bool get_preserve_aspect() const { return m_preserve_aspect; }
-
 protected:
     void on_render(UIRenderContext& ctx) override;
     Vec2 on_measure(Vec2 available_size) override;
@@ -89,7 +86,6 @@ protected:
 private:
     render::TextureHandle m_texture;
     Vec4 m_tint{1.0f};
-    bool m_preserve_aspect = true;
 };
 
 // Slider - value input

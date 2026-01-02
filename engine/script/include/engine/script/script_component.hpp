@@ -1,15 +1,21 @@
 #pragma once
 
 #include <engine/scene/entity.hpp>
+#include <engine/scene/world.hpp>
+#include <engine/core/log.hpp>
 #include <sol/sol.hpp>
 #include <string>
 #include <unordered_map>
 
-namespace engine::scene {
-class World;
-}
-
 namespace engine::script {
+
+// Get the current World context for script execution (thread-local)
+// Returns nullptr if not within a script update context
+scene::World* get_current_script_world();
+
+// Register/unregister a World for hot reload support
+void register_script_world(scene::World* world);
+void unregister_script_world(scene::World* world);
 
 // Script component that runs Lua code attached to an entity
 struct ScriptComponent {
@@ -52,7 +58,25 @@ void script_reload_all();
 
 // Call a method on an entity's script
 template<typename... Args>
-void script_call(scene::World& world, scene::Entity entity, const std::string& method, Args&&... args);
+void script_call(scene::World& world, scene::Entity entity, const std::string& method, Args&&... args) {
+    if (!world.has<ScriptComponent>(entity)) {
+        return;
+    }
+
+    auto& script = world.get<ScriptComponent>(entity);
+    if (!script.loaded || !script.instance.valid()) {
+        return;
+    }
+
+    sol::function fn = script.instance[method];
+    if (fn.valid()) {
+        sol::protected_function_result result = fn(script.instance, std::forward<Args>(args)...);
+        if (!result.valid()) {
+            sol::error err = result;
+            core::log(core::LogLevel::Error, "Script {} error: {}", method, err.what());
+        }
+    }
+}
 
 // Set a property on an entity's script
 void script_set_property(scene::World& world, scene::Entity entity,

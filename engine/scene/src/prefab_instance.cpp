@@ -1,10 +1,147 @@
 #include <engine/scene/prefab_instance.hpp>
 #include <engine/scene/transform.hpp>
+#include <engine/scene/scene_serializer.hpp>
+#include <engine/reflect/type_registry.hpp>
 #include <engine/core/log.hpp>
 #include <engine/core/filesystem.hpp>
+#include <engine/core/serialize.hpp>
 #include <algorithm>
+#include <sstream>
+#include <regex>
 
 namespace engine::scene {
+
+namespace {
+
+// Helper to parse a JSON value string into the appropriate entt::meta_any
+entt::meta_any parse_json_value_to_any(const std::string& json, entt::meta_type target_type) {
+    if (!target_type) return {};
+
+    auto type_id = target_type.id();
+
+    // Handle primitive types
+    if (type_id == entt::type_hash<bool>::value()) {
+        return entt::meta_any{json == "true"};
+    }
+    else if (type_id == entt::type_hash<int32_t>::value()) {
+        try { return entt::meta_any{std::stoi(json)}; }
+        catch (...) { return {}; }
+    }
+    else if (type_id == entt::type_hash<uint32_t>::value()) {
+        try { return entt::meta_any{static_cast<uint32_t>(std::stoul(json))}; }
+        catch (...) { return {}; }
+    }
+    else if (type_id == entt::type_hash<float>::value()) {
+        try { return entt::meta_any{std::stof(json)}; }
+        catch (...) { return {}; }
+    }
+    else if (type_id == entt::type_hash<double>::value()) {
+        try { return entt::meta_any{std::stod(json)}; }
+        catch (...) { return {}; }
+    }
+    else if (type_id == entt::type_hash<std::string>::value()) {
+        // Remove surrounding quotes if present
+        if (json.size() >= 2 && json.front() == '"' && json.back() == '"') {
+            return entt::meta_any{json.substr(1, json.size() - 2)};
+        }
+        return entt::meta_any{json};
+    }
+    // Handle Vec3
+    else if (type_id == entt::type_hash<core::Vec3>::value()) {
+        core::Vec3 result{0.0f};
+        std::regex re(R"([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)");
+        auto it = std::sregex_iterator(json.begin(), json.end(), re);
+        auto end = std::sregex_iterator();
+        int i = 0;
+        for (; it != end && i < 3; ++it, ++i) {
+            try { (&result.x)[i] = std::stof(it->str()); }
+            catch (...) {}
+        }
+        return entt::meta_any{result};
+    }
+    // Handle Vec4
+    else if (type_id == entt::type_hash<core::Vec4>::value()) {
+        core::Vec4 result{0.0f};
+        std::regex re(R"([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)");
+        auto it = std::sregex_iterator(json.begin(), json.end(), re);
+        auto end = std::sregex_iterator();
+        int i = 0;
+        for (; it != end && i < 4; ++it, ++i) {
+            try { (&result.x)[i] = std::stof(it->str()); }
+            catch (...) {}
+        }
+        return entt::meta_any{result};
+    }
+    // Handle Quat
+    else if (type_id == entt::type_hash<core::Quat>::value()) {
+        core::Quat result{1.0f, 0.0f, 0.0f, 0.0f};
+        std::regex re(R"([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)");
+        auto it = std::sregex_iterator(json.begin(), json.end(), re);
+        auto end = std::sregex_iterator();
+        float vals[4] = {1.0f, 0.0f, 0.0f, 0.0f};
+        int i = 0;
+        for (; it != end && i < 4; ++it, ++i) {
+            try { vals[i] = std::stof(it->str()); }
+            catch (...) {}
+        }
+        result.w = vals[0]; result.x = vals[1]; result.y = vals[2]; result.z = vals[3];
+        return entt::meta_any{result};
+    }
+
+    return {};
+}
+
+// Helper to serialize an entt::meta_any to JSON string
+std::string any_to_json_string(const entt::meta_any& value) {
+    if (!value) return "null";
+
+    auto type_id = value.type().id();
+
+    if (type_id == entt::type_hash<bool>::value()) {
+        return value.cast<bool>() ? "true" : "false";
+    }
+    else if (type_id == entt::type_hash<int32_t>::value()) {
+        return std::to_string(value.cast<int32_t>());
+    }
+    else if (type_id == entt::type_hash<uint32_t>::value()) {
+        return std::to_string(value.cast<uint32_t>());
+    }
+    else if (type_id == entt::type_hash<float>::value()) {
+        std::ostringstream ss;
+        ss << std::fixed << value.cast<float>();
+        return ss.str();
+    }
+    else if (type_id == entt::type_hash<double>::value()) {
+        std::ostringstream ss;
+        ss << std::fixed << value.cast<double>();
+        return ss.str();
+    }
+    else if (type_id == entt::type_hash<std::string>::value()) {
+        return "\"" + value.cast<std::string>() + "\"";
+    }
+    else if (type_id == entt::type_hash<core::Vec3>::value()) {
+        auto v = value.cast<core::Vec3>();
+        std::ostringstream ss;
+        ss << std::fixed << "[" << v.x << ", " << v.y << ", " << v.z << "]";
+        return ss.str();
+    }
+    else if (type_id == entt::type_hash<core::Vec4>::value()) {
+        auto v = value.cast<core::Vec4>();
+        std::ostringstream ss;
+        ss << std::fixed << "[" << v.x << ", " << v.y << ", " << v.z << ", " << v.w << "]";
+        return ss.str();
+    }
+    else if (type_id == entt::type_hash<core::Quat>::value()) {
+        auto q = value.cast<core::Quat>();
+        std::ostringstream ss;
+        ss << std::fixed << "[" << q.w << ", " << q.x << ", " << q.y << ", " << q.z << "]";
+        return ss.str();
+    }
+
+    return "null";
+}
+
+} // anonymous namespace
 
 // ============================================================================
 // PrefabInstance
@@ -200,7 +337,7 @@ void PrefabManager::update_instances(World& world, const std::string& prefab_pat
     unload_prefab(prefab_path);
     const PrefabData* data = load_prefab(prefab_path);
 
-    if (!data) {
+    if (!data || !m_serializer) {
         return;
     }
 
@@ -208,12 +345,65 @@ void PrefabManager::update_instances(World& world, const std::string& prefab_pat
     auto instances = get_instances(world, prefab_path);
 
     for (Entity instance_root : instances) {
-        // Store current overrides
+        if (!world.has<PrefabInstance>(instance_root)) continue;
+
+        // Store current overrides before updating
         auto& prefab_instance = world.get<PrefabInstance>(instance_root);
         std::vector<PropertyOverride> saved_overrides = prefab_instance.overrides;
 
-        // TODO: Re-apply prefab data while preserving overrides
-        // This is complex as it requires diffing and merging
+        // Get current parent for re-parenting after update
+        Entity parent = NullEntity;
+        if (world.has<Hierarchy>(instance_root)) {
+            parent = world.get<Hierarchy>(instance_root).parent;
+        }
+
+        // Collect all entities in the current instance hierarchy
+        auto old_entities = collect_hierarchy(world, instance_root);
+
+        // Remove PrefabInstance components before destroying (to avoid triggering cleanup)
+        for (Entity e : old_entities) {
+            if (e != instance_root && world.has<PrefabInstance>(e)) {
+                world.remove<PrefabInstance>(e);
+            }
+        }
+
+        // Destroy old instance entities (except root, which we'll update in place)
+        for (auto it = old_entities.rbegin(); it != old_entities.rend(); ++it) {
+            if (*it != instance_root) {
+                world.destroy(*it);
+            }
+        }
+
+        // Re-deserialize from prefab data as a new entity
+        Entity new_root = m_serializer->deserialize_entity(world, data->json_data, parent);
+
+        if (new_root != NullEntity && new_root != instance_root) {
+            // Copy the new entity's components to the original root
+            // This is a simplified approach - in a full implementation, we'd need
+            // to properly merge the entity data
+
+            // Re-add PrefabInstance component
+            if (!world.has<PrefabInstance>(new_root)) {
+                world.emplace<PrefabInstance>(new_root, prefab_path);
+            }
+
+            // Restore saved overrides
+            auto& new_instance = world.get<PrefabInstance>(new_root);
+            new_instance.overrides = saved_overrides;
+            new_instance.is_root = true;
+
+            // Apply overrides to restore user modifications
+            apply_overrides(world, new_root, new_instance);
+
+            // Mark children as part of this prefab instance
+            for (auto child : get_children(world, new_root)) {
+                if (!world.has<PrefabInstance>(child)) {
+                    auto& child_instance = world.emplace<PrefabInstance>(child);
+                    child_instance.prefab_path = prefab_path;
+                    child_instance.is_root = false;
+                }
+            }
+        }
 
         core::log(core::LogLevel::Debug, "Updated prefab instance {} from '{}'",
                   static_cast<uint32_t>(instance_root), prefab_path);
@@ -319,8 +509,49 @@ std::vector<Entity> PrefabManager::get_instances(World& world, const std::string
 }
 
 void PrefabManager::apply_overrides(World& world, Entity entity, const PrefabInstance& instance) {
-    // TODO: Apply overrides using reflection system
-    // This would iterate through overrides and use TypeRegistry to set properties
+    auto& registry = world.registry();
+    auto& type_registry = reflect::TypeRegistry::instance();
+
+    for (const auto& override : instance.overrides) {
+        // Get component from entity
+        auto component = type_registry.get_component_any(registry, entity, override.component_type);
+        if (!component) {
+            core::log(core::LogLevel::Warn, "PrefabManager::apply_overrides: Component '{}' not found on entity",
+                      override.component_type);
+            continue;
+        }
+
+        // Get property info
+        const auto* prop_info = type_registry.get_property_info(override.component_type, override.property_path);
+        if (!prop_info) {
+            core::log(core::LogLevel::Warn, "PrefabManager::apply_overrides: Property '{}' not found in component '{}'",
+                      override.property_path, override.component_type);
+            continue;
+        }
+
+        if (!prop_info->setter) {
+            core::log(core::LogLevel::Warn, "PrefabManager::apply_overrides: Property '{}' has no setter",
+                      override.property_path);
+            continue;
+        }
+
+        // Parse the JSON value to the appropriate type
+        auto value = parse_json_value_to_any(override.json_value, prop_info->type);
+        if (!value) {
+            core::log(core::LogLevel::Warn, "PrefabManager::apply_overrides: Failed to parse value '{}' for property '{}'",
+                      override.json_value, override.property_path);
+            continue;
+        }
+
+        // Apply the override
+        prop_info->setter(component, value);
+
+        // Write the modified component back to the entity
+        type_registry.set_component_any(registry, entity, override.component_type, component);
+    }
+
+    core::log(core::LogLevel::Debug, "Applied {} overrides to entity {}",
+              instance.overrides.size(), static_cast<uint32_t>(entity));
 }
 
 std::vector<Entity> PrefabManager::collect_hierarchy(World& world, Entity root) {
@@ -381,7 +612,46 @@ void merge_overrides(PrefabInstance& target, const PrefabInstance& source) {
 
 std::vector<PropertyOverride> diff_instances(World& world, Entity instance1, Entity instance2) {
     std::vector<PropertyOverride> diffs;
-    // TODO: Compare components using reflection
+    auto& registry = world.registry();
+    auto& type_registry = reflect::TypeRegistry::instance();
+
+    // Iterate through all registered component types
+    for (const auto& type_name : type_registry.get_all_component_names()) {
+        // Get components from both entities
+        auto comp1 = type_registry.get_component_any(registry, instance1, type_name);
+        auto comp2 = type_registry.get_component_any(registry, instance2, type_name);
+
+        // Skip if either entity doesn't have this component
+        if (!comp1 || !comp2) continue;
+
+        // Get type info to iterate properties
+        const auto* type_info = type_registry.get_type_info(type_name);
+        if (!type_info) continue;
+
+        // Compare each property
+        for (const auto& prop : type_info->properties) {
+            if (!prop.getter) continue;
+
+            auto val1 = prop.getter(comp1);
+            auto val2 = prop.getter(comp2);
+
+            if (!val1 || !val2) continue;
+
+            // Convert to JSON strings for comparison
+            std::string json1 = any_to_json_string(val1);
+            std::string json2 = any_to_json_string(val2);
+
+            // If values differ, add to diffs (using instance1's value)
+            if (json1 != json2) {
+                PropertyOverride diff;
+                diff.component_type = type_name;
+                diff.property_path = prop.name;
+                diff.json_value = json1;
+                diffs.push_back(diff);
+            }
+        }
+    }
+
     return diffs;
 }
 

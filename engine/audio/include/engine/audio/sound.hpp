@@ -1,8 +1,31 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 namespace engine::audio {
+
+// Audio error codes for error handling
+enum class AudioError : uint8_t {
+    None = 0,        // No error
+    FileNotFound,    // Audio file does not exist
+    InvalidFormat,   // Unsupported audio format
+    DecodingFailed,  // Failed to decode audio data
+    DeviceError,     // Audio device initialization failed
+    OutOfMemory,     // Failed to allocate resources
+    InvalidHandle,   // Invalid sound/music handle
+    PlaybackFailed,  // Failed to start playback
+    Unknown          // Unknown error
+};
+
+// Result structure for operations that can fail
+struct AudioResult {
+    AudioError error = AudioError::None;
+    std::string message;
+
+    bool ok() const { return error == AudioError::None; }
+    explicit operator bool() const { return ok(); }
+};
 
 // Sound handle (for short sound effects)
 struct SoundHandle {

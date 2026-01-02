@@ -113,13 +113,16 @@ void AudioSystem::update_sources(World& world, double dt) {
 
         // Handle play state changes
         if (source.playing && !currently_playing) {
+            // Validate source parameters before playing
+            validate_audio_source(source);
+
             // Start playing
             SoundConfig config;
             config.volume = source.volume;
             config.pitch = source.pitch;
             config.loop = source.loop;
             config.spatial = source.spatial;
-            
+
             // Apply play-time config
             if (source.spatial) {
                 audio.play_sound_3d(source.sound, position, config);

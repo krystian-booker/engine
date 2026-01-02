@@ -12,6 +12,8 @@ void SystemRegistry::set_engine_scheduler(scene::Scheduler* scheduler) {
 }
 
 void SystemRegistry::add(scene::Phase phase, scene::SystemFn fn, const std::string& name, int priority) {
+    std::unique_lock<std::shared_mutex> lock(m_systems_mutex);
+
     m_game_scheduler.add(phase, std::move(fn), name, priority);
     m_game_system_names.push_back(name);
     core::log(core::LogLevel::Debug, "Registered game system: {} (phase {}, priority {})",
@@ -19,6 +21,8 @@ void SystemRegistry::add(scene::Phase phase, scene::SystemFn fn, const std::stri
 }
 
 void SystemRegistry::remove(const std::string& name) {
+    std::unique_lock<std::shared_mutex> lock(m_systems_mutex);
+
     m_game_scheduler.remove(name);
     m_game_system_names.erase(
         std::remove(m_game_system_names.begin(), m_game_system_names.end(), name),
@@ -27,6 +31,8 @@ void SystemRegistry::remove(const std::string& name) {
 }
 
 void SystemRegistry::clear_game_systems() {
+    std::unique_lock<std::shared_mutex> lock(m_systems_mutex);
+
     core::log(core::LogLevel::Info, "Clearing {} game systems for hot reload",
               m_game_system_names.size());
 
@@ -38,6 +44,8 @@ void SystemRegistry::clear_game_systems() {
 }
 
 void SystemRegistry::run(scene::World& world, double dt, scene::Phase phase) {
+    std::shared_lock<std::shared_mutex> lock(m_systems_mutex);
+
     // Run engine systems first
     if (m_engine_scheduler) {
         m_engine_scheduler->run(world, dt, phase);

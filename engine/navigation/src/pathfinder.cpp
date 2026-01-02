@@ -12,9 +12,9 @@ namespace engine::navigation {
 namespace {
 float random_unit()
 {
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-    static std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+    thread_local std::random_device rd;
+    thread_local std::mt19937 gen(rd());
+    thread_local std::uniform_real_distribution<float> dist(0.0f, 1.0f);
     return dist(gen);
 }
 } // namespace

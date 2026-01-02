@@ -2,6 +2,7 @@
 #include <engine/render/renderer.hpp>
 #include <engine/core/log.hpp>
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 namespace engine::render {
@@ -206,12 +207,13 @@ void RenderPipeline::render(const CameraData& camera,
     // Cull objects
     cull_objects(camera, objects, m_visible_opaque);
 
-    // Separate opaque and transparent
+    // Separate opaque and transparent based on blend mode
     m_visible_transparent.clear();
     auto it = std::partition(m_visible_opaque.begin(), m_visible_opaque.end(),
         [](const RenderObject* obj) {
-            // TODO: Check material blend mode
-            return true;  // Assume opaque for now
+            // Check blend mode - BlendMode enum: 0=Opaque, 1=AlphaTest, 2+=Transparent
+            // Opaque and AlphaTest render with the opaque batch
+            return obj->blend_mode <= 1;
         });
     m_visible_transparent.assign(it, m_visible_opaque.end());
     m_visible_opaque.erase(it, m_visible_opaque.end());
@@ -458,20 +460,136 @@ void RenderPipeline::update_light_uniforms(const std::vector<LightData>& lights)
     }
 }
 
+// Extract frustum planes from view-projection matrix
+// Planes are stored as Vec4 (a, b, c, d) where ax + by + cz + d = 0
+static void extract_frustum_planes(const Mat4& vp, std::array<Vec4, 6>& planes) {
+    // Left plane
+    planes[0] = Vec4(
+        vp[0][3] + vp[0][0],
+        vp[1][3] + vp[1][0],
+        vp[2][3] + vp[2][0],
+        vp[3][3] + vp[3][0]
+    );
+
+    // Right plane
+    planes[1] = Vec4(
+        vp[0][3] - vp[0][0],
+        vp[1][3] - vp[1][0],
+        vp[2][3] - vp[2][0],
+        vp[3][3] - vp[3][0]
+    );
+
+    // Bottom plane
+    planes[2] = Vec4(
+        vp[0][3] + vp[0][1],
+        vp[1][3] + vp[1][1],
+        vp[2][3] + vp[2][1],
+        vp[3][3] + vp[3][1]
+    );
+
+    // Top plane
+    planes[3] = Vec4(
+        vp[0][3] - vp[0][1],
+        vp[1][3] - vp[1][1],
+        vp[2][3] - vp[2][1],
+        vp[3][3] - vp[3][1]
+    );
+
+    // Near plane
+    planes[4] = Vec4(
+        vp[0][3] + vp[0][2],
+        vp[1][3] + vp[1][2],
+        vp[2][3] + vp[2][2],
+        vp[3][3] + vp[3][2]
+    );
+
+    // Far plane
+    planes[5] = Vec4(
+        vp[0][3] - vp[0][2],
+        vp[1][3] - vp[1][2],
+        vp[2][3] - vp[2][2],
+        vp[3][3] - vp[3][2]
+    );
+
+    // Normalize all planes
+    for (auto& plane : planes) {
+        float len = std::sqrt(plane.x * plane.x + plane.y * plane.y + plane.z * plane.z);
+        if (len > 0.0001f) {
+            plane /= len;
+        }
+    }
+}
+
+// Test if AABB is outside frustum (returns true if completely outside)
+static bool aabb_outside_frustum(const Vec3& min, const Vec3& max, const std::array<Vec4, 6>& planes) {
+    for (const auto& plane : planes) {
+        // Find the corner of AABB most in the direction of plane normal
+        Vec3 positive_corner(
+            plane.x >= 0 ? max.x : min.x,
+            plane.y >= 0 ? max.y : min.y,
+            plane.z >= 0 ? max.z : min.z
+        );
+
+        // If the positive corner is outside the plane, AABB is fully outside
+        float dist = plane.x * positive_corner.x + plane.y * positive_corner.y +
+                     plane.z * positive_corner.z + plane.w;
+        if (dist < 0.0f) {
+            return true;  // Completely outside this plane
+        }
+    }
+    return false;  // Inside or intersecting all planes
+}
+
 void RenderPipeline::cull_objects(const CameraData& camera,
                                    const std::vector<RenderObject>& objects,
                                    std::vector<const RenderObject*>& visible_objects) {
     visible_objects.clear();
     visible_objects.reserve(objects.size());
 
-    // TODO: Implement frustum culling
-    // For now, just add all visible objects
+    // Extract frustum planes from view-projection matrix
+    std::array<Vec4, 6> frustum_planes;
+    extract_frustum_planes(camera.view_projection, frustum_planes);
+
     for (const auto& obj : objects) {
-        if (obj.visible) {
-            visible_objects.push_back(&obj);
-        } else {
+        if (!obj.visible) {
             m_stats.objects_culled++;
+            continue;
         }
+
+        // If object has valid bounds, perform frustum culling
+        if (obj.bounds.min != Vec3(0) || obj.bounds.max != Vec3(0)) {
+            // Transform AABB to world space
+            // For simplicity, we transform the center and half-extents
+            Vec3 center = (obj.bounds.min + obj.bounds.max) * 0.5f;
+            Vec3 half_extent = (obj.bounds.max - obj.bounds.min) * 0.5f;
+
+            // Transform center to world space
+            Vec4 world_center = obj.transform * Vec4(center, 1.0f);
+
+            // Compute world-space AABB (conservative approximation)
+            // We use the absolute values of the rotation matrix to compute max extent
+            Vec3 world_half_extent(
+                std::abs(obj.transform[0][0]) * half_extent.x +
+                std::abs(obj.transform[1][0]) * half_extent.y +
+                std::abs(obj.transform[2][0]) * half_extent.z,
+                std::abs(obj.transform[0][1]) * half_extent.x +
+                std::abs(obj.transform[1][1]) * half_extent.y +
+                std::abs(obj.transform[2][1]) * half_extent.z,
+                std::abs(obj.transform[0][2]) * half_extent.x +
+                std::abs(obj.transform[1][2]) * half_extent.y +
+                std::abs(obj.transform[2][2]) * half_extent.z
+            );
+
+            Vec3 world_min = Vec3(world_center) - world_half_extent;
+            Vec3 world_max = Vec3(world_center) + world_half_extent;
+
+            if (aabb_outside_frustum(world_min, world_max, frustum_planes)) {
+                m_stats.objects_culled++;
+                continue;
+            }
+        }
+
+        visible_objects.push_back(&obj);
     }
 }
 

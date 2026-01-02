@@ -1,5 +1,6 @@
 #include <engine/save/save_system.hpp>
 #include <engine/scene/components.hpp>
+#include <engine/core/log.hpp>
 #include <filesystem>
 #include <fstream>
 #include <algorithm>
@@ -254,9 +255,8 @@ LoadResult SaveSystem::load_game(World& world, const SaveGame& save) {
 
         m_load_progress = 0.3f;
 
-        // Load entities (need non-const for internal operations)
-        SaveGame& mutable_save = const_cast<SaveGame&>(save);
-        load_entities(world, mutable_save);
+        // Load entities
+        load_entities(world, save);
 
         m_load_progress = 0.7f;
 
@@ -433,6 +433,18 @@ void SaveSystem::save_entities(World& world, SaveGame& save) {
             }
         }
 
+        // Save hierarchy (parent relationship)
+        if (auto* hierarchy = registry.try_get<scene::Hierarchy>(entity)) {
+            if (hierarchy->parent != NullEntity) {
+                // Only save parent if it also has a Saveable component
+                if (auto* parent_saveable = registry.try_get<Saveable>(hierarchy->parent)) {
+                    if (parent_saveable->persistent_id != 0) {
+                        entity_json["parent_persistent_id"] = parent_saveable->persistent_id;
+                    }
+                }
+            }
+        }
+
         // Save registered components
         if (saveable.save_components) {
             json components_json;
@@ -447,8 +459,13 @@ void SaveSystem::save_entities(World& world, SaveGame& save) {
 
                 if (excluded) continue;
 
-                // TODO: Use reflection or type registry to get component pointer
-                // For now, components must be explicitly registered with get functions
+                // Get component pointer using the registered getter
+                void* component_ptr = serializer.get(entity, world);
+                if (component_ptr) {
+                    JsonArchive archive;
+                    serializer.serialize(archive, component_ptr);
+                    components_json[type_name] = archive.get_json();
+                }
             }
 
             if (!components_json.empty()) {
@@ -495,6 +512,10 @@ void SaveSystem::load_entities(World& world, const SaveGame& save) {
         }
     }
 
+    // Store parent relationships for second pass
+    std::vector<std::pair<Entity, uint64_t>> pending_parents;
+
+    // First pass: Load all entities and their data
     for (uint64_t persistent_id : entity_ids) {
         std::string entity_data_str = save.get_entity_data(persistent_id);
         if (entity_data_str.empty()) continue;
@@ -515,6 +536,9 @@ void SaveSystem::load_entities(World& world, const SaveGame& save) {
                 saveable.save_transform = entity_json.value("save_transform", true);
                 saveable.save_components = entity_json.value("save_components", true);
                 saveable.destroy_on_load = entity_json.value("destroy_on_load", true);
+
+                // Add to map for hierarchy resolution
+                id_to_entity[persistent_id] = entity;
             }
 
             // Load transform
@@ -539,6 +563,12 @@ void SaveSystem::load_entities(World& world, const SaveGame& save) {
                 }
             }
 
+            // Store parent relationship for second pass
+            if (entity_json.contains("parent_persistent_id")) {
+                uint64_t parent_id = entity_json["parent_persistent_id"].get<uint64_t>();
+                pending_parents.emplace_back(entity, parent_id);
+            }
+
             // Load components
             if (entity_json.contains("components")) {
                 const auto& components_json = entity_json["components"];
@@ -556,9 +586,19 @@ void SaveSystem::load_entities(World& world, const SaveGame& save) {
                 }
             }
 
-        } catch (const std::exception&) {
-            // Skip malformed entity data
+        } catch (const std::exception& e) {
+            core::log(core::LogLevel::Warn, "SaveSystem: Failed to load entity {}: {}", persistent_id, e.what());
             continue;
+        }
+    }
+
+    // Second pass: Restore parent-child relationships
+    for (const auto& [child, parent_id] : pending_parents) {
+        auto parent_it = id_to_entity.find(parent_id);
+        if (parent_it != id_to_entity.end()) {
+            scene::set_parent(world, child, parent_it->second);
+        } else {
+            core::log(core::LogLevel::Warn, "SaveSystem: Parent entity {} not found for child", parent_id);
         }
     }
 }

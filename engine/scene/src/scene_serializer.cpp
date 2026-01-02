@@ -11,6 +11,38 @@ namespace engine::scene {
 
 using namespace engine::core;
 
+// Safe number conversion helpers - return default on parse failure instead of throwing
+namespace {
+
+float safe_stof(const std::string& str, float default_val = 0.0f) {
+    try {
+        return std::stof(str);
+    } catch (const std::exception&) {
+        log(LogLevel::Warn, "Failed to parse float: '{}'", str);
+        return default_val;
+    }
+}
+
+unsigned long safe_stoul(const std::string& str, unsigned long default_val = 0) {
+    try {
+        return std::stoul(str);
+    } catch (const std::exception&) {
+        log(LogLevel::Warn, "Failed to parse unsigned long: '{}'", str);
+        return default_val;
+    }
+}
+
+uint64_t safe_stoull(const std::string& str, uint64_t default_val = 0) {
+    try {
+        return std::stoull(str);
+    } catch (const std::exception&) {
+        log(LogLevel::Warn, "Failed to parse uint64: '{}'", str);
+        return default_val;
+    }
+}
+
+} // anonymous namespace
+
 // UUID generation using random + timestamp
 uint64_t SceneSerializer::generate_uuid() {
     static std::random_device rd;
@@ -72,6 +104,10 @@ bool SceneSerializer::serialize_to_file(World& world, const std::string& path) c
     }
 
     file << json;
+    if (!file.good()) {
+        log(LogLevel::Error, "Failed to write scene data to: {}", path);
+        return false;
+    }
     file.close();
 
     log(LogLevel::Info, "Scene serialized to: {}", path);
@@ -308,9 +344,9 @@ Vec3 SceneSerializer::parse_vec3(const std::string& json) const {
     std::regex re(R"(\[\s*([+-]?\d*\.?\d+)\s*,\s*([+-]?\d*\.?\d+)\s*,\s*([+-]?\d*\.?\d+)\s*\])");
     std::smatch match;
     if (std::regex_search(json, match, re) && match.size() == 4) {
-        result.x = std::stof(match[1].str());
-        result.y = std::stof(match[2].str());
-        result.z = std::stof(match[3].str());
+        result.x = safe_stof(match[1].str());
+        result.y = safe_stof(match[2].str());
+        result.z = safe_stof(match[3].str());
     }
     return result;
 }
@@ -320,10 +356,10 @@ Vec4 SceneSerializer::parse_vec4(const std::string& json) const {
     std::regex re(R"(\[\s*([+-]?\d*\.?\d+)\s*,\s*([+-]?\d*\.?\d+)\s*,\s*([+-]?\d*\.?\d+)\s*,\s*([+-]?\d*\.?\d+)\s*\])");
     std::smatch match;
     if (std::regex_search(json, match, re) && match.size() == 5) {
-        result.x = std::stof(match[1].str());
-        result.y = std::stof(match[2].str());
-        result.z = std::stof(match[3].str());
-        result.w = std::stof(match[4].str());
+        result.x = safe_stof(match[1].str());
+        result.y = safe_stof(match[2].str());
+        result.z = safe_stof(match[3].str());
+        result.w = safe_stof(match[4].str());
     }
     return result;
 }
@@ -333,17 +369,31 @@ Quat SceneSerializer::parse_quat(const std::string& json) const {
     std::regex re(R"(\[\s*([+-]?\d*\.?\d+)\s*,\s*([+-]?\d*\.?\d+)\s*,\s*([+-]?\d*\.?\d+)\s*,\s*([+-]?\d*\.?\d+)\s*\])");
     std::smatch match;
     if (std::regex_search(json, match, re) && match.size() == 5) {
-        result.w = std::stof(match[1].str());
-        result.x = std::stof(match[2].str());
-        result.y = std::stof(match[3].str());
-        result.z = std::stof(match[4].str());
+        result.w = safe_stof(match[1].str());
+        result.x = safe_stof(match[2].str());
+        result.y = safe_stof(match[3].str());
+        result.z = safe_stof(match[4].str());
     }
     return result;
 }
 
-Mat4 SceneSerializer::parse_mat4(const std::string& /*json*/) const {
-    // Simplified - just return identity for now
-    return Mat4{1.0f};
+Mat4 SceneSerializer::parse_mat4(const std::string& json) const {
+    Mat4 result{1.0f};
+    // Parse array of 16 floats from JSON format: [f0, f1, f2, ... f15]
+    std::regex num_re(R"([+-]?\d*\.?\d+(?:[eE][+-]?\d+)?)");
+    auto nums_begin = std::sregex_iterator(json.begin(), json.end(), num_re);
+    auto nums_end = std::sregex_iterator();
+
+    int i = 0;
+    for (auto it = nums_begin; it != nums_end && i < 16; ++it, ++i) {
+        (&result[0][0])[i] = safe_stof(it->str());
+    }
+
+    if (i < 16 && i > 0) {
+        log(LogLevel::Warn, "parse_mat4: Expected 16 values, got {}", i);
+    }
+
+    return result;
 }
 
 // Component serialization
@@ -450,13 +500,13 @@ void SceneSerializer::deserialize_mesh_renderer(MeshRenderer& renderer, const st
 
     std::smatch match;
     if (std::regex_search(json, match, mesh_re)) {
-        renderer.mesh.id = std::stoul(match[1].str());
+        renderer.mesh.id = safe_stoul(match[1].str());
     }
     if (std::regex_search(json, match, mat_re)) {
-        renderer.material.id = std::stoul(match[1].str());
+        renderer.material.id = safe_stoul(match[1].str());
     }
     if (std::regex_search(json, match, layer_re)) {
-        renderer.render_layer = static_cast<uint8_t>(std::stoul(match[1].str()));
+        renderer.render_layer = static_cast<uint8_t>(safe_stoul(match[1].str()));
     }
     if (std::regex_search(json, match, visible_re)) {
         renderer.visible = (match[1].str() == "true");
@@ -481,19 +531,19 @@ void SceneSerializer::deserialize_camera(Camera& camera, const std::string& json
 
     std::smatch match;
     if (std::regex_search(json, match, fov_re)) {
-        camera.fov = std::stof(match[1].str());
+        camera.fov = safe_stof(match[1].str());
     }
     if (std::regex_search(json, match, near_re)) {
-        camera.near_plane = std::stof(match[1].str());
+        camera.near_plane = safe_stof(match[1].str());
     }
     if (std::regex_search(json, match, far_re)) {
-        camera.far_plane = std::stof(match[1].str());
+        camera.far_plane = safe_stof(match[1].str());
     }
     if (std::regex_search(json, match, aspect_re)) {
-        camera.aspect_ratio = std::stof(match[1].str());
+        camera.aspect_ratio = safe_stof(match[1].str());
     }
     if (std::regex_search(json, match, priority_re)) {
-        camera.priority = static_cast<uint8_t>(std::stoul(match[1].str()));
+        camera.priority = static_cast<uint8_t>(safe_stoul(match[1].str()));
     }
     if (std::regex_search(json, match, active_re)) {
         camera.active = (match[1].str() == "true");
@@ -502,7 +552,7 @@ void SceneSerializer::deserialize_camera(Camera& camera, const std::string& json
         camera.orthographic = (match[1].str() == "true");
     }
     if (std::regex_search(json, match, ortho_size_re)) {
-        camera.ortho_size = std::stof(match[1].str());
+        camera.ortho_size = safe_stof(match[1].str());
     }
 }
 
@@ -518,22 +568,25 @@ void SceneSerializer::deserialize_light(Light& light, const std::string& json) c
 
     std::smatch match;
     if (std::regex_search(json, match, type_re)) {
-        light.type = static_cast<LightType>(std::stoul(match[1].str()));
+        auto type_val = safe_stoul(match[1].str());
+        if (type_val <= static_cast<unsigned long>(LightType::Spot)) {
+            light.type = static_cast<LightType>(type_val);
+        }
     }
     if (std::regex_search(json, match, color_re)) {
         light.color = parse_vec3(match[1].str());
     }
     if (std::regex_search(json, match, intensity_re)) {
-        light.intensity = std::stof(match[1].str());
+        light.intensity = safe_stof(match[1].str());
     }
     if (std::regex_search(json, match, range_re)) {
-        light.range = std::stof(match[1].str());
+        light.range = safe_stof(match[1].str());
     }
     if (std::regex_search(json, match, inner_re)) {
-        light.spot_inner_angle = std::stof(match[1].str());
+        light.spot_inner_angle = safe_stof(match[1].str());
     }
     if (std::regex_search(json, match, outer_re)) {
-        light.spot_outer_angle = std::stof(match[1].str());
+        light.spot_outer_angle = safe_stof(match[1].str());
     }
     if (std::regex_search(json, match, shadows_re)) {
         light.cast_shadows = (match[1].str() == "true");
@@ -558,16 +611,16 @@ void SceneSerializer::deserialize_particle_emitter(ParticleEmitter& emitter, con
 
     std::smatch match;
     if (std::regex_search(json, match, max_re)) {
-        emitter.max_particles = std::stoul(match[1].str());
+        emitter.max_particles = safe_stoul(match[1].str());
     }
     if (std::regex_search(json, match, rate_re)) {
-        emitter.emission_rate = std::stof(match[1].str());
+        emitter.emission_rate = safe_stof(match[1].str());
     }
     if (std::regex_search(json, match, life_re)) {
-        emitter.lifetime = std::stof(match[1].str());
+        emitter.lifetime = safe_stof(match[1].str());
     }
     if (std::regex_search(json, match, speed_re)) {
-        emitter.initial_speed = std::stof(match[1].str());
+        emitter.initial_speed = safe_stof(match[1].str());
     }
     if (std::regex_search(json, match, variance_re)) {
         emitter.initial_velocity_variance = parse_vec3(match[1].str());
@@ -579,10 +632,10 @@ void SceneSerializer::deserialize_particle_emitter(ParticleEmitter& emitter, con
         emitter.end_color = parse_vec4(match[1].str());
     }
     if (std::regex_search(json, match, start_size_re)) {
-        emitter.start_size = std::stof(match[1].str());
+        emitter.start_size = safe_stof(match[1].str());
     }
     if (std::regex_search(json, match, end_size_re)) {
-        emitter.end_size = std::stof(match[1].str());
+        emitter.end_size = safe_stof(match[1].str());
     }
     if (std::regex_search(json, match, gravity_re)) {
         emitter.gravity = parse_vec3(match[1].str());
@@ -679,7 +732,7 @@ SerializedEntity SceneSerializer::parse_entity_json(const std::string& json) {
 
     std::smatch match;
     if (std::regex_search(json, match, uuid_re)) {
-        entity.uuid = std::stoull(match[1].str());
+        entity.uuid = safe_stoull(match[1].str());
     }
     if (std::regex_search(json, match, name_re)) {
         entity.name = match[1].str();
@@ -688,7 +741,7 @@ SerializedEntity SceneSerializer::parse_entity_json(const std::string& json) {
         entity.enabled = (match[1].str() == "true");
     }
     if (std::regex_search(json, match, parent_re)) {
-        entity.parent_uuid = std::stoull(match[1].str());
+        entity.parent_uuid = safe_stoull(match[1].str());
     }
 
     return entity;

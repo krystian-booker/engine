@@ -2,6 +2,7 @@
 
 #include <string>
 #include <format>
+#include <cstdlib>
 
 namespace engine::core {
 
@@ -35,3 +36,17 @@ void log(LogLevel level, std::format_string<Args...> fmt, Args&&... args) {
 }
 
 } // namespace engine::core
+
+// Runtime assertion macro - active in debug builds only
+#ifdef NDEBUG
+    #define ENGINE_ASSERT(condition, message) ((void)0)
+#else
+    #define ENGINE_ASSERT(condition, message) \
+        do { \
+            if (!(condition)) { \
+                ::engine::core::log(::engine::core::LogLevel::Fatal, \
+                    "Assertion failed: {} at {}:{}", message, __FILE__, __LINE__); \
+                std::abort(); \
+            } \
+        } while(0)
+#endif

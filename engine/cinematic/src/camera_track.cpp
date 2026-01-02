@@ -1,4 +1,8 @@
 #include <engine/cinematic/camera_track.hpp>
+#include <engine/scene/world.hpp>
+#include <engine/scene/transform.hpp>
+#include <engine/scene/render_components.hpp>
+#include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cmath>
 
@@ -44,7 +48,7 @@ float CameraTrack::get_duration() const {
     return duration;
 }
 
-void CameraTrack::evaluate(float time) {
+void CameraTrack::evaluate(float time, scene::World& world) {
     if (!m_enabled || m_keyframes.empty()) {
         return;
     }
@@ -55,10 +59,22 @@ void CameraTrack::evaluate(float time) {
     // Apply shake
     sampled.position = apply_shake(sampled.position, time);
 
-    // Apply to target camera entity (would use world reference)
-    // This is a placeholder - actual implementation would modify camera component
-    // world.get<Camera>(m_target_camera).position = sampled.position;
-    // etc.
+    // Apply to target camera entity
+    if (m_target_camera != scene::NullEntity) {
+        // Apply position/rotation to LocalTransform
+        if (world.has<scene::LocalTransform>(m_target_camera)) {
+            auto& transform = world.get<scene::LocalTransform>(m_target_camera);
+            transform.position = sampled.position;
+            transform.rotation = sampled.rotation;
+        }
+        // Apply camera-specific values to Camera component
+        if (world.has<scene::Camera>(m_target_camera)) {
+            auto& camera = world.get<scene::Camera>(m_target_camera);
+            camera.fov = sampled.fov;
+            camera.near_plane = sampled.near_plane;
+            camera.far_plane = sampled.far_plane;
+        }
+    }
 }
 
 void CameraTrack::reset() {
@@ -152,6 +168,9 @@ void CameraTrack::sort_keyframes() {
 }
 
 size_t CameraTrack::find_keyframe_index(float time) const {
+    if (m_keyframes.size() < 2) {
+        return 0;
+    }
     for (size_t i = 0; i < m_keyframes.size() - 1; ++i) {
         if (time >= m_keyframes[i].time && time < m_keyframes[i + 1].time) {
             return i;
@@ -180,6 +199,84 @@ Vec3 CameraTrack::apply_shake(const Vec3& position, float time) const {
     }
 
     return result;
+}
+
+void CameraTrack::serialize(nlohmann::json& j) const {
+    j["keyframes"] = nlohmann::json::array();
+    for (const auto& kf : m_keyframes) {
+        j["keyframes"].push_back({
+            {"time", kf.time},
+            {"position", {kf.position.x, kf.position.y, kf.position.z}},
+            {"rotation", {kf.rotation.w, kf.rotation.x, kf.rotation.y, kf.rotation.z}},
+            {"fov", kf.fov},
+            {"near_plane", kf.near_plane},
+            {"far_plane", kf.far_plane},
+            {"focus_distance", kf.focus_distance},
+            {"aperture", kf.aperture},
+            {"interpolation", static_cast<int>(kf.interpolation)},
+            {"easing", static_cast<int>(kf.easing)}
+        });
+    }
+
+    j["shakes"] = nlohmann::json::array();
+    for (const auto& [time, shake] : m_shakes) {
+        j["shakes"].push_back({
+            {"time", time},
+            {"amplitude", shake.amplitude},
+            {"frequency", shake.frequency},
+            {"direction", {shake.direction.x, shake.direction.y, shake.direction.z}},
+            {"duration", shake.duration},
+            {"falloff", shake.falloff}
+        });
+    }
+
+    j["rail_type"] = static_cast<int>(m_rail_type);
+}
+
+void CameraTrack::deserialize(const nlohmann::json& j) {
+    m_keyframes.clear();
+    m_shakes.clear();
+
+    if (j.contains("keyframes")) {
+        for (const auto& kf_json : j["keyframes"]) {
+            CameraKeyframe kf;
+            kf.time = kf_json.value("time", 0.0f);
+            if (kf_json.contains("position")) {
+                auto& pos = kf_json["position"];
+                kf.position = Vec3{pos[0], pos[1], pos[2]};
+            }
+            if (kf_json.contains("rotation")) {
+                auto& rot = kf_json["rotation"];
+                kf.rotation = Quat{rot[0], rot[1], rot[2], rot[3]};
+            }
+            kf.fov = kf_json.value("fov", 60.0f);
+            kf.near_plane = kf_json.value("near_plane", 0.1f);
+            kf.far_plane = kf_json.value("far_plane", 1000.0f);
+            kf.focus_distance = kf_json.value("focus_distance", 10.0f);
+            kf.aperture = kf_json.value("aperture", 2.8f);
+            kf.interpolation = static_cast<InterpolationMode>(kf_json.value("interpolation", 0));
+            kf.easing = static_cast<EaseType>(kf_json.value("easing", 0));
+            m_keyframes.push_back(kf);
+        }
+    }
+
+    if (j.contains("shakes")) {
+        for (const auto& shake_json : j["shakes"]) {
+            CameraShake shake;
+            float time = shake_json.value("time", 0.0f);
+            shake.amplitude = shake_json.value("amplitude", 0.0f);
+            shake.frequency = shake_json.value("frequency", 10.0f);
+            if (shake_json.contains("direction")) {
+                auto& dir = shake_json["direction"];
+                shake.direction = Vec3{dir[0], dir[1], dir[2]};
+            }
+            shake.duration = shake_json.value("duration", 0.0f);
+            shake.falloff = shake_json.value("falloff", 1.0f);
+            m_shakes.emplace_back(time, shake);
+        }
+    }
+
+    m_rail_type = static_cast<CameraRailType>(j.value("rail_type", 0));
 }
 
 } // namespace engine::cinematic

@@ -21,8 +21,12 @@ DebugConsole::DebugConsole() {
         clear();
     });
 
-    register_command("quit", "Exit application", [](const auto&) {
-        // TODO: Signal application quit
+    register_command("quit", "Exit application", [this](const auto&) {
+        if (m_quit_callback) {
+            m_quit_callback();
+        } else {
+            add_log(core::LogLevel::Warn, "Quit callback not set");
+        }
     });
 }
 

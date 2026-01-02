@@ -1,13 +1,6 @@
 # engine/debug-gui/CMakeLists.txt
 # engine::debug-gui - Debug GUI overlays using DearImGui
 
-# Temporarily disable debug GUI implementation; provide stub target
-add_library(engine_debug_gui INTERFACE)
-add_library(engine::debug-gui ALIAS engine_debug_gui)
-target_compile_definitions(engine_debug_gui INTERFACE ENGINE_DEBUG_GUI_DISABLED=1)
-message(STATUS "debug-gui: Disabled (stub)")
-return()
-
 # Only build full implementation in Debug configurations
 # For Release, provide empty interface target
 set(IS_DEBUG_BUILD FALSE)

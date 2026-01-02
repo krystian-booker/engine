@@ -1,10 +1,14 @@
 #include <engine/scene/transform.hpp>
 #include <engine/scene/world.hpp>
+#include <engine/core/log.hpp>
 #include <unordered_map>
 
 namespace engine::scene {
 
 namespace {
+
+// Maximum iterations for hierarchy traversal to prevent infinite loops from corrupted data
+constexpr size_t MAX_HIERARCHY_ITERATIONS = 100000;
 
 struct RootList {
     Entity first = NullEntity;
@@ -44,9 +48,14 @@ void update_descendant_depths(entt::registry& registry, Entity entity, uint32_t 
 
     h->depth = depth;
     Entity child = h->first_child;
-    while (child != NullEntity) {
+    size_t iterations = 0;
+    while (child != NullEntity && iterations++ < MAX_HIERARCHY_ITERATIONS) {
         update_descendant_depths(registry, child, depth + 1);
-        child = registry.get<Hierarchy>(child).next_sibling;
+        auto* child_h = registry.try_get<Hierarchy>(child);
+        child = child_h ? child_h->next_sibling : NullEntity;
+    }
+    if (iterations >= MAX_HIERARCHY_ITERATIONS) {
+        core::log(core::LogLevel::Error, "Hierarchy corruption detected: infinite loop in update_descendant_depths");
     }
 }
 
@@ -169,11 +178,16 @@ void attach_to_parent(entt::registry& registry, RootList& root_list, Entity chil
             child_h.prev_sibling = NullEntity;
             child_h.next_sibling = NullEntity;
         } else {
-            while (registry.get<Hierarchy>(last_child).next_sibling != NullEntity) {
-                last_child = registry.get<Hierarchy>(last_child).next_sibling;
+            size_t iterations = 0;
+            while (iterations++ < MAX_HIERARCHY_ITERATIONS) {
+                auto* h = registry.try_get<Hierarchy>(last_child);
+                if (!h || h->next_sibling == NullEntity) break;
+                last_child = h->next_sibling;
             }
 
-            registry.get<Hierarchy>(last_child).next_sibling = child;
+            if (auto* last_h = registry.try_get<Hierarchy>(last_child)) {
+                last_h->next_sibling = child;
+            }
             child_h.prev_sibling = last_child;
             child_h.next_sibling = NullEntity;
         }
@@ -249,9 +263,11 @@ void set_parent(World& world, Entity child, Entity parent, Entity before_sibling
 
     // Update depth for descendants (child depth already set during attach)
     Entity c = child_h.first_child;
-    while (c != NullEntity) {
+    size_t iterations = 0;
+    while (c != NullEntity && iterations++ < MAX_HIERARCHY_ITERATIONS) {
         update_descendant_depths(registry, c, child_h.depth + 1);
-        c = registry.get<Hierarchy>(c).next_sibling;
+        auto* c_h = registry.try_get<Hierarchy>(c);
+        c = c_h ? c_h->next_sibling : NullEntity;
     }
 
     // Mark old parent's cached children dirty if it changed
@@ -290,9 +306,11 @@ const std::vector<Entity>& get_children(World& world, Entity parent) {
     if (h->children_dirty) {
         h->cached_children.clear();
         Entity child = h->first_child;
-        while (child != NullEntity) {
+        size_t iterations = 0;
+        while (child != NullEntity && iterations++ < MAX_HIERARCHY_ITERATIONS) {
             h->cached_children.push_back(child);
-            child = registry.get<Hierarchy>(child).next_sibling;
+            auto* child_h = registry.try_get<Hierarchy>(child);
+            child = child_h ? child_h->next_sibling : NullEntity;
         }
         h->children_dirty = false;
     }
@@ -307,8 +325,10 @@ void iterate_children(World& world, Entity parent, std::function<void(Entity)> f
     if (!h) return;
 
     Entity child = h->first_child;
-    while (child != NullEntity) {
-        Entity next = registry.get<Hierarchy>(child).next_sibling;
+    size_t iterations = 0;
+    while (child != NullEntity && iterations++ < MAX_HIERARCHY_ITERATIONS) {
+        auto* child_h = registry.try_get<Hierarchy>(child);
+        Entity next = child_h ? child_h->next_sibling : NullEntity;
         fn(child);
         child = next;
     }
@@ -336,7 +356,9 @@ std::vector<Entity> get_root_entities(World& world) {
             h->next_sibling = NullEntity;
 
             if (last_root != NullEntity) {
-                registry.get<Hierarchy>(last_root).next_sibling = entity;
+                if (auto* last_h = registry.try_get<Hierarchy>(last_root)) {
+                    last_h->next_sibling = entity;
+                }
             } else {
                 root_list.first = entity;
             }
@@ -351,7 +373,8 @@ std::vector<Entity> get_root_entities(World& world) {
     if (root_list.dirty) {
         root_list.cached.clear();
         Entity root = root_list.first;
-        while (root != NullEntity) {
+        size_t iterations = 0;
+        while (root != NullEntity && iterations++ < MAX_HIERARCHY_ITERATIONS) {
             root_list.cached.push_back(root);
             auto* h = registry.try_get<Hierarchy>(root);
             root = h ? h->next_sibling : NullEntity;
@@ -366,7 +389,8 @@ bool is_ancestor_of(World& world, Entity ancestor, Entity descendant) {
     auto& registry = world.registry();
 
     Entity current = descendant;
-    while (current != NullEntity) {
+    size_t iterations = 0;
+    while (current != NullEntity && iterations++ < MAX_HIERARCHY_ITERATIONS) {
         auto* h = registry.try_get<Hierarchy>(current);
         if (!h) break;
 

@@ -13,9 +13,10 @@ std::vector<uint8_t> FileSystem::read_binary(const std::string& path) {
     if (!file) return {};
 
     auto size = file.tellg();
+    if (size < 0) return {};
     file.seekg(0);
 
-    std::vector<uint8_t> data(size);
+    std::vector<uint8_t> data(static_cast<size_t>(size));
     file.read(reinterpret_cast<char*>(data.data()), size);
     return data;
 }

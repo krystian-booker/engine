@@ -27,6 +27,9 @@
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyActivationListener.h>
 #include <Jolt/Physics/Body/BodyLock.h>
+#include <Jolt/Physics/Constraints/FixedConstraint.h>
+#include <Jolt/Physics/Constraints/HingeConstraint.h>
+#include <Jolt/Physics/Constraints/SwingTwistConstraint.h>
 
 #include <unordered_map>
 #include <mutex>
@@ -119,6 +122,14 @@ struct PhysicsWorld::Impl {
     mutable std::mutex body_map_mutex;
     std::unordered_map<uint32_t, BodyID> body_map;
     uint32_t next_body_id = 1;
+
+    // Constraint storage
+    mutable std::mutex constraint_map_mutex;
+    std::unordered_map<uint32_t, Ref<Constraint>> constraint_map;
+    uint32_t next_constraint_id = 1;
+
+    // Shape info cache for debug rendering (shape type and dimensions per body)
+    std::unordered_map<uint32_t, BodyShapeInfo> body_shape_info;
 
     bool initialized = false;
 
@@ -411,6 +422,39 @@ PhysicsBodyId create_body_impl(PhysicsWorld::Impl* impl, const BodySettings& set
     PhysicsBodyId id{impl->next_body_id++};
     impl->body_map[id.id] = body->GetID();
 
+    // Store shape info for debug rendering
+    BodyShapeInfo shape_info;
+    if (settings.shape) {
+        shape_info.type = settings.shape->type;
+        shape_info.center_offset = settings.shape->center_offset;
+        switch (settings.shape->type) {
+            case ShapeType::Box: {
+                auto* box = static_cast<BoxShapeSettings*>(settings.shape);
+                shape_info.dimensions = box->half_extents;
+                break;
+            }
+            case ShapeType::Sphere: {
+                auto* sphere = static_cast<SphereShapeSettings*>(settings.shape);
+                shape_info.dimensions = Vec3{sphere->radius, sphere->radius, sphere->radius};
+                break;
+            }
+            case ShapeType::Capsule: {
+                auto* capsule = static_cast<CapsuleShapeSettings*>(settings.shape);
+                shape_info.dimensions = Vec3{capsule->radius, capsule->half_height, capsule->radius};
+                break;
+            }
+            case ShapeType::Cylinder: {
+                auto* cyl = static_cast<CylinderShapeSettings*>(settings.shape);
+                shape_info.dimensions = Vec3{cyl->radius, cyl->half_height, cyl->radius};
+                break;
+            }
+            default:
+                shape_info.dimensions = Vec3{0.5f};
+                break;
+        }
+    }
+    impl->body_shape_info[id.id] = shape_info;
+
     return id;
 }
 
@@ -424,6 +468,7 @@ void destroy_body_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id) {
         if (it == impl->body_map.end()) return;
         jolt_id = it->second;
         impl->body_map.erase(it);
+        impl->body_shape_info.erase(id.id);
     }
 
     BodyInterface& body_interface = impl->physics_system->GetBodyInterface();
@@ -901,6 +946,594 @@ std::vector<PhysicsBodyId> get_all_body_ids_impl(PhysicsWorld::Impl* impl) {
         result.push_back(PhysicsBodyId{id});
     }
     return result;
+}
+
+// ============================================================================
+// Motion Type API
+// ============================================================================
+
+void set_motion_type_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id, BodyType type) {
+    if (!impl || !impl->initialized) return;
+
+    BodyID jolt_id;
+    {
+        std::lock_guard<std::mutex> lock(impl->body_map_mutex);
+        jolt_id = get_jolt_body_id(impl, id);
+    }
+    if (jolt_id.IsInvalid()) return;
+
+    EMotionType motion_type;
+    switch (type) {
+        case BodyType::Static:
+            motion_type = EMotionType::Static;
+            break;
+        case BodyType::Kinematic:
+            motion_type = EMotionType::Kinematic;
+            break;
+        case BodyType::Dynamic:
+        default:
+            motion_type = EMotionType::Dynamic;
+            break;
+    }
+
+    BodyInterface& body_interface = impl->physics_system->GetBodyInterface();
+    body_interface.SetMotionType(jolt_id, motion_type, EActivation::Activate);
+}
+
+BodyType get_motion_type_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id) {
+    if (!impl || !impl->initialized) return BodyType::Static;
+
+    BodyID jolt_id;
+    {
+        std::lock_guard<std::mutex> lock(impl->body_map_mutex);
+        jolt_id = get_jolt_body_id(impl, id);
+    }
+    if (jolt_id.IsInvalid()) return BodyType::Static;
+
+    BodyInterface& body_interface = impl->physics_system->GetBodyInterface();
+    EMotionType motion_type = body_interface.GetMotionType(jolt_id);
+
+    switch (motion_type) {
+        case EMotionType::Static:
+            return BodyType::Static;
+        case EMotionType::Kinematic:
+            return BodyType::Kinematic;
+        case EMotionType::Dynamic:
+        default:
+            return BodyType::Dynamic;
+    }
+}
+
+BodyShapeInfo get_body_shape_info_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id) {
+    if (!impl) return BodyShapeInfo{};
+
+    std::lock_guard<std::mutex> lock(impl->body_map_mutex);
+    auto it = impl->body_shape_info.find(id.id);
+    if (it != impl->body_shape_info.end()) {
+        return it->second;
+    }
+    return BodyShapeInfo{};
+}
+
+// ============================================================================
+// Constraint API
+// ============================================================================
+
+ConstraintId create_fixed_constraint_impl(PhysicsWorld::Impl* impl, const FixedConstraintSettings& settings) {
+    if (!impl || !impl->initialized) return ConstraintId{};
+
+    BodyID jolt_id_a, jolt_id_b;
+    {
+        std::lock_guard<std::mutex> lock(impl->body_map_mutex);
+        jolt_id_a = get_jolt_body_id(impl, settings.body_a);
+        jolt_id_b = get_jolt_body_id(impl, settings.body_b);
+    }
+    if (jolt_id_a.IsInvalid() || jolt_id_b.IsInvalid()) {
+        log(LogLevel::Warn, "create_fixed_constraint: invalid body IDs");
+        return ConstraintId{};
+    }
+
+    JPH::FixedConstraintSettings jolt_settings;
+    jolt_settings.mAutoDetectPoint = false;
+    jolt_settings.mPoint1 = RVec3(settings.local_anchor_a.x, settings.local_anchor_a.y, settings.local_anchor_a.z);
+    jolt_settings.mPoint2 = RVec3(settings.local_anchor_b.x, settings.local_anchor_b.y, settings.local_anchor_b.z);
+
+    BodyInterface& body_interface = impl->physics_system->GetBodyInterface();
+    BodyLockWrite lock_a(impl->physics_system->GetBodyLockInterface(), jolt_id_a);
+    BodyLockWrite lock_b(impl->physics_system->GetBodyLockInterface(), jolt_id_b);
+
+    if (!lock_a.Succeeded() || !lock_b.Succeeded()) {
+        log(LogLevel::Warn, "create_fixed_constraint: failed to lock bodies");
+        return ConstraintId{};
+    }
+
+    Body& body_a = lock_a.GetBody();
+    Body& body_b = lock_b.GetBody();
+
+    Ref<Constraint> constraint = jolt_settings.Create(body_a, body_b);
+    impl->physics_system->AddConstraint(constraint);
+
+    std::lock_guard<std::mutex> clock(impl->constraint_map_mutex);
+    ConstraintId id{impl->next_constraint_id++};
+    impl->constraint_map[id.id] = constraint;
+
+    return id;
+}
+
+ConstraintId create_hinge_constraint_impl(PhysicsWorld::Impl* impl, const HingeConstraintSettings& settings) {
+    if (!impl || !impl->initialized) return ConstraintId{};
+
+    BodyID jolt_id_a, jolt_id_b;
+    {
+        std::lock_guard<std::mutex> lock(impl->body_map_mutex);
+        jolt_id_a = get_jolt_body_id(impl, settings.body_a);
+        jolt_id_b = get_jolt_body_id(impl, settings.body_b);
+    }
+    if (jolt_id_a.IsInvalid() || jolt_id_b.IsInvalid()) {
+        log(LogLevel::Warn, "create_hinge_constraint: invalid body IDs");
+        return ConstraintId{};
+    }
+
+    JPH::HingeConstraintSettings jolt_settings;
+    jolt_settings.mPoint1 = RVec3(settings.local_anchor_a.x, settings.local_anchor_a.y, settings.local_anchor_a.z);
+    jolt_settings.mPoint2 = RVec3(settings.local_anchor_b.x, settings.local_anchor_b.y, settings.local_anchor_b.z);
+    jolt_settings.mHingeAxis1 = JPH::Vec3(settings.hinge_axis.x, settings.hinge_axis.y, settings.hinge_axis.z);
+    jolt_settings.mHingeAxis2 = jolt_settings.mHingeAxis1;
+    jolt_settings.mNormalAxis1 = JPH::Vec3(1.0f, 0.0f, 0.0f);
+    if (std::abs(settings.hinge_axis.x) > 0.9f) {
+        jolt_settings.mNormalAxis1 = JPH::Vec3(0.0f, 1.0f, 0.0f);
+    }
+    jolt_settings.mNormalAxis2 = jolt_settings.mNormalAxis1;
+
+    if (settings.enable_limits) {
+        jolt_settings.mLimitsMin = settings.limit_min;
+        jolt_settings.mLimitsMax = settings.limit_max;
+    }
+
+    BodyLockWrite lock_a(impl->physics_system->GetBodyLockInterface(), jolt_id_a);
+    BodyLockWrite lock_b(impl->physics_system->GetBodyLockInterface(), jolt_id_b);
+
+    if (!lock_a.Succeeded() || !lock_b.Succeeded()) {
+        log(LogLevel::Warn, "create_hinge_constraint: failed to lock bodies");
+        return ConstraintId{};
+    }
+
+    Body& body_a = lock_a.GetBody();
+    Body& body_b = lock_b.GetBody();
+
+    Ref<Constraint> constraint = jolt_settings.Create(body_a, body_b);
+    impl->physics_system->AddConstraint(constraint);
+
+    std::lock_guard<std::mutex> clock(impl->constraint_map_mutex);
+    ConstraintId id{impl->next_constraint_id++};
+    impl->constraint_map[id.id] = constraint;
+
+    return id;
+}
+
+ConstraintId create_swing_twist_constraint_impl(PhysicsWorld::Impl* impl, const SwingTwistConstraintSettings& settings) {
+    if (!impl || !impl->initialized) return ConstraintId{};
+
+    BodyID jolt_id_a, jolt_id_b;
+    {
+        std::lock_guard<std::mutex> lock(impl->body_map_mutex);
+        jolt_id_a = get_jolt_body_id(impl, settings.body_a);
+        jolt_id_b = get_jolt_body_id(impl, settings.body_b);
+    }
+    if (jolt_id_a.IsInvalid() || jolt_id_b.IsInvalid()) {
+        log(LogLevel::Warn, "create_swing_twist_constraint: invalid body IDs");
+        return ConstraintId{};
+    }
+
+    JPH::SwingTwistConstraintSettings jolt_settings;
+    jolt_settings.mPosition1 = RVec3(settings.local_anchor_a.x, settings.local_anchor_a.y, settings.local_anchor_a.z);
+    jolt_settings.mPosition2 = RVec3(settings.local_anchor_b.x, settings.local_anchor_b.y, settings.local_anchor_b.z);
+    jolt_settings.mTwistAxis1 = JPH::Vec3(settings.twist_axis.x, settings.twist_axis.y, settings.twist_axis.z);
+    jolt_settings.mTwistAxis2 = jolt_settings.mTwistAxis1;
+    jolt_settings.mPlaneAxis1 = JPH::Vec3(settings.plane_axis.x, settings.plane_axis.y, settings.plane_axis.z);
+    jolt_settings.mPlaneAxis2 = jolt_settings.mPlaneAxis1;
+    jolt_settings.mNormalHalfConeAngle = settings.swing_limit_y;
+    jolt_settings.mPlaneHalfConeAngle = settings.swing_limit_z;
+    jolt_settings.mTwistMinAngle = settings.twist_min;
+    jolt_settings.mTwistMaxAngle = settings.twist_max;
+
+    BodyLockWrite lock_a(impl->physics_system->GetBodyLockInterface(), jolt_id_a);
+    BodyLockWrite lock_b(impl->physics_system->GetBodyLockInterface(), jolt_id_b);
+
+    if (!lock_a.Succeeded() || !lock_b.Succeeded()) {
+        log(LogLevel::Warn, "create_swing_twist_constraint: failed to lock bodies");
+        return ConstraintId{};
+    }
+
+    Body& body_a = lock_a.GetBody();
+    Body& body_b = lock_b.GetBody();
+
+    Ref<Constraint> constraint = jolt_settings.Create(body_a, body_b);
+    impl->physics_system->AddConstraint(constraint);
+
+    std::lock_guard<std::mutex> clock(impl->constraint_map_mutex);
+    ConstraintId id{impl->next_constraint_id++};
+    impl->constraint_map[id.id] = constraint;
+
+    return id;
+}
+
+void destroy_constraint_impl(PhysicsWorld::Impl* impl, ConstraintId id) {
+    if (!impl || !impl->initialized) return;
+
+    Ref<Constraint> constraint;
+    {
+        std::lock_guard<std::mutex> lock(impl->constraint_map_mutex);
+        auto it = impl->constraint_map.find(id.id);
+        if (it == impl->constraint_map.end()) return;
+        constraint = it->second;
+        impl->constraint_map.erase(it);
+    }
+
+    impl->physics_system->RemoveConstraint(constraint);
+}
+
+void set_constraint_motor_state_impl(PhysicsWorld::Impl* impl, ConstraintId id, bool enabled) {
+    if (!impl || !impl->initialized) return;
+
+    Ref<Constraint> constraint;
+    {
+        std::lock_guard<std::mutex> lock(impl->constraint_map_mutex);
+        auto it = impl->constraint_map.find(id.id);
+        if (it == impl->constraint_map.end()) return;
+        constraint = it->second;
+    }
+
+    // Try casting to different constraint types and set motor
+    // Try casting to different constraint types and set motor
+    EConstraintSubType type = constraint->GetSubType();
+    if (type == EConstraintSubType::SwingTwist) {
+        auto* swing_twist = static_cast<SwingTwistConstraint*>(constraint.GetPtr());
+        swing_twist->SetSwingMotorState(enabled ? EMotorState::Position : EMotorState::Off);
+        swing_twist->SetTwistMotorState(enabled ? EMotorState::Position : EMotorState::Off);
+    } else if (type == EConstraintSubType::Hinge) {
+        auto* hinge = static_cast<HingeConstraint*>(constraint.GetPtr());
+        hinge->SetMotorState(enabled ? EMotorState::Position : EMotorState::Off);
+    }
+}
+
+void set_constraint_motor_target_impl(PhysicsWorld::Impl* impl, ConstraintId id, const Quat& target) {
+    if (!impl || !impl->initialized) return;
+
+    Ref<Constraint> constraint;
+    {
+        std::lock_guard<std::mutex> lock(impl->constraint_map_mutex);
+        auto it = impl->constraint_map.find(id.id);
+        if (it == impl->constraint_map.end()) return;
+        constraint = it->second;
+    }
+
+    EConstraintSubType type = constraint->GetSubType();
+    if (type == EConstraintSubType::SwingTwist) {
+        auto* swing_twist = static_cast<SwingTwistConstraint*>(constraint.GetPtr());
+        swing_twist->SetTargetOrientationCS(JPH::Quat(target.x, target.y, target.z, target.w));
+    } else if (type == EConstraintSubType::Hinge) {
+        auto* hinge = static_cast<HingeConstraint*>(constraint.GetPtr());
+        // For hinge, extract rotation around hinge axis
+        // Simplified: just use the angle component
+        float angle = 2.0f * std::acos(std::clamp(target.w, -1.0f, 1.0f));
+        hinge->SetTargetAngle(angle);
+    }
+}
+
+void set_constraint_motor_velocity_impl(PhysicsWorld::Impl* impl, ConstraintId id, const Vec3& angular_velocity) {
+    if (!impl || !impl->initialized) return;
+
+    Ref<Constraint> constraint;
+    {
+        std::lock_guard<std::mutex> lock(impl->constraint_map_mutex);
+        auto it = impl->constraint_map.find(id.id);
+        if (it == impl->constraint_map.end()) return;
+        constraint = it->second;
+    }
+
+    EConstraintSubType type = constraint->GetSubType();
+    if (type == EConstraintSubType::SwingTwist) {
+        auto* swing_twist = static_cast<SwingTwistConstraint*>(constraint.GetPtr());
+        swing_twist->SetSwingMotorState(EMotorState::Velocity);
+        swing_twist->SetTwistMotorState(EMotorState::Velocity);
+        swing_twist->SetTargetAngularVelocityCS(JPH::Vec3(angular_velocity.x, angular_velocity.y, angular_velocity.z));
+    } else if (type == EConstraintSubType::Hinge) {
+        auto* hinge = static_cast<HingeConstraint*>(constraint.GetPtr());
+        hinge->SetMotorState(EMotorState::Velocity);
+        hinge->SetTargetAngularVelocity(glm::length(angular_velocity));
+    }
+}
+
+void set_constraint_motor_strength_impl(PhysicsWorld::Impl* impl, ConstraintId id, float max_force) {
+    if (!impl || !impl->initialized) return;
+
+    Ref<Constraint> constraint;
+    {
+        std::lock_guard<std::mutex> lock(impl->constraint_map_mutex);
+        auto it = impl->constraint_map.find(id.id);
+        if (it == impl->constraint_map.end()) return;
+        constraint = it->second;
+    }
+
+    MotorSettings motor_settings(10.0f, 1.0f);
+    motor_settings.SetForceLimit(max_force);
+
+    EConstraintSubType type = constraint->GetSubType();
+    if (type == EConstraintSubType::SwingTwist) {
+        auto* swing_twist = static_cast<SwingTwistConstraint*>(constraint.GetPtr());
+        swing_twist->GetSwingMotorSettings() = motor_settings;
+        swing_twist->GetTwistMotorSettings() = motor_settings;
+    } else if (type == EConstraintSubType::Hinge) {
+        auto* hinge = static_cast<HingeConstraint*>(constraint.GetPtr());
+        hinge->GetMotorSettings() = motor_settings;
+    }
+}
+
+// ============================================================================
+// Debug/Contact Query API
+// ============================================================================
+
+std::vector<ContactPointInfo> get_contact_points_impl(PhysicsWorld::Impl* impl) {
+    std::vector<ContactPointInfo> result;
+    if (!impl || !impl->initialized) return result;
+
+    // Jolt doesn't provide a simple contact list - we'd need to set up a ContactListener
+    // For now, return empty. Full implementation would require adding a ContactListener
+    // during init that collects contacts each frame.
+    return result;
+}
+
+std::vector<ConstraintInfo> get_all_constraints_impl(PhysicsWorld::Impl* impl) {
+    std::vector<ConstraintInfo> result;
+    if (!impl || !impl->initialized) return result;
+
+    std::lock_guard<std::mutex> clock(impl->constraint_map_mutex);
+    std::lock_guard<std::mutex> block(impl->body_map_mutex);
+
+    for (const auto& [cid, constraint] : impl->constraint_map) {
+        ConstraintInfo info;
+        info.id = ConstraintId{cid};
+
+        // Get body IDs from constraint (if TwoBodyConstraint)
+        if (constraint->GetType() == EConstraintType::TwoBodyConstraint) {
+            auto* two_body = static_cast<TwoBodyConstraint*>(constraint.GetPtr());
+            const Body* body1 = two_body->GetBody1();
+            const Body* body2 = two_body->GetBody2();
+
+            if (body1) {
+                info.body_a = impl->find_body_id(body1->GetID());
+                RVec3 pos = body1->GetPosition();
+                info.world_anchor_a = Vec3{static_cast<float>(pos.GetX()),
+                                            static_cast<float>(pos.GetY()),
+                                            static_cast<float>(pos.GetZ())};
+            }
+            if (body2) {
+                info.body_b = impl->find_body_id(body2->GetID());
+                RVec3 pos = body2->GetPosition();
+                info.world_anchor_b = Vec3{static_cast<float>(pos.GetX()),
+                                            static_cast<float>(pos.GetY()),
+                                            static_cast<float>(pos.GetZ())};
+            }
+        }
+
+        result.push_back(info);
+    }
+
+    return result;
+}
+
+// ============================================================================
+// PhysicsWorld method implementations (forwarding to impl functions)
+// ============================================================================
+
+void PhysicsWorld::init(const engine::core::PhysicsSettings& settings) {
+    init_physics_impl(m_impl.get(), settings);
+}
+
+void PhysicsWorld::shutdown() {
+    shutdown_physics_impl(m_impl.get());
+}
+
+void PhysicsWorld::step(double dt) {
+    step_physics_impl(m_impl.get(), dt);
+}
+
+PhysicsBodyId PhysicsWorld::create_body(const BodySettings& settings) {
+    return create_body_impl(m_impl.get(), settings);
+}
+
+void PhysicsWorld::destroy_body(PhysicsBodyId id) {
+    destroy_body_impl(m_impl.get(), id);
+}
+
+bool PhysicsWorld::is_valid(PhysicsBodyId id) const {
+    return is_valid_impl(m_impl.get(), id);
+}
+
+void PhysicsWorld::set_position(PhysicsBodyId id, const Vec3& pos) {
+    set_position_impl(m_impl.get(), id, pos);
+}
+
+void PhysicsWorld::set_rotation(PhysicsBodyId id, const Quat& rot) {
+    set_rotation_impl(m_impl.get(), id, rot);
+}
+
+void PhysicsWorld::set_transform(PhysicsBodyId id, const Vec3& pos, const Quat& rot) {
+    set_position_impl(m_impl.get(), id, pos);
+    set_rotation_impl(m_impl.get(), id, rot);
+}
+
+Vec3 PhysicsWorld::get_position(PhysicsBodyId id) const {
+    return get_position_impl(m_impl.get(), id);
+}
+
+Quat PhysicsWorld::get_rotation(PhysicsBodyId id) const {
+    return get_rotation_impl(m_impl.get(), id);
+}
+
+void PhysicsWorld::set_linear_velocity(PhysicsBodyId id, const Vec3& vel) {
+    set_linear_velocity_impl(m_impl.get(), id, vel);
+}
+
+void PhysicsWorld::set_angular_velocity(PhysicsBodyId id, const Vec3& vel) {
+    set_angular_velocity_impl(m_impl.get(), id, vel);
+}
+
+Vec3 PhysicsWorld::get_linear_velocity(PhysicsBodyId id) const {
+    return get_linear_velocity_impl(m_impl.get(), id);
+}
+
+Vec3 PhysicsWorld::get_angular_velocity(PhysicsBodyId id) const {
+    return get_angular_velocity_impl(m_impl.get(), id);
+}
+
+void PhysicsWorld::add_force(PhysicsBodyId id, const Vec3& force) {
+    add_force_impl(m_impl.get(), id, force);
+}
+
+void PhysicsWorld::add_force_at_point(PhysicsBodyId id, const Vec3& force, const Vec3& point) {
+    add_force_at_point_impl(m_impl.get(), id, force, point);
+}
+
+void PhysicsWorld::add_torque(PhysicsBodyId id, const Vec3& torque) {
+    add_torque_impl(m_impl.get(), id, torque);
+}
+
+void PhysicsWorld::add_impulse(PhysicsBodyId id, const Vec3& impulse) {
+    add_impulse_impl(m_impl.get(), id, impulse);
+}
+
+void PhysicsWorld::add_impulse_at_point(PhysicsBodyId id, const Vec3& impulse, const Vec3& point) {
+    add_impulse_at_point_impl(m_impl.get(), id, impulse, point);
+}
+
+void PhysicsWorld::set_gravity_factor(PhysicsBodyId id, float factor) {
+    set_gravity_factor_impl(m_impl.get(), id, factor);
+}
+
+void PhysicsWorld::set_friction(PhysicsBodyId id, float friction) {
+    set_friction_impl(m_impl.get(), id, friction);
+}
+
+void PhysicsWorld::set_restitution(PhysicsBodyId id, float restitution) {
+    set_restitution_impl(m_impl.get(), id, restitution);
+}
+
+void PhysicsWorld::activate_body(PhysicsBodyId id) {
+    activate_body_impl(m_impl.get(), id);
+}
+
+bool PhysicsWorld::is_active(PhysicsBodyId id) const {
+    return is_active_impl(m_impl.get(), id);
+}
+
+void PhysicsWorld::set_motion_type(PhysicsBodyId id, BodyType type) {
+    set_motion_type_impl(m_impl.get(), id, type);
+}
+
+BodyType PhysicsWorld::get_motion_type(PhysicsBodyId id) const {
+    return get_motion_type_impl(m_impl.get(), id);
+}
+
+BodyShapeInfo PhysicsWorld::get_body_shape_info(PhysicsBodyId id) const {
+    return get_body_shape_info_impl(m_impl.get(), id);
+}
+
+BodyType PhysicsWorld::get_body_type(PhysicsBodyId id) const {
+    return get_motion_type_impl(m_impl.get(), id);
+}
+
+RaycastHit PhysicsWorld::raycast(const Vec3& origin, const Vec3& direction, float max_distance,
+                                  uint16_t layer_mask) const {
+    return raycast_impl(m_impl.get(), origin, direction, max_distance, layer_mask);
+}
+
+std::vector<RaycastHit> PhysicsWorld::raycast_all(const Vec3& origin, const Vec3& direction,
+                                                   float max_distance, uint16_t layer_mask) const {
+    return raycast_all_impl(m_impl.get(), origin, direction, max_distance, layer_mask);
+}
+
+std::vector<PhysicsBodyId> PhysicsWorld::overlap_sphere(const Vec3& center, float radius,
+                                                         uint16_t layer_mask) const {
+    return overlap_sphere_impl(m_impl.get(), center, radius, layer_mask);
+}
+
+std::vector<PhysicsBodyId> PhysicsWorld::overlap_box(const Vec3& center, const Vec3& half_extents,
+                                                      const Quat& rotation, uint16_t layer_mask) const {
+    return overlap_box_impl(m_impl.get(), center, half_extents, rotation, layer_mask);
+}
+
+void PhysicsWorld::set_collision_callback(CollisionCallback callback) {
+    set_collision_callback_impl(m_impl.get(), std::move(callback));
+}
+
+CollisionFilter& PhysicsWorld::get_collision_filter() {
+    return get_collision_filter_impl(m_impl.get());
+}
+
+const CollisionFilter& PhysicsWorld::get_collision_filter() const {
+    return const_cast<PhysicsWorld*>(this)->get_collision_filter();
+}
+
+ConstraintId PhysicsWorld::create_fixed_constraint(const FixedConstraintSettings& settings) {
+    return create_fixed_constraint_impl(m_impl.get(), settings);
+}
+
+ConstraintId PhysicsWorld::create_hinge_constraint(const HingeConstraintSettings& settings) {
+    return create_hinge_constraint_impl(m_impl.get(), settings);
+}
+
+ConstraintId PhysicsWorld::create_swing_twist_constraint(const SwingTwistConstraintSettings& settings) {
+    return create_swing_twist_constraint_impl(m_impl.get(), settings);
+}
+
+void PhysicsWorld::destroy_constraint(ConstraintId id) {
+    destroy_constraint_impl(m_impl.get(), id);
+}
+
+void PhysicsWorld::set_constraint_motor_state(ConstraintId id, bool enabled) {
+    set_constraint_motor_state_impl(m_impl.get(), id, enabled);
+}
+
+void PhysicsWorld::set_constraint_motor_target(ConstraintId id, const Quat& target_rotation) {
+    set_constraint_motor_target_impl(m_impl.get(), id, target_rotation);
+}
+
+void PhysicsWorld::set_constraint_motor_velocity(ConstraintId id, const Vec3& angular_velocity) {
+    set_constraint_motor_velocity_impl(m_impl.get(), id, angular_velocity);
+}
+
+void PhysicsWorld::set_constraint_motor_strength(ConstraintId id, float max_force_limit) {
+    set_constraint_motor_strength_impl(m_impl.get(), id, max_force_limit);
+}
+
+std::vector<ContactPointInfo> PhysicsWorld::get_contact_points() const {
+    return get_contact_points_impl(m_impl.get());
+}
+
+std::vector<ConstraintInfo> PhysicsWorld::get_all_constraints() const {
+    return get_all_constraints_impl(m_impl.get());
+}
+
+void PhysicsWorld::set_gravity(const Vec3& gravity) {
+    set_gravity_impl(m_impl.get(), gravity);
+}
+
+Vec3 PhysicsWorld::get_gravity() const {
+    return get_gravity_impl(m_impl.get());
+}
+
+uint32_t PhysicsWorld::get_body_count() const {
+    return get_body_count_impl(m_impl.get());
+}
+
+uint32_t PhysicsWorld::get_active_body_count() const {
+    return get_active_body_count_impl(m_impl.get());
+}
+
+std::vector<PhysicsBodyId> PhysicsWorld::get_all_body_ids() const {
+    return get_all_body_ids_impl(m_impl.get());
 }
 
 } // namespace engine::physics

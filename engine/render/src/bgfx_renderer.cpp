@@ -1,5 +1,6 @@
 #include <engine/render/renderer.hpp>
 #include <engine/render/pbr_material.hpp>
+#include <engine/render/debug_draw.hpp>
 #include <engine/core/log.hpp>
 #include <bgfx/bgfx.h>
 #include <bgfx/platform.h>
@@ -51,6 +52,9 @@ struct PBRUniforms {
     bgfx::UniformHandle s_shadowMap2 = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_shadowMap3 = BGFX_INVALID_HANDLE;
 
+    // Blit sampler (for blit_to_screen)
+    bgfx::UniformHandle s_blit_texture = BGFX_INVALID_HANDLE;
+
     void create() {
         u_cameraPos = bgfx::createUniform("u_cameraPos", bgfx::UniformType::Vec4);
         u_albedoColor = bgfx::createUniform("u_albedoColor", bgfx::UniformType::Vec4);
@@ -83,6 +87,9 @@ struct PBRUniforms {
         s_shadowMap1 = bgfx::createUniform("s_shadowMap1", bgfx::UniformType::Sampler);
         s_shadowMap2 = bgfx::createUniform("s_shadowMap2", bgfx::UniformType::Sampler);
         s_shadowMap3 = bgfx::createUniform("s_shadowMap3", bgfx::UniformType::Sampler);
+
+        // Blit sampler
+        s_blit_texture = bgfx::createUniform("s_texture", bgfx::UniformType::Sampler);
     }
 
     void destroy() {
@@ -117,6 +124,9 @@ struct PBRUniforms {
         if (bgfx::isValid(s_shadowMap1)) bgfx::destroy(s_shadowMap1);
         if (bgfx::isValid(s_shadowMap2)) bgfx::destroy(s_shadowMap2);
         if (bgfx::isValid(s_shadowMap3)) bgfx::destroy(s_shadowMap3);
+
+        // Blit sampler
+        if (bgfx::isValid(s_blit_texture)) bgfx::destroy(s_blit_texture);
     }
 };
 
@@ -130,13 +140,30 @@ static bgfx::ShaderHandle load_shader_from_file(const std::string& path) {
         return BGFX_INVALID_HANDLE;
     }
 
-    auto size = file.tellg();
+    std::streampos pos = file.tellg();
+    if (pos == std::streampos(-1) || pos <= 0) {
+        log(LogLevel::Error, ("Failed to get shader file size: " + path).c_str());
+        return BGFX_INVALID_HANDLE;
+    }
+
+    auto size = static_cast<std::streamsize>(pos);
     file.seekg(0, std::ios::beg);
+
+    if (!file.good()) {
+        log(LogLevel::Error, ("Failed to seek in shader file: " + path).c_str());
+        return BGFX_INVALID_HANDLE;
+    }
 
     const bgfx::Memory* mem = bgfx::alloc(static_cast<uint32_t>(size) + 1);
     file.read(reinterpret_cast<char*>(mem->data), size);
-    mem->data[size] = '\0';
 
+    if (file.gcount() != size) {
+        log(LogLevel::Error, ("Failed to read complete shader file: " + path).c_str());
+        // Note: bgfx::alloc memory is owned by bgfx and will be freed internally
+        return BGFX_INVALID_HANDLE;
+    }
+
+    mem->data[size] = '\0';
     return bgfx::createShader(mem);
 }
 
@@ -222,6 +249,39 @@ public:
             log(LogLevel::Warn, "Failed to load shadow shader program");
         }
 
+        // Load debug shader
+        bgfx::ShaderHandle debug_vsh = load_shader_from_file(shader_path + "vs_debug.sc.bin");
+        bgfx::ShaderHandle debug_fsh = load_shader_from_file(shader_path + "fs_debug.sc.bin");
+
+        if (bgfx::isValid(debug_vsh) && bgfx::isValid(debug_fsh)) {
+            m_debug_program = bgfx::createProgram(debug_vsh, debug_fsh, true);
+            log(LogLevel::Info, "Debug shader program loaded successfully");
+        } else {
+            log(LogLevel::Warn, "Failed to load debug shader program");
+        }
+
+        // Initialize debug vertex layout
+        m_debug_vertex_layout
+            .begin()
+            .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+            .add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)  // Normalized
+            .end();
+
+        // Load skinned PBR shader
+        bgfx::ShaderHandle skinned_vsh = load_shader_from_file(shader_path + "vs_skinned_pbr.sc.bin");
+        // Skinned PBR uses the same fragment shader as regular PBR
+        bgfx::ShaderHandle skinned_fsh = load_shader_from_file(shader_path + "fs_pbr.sc.bin");
+
+        if (bgfx::isValid(skinned_vsh) && bgfx::isValid(skinned_fsh)) {
+            m_skinned_pbr_program = bgfx::createProgram(skinned_vsh, skinned_fsh, true);
+            log(LogLevel::Info, "Skinned PBR shader program loaded successfully");
+        } else {
+            log(LogLevel::Warn, "Failed to load skinned PBR shader program");
+        }
+
+        // Create bone matrices uniform (128 bones * 4 vec4s per matrix = 512 vec4s)
+        m_u_boneMatrices = bgfx::createUniform("u_boneMatrices", bgfx::UniformType::Vec4, 512);
+
         // Create PBR uniforms
         s_pbr_uniforms.create();
 
@@ -247,17 +307,36 @@ public:
         }
 
         // Destroy shader programs
+        // Check if PBR program is different BEFORE destroying anything
+        bool pbr_is_separate = bgfx::isValid(m_pbr_program) &&
+                               bgfx::isValid(m_default_program) &&
+                               m_pbr_program.idx != m_default_program.idx;
+
         if (bgfx::isValid(m_default_program)) {
             bgfx::destroy(m_default_program);
             m_default_program = BGFX_INVALID_HANDLE;
         }
-        if (bgfx::isValid(m_pbr_program) && m_pbr_program.idx != m_default_program.idx) {
+        if (pbr_is_separate) {
             bgfx::destroy(m_pbr_program);
             m_pbr_program = BGFX_INVALID_HANDLE;
+        } else {
+            m_pbr_program = BGFX_INVALID_HANDLE;  // Was alias to default, already destroyed
         }
         if (bgfx::isValid(m_shadow_program)) {
             bgfx::destroy(m_shadow_program);
             m_shadow_program = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_debug_program)) {
+            bgfx::destroy(m_debug_program);
+            m_debug_program = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_skinned_pbr_program)) {
+            bgfx::destroy(m_skinned_pbr_program);
+            m_skinned_pbr_program = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_u_boneMatrices)) {
+            bgfx::destroy(m_u_boneMatrices);
+            m_u_boneMatrices = BGFX_INVALID_HANDLE;
         }
 
         // Destroy PBR uniforms
@@ -733,28 +812,169 @@ public:
 
     void submit_skinned_mesh(RenderView view, MeshHandle mesh, MaterialHandle material,
                               const Mat4& transform, const Mat4* bone_matrices, uint32_t bone_count) override {
-        // For now, submit as regular mesh (skinning requires additional shader setup)
-        DrawCall call;
-        call.mesh = mesh;
-        call.material = material;
-        call.transform = transform;
-        queue_draw(call, view);
-        // TODO: Implement proper skinned mesh rendering with bone matrices
+        if (!bgfx::isValid(m_skinned_pbr_program) || !bone_matrices || bone_count == 0) {
+            // Fall back to regular mesh rendering
+            submit_mesh(view, mesh, material, transform);
+            return;
+        }
+
+        // Get mesh data
+        auto mesh_it = m_meshes.find(mesh.id);
+        if (mesh_it == m_meshes.end()) return;
+
+        const BGFXMesh& bgfx_mesh = mesh_it->second;
+        if (!bgfx::isValid(bgfx_mesh.vbh)) return;
+
+        // Get material data
+        MaterialData* mat_data = nullptr;
+        auto mat_it = m_materials.find(material.id);
+        if (mat_it != m_materials.end()) {
+            mat_data = &mat_it->second;
+        }
+
+        uint16_t view_id = static_cast<uint16_t>(view);
+
+        // Set transform
+        bgfx::setTransform(&transform);
+
+        // Upload bone matrices (clamped to 128 bones max)
+        uint32_t actual_bones = std::min(bone_count, 128u);
+        bgfx::setUniform(m_u_boneMatrices, bone_matrices, actual_bones * 4);  // 4 vec4s per matrix
+
+        // Set vertex/index buffers
+        bgfx::setVertexBuffer(0, bgfx_mesh.vbh);
+        if (bgfx::isValid(bgfx_mesh.ibh)) {
+            bgfx::setIndexBuffer(bgfx_mesh.ibh);
+        }
+
+        // Set PBR material uniforms (same as regular PBR)
+        if (mat_data) {
+            Vec4 albedo_color(mat_data->albedo.x, mat_data->albedo.y, mat_data->albedo.z, mat_data->albedo.w);
+            Vec4 pbr_params(mat_data->metallic, mat_data->roughness, mat_data->ao, mat_data->alpha_cutoff);
+            Vec4 emissive_color(mat_data->emissive.x, mat_data->emissive.y, mat_data->emissive.z, 0.0f);
+
+            bgfx::setUniform(s_pbr_uniforms.u_albedoColor, &albedo_color);
+            bgfx::setUniform(s_pbr_uniforms.u_pbrParams, &pbr_params);
+            bgfx::setUniform(s_pbr_uniforms.u_emissiveColor, &emissive_color);
+
+            // Set textures
+            auto bind_texture = [this](bgfx::UniformHandle uniform, TextureHandle tex, uint8_t slot, bgfx::TextureHandle fallback) {
+                auto it = m_textures.find(tex.id);
+                if (it != m_textures.end() && bgfx::isValid(it->second)) {
+                    bgfx::setTexture(slot, uniform, it->second);
+                } else {
+                    bgfx::setTexture(slot, uniform, fallback);
+                }
+            };
+
+            bind_texture(s_pbr_uniforms.s_albedo, mat_data->albedo_map, 0, m_white_texture);
+            bind_texture(s_pbr_uniforms.s_normal, mat_data->normal_map, 1, m_default_normal);
+            bind_texture(s_pbr_uniforms.s_metallicRoughness, mat_data->metallic_roughness_map, 2, m_white_texture);
+            bind_texture(s_pbr_uniforms.s_ao, mat_data->ao_map, 3, m_white_texture);
+            bind_texture(s_pbr_uniforms.s_emissive, mat_data->emissive_map, 4, m_white_texture);
+        }
+
+        // Set camera position for PBR specular
+        Vec4 cam_pos(m_camera_position.x, m_camera_position.y, m_camera_position.z, 1.0f);
+        bgfx::setUniform(s_pbr_uniforms.u_cameraPos, &cam_pos);
+
+        // Set render state
+        uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                         BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
+                         BGFX_STATE_CULL_CCW | BGFX_STATE_MSAA;
+
+        bgfx::setState(state);
+        bgfx::submit(view_id, m_skinned_pbr_program);
     }
 
     void flush_debug_draw(RenderView view) override {
-        // Debug draw is handled separately - stub for now
-        // TODO: Implement debug line/shape rendering
+        if (!bgfx::isValid(m_debug_program)) return;
+
+        const auto& lines = DebugDraw::get_lines();
+        if (lines.empty()) return;
+
+        // Filter lines based on view (depth tested vs overlay)
+        bool depth_test = (view == RenderView::Debug);
+        std::vector<const DebugDraw::DebugLine*> filtered_lines;
+        for (const auto& line : lines) {
+            if (line.depth_test == depth_test) {
+                filtered_lines.push_back(&line);
+            }
+        }
+
+        if (filtered_lines.empty()) return;
+
+        uint16_t view_id = static_cast<uint16_t>(view);
+
+        // Each line has 2 vertices, need position (3 floats) + color (4 bytes packed)
+        uint32_t num_lines = static_cast<uint32_t>(filtered_lines.size());
+        uint32_t num_vertices = num_lines * 2;
+
+        // Check if we can allocate transient buffer
+        if (!bgfx::getAvailTransientVertexBuffer(num_vertices, m_debug_vertex_layout)) {
+            return;  // Not enough space
+        }
+
+        bgfx::TransientVertexBuffer tvb;
+        bgfx::allocTransientVertexBuffer(&tvb, num_vertices, m_debug_vertex_layout);
+
+        // Debug vertex: 3 floats for position + 1 uint32 for packed RGBA color
+        struct DebugVertex {
+            float x, y, z;
+            uint32_t abgr;
+        };
+
+        auto* vertex = reinterpret_cast<DebugVertex*>(tvb.data);
+        for (const auto* line : filtered_lines) {
+            // Convert RGBA to ABGR for bgfx
+            auto rgba_to_abgr = [](uint32_t rgba) -> uint32_t {
+                uint8_t r = (rgba >> 24) & 0xFF;
+                uint8_t g = (rgba >> 16) & 0xFF;
+                uint8_t b = (rgba >> 8) & 0xFF;
+                uint8_t a = rgba & 0xFF;
+                return (a << 24) | (b << 16) | (g << 8) | r;
+            };
+
+            // First vertex
+            vertex->x = line->a.x;
+            vertex->y = line->a.y;
+            vertex->z = line->a.z;
+            vertex->abgr = rgba_to_abgr(line->color_a);
+            vertex++;
+
+            // Second vertex
+            vertex->x = line->b.x;
+            vertex->y = line->b.y;
+            vertex->z = line->b.z;
+            vertex->abgr = rgba_to_abgr(line->color_b);
+            vertex++;
+        }
+
+        // Set render state
+        uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                         BGFX_STATE_PT_LINES | BGFX_STATE_LINEAA;
+
+        if (depth_test) {
+            state |= BGFX_STATE_DEPTH_TEST_LESS | BGFX_STATE_WRITE_Z;
+        }
+
+        bgfx::setVertexBuffer(0, &tvb);
+        bgfx::setState(state);
+        bgfx::submit(view_id, m_debug_program);
     }
 
     void blit_to_screen(RenderView view, TextureHandle source) override {
         // Blit a texture to the final backbuffer
         auto it = m_textures.find(source.id);
         if (it != m_textures.end()) {
-            bgfx::setTexture(0, bgfx::createUniform("s_texture", bgfx::UniformType::Sampler), it->second);
+            bgfx::setTexture(0, s_pbr_uniforms.s_blit_texture, it->second);
             bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
-            // Submit fullscreen quad to blit
-            // TODO: Use proper fullscreen blit program
+
+            // Submit fullscreen quad using the default program
+            // A proper implementation would use a dedicated blit shader
+            if (bgfx::isValid(m_default_program)) {
+                bgfx::submit(static_cast<uint16_t>(view), m_default_program);
+            }
         }
     }
 
@@ -957,6 +1177,14 @@ public:
 
     bool get_vsync() const override { return m_vsync; }
 
+    uint16_t get_native_texture_handle(TextureHandle h) const override {
+        auto it = m_textures.find(h.id);
+        if (it != m_textures.end()) {
+            return it->second.idx;
+        }
+        return bgfx::kInvalidHandle;
+    }
+
 private:
     // Internal mesh structure
     struct BGFXMesh {
@@ -1118,6 +1346,14 @@ private:
     bgfx::ProgramHandle m_default_program = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_pbr_program = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_shadow_program = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_debug_program = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_skinned_pbr_program = BGFX_INVALID_HANDLE;
+
+    // Skinned mesh uniform (128 bones * 4 vec4s per matrix = 512 vec4s)
+    bgfx::UniformHandle m_u_boneMatrices = BGFX_INVALID_HANDLE;
+
+    // Debug vertex layout (position + color)
+    bgfx::VertexLayout m_debug_vertex_layout;
 
     // Default textures for PBR
     bgfx::TextureHandle m_white_texture = BGFX_INVALID_HANDLE;

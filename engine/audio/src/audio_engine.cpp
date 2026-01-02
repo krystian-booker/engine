@@ -56,13 +56,30 @@ extern void set_reverb_params_impl(AudioEngine::Impl* impl, const AudioEngine::R
 extern void set_sound_paused_impl(AudioEngine::Impl* impl, SoundHandle h, bool paused);
 extern void set_sound_volume_handle_impl(AudioEngine::Impl* impl, SoundHandle h, float volume);
 extern void set_sound_pitch_handle_impl(AudioEngine::Impl* impl, SoundHandle h, float pitch);
-
-extern void set_sound_pitch_handle_impl(AudioEngine::Impl* impl, SoundHandle h, float pitch);
 extern void set_sound_attenuation_model_impl(AudioEngine::Impl* impl, SoundHandle h, AttenuationModel model);
 extern void set_sound_rolloff_impl(AudioEngine::Impl* impl, SoundHandle h, float rolloff);
 extern void set_sound_min_max_distance_impl(AudioEngine::Impl* impl, SoundHandle h, float min_dist, float max_dist);
 extern void set_sound_cone_impl(AudioEngine::Impl* impl, SoundHandle h, float inner_angle_deg, float outer_angle_deg, float outer_gain);
 extern void set_sound_doppler_factor_impl(AudioEngine::Impl* impl, SoundHandle h, float factor);
+
+// Error handling extern declarations
+extern void set_error_callback_impl(AudioEngine::Impl* impl, AudioErrorCallback callback);
+extern AudioResult get_last_error_impl(AudioEngine::Impl* impl);
+extern bool is_sound_valid_impl(AudioEngine::Impl* impl, SoundHandle h);
+extern bool is_music_valid_impl(AudioEngine::Impl* impl, MusicHandle h);
+extern bool is_bus_valid_impl(AudioEngine::Impl* impl, AudioBusHandle h);
+
+// Filter extern declarations
+extern void set_bus_lowpass_impl(AudioEngine::Impl* impl, AudioBusHandle bus, float cutoff_hz, bool enabled);
+extern void set_bus_highpass_impl(AudioEngine::Impl* impl, AudioBusHandle bus, float cutoff_hz, bool enabled);
+extern AudioEngine::FilterParams get_bus_filters_impl(AudioEngine::Impl* impl, AudioBusHandle bus);
+
+// Reverb preset extern declaration
+extern AudioEngine::ReverbParams get_reverb_preset_params(ReverbPreset preset);
+
+// Voice management extern declarations
+extern void set_max_voices_impl(AudioEngine::Impl* impl, uint32_t count);
+extern uint32_t get_max_voices_impl(AudioEngine::Impl* impl);
 
 // Constructor and destructor defined in miniaudio_impl.cpp where Impl is complete
 
@@ -249,6 +266,14 @@ void AudioEngine::set_reverb_params(const ReverbParams& params) {
     set_reverb_params_impl(m_impl.get(), params);
 }
 
+AudioEngine::ReverbParams AudioEngine::get_reverb_preset(ReverbPreset preset) {
+    return get_reverb_preset_params(preset);
+}
+
+void AudioEngine::set_reverb_preset(ReverbPreset preset) {
+    set_reverb_params(get_reverb_preset_params(preset));
+}
+
 void AudioEngine::pause(SoundHandle h) {
     set_sound_paused_impl(m_impl.get(), h, true);
 }
@@ -291,6 +316,51 @@ void AudioEngine::set_sound_cone(SoundHandle h, float inner_angle_deg, float out
 
 void AudioEngine::set_sound_doppler_factor(SoundHandle h, float factor) {
     set_sound_doppler_factor_impl(m_impl.get(), h, factor);
+}
+
+void AudioEngine::set_error_callback(AudioErrorCallback callback) {
+    set_error_callback_impl(m_impl.get(), std::move(callback));
+}
+
+AudioResult AudioEngine::get_last_error() const {
+    return get_last_error_impl(m_impl.get());
+}
+
+bool AudioEngine::is_valid(SoundHandle h) const {
+    return is_sound_valid_impl(m_impl.get(), h);
+}
+
+bool AudioEngine::is_valid(MusicHandle h) const {
+    return is_music_valid_impl(m_impl.get(), h);
+}
+
+bool AudioEngine::is_valid(AudioBusHandle h) const {
+    return is_bus_valid_impl(m_impl.get(), h);
+}
+
+void AudioEngine::set_bus_lowpass(AudioBusHandle bus, float cutoff_hz, bool enabled) {
+    set_bus_lowpass_impl(m_impl.get(), bus, cutoff_hz, enabled);
+}
+
+void AudioEngine::set_bus_highpass(AudioBusHandle bus, float cutoff_hz, bool enabled) {
+    set_bus_highpass_impl(m_impl.get(), bus, cutoff_hz, enabled);
+}
+
+void AudioEngine::set_bus_filters(AudioBusHandle bus, const FilterParams& params) {
+    set_bus_lowpass_impl(m_impl.get(), bus, params.lowpass_cutoff, params.lowpass_enabled);
+    set_bus_highpass_impl(m_impl.get(), bus, params.highpass_cutoff, params.highpass_enabled);
+}
+
+AudioEngine::FilterParams AudioEngine::get_bus_filters(AudioBusHandle bus) const {
+    return get_bus_filters_impl(m_impl.get(), bus);
+}
+
+void AudioEngine::set_max_voices(uint32_t count) {
+    set_max_voices_impl(m_impl.get(), count);
+}
+
+uint32_t AudioEngine::get_max_voices() const {
+    return get_max_voices_impl(m_impl.get());
 }
 
 // Global instance

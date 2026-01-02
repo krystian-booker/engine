@@ -2,6 +2,7 @@
 
 #include <engine/cinematic/track.hpp>
 #include <engine/scene/entity.hpp>
+#include <cassert>
 #include <string>
 
 namespace engine::cinematic {
@@ -42,16 +43,26 @@ public:
     void clear_clips();
 
     size_t clip_count() const { return m_clips.size(); }
-    AnimationClipRef& get_clip(size_t index) { return m_clips[index]; }
-    const AnimationClipRef& get_clip(size_t index) const { return m_clips[index]; }
+    AnimationClipRef& get_clip(size_t index) {
+        assert(index < m_clips.size() && "Clip index out of bounds");
+        return m_clips[index];
+    }
+    const AnimationClipRef& get_clip(size_t index) const {
+        assert(index < m_clips.size() && "Clip index out of bounds");
+        return m_clips[index];
+    }
 
     // Add explicit blends
     void add_blend(const AnimationBlend& blend);
 
     // Track interface
     float get_duration() const override;
-    void evaluate(float time) override;
+    void evaluate(float time, scene::World& world) override;
     void reset() override;
+
+    // Serialization
+    void serialize(nlohmann::json& j) const override;
+    void deserialize(const nlohmann::json& j) override;
 
     // Query active clip at time
     const AnimationClipRef* get_active_clip(float time) const;
@@ -89,8 +100,12 @@ public:
 
     // Track interface
     float get_duration() const override;
-    void evaluate(float time) override;
+    void evaluate(float time, scene::World& world) override;
     void reset() override;
+
+    // Serialization
+    void serialize(nlohmann::json& j) const override;
+    void deserialize(const nlohmann::json& j) override;
 
     // Sample transform at time
     Vec3 sample_position(float time) const;

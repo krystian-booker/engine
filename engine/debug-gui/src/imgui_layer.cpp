@@ -7,7 +7,58 @@
 // ImGui headers from bgfx's 3rdparty
 #include <imgui.h>
 
+#include <fstream>
+#include <string>
+
 namespace engine::debug_gui {
+
+namespace {
+
+// Helper function to load shader binary from file
+bgfx::ShaderHandle load_shader_from_file(const std::string& path) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) {
+        return BGFX_INVALID_HANDLE;
+    }
+
+    auto size = file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    const bgfx::Memory* mem = bgfx::alloc(static_cast<uint32_t>(size) + 1);
+    file.read(reinterpret_cast<char*>(mem->data), size);
+    mem->data[size] = '\0';
+
+    return bgfx::createShader(mem);
+}
+
+// Get shader path based on renderer type
+std::string get_shader_path() {
+    bgfx::RendererType::Enum renderer = bgfx::getRendererType();
+    std::string shader_dir = "shaders/";
+
+    switch (renderer) {
+        case bgfx::RendererType::Direct3D11:
+        case bgfx::RendererType::Direct3D12:
+            shader_dir += "dx11/";
+            break;
+        case bgfx::RendererType::OpenGL:
+            shader_dir += "glsl/";
+            break;
+        case bgfx::RendererType::Vulkan:
+            shader_dir += "spirv/";
+            break;
+        case bgfx::RendererType::Metal:
+            shader_dir += "metal/";
+            break;
+        default:
+            shader_dir += "dx11/";
+            break;
+    }
+
+    return shader_dir;
+}
+
+} // anonymous namespace
 
 ImGuiLayer::ImGuiLayer() = default;
 
@@ -44,13 +95,18 @@ bool ImGuiLayer::init(void* /*native_window_handle*/, uint32_t width, uint32_t h
     m_u_texture = bgfx::createUniform("s_tex", bgfx::UniformType::Sampler);
 
     // Load shader program
-    // For now, we'll create a simple embedded shader program
-    // In production, these would be compiled shaders loaded from disk
-    bgfx::RendererType::Enum renderer = bgfx::getRendererType();
+    std::string shader_path = get_shader_path();
+    bgfx::ShaderHandle vsh = load_shader_from_file(shader_path + "vs_imgui.sc.bin");
+    bgfx::ShaderHandle fsh = load_shader_from_file(shader_path + "fs_imgui.sc.bin");
 
-    // Create shader program - for now use built-in shaders if available
-    // TODO: Load compiled shaders from disk
-    // m_program = loadProgram("vs_imgui", "fs_imgui");
+    if (bgfx::isValid(vsh) && bgfx::isValid(fsh)) {
+        m_program = bgfx::createProgram(vsh, fsh, true);
+        core::log(core::LogLevel::Info, "ImGui shader program loaded");
+    } else {
+        core::log(core::LogLevel::Warn, "Failed to load ImGui shaders - debug GUI will not render");
+        if (bgfx::isValid(vsh)) bgfx::destroy(vsh);
+        if (bgfx::isValid(fsh)) bgfx::destroy(fsh);
+    }
 
     // Setup style
     setup_style();
@@ -211,8 +267,8 @@ void ImGuiLayer::render_draw_data(ImDrawData* draw_data, render::RenderView view
 
                 // Bind texture
                 bgfx::TextureHandle tex = m_font_texture;
-                if (pcmd->TextureId) {
-                    tex.idx = static_cast<uint16_t>(reinterpret_cast<uintptr_t>(pcmd->TextureId));
+                if (pcmd->GetTexID()) {
+                    tex.idx = static_cast<uint16_t>((uintptr_t)pcmd->GetTexID());
                 }
 
                 if (bgfx::isValid(tex)) {
@@ -301,7 +357,7 @@ void ImGuiLayer::build_fonts() {
         io.Fonts->AddFontDefault();
     }
 
-    io.Fonts->Build();
+    // io.Fonts->Build(); // Not needed in 1.92+
     create_font_texture();
 }
 
@@ -340,9 +396,10 @@ void ImGuiLayer::setup_style() {
     colors[ImGuiCol_Button] = ImVec4(0.20f, 0.40f, 0.60f, 0.62f);
     colors[ImGuiCol_ButtonHovered] = ImVec4(0.26f, 0.52f, 0.78f, 0.79f);
     colors[ImGuiCol_ButtonActive] = ImVec4(0.26f, 0.52f, 0.78f, 1.00f);
-    colors[ImGuiCol_Tab] = ImVec4(0.16f, 0.16f, 0.18f, 1.00f);
-    colors[ImGuiCol_TabHovered] = ImVec4(0.26f, 0.52f, 0.78f, 0.80f);
-    colors[ImGuiCol_TabActive] = ImVec4(0.20f, 0.40f, 0.60f, 1.00f);
+    // Tab colors (commented out as they might not be available in minimized ImGui params)
+    // colors[ImGuiCol_Tab] = ImVec4(0.16f, 0.16f, 0.18f, 1.00f);
+    // colors[ImGuiCol_TabHovered] = ImVec4(0.26f, 0.52f, 0.78f, 0.80f);
+    // colors[ImGuiCol_TabActive] = ImVec4(0.20f, 0.40f, 0.60f, 1.00f);
     colors[ImGuiCol_ScrollbarBg] = ImVec4(0.10f, 0.10f, 0.12f, 0.53f);
     colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.31f, 0.31f, 0.35f, 1.00f);
     colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.41f, 0.41f, 0.45f, 1.00f);
@@ -353,9 +410,14 @@ void ImGuiLayer::create_font_texture() {
     destroy_font_texture();
 
     ImGuiIO& io = ImGui::GetIO();
-    unsigned char* pixels;
-    int width, height;
-    io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
+    
+    // Use ImTextureData directly as GetTexDataAsRGBA32 is obsolete/disabled
+    ImTextureData* tex_data = io.Fonts->TexData;
+    IM_ASSERT(tex_data != nullptr);
+    
+    unsigned char* pixels = tex_data->Pixels;
+    int width = tex_data->Width;
+    int height = tex_data->Height;
 
     m_font_texture = bgfx::createTexture2D(
         static_cast<uint16_t>(width),
@@ -367,7 +429,7 @@ void ImGuiLayer::create_font_texture() {
         bgfx::copy(pixels, width * height * 4)
     );
 
-    io.Fonts->SetTexID(reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(m_font_texture.idx)));
+    tex_data->SetTexID((ImTextureID)(uintptr_t)m_font_texture.idx);
 }
 
 void ImGuiLayer::destroy_font_texture() {

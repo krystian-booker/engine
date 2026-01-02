@@ -42,6 +42,23 @@ entt::meta_any ComponentFactory::create(entt::registry& registry, entt::entity e
         storage->push(entity);
     }
 
+    // Apply constructed instance data to the component in storage
+    if (instance) {
+        void* ptr = storage->value(entity);
+        auto target = type.from_void(ptr);
+        auto* type_info = type_registry.get_type_info(type_name);
+        if (type_info) {
+            for (const auto& prop : type_info->properties) {
+                if (prop.getter && prop.setter) {
+                    auto value = prop.getter(instance);
+                    if (value) {
+                        prop.setter(target, value);
+                    }
+                }
+            }
+        }
+    }
+
     return instance;
 }
 
@@ -100,6 +117,8 @@ entt::meta_any ComponentFactory::get(const entt::registry& registry, entt::entit
     auto* storage = registry.storage(type.id());
     if (storage && storage->contains(entity)) {
         const void* ptr = storage->value(entity);
+        // const_cast required: EnTT's from_void() only accepts non-const void*.
+        // The resulting meta_any preserves const semantics internally.
         return type.from_void(const_cast<void*>(ptr));
     }
 

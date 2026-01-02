@@ -1,5 +1,6 @@
 #include <engine/streaming/scene_streaming.hpp>
 #include <engine/streaming/streaming_volume.hpp>
+#include <engine/render/debug_draw.hpp>
 #include <algorithm>
 #include <chrono>
 
@@ -42,12 +43,15 @@ void SceneStreamingSystem::shutdown() {
     if (!m_initialized) return;
 
     // Wait for async loads to complete
-    for (auto& task : m_async_loads) {
-        if (task.future.valid()) {
-            task.future.wait();
+    {
+        std::lock_guard<std::mutex> lock(m_async_mutex);
+        for (auto& task : m_async_loads) {
+            if (task && task->future.valid()) {
+                task->future.wait();
+            }
         }
+        m_async_loads.clear();
     }
-    m_async_loads.clear();
 
     // Unload all cells
     for (auto& [name, cell] : m_cells) {
@@ -352,15 +356,17 @@ void SceneStreamingSystem::process_load_queue() {
         cell->state = CellState::Loading;
 
         if (m_cell_loader) {
-            // Use async loading
-            AsyncLoadTask task;
-            task.cell_name = request.cell_name;
+            // Use async loading with stable pointer for lambda capture
+            auto task = std::make_unique<AsyncLoadTask>();
+            task->cell_name = request.cell_name;
+            auto* entities_ptr = &task->loaded_entities;
 
             std::string scene_path = cell->scene_path;
-            task.future = std::async(std::launch::async, [this, scene_path, &task]() {
-                return m_cell_loader(scene_path, task.loaded_entities);
+            task->future = std::async(std::launch::async, [this, scene_path, entities_ptr]() {
+                return m_cell_loader(scene_path, *entities_ptr);
             });
 
+            std::lock_guard<std::mutex> lock(m_async_mutex);
             m_async_loads.push_back(std::move(task));
         } else {
             // No loader, just mark as loaded
@@ -393,17 +399,20 @@ void SceneStreamingSystem::process_unload_queue() {
 }
 
 void SceneStreamingSystem::check_async_loads() {
-    for (auto it = m_async_loads.begin(); it != m_async_loads.end();) {
-        if (it->future.valid() &&
-            it->future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
+    std::lock_guard<std::mutex> lock(m_async_mutex);
 
-            bool success = it->future.get();
-            auto* cell = get_cell(it->cell_name);
+    for (auto it = m_async_loads.begin(); it != m_async_loads.end();) {
+        auto& task = *it;
+        if (task->future.valid() &&
+            task->future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
+
+            bool success = task->future.get();
+            auto* cell = get_cell(task->cell_name);
 
             if (cell) {
                 if (success) {
                     cell->state = CellState::Loaded;
-                    cell->entity_ids = std::move(it->loaded_entities);
+                    cell->entity_ids = std::move(task->loaded_entities);
                     if (m_on_loaded) m_on_loaded(cell->name);
                 } else {
                     cell->state = CellState::Unloaded;
@@ -476,7 +485,22 @@ void SceneStreamingSystem::update_cell_visibility(StreamingCellData& cell, const
 }
 
 void SceneStreamingSystem::debug_draw() const {
-    // Implementation would use debug draw system
+    using namespace engine::render;
+
+    for (const auto& [name, cell] : m_cells) {
+        uint32_t color;
+        switch (cell.state) {
+            case CellState::Unloaded:  color = DebugDraw::MAGENTA; break;
+            case CellState::Loading:   color = DebugDraw::YELLOW; break;
+            case CellState::Loaded:    color = DebugDraw::CYAN; break;
+            case CellState::Visible:   color = DebugDraw::GREEN; break;
+            case CellState::Unloading: color = DebugDraw::ORANGE; break;
+            default:                   color = DebugDraw::WHITE; break;
+        }
+        DebugDraw::aabb(cell.bounds, color);
+        Vec3 center = (cell.bounds.min + cell.bounds.max) * 0.5f;
+        DebugDraw::text_3d(center, name, color);
+    }
 }
 
 // StreamingVolumeManager implementation
@@ -560,7 +584,7 @@ void StreamingVolumeManager::update(const Vec3& player_position, uint32_t player
         float target_fade = inside ? 1.0f : 0.0f;
         if (volume.fade_distance > 0.0f) {
             float dist = get_signed_distance(volume, player_position);
-            if (dist < volume.fade_distance) {
+            if (dist > 0.0f && dist < volume.fade_distance) {
                 target_fade = 1.0f - (dist / volume.fade_distance);
             }
         }
@@ -657,8 +681,9 @@ bool StreamingVolumeManager::test_point_in_volume(const StreamingVolume& volume,
     Quat inv_rot = conjugate(volume.rotation);
     local = inv_rot * local;
 
-    // Apply inverse scale
-    local = local / volume.scale;
+    // Apply inverse scale (guard against zero)
+    Vec3 safe_scale = glm::max(volume.scale, Vec3(0.0001f));
+    local = local / safe_scale;
 
     switch (volume.shape) {
         case VolumeShape::Box:
@@ -691,7 +716,8 @@ float StreamingVolumeManager::get_signed_distance(const StreamingVolume& volume,
     Vec3 local = point - volume.position;
     Quat inv_rot = conjugate(volume.rotation);
     local = inv_rot * local;
-    local = local / volume.scale;
+    Vec3 safe_scale = glm::max(volume.scale, Vec3(0.0001f));
+    local = local / safe_scale;
 
     switch (volume.shape) {
         case VolumeShape::Box: {
@@ -723,7 +749,39 @@ float StreamingVolumeManager::get_signed_distance(const StreamingVolume& volume,
 }
 
 void StreamingVolumeManager::debug_draw() const {
-    // Implementation would use debug draw system
+    using namespace engine::render;
+
+    for (const auto& volume : m_volumes) {
+        if (!volume.enabled) continue;
+        uint32_t color = volume.is_active ? DebugDraw::GREEN : DebugDraw::CYAN;
+
+        switch (volume.shape) {
+            case VolumeShape::Box:
+                DebugDraw::box(volume.position, volume.box_extents * 2.0f,
+                              volume.rotation, color);
+                break;
+            case VolumeShape::Sphere:
+                DebugDraw::sphere(volume.position, volume.sphere_radius, color);
+                break;
+            case VolumeShape::Capsule: {
+                Vec3 up = volume.rotation * Vec3{0.0f, 1.0f, 0.0f};
+                float half = volume.capsule_height * 0.5f - volume.capsule_radius;
+                DebugDraw::capsule(volume.position - up * half,
+                                   volume.position + up * half,
+                                   volume.capsule_radius, color);
+                break;
+            }
+            case VolumeShape::Cylinder: {
+                Vec3 up = volume.rotation * Vec3{0.0f, 1.0f, 0.0f};
+                float half = volume.cylinder_height * 0.5f;
+                DebugDraw::cylinder(volume.position - up * half,
+                                    volume.position + up * half,
+                                    volume.cylinder_radius, color);
+                break;
+            }
+        }
+        DebugDraw::text_3d(volume.position, volume.name, color);
+    }
 }
 
 } // namespace engine::streaming

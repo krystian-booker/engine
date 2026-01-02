@@ -39,6 +39,7 @@ target_link_libraries(engine_cinematic
         engine::core
         engine::scene
         engine::audio
+        engine::render
     PRIVATE
         engine_compiler_flags
         nlohmann_json::nlohmann_json

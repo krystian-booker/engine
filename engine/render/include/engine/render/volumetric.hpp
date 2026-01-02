@@ -142,6 +142,14 @@ private:
 
     // Previous frame data for reprojection
     Mat4 m_prev_view_proj{1.0f};
+
+    // Current frame data (stored in update() for use in passes)
+    TextureHandle m_depth_texture;
+    std::array<TextureHandle, 4> m_shadow_maps;
+    std::array<Mat4, 4> m_shadow_matrices;
+    Vec3 m_camera_pos{0.0f};
+    float m_near_plane = 0.1f;
+    float m_far_plane = 100.0f;
 };
 
 // Henyey-Greenstein phase function helpers

@@ -80,4 +80,54 @@ float calculate_cone_attenuation(const Vec3& source_forward,
     }
 }
 
+bool validate_audio_source(AudioSource& source) {
+    bool corrected = false;
+
+    // Volume: clamp to [0, 2] (allow up to 2x boost)
+    float clamped_vol = std::clamp(source.volume, 0.0f, 2.0f);
+    if (clamped_vol != source.volume) {
+        source.volume = clamped_vol;
+        corrected = true;
+    }
+
+    // Pitch: clamp to [0.1, 4.0] (reasonable range)
+    float clamped_pitch = std::clamp(source.pitch, 0.1f, 4.0f);
+    if (clamped_pitch != source.pitch) {
+        source.pitch = clamped_pitch;
+        corrected = true;
+    }
+
+    // Rolloff: must be > 0
+    if (source.rolloff <= 0.0f) {
+        source.rolloff = 1.0f;
+        corrected = true;
+    }
+
+    // Distances: min must be positive, max must be >= min
+    if (source.min_distance <= 0.0f) {
+        source.min_distance = 0.001f;
+        corrected = true;
+    }
+    if (source.max_distance < source.min_distance) {
+        std::swap(source.min_distance, source.max_distance);
+        corrected = true;
+    }
+
+    // Cone angles: clamp to [0, 360], ensure outer >= inner
+    source.cone_inner_angle = std::clamp(source.cone_inner_angle, 0.0f, 360.0f);
+    source.cone_outer_angle = std::clamp(source.cone_outer_angle, 0.0f, 360.0f);
+    if (source.cone_outer_angle < source.cone_inner_angle) {
+        std::swap(source.cone_inner_angle, source.cone_outer_angle);
+        corrected = true;
+    }
+
+    // Cone outer volume: clamp to [0, 1]
+    source.cone_outer_volume = std::clamp(source.cone_outer_volume, 0.0f, 1.0f);
+
+    // Doppler factor: clamp to [0, 10]
+    source.doppler_factor = std::clamp(source.doppler_factor, 0.0f, 10.0f);
+
+    return corrected;
+}
+
 } // namespace engine::audio

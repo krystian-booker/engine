@@ -61,8 +61,14 @@ int Application::run(int argc, char** argv) {
     m_system_registry = std::make_unique<plugin::SystemRegistry>();
     m_system_registry->set_engine_scheduler(m_engine_scheduler.get());
 
-    // TODO: Initialize renderer when render system is ready
-    // m_renderer = std::make_unique<render::Renderer>();
+    // Initialize renderer
+    m_renderer = render::create_bgfx_renderer();
+    if (m_renderer) {
+        if (!m_renderer->init(m_native_window, m_window_width, m_window_height)) {
+            log(LogLevel::Error, "Failed to initialize renderer");
+            m_renderer.reset();
+        }
+    }
 
     m_initialized = true;
 
@@ -150,6 +156,9 @@ int Application::run(int argc, char** argv) {
     // Destroy engine systems
     m_system_registry.reset();
     m_engine_scheduler.reset();
+    if (m_renderer) {
+        m_renderer->shutdown();
+    }
     m_renderer.reset();
     m_world.reset();
 
@@ -288,11 +297,6 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             events().dispatch(WindowFocusEvent{false});
             return 0;
 
-        case WM_KEYDOWN:
-            if (wParam == VK_ESCAPE && app) {
-                app->quit();
-            }
-            return 0;
     }
 
     return DefWindowProc(hwnd, msg, wParam, lParam);

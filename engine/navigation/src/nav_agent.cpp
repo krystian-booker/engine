@@ -217,11 +217,13 @@ void NavAgentSystem::follow_path(NavAgentComponent& agent, Vec3& position, float
 
     // Calculate desired speed (slow down when approaching target)
     float desired_speed = agent.speed;
-    float stopping_dist = (agent.speed * agent.speed) / (2.0f * agent.deceleration);
+    if (agent.deceleration > 0.0f) {
+        float stopping_dist = (agent.speed * agent.speed) / (2.0f * agent.deceleration);
 
-    if (remaining_distance < stopping_dist) {
-        desired_speed = std::sqrt(2.0f * agent.deceleration * remaining_distance);
-        desired_speed = std::max(desired_speed, 0.5f);  // Minimum speed
+        if (remaining_distance < stopping_dist) {
+            desired_speed = std::sqrt(2.0f * agent.deceleration * remaining_distance);
+            desired_speed = std::max(desired_speed, 0.5f);  // Minimum speed
+        }
     }
 
     // Accelerate/decelerate towards desired speed
@@ -316,12 +318,6 @@ float NavAgentSystem::get_remaining_distance(scene::World& world, uint32_t entit
 
 void NavAgentSystem::set_max_agents(int max_agents) {
     m_max_agents = max_agents;
-}
-
-void register_nav_agent_system(scene::World& /*world*/, NavAgentSystem& /*system*/) {
-    // TODO: Register with scheduler when available
-    // For now, manual update call is required
-    core::log(core::LogLevel::Info, "NavAgentSystem registered - call update() manually each frame");
 }
 
 } // namespace engine::navigation

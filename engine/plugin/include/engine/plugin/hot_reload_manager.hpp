@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <functional>
 #include <chrono>
+#include <mutex>
 #include <nlohmann/json_fwd.hpp>
 
 namespace engine::plugin {
@@ -79,6 +80,8 @@ private:
     double m_last_reload_time_ms = 0.0;
 
     bool m_initialized = false;
+    bool m_reload_in_progress = false;
+    mutable std::mutex m_reload_mutex;
 };
 
 } // namespace engine::plugin

@@ -26,6 +26,7 @@ target_link_libraries(engine_localization
         engine::core
     PRIVATE
         engine_compiler_flags
+        nlohmann_json::nlohmann_json
 )
 
 set_target_properties(engine_localization PROPERTIES

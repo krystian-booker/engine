@@ -1,4 +1,6 @@
 #include <engine/cinematic/audio_track.hpp>
+#include <engine/scene/world.hpp>
+#include <nlohmann/json.hpp>
 #include <algorithm>
 
 namespace engine::cinematic {
@@ -9,6 +11,10 @@ namespace engine::cinematic {
 
 AudioTrack::AudioTrack(const std::string& name)
     : Track(name, TrackType::Audio) {
+}
+
+AudioTrack::~AudioTrack() {
+    stop_all_sounds();
 }
 
 void AudioTrack::add_event(const AudioEvent& event) {
@@ -79,7 +85,7 @@ float AudioTrack::get_duration() const {
     return duration;
 }
 
-void AudioTrack::evaluate(float time) {
+void AudioTrack::evaluate(float time, scene::World& /*world*/) {
     if (!m_enabled || m_muted || !m_audio_engine) {
         return;
     }
@@ -175,9 +181,23 @@ void AudioTrack::process_event(const AudioEvent& event, float /*current_time*/) 
             }
             break;
 
-        case AudioEventType::FadeIn:
+        case AudioEventType::FadeIn: {
+            audio::SoundHandle handle = m_audio_engine->play(
+                event.sound_path,
+                0.0f,
+                event.loop
+            );
+            if (handle.valid()) {
+                m_active_sounds.push_back(handle);
+                m_audio_engine->fade_in(handle, event.fade_duration);
+            }
+            break;
+        }
+
         case AudioEventType::FadeOut:
-            // Would implement with volume automation
+            for (const auto& handle : m_active_sounds) {
+                m_audio_engine->fade_out(handle, event.fade_duration);
+            }
             break;
 
         case AudioEventType::SetVolume:
@@ -230,7 +250,7 @@ float MusicTrack::get_duration() const {
     return m_cues.back().time;
 }
 
-void MusicTrack::evaluate(float time) {
+void MusicTrack::evaluate(float time, scene::World& /*world*/) {
     if (!m_enabled || m_muted || !m_audio_engine) {
         return;
     }
@@ -268,6 +288,109 @@ void MusicTrack::reset() {
     }
     m_current_music = {};
     m_current_cue_index = 0;
+}
+
+// ============================================================================
+// AudioTrack Serialization
+// ============================================================================
+
+void AudioTrack::serialize(nlohmann::json& j) const {
+    j["events"] = nlohmann::json::array();
+    for (const auto& event : m_events) {
+        j["events"].push_back({
+            {"time", event.time},
+            {"type", static_cast<int>(event.type)},
+            {"sound_path", event.sound_path},
+            {"volume", event.volume},
+            {"pitch", event.pitch},
+            {"fade_duration", event.fade_duration},
+            {"loop", event.loop},
+            {"spatial", event.spatial},
+            {"position", {event.position.x, event.position.y, event.position.z}}
+        });
+    }
+
+    j["volume_keys"] = nlohmann::json::array();
+    for (const auto& key : m_volume_keys) {
+        j["volume_keys"].push_back({
+            {"time", key.time},
+            {"volume", key.volume},
+            {"easing", static_cast<int>(key.easing)}
+        });
+    }
+
+    j["master_volume"] = m_master_volume;
+}
+
+void AudioTrack::deserialize(const nlohmann::json& j) {
+    m_events.clear();
+    m_volume_keys.clear();
+    m_event_triggered.clear();
+
+    if (j.contains("events")) {
+        for (const auto& event_json : j["events"]) {
+            AudioEvent event;
+            event.time = event_json.value("time", 0.0f);
+            event.type = static_cast<AudioEventType>(event_json.value("type", 0));
+            event.sound_path = event_json.value("sound_path", "");
+            event.volume = event_json.value("volume", 1.0f);
+            event.pitch = event_json.value("pitch", 1.0f);
+            event.fade_duration = event_json.value("fade_duration", 0.0f);
+            event.loop = event_json.value("loop", false);
+            event.spatial = event_json.value("spatial", false);
+            if (event_json.contains("position")) {
+                auto& pos = event_json["position"];
+                event.position = Vec3{pos[0], pos[1], pos[2]};
+            }
+            m_events.push_back(event);
+            m_event_triggered.push_back(false);
+        }
+    }
+
+    if (j.contains("volume_keys")) {
+        for (const auto& key_json : j["volume_keys"]) {
+            VolumeKeyframe key;
+            key.time = key_json.value("time", 0.0f);
+            key.volume = key_json.value("volume", 1.0f);
+            key.easing = static_cast<EaseType>(key_json.value("easing", 0));
+            m_volume_keys.push_back(key);
+        }
+    }
+
+    m_master_volume = j.value("master_volume", 1.0f);
+}
+
+// ============================================================================
+// MusicTrack Serialization
+// ============================================================================
+
+void MusicTrack::serialize(nlohmann::json& j) const {
+    j["cues"] = nlohmann::json::array();
+    for (const auto& cue : m_cues) {
+        j["cues"].push_back({
+            {"time", cue.time},
+            {"music_path", cue.music_path},
+            {"fade_duration", cue.fade_duration},
+            {"is_stinger", cue.is_stinger},
+            {"duck_amount", cue.duck_amount}
+        });
+    }
+}
+
+void MusicTrack::deserialize(const nlohmann::json& j) {
+    m_cues.clear();
+
+    if (j.contains("cues")) {
+        for (const auto& cue_json : j["cues"]) {
+            MusicCue cue;
+            cue.time = cue_json.value("time", 0.0f);
+            cue.music_path = cue_json.value("music_path", "");
+            cue.fade_duration = cue_json.value("fade_duration", 1.0f);
+            cue.is_stinger = cue_json.value("is_stinger", false);
+            cue.duck_amount = cue_json.value("duck_amount", 0.5f);
+            m_cues.push_back(cue);
+        }
+    }
 }
 
 } // namespace engine::cinematic

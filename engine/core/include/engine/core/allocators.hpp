@@ -82,8 +82,8 @@ public:
         , m_allocated(0)
     {
         // Ensure each slot can hold at least a pointer for the free list
-        static_assert(sizeof(T) >= sizeof(void*) || sizeof(FreeNode) <= sizeof(T),
-            "Pool element too small for free list");
+        static_assert(sizeof(T) >= sizeof(void*),
+            "Pool element must be at least pointer-sized for free list");
 
         m_pool = static_cast<T*>(::operator new(sizeof(T) * pool_size));
         m_free_list = nullptr;

@@ -40,7 +40,9 @@ public:
     virtual void end_object() = 0;
 
     // Array support
-    virtual size_t begin_array(const char* name) = 0;  // Returns array size when reading
+    // count: When writing, pass the array size to serialize. When reading, count is ignored.
+    // Returns: When reading, returns the array size from the data. When writing, returns count.
+    virtual size_t begin_array(const char* name, size_t count = 0) = 0;
     virtual void end_array() = 0;
 };
 
@@ -76,7 +78,7 @@ public:
     bool begin_object(const char* name) override;
     void end_object() override;
 
-    size_t begin_array(const char* name) override;
+    size_t begin_array(const char* name, size_t count = 0) override;
     void end_array() override;
 
     // Get the JSON string (for writing)
@@ -124,7 +126,7 @@ public:
     bool begin_object(const char* name) override;
     void end_object() override;
 
-    size_t begin_array(const char* name) override;
+    size_t begin_array(const char* name, size_t count = 0) override;
     void end_array() override;
 
     // Get the binary data (for writing)

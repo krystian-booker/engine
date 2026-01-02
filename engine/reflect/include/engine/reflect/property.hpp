@@ -29,7 +29,7 @@ struct PropertyMeta {
 
     PropertyMeta() = default;
 
-    PropertyMeta& set_display_name(const std::string& name) { display_name = name; return *this; }
+    PropertyMeta& set_display_name(const std::string& new_name) { display_name = new_name; return *this; }
     PropertyMeta& set_category(const std::string& cat) { category = cat; return *this; }
     PropertyMeta& set_tooltip(const std::string& tip) { tooltip = tip; return *this; }
     PropertyMeta& set_range(float min, float max, float s = 0.0f) {
@@ -63,7 +63,7 @@ struct TypeMeta {
 
     TypeMeta() = default;
 
-    TypeMeta& set_display_name(const std::string& name) { display_name = name; return *this; }
+    TypeMeta& set_display_name(const std::string& new_name) { display_name = new_name; return *this; }
     TypeMeta& set_description(const std::string& desc) { description = desc; return *this; }
     TypeMeta& set_icon(const std::string& i) { icon = i; return *this; }
     TypeMeta& set_category(TypeCategory cat) { category = cat; return *this; }

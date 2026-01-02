@@ -6,6 +6,8 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <shared_mutex>
+#include <atomic>
 
 namespace engine::localization {
 
@@ -178,6 +180,9 @@ public:
     void set_plural_rule(const std::string& language, PluralRuleFunc rule);
 
     // Table access (for editors)
+    // NOTE: Returned pointer is NOT thread-safe. Only use from single-threaded
+    // editor/tool contexts. Do not modify the table while other threads may be
+    // calling get() or other lookup methods.
     LocalizationTable* get_table(const std::string& code);
     const LocalizationTable* get_table(const std::string& code) const;
 
@@ -185,13 +190,27 @@ public:
     struct Stats {
         size_t loaded_languages = 0;
         size_t total_strings = 0;
-        size_t missing_lookups = 0;
+        std::atomic<size_t> missing_lookups{0};  // Atomic for thread-safe increment under shared_lock
+
+        Stats() = default;
+        Stats(const Stats& other) {
+            loaded_languages = other.loaded_languages;
+            total_strings = other.total_strings;
+            missing_lookups.store(other.missing_lookups.load(std::memory_order_relaxed));
+        }
     };
-    Stats get_stats() const { return m_stats; }
+    Stats get_stats() const {
+        std::shared_lock lock(m_mutex);
+        Stats result;
+        result.loaded_languages = m_stats.loaded_languages;
+        result.total_strings = m_stats.total_strings;
+        result.missing_lookups.store(m_stats.missing_lookups.load(std::memory_order_relaxed));
+        return result;
+    }
 
 private:
-    std::string resolve_key(const std::string& key) const;
-    PluralForm get_plural_form(const std::string& language, int64_t count) const;
+    std::string resolve_key_unlocked(const std::string& key) const;
+    PluralForm get_plural_form_unlocked(const std::string& language, int64_t count) const;
 
     LocalizationConfig m_config;
     bool m_initialized = false;
@@ -202,6 +221,7 @@ private:
     std::unordered_map<std::string, LanguageChangeCallback> m_callbacks;
 
     mutable Stats m_stats;
+    mutable std::shared_mutex m_mutex;
 };
 
 // Global localization manager

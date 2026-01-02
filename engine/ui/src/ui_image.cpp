@@ -20,13 +20,7 @@ void UIImage::on_render(UIRenderContext& ctx) {
 }
 
 Vec2 UIImage::on_measure(Vec2 available_size) {
-    Vec2 size = UIElement::on_measure(available_size);
-
-    // If preserving aspect ratio and we have a texture, adjust size
-    // This would require knowing the texture dimensions
-    // For now, just use the explicit size
-
-    return size;
+    return UIElement::on_measure(available_size);
 }
 
 } // namespace engine::ui

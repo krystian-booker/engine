@@ -1,9 +1,61 @@
 #include <engine/ui/ui_renderer.hpp>
 #include <engine/core/log.hpp>
 #include <bgfx/bgfx.h>
+#include <bx/math.h>
 #include <cmath>
+#include <fstream>
+#include <string>
 
 namespace engine::ui {
+
+namespace {
+
+// Helper function to load shader binary from file
+bgfx::ShaderHandle load_shader_from_file(const std::string& path) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) {
+        core::log(core::LogLevel::Error, "UIRenderer: Failed to open shader file: {}", path);
+        return BGFX_INVALID_HANDLE;
+    }
+
+    auto size = file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    const bgfx::Memory* mem = bgfx::alloc(static_cast<uint32_t>(size) + 1);
+    file.read(reinterpret_cast<char*>(mem->data), size);
+    mem->data[size] = '\0';
+
+    return bgfx::createShader(mem);
+}
+
+// Get shader path based on renderer type
+std::string get_shader_path() {
+    bgfx::RendererType::Enum renderer = bgfx::getRendererType();
+    std::string shader_dir = "shaders/";
+
+    switch (renderer) {
+        case bgfx::RendererType::Direct3D11:
+        case bgfx::RendererType::Direct3D12:
+            shader_dir += "dx11/";
+            break;
+        case bgfx::RendererType::OpenGL:
+            shader_dir += "glsl/";
+            break;
+        case bgfx::RendererType::Vulkan:
+            shader_dir += "spirv/";
+            break;
+        case bgfx::RendererType::Metal:
+            shader_dir += "metal/";
+            break;
+        default:
+            shader_dir += "dx11/";
+            break;
+    }
+
+    return shader_dir;
+}
+
+} // anonymous namespace
 
 // UIRenderContext implementation
 
@@ -271,14 +323,15 @@ void UIRenderContext::flush_batch() {
 
 void UIRenderContext::new_command(uint32_t texture_id, bool is_text) {
     // Check if we can extend the current command
-    if (!m_commands.empty()) {
+    if (!m_commands.empty() && !m_clip_stack.empty()) {
         auto& cmd = m_commands.back();
+        const auto& clip = m_clip_stack.back();
         if (cmd.texture_id == texture_id &&
             cmd.is_text == is_text &&
-            cmd.clip_rect.x == m_clip_stack.back().x &&
-            cmd.clip_rect.y == m_clip_stack.back().y &&
-            cmd.clip_rect.width == m_clip_stack.back().width &&
-            cmd.clip_rect.height == m_clip_stack.back().height) {
+            cmd.clip_rect.x == clip.x &&
+            cmd.clip_rect.y == clip.y &&
+            cmd.clip_rect.width == clip.width &&
+            cmd.clip_rect.height == clip.height) {
             return;  // Can extend current command
         }
     }
@@ -337,8 +390,19 @@ bool UIRenderer::init() {
     m_white_texture = bgfx::createTexture2D(1, 1, false, 1, bgfx::TextureFormat::RGBA8,
                                             0, bgfx::copy(&white_pixel, 4));
 
-    // TODO: Load UI shader
-    // m_shader = load shader...
+    // Load UI shader
+    std::string shader_path = get_shader_path();
+    bgfx::ShaderHandle vsh = load_shader_from_file(shader_path + "vs_ui.sc.bin");
+    bgfx::ShaderHandle fsh = load_shader_from_file(shader_path + "fs_ui.sc.bin");
+
+    if (bgfx::isValid(vsh) && bgfx::isValid(fsh)) {
+        m_shader = bgfx::createProgram(vsh, fsh, true);
+        core::log(core::LogLevel::Info, "UIRenderer: Shader program loaded");
+    } else {
+        core::log(core::LogLevel::Warn, "UIRenderer: Failed to load shaders - UI will not render");
+        if (bgfx::isValid(vsh)) bgfx::destroy(vsh);
+        if (bgfx::isValid(fsh)) bgfx::destroy(fsh);
+    }
 
     m_initialized = true;
     core::log(core::LogLevel::Info, "UIRenderer initialized");
@@ -348,6 +412,11 @@ bool UIRenderer::init() {
 
 void UIRenderer::shutdown() {
     if (!m_initialized) return;
+
+    if (bgfx::isValid(m_shader)) {
+        bgfx::destroy(m_shader);
+        m_shader = BGFX_INVALID_HANDLE;
+    }
 
     if (bgfx::isValid(m_vertex_buffer)) {
         bgfx::destroy(m_vertex_buffer);
@@ -380,6 +449,7 @@ void UIRenderer::shutdown() {
 
 void UIRenderer::render(const UIRenderContext& ctx, render::RenderView view) {
     if (!m_initialized) return;
+    if (!bgfx::isValid(m_shader)) return;
 
     const auto& vertices = ctx.get_vertices();
     const auto& indices = ctx.get_indices();
@@ -389,19 +459,70 @@ void UIRenderer::render(const UIRenderContext& ctx, render::RenderView view) {
         return;
     }
 
+    const bgfx::ViewId view_id = static_cast<bgfx::ViewId>(view);
+
+    // Get screen dimensions from context
+    uint32_t screen_width = ctx.get_screen_width();
+    uint32_t screen_height = ctx.get_screen_height();
+
+    if (screen_width == 0 || screen_height == 0) {
+        return;
+    }
+
+    // Setup orthographic projection for 2D UI rendering
+    float ortho[16];
+    bx::mtxOrtho(ortho, 0.0f, static_cast<float>(screen_width),
+                 static_cast<float>(screen_height), 0.0f,
+                 0.0f, 1000.0f, 0.0f, bgfx::getCaps()->homogeneousDepth);
+
+    bgfx::setViewTransform(view_id, nullptr, ortho);
+    bgfx::setViewRect(view_id, 0, 0, static_cast<uint16_t>(screen_width), static_cast<uint16_t>(screen_height));
+
     // Update buffers
     bgfx::update(m_vertex_buffer, 0, bgfx::copy(vertices.data(), static_cast<uint32_t>(vertices.size() * sizeof(UIVertex))));
     bgfx::update(m_index_buffer, 0, bgfx::copy(indices.data(), static_cast<uint32_t>(indices.size() * sizeof(uint16_t))));
 
-    // TODO: Submit draw commands with shader
-    // For each command:
-    //   - Set scissor rect
-    //   - Bind texture
-    //   - Submit draw call
+    // Submit draw commands
+    for (const auto& cmd : commands) {
+        if (cmd.index_count == 0) continue;
 
-    // Placeholder: just log that we would render
-    // core::log_debug("UIRenderer: {} vertices, {} indices, {} commands",
-    //                vertices.size(), indices.size(), commands.size());
+        // Set scissor rect for clipping
+        const Rect& clip = cmd.clip_rect;
+        if (clip.width > 0 && clip.height > 0) {
+            bgfx::setScissor(
+                static_cast<uint16_t>(clip.x),
+                static_cast<uint16_t>(clip.y),
+                static_cast<uint16_t>(clip.width),
+                static_cast<uint16_t>(clip.height)
+            );
+        }
+
+        // Bind texture (use white texture for solid colors if texture_id is 0)
+        bgfx::TextureHandle tex;
+        if (cmd.texture_id == 0) {
+            tex = m_white_texture;
+        } else {
+            tex.idx = static_cast<uint16_t>(cmd.texture_id);
+        }
+
+        if (bgfx::isValid(tex)) {
+            bgfx::setTexture(0, m_u_texture, tex);
+        }
+
+        // Set vertex and index buffers with offsets
+        bgfx::setVertexBuffer(0, m_vertex_buffer, cmd.vertex_offset, cmd.vertex_count);
+        bgfx::setIndexBuffer(m_index_buffer, cmd.index_offset, cmd.index_count);
+
+        // Set render state for alpha blending
+        uint64_t state = BGFX_STATE_WRITE_RGB
+            | BGFX_STATE_WRITE_A
+            | BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_INV_SRC_ALPHA);
+
+        bgfx::setState(state);
+
+        // Submit
+        bgfx::submit(view_id, m_shader);
+    }
 }
 
 } // namespace engine::ui

@@ -71,6 +71,31 @@ const PropertyInfo* TypeRegistry::get_property_info(const std::string& type_name
     return nullptr;
 }
 
+const MethodInfo* TypeRegistry::get_method_info(const std::string& type_name, const std::string& method_name) const {
+    auto* type_info = get_type_info(type_name);
+    if (!type_info) {
+        return nullptr;
+    }
+
+    for (const auto& method : type_info->methods) {
+        if (method.name == method_name) {
+            return &method;
+        }
+    }
+    return nullptr;
+}
+
+entt::meta_any TypeRegistry::invoke_method(entt::meta_any& obj, const std::string& type_name,
+                                           const std::string& method_name,
+                                           const std::vector<entt::meta_any>& args) {
+    auto* method_info = get_method_info(type_name, method_name);
+    if (!method_info || !method_info->invoker) {
+        return {};
+    }
+
+    return method_info->invoker(obj, args);
+}
+
 void TypeRegistry::serialize_any(const entt::meta_any& value, core::IArchive& ar, const char* name) {
     if (!value) {
         return;
@@ -277,28 +302,54 @@ void TypeRegistry::set_component_any(entt::registry& registry, entt::entity enti
     auto* storage = registry.storage(it->second);
     if (storage && storage->contains(entity)) {
         void* ptr = storage->value(entity);
-        // Copy data from meta_any to the component
         auto type = entt::resolve(it->second);
         if (type && value) {
-            // Use type's copy assignment if available
-            auto data = type.data("_copy"_hs);
-            if (data) {
-                // Not directly supported, use property-by-property copy
-                auto* type_info = get_type_info(it->second);
-                if (type_info) {
-                    entt::meta_any target = type.from_void(ptr);
-                    for (const auto& prop : type_info->properties) {
-                        if (prop.getter && prop.setter) {
-                            auto prop_value = prop.getter(value);
-                            if (prop_value) {
-                                prop.setter(target, prop_value);
-                            }
+            // Copy property-by-property from value to target
+            auto* type_info = get_type_info(it->second);
+            if (type_info) {
+                entt::meta_any target = type.from_void(ptr);
+                for (const auto& prop : type_info->properties) {
+                    if (prop.getter && prop.setter) {
+                        auto prop_value = prop.getter(value);
+                        if (prop_value) {
+                            prop.setter(target, prop_value);
                         }
                     }
                 }
             }
         }
     }
+}
+
+bool TypeRegistry::add_component_any(entt::registry& registry, entt::entity entity, const std::string& type_name) {
+    auto it = m_component_factories.find(type_name);
+    if (it == m_component_factories.end()) {
+        return false;
+    }
+
+    it->second.emplace(registry, entity);
+    return true;
+}
+
+bool TypeRegistry::remove_component_any(entt::registry& registry, entt::entity entity, const std::string& type_name) {
+    auto it = m_component_factories.find(type_name);
+    if (it == m_component_factories.end()) {
+        return false;
+    }
+
+    // Check if entity has the component before removing
+    auto name_it = m_name_to_id.find(type_name);
+    if (name_it == m_name_to_id.end()) {
+        return false;
+    }
+
+    auto* storage = registry.storage(name_it->second);
+    if (!storage || !storage->contains(entity)) {
+        return false;
+    }
+
+    it->second.remove(registry, entity);
+    return true;
 }
 
 } // namespace engine::reflect

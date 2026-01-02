@@ -1,7 +1,9 @@
 #include <engine/physics/character_controller.hpp>
+#include <engine/scene/world.hpp>
+#include <engine/scene/transform.hpp>
 #include <engine/core/log.hpp>
 #include <algorithm>
-#include <cmath>
+
 
 namespace engine::physics {
 
@@ -243,7 +245,9 @@ void CharacterController::teleport(const Vec3& position, const Quat& rotation) {
 }
 
 void CharacterController::refresh_ground_state() {
-    update_ground_state(0.016f);  // Default dt for manual refresh
+    // Use a small dt for manual refresh - this only affects time_since_grounded accumulation
+    // A more robust approach would store last dt, but 0 is safe for refresh purposes
+    update_ground_state(0.0f);
 }
 
 void CharacterController::update_ground_state(float dt) {
@@ -345,12 +349,15 @@ void CharacterController::apply_movement(float dt) {
     m_velocity.z = current_horizontal.z;
 
     // Handle sliding on steep slopes
-    if (m_ground_state.sliding) {
+    if (m_ground_state.sliding && m_world) {
         Vec3 slide_dir = m_ground_state.ground_normal;
         slide_dir.y = 0.0f;
         if (glm::length(slide_dir) > 0.01f) {
             slide_dir = glm::normalize(slide_dir);
-            m_velocity += slide_dir * 9.81f * dt;  // Slide acceleration
+            // Use world gravity magnitude for slide acceleration
+            Vec3 gravity = m_world->get_gravity();
+            float gravity_magnitude = std::abs(gravity.y);
+            m_velocity += slide_dir * gravity_magnitude * dt;
         }
     }
 }
@@ -403,19 +410,23 @@ void CharacterController::handle_step_up() {
 
 // System function
 void character_controller_system(scene::World& world, PhysicsWorld& physics, float dt) {
-    // This would iterate over all CharacterControllerComponent entities
-    // and call update on each controller
+    auto view = world.view<CharacterControllerComponent, scene::LocalTransform>();
 
-    // auto view = world.view<CharacterControllerComponent, scene::LocalTransform>();
-    // for (auto entity : view) {
-    //     auto& cc = view.get<CharacterControllerComponent>(entity);
-    //     auto& transform = view.get<scene::LocalTransform>(entity);
-    //
-    //     if (cc.controller) {
-    //         cc.controller->update(dt);
-    //         transform.position = cc.controller->get_position();
-    //     }
-    // }
+    for (auto entity : view) {
+        auto& cc = view.get<CharacterControllerComponent>(entity);
+        auto& transform = view.get<scene::LocalTransform>(entity);
+
+        if (!cc.controller) continue;
+        if (!cc.controller->is_initialized()) continue;
+        if (!cc.controller->is_enabled()) continue;
+
+        // Update the controller
+        cc.controller->update(dt);
+
+        // Sync position and rotation back to transform component
+        transform.position = cc.controller->get_position();
+        transform.rotation = cc.controller->get_rotation();
+    }
 }
 
 } // namespace engine::physics

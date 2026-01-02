@@ -104,7 +104,12 @@ constexpr const char* EXPORT_SHUTDOWN = "game_shutdown";
             return false; \
         } \
         g_game_instance = new GameClass(); \
-        return g_game_instance->init(ctx); \
+        if (!g_game_instance->init(ctx)) { \
+            delete g_game_instance; \
+            g_game_instance = nullptr; \
+            return false; \
+        } \
+        return true; \
     } \
     \
     GAME_API void game_register_systems(engine::plugin::SystemRegistry* reg) { \

@@ -3,6 +3,7 @@
 #include <engine/cinematic/sequence.hpp>
 #include <engine/scene/world.hpp>
 #include <functional>
+#include <mutex>
 
 namespace engine::cinematic {
 
@@ -57,16 +58,16 @@ public:
     void stop();
     void toggle_play_pause();
 
-    // Seek
-    void seek(float time);
-    void seek_to_start();
-    void seek_to_end();
-    void seek_to_marker(const std::string& marker_name);
+    // Seek (world required for immediate evaluation)
+    void seek(float time, scene::World& world);
+    void seek_to_start(scene::World& world);
+    void seek_to_end(scene::World& world);
+    void seek_to_marker(const std::string& marker_name, scene::World& world);
 
     // Frame stepping
-    void step_forward();
-    void step_backward();
-    void set_frame_rate(float fps) { m_frame_rate = fps; }
+    void step_forward(scene::World& world);
+    void step_backward(scene::World& world);
+    void set_frame_rate(float fps) { if (fps > 0.0f) m_frame_rate = fps; }
 
     // Playback settings
     void set_playback_speed(float speed) { m_playback_speed = speed; }
@@ -170,6 +171,7 @@ public:
 private:
     CinematicManager() = default;
 
+    mutable std::mutex m_mutex;
     std::unordered_map<std::string, std::unique_ptr<Sequence>> m_sequences;
     std::unique_ptr<SequencePlayer> m_active_player;
     std::vector<std::unique_ptr<SequencePlayer>> m_background_players;

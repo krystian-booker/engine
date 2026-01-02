@@ -95,7 +95,6 @@ struct StreamingStats {
     uint32_t visible_cells = 0;
     uint32_t loading_cells = 0;
     uint32_t unloading_cells = 0;
-    uint64_t loaded_memory = 0;
     uint32_t loads_this_frame = 0;
     uint32_t unloads_this_frame = 0;
     float average_load_time_ms = 0.0f;
@@ -214,7 +213,7 @@ private:
         std::future<bool> future;
         std::vector<uint32_t> loaded_entities;
     };
-    std::vector<AsyncLoadTask> m_async_loads;
+    std::vector<std::unique_ptr<AsyncLoadTask>> m_async_loads;
     std::mutex m_async_mutex;
 
     // Callbacks

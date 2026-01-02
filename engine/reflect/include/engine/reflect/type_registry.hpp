@@ -32,12 +32,21 @@ struct PropertyInfo {
     std::function<void(entt::meta_any&, const entt::meta_any&)> setter;
 };
 
+// Method info returned from queries
+struct MethodInfo {
+    std::string name;
+    entt::meta_type return_type;
+    std::vector<entt::meta_type> param_types;
+    std::function<entt::meta_any(entt::meta_any&, const std::vector<entt::meta_any>&)> invoker;
+};
+
 // Type info returned from queries
 struct TypeInfo {
     std::string name;
     entt::id_type id;
     TypeMeta meta;
     std::vector<PropertyInfo> properties;
+    std::vector<MethodInfo> methods;
     bool is_component;
 };
 
@@ -79,6 +88,14 @@ public:
     // Get property info
     const PropertyInfo* get_property_info(const std::string& type_name, const std::string& prop_name) const;
 
+    // Get method info
+    const MethodInfo* get_method_info(const std::string& type_name, const std::string& method_name) const;
+
+    // Invoke a method by name
+    entt::meta_any invoke_method(entt::meta_any& obj, const std::string& type_name,
+                                 const std::string& method_name,
+                                 const std::vector<entt::meta_any>& args = {});
+
     // Serialization helpers
     void serialize_any(const entt::meta_any& value, core::IArchive& ar, const char* name);
     entt::meta_any deserialize_any(entt::meta_type type, core::IArchive& ar, const char* name);
@@ -89,7 +106,22 @@ public:
     // Set a component from a meta_any
     void set_component_any(entt::registry& registry, entt::entity entity, const std::string& type_name, const entt::meta_any& value);
 
+    // Add a default-constructed component to an entity
+    bool add_component_any(entt::registry& registry, entt::entity entity, const std::string& type_name);
+
+    // Remove a component from an entity
+    bool remove_component_any(entt::registry& registry, entt::entity entity, const std::string& type_name);
+
 private:
+    // Component factory function types
+    using ComponentEmplacer = std::function<void(entt::registry&, entt::entity)>;
+    using ComponentRemover = std::function<void(entt::registry&, entt::entity)>;
+
+    struct ComponentFactory {
+        ComponentEmplacer emplace;
+        ComponentRemover remove;
+    };
+
     TypeRegistry() = default;
     ~TypeRegistry() = default;
     TypeRegistry(const TypeRegistry&) = delete;
@@ -98,6 +130,7 @@ private:
     // Internal storage
     std::unordered_map<std::string, entt::id_type> m_name_to_id;
     std::unordered_map<entt::id_type, TypeInfo> m_type_info;
+    std::unordered_map<std::string, ComponentFactory> m_component_factories;
     std::vector<std::string> m_component_names;
 };
 
@@ -137,6 +170,16 @@ void TypeRegistry::register_component(const char* name, const TypeMeta& meta) {
 
     m_type_info[type_id] = std::move(info);
     m_component_names.push_back(name);
+
+    // Store factory functions for runtime add/remove
+    ComponentFactory factory;
+    factory.emplace = [](entt::registry& reg, entt::entity ent) {
+        reg.emplace_or_replace<T>(ent);
+    };
+    factory.remove = [](entt::registry& reg, entt::entity ent) {
+        reg.remove<T>(ent);
+    };
+    m_component_factories[name] = std::move(factory);
 }
 
 template<typename T, auto MemberPtr>
@@ -176,9 +219,96 @@ void TypeRegistry::register_property(const char* name, const PropertyMeta& meta)
     }
 }
 
+namespace detail {
+    // Helper to extract member function traits
+    template<typename T>
+    struct member_function_traits;
+
+    // Non-const member function
+    template<typename R, typename C, typename... Args>
+    struct member_function_traits<R(C::*)(Args...)> {
+        using return_type = R;
+        using class_type = C;
+        using args_tuple = std::tuple<Args...>;
+        static constexpr size_t arity = sizeof...(Args);
+    };
+
+    // Const member function
+    template<typename R, typename C, typename... Args>
+    struct member_function_traits<R(C::*)(Args...) const> {
+        using return_type = R;
+        using class_type = C;
+        using args_tuple = std::tuple<Args...>;
+        static constexpr size_t arity = sizeof...(Args);
+    };
+
+    // Helper to invoke method with args from vector
+    template<typename T, auto FuncPtr, typename R, size_t... Is, typename... Args>
+    entt::meta_any invoke_impl(T* obj, const std::vector<entt::meta_any>& args,
+                               std::index_sequence<Is...>, std::tuple<Args...>) {
+        if constexpr (std::is_void_v<R>) {
+            (obj->*FuncPtr)(args[Is].template cast<std::decay_t<Args>>()...);
+            return {};
+        } else {
+            return entt::meta_any{(obj->*FuncPtr)(args[Is].template cast<std::decay_t<Args>>()...)};
+        }
+    }
+}
+
 template<typename T, auto FuncPtr>
 void TypeRegistry::register_method(const char* name) {
-    (void)name;
+    using traits = detail::member_function_traits<decltype(FuncPtr)>;
+    using return_type = typename traits::return_type;
+    using args_tuple = typename traits::args_tuple;
+    constexpr size_t arity = traits::arity;
+
+    auto type_id = entt::type_hash<T>::value();
+
+    auto it = m_type_info.find(type_id);
+    if (it != m_type_info.end()) {
+        MethodInfo method;
+        method.name = name;
+        method.return_type = entt::resolve<return_type>();
+
+        // Store parameter types
+        if constexpr (arity > 0) {
+            method.param_types.reserve(arity);
+            std::apply([&](auto... args) {
+                (method.param_types.push_back(entt::resolve<std::decay_t<decltype(args)>>()), ...);
+            }, args_tuple{});
+        }
+
+        // Create invoker lambda
+        if constexpr (arity == 0) {
+            method.invoker = [](entt::meta_any& obj, const std::vector<entt::meta_any>& args) -> entt::meta_any {
+                if (!args.empty()) {
+                    return {};
+                }
+                if (auto* ptr = obj.try_cast<T>()) {
+                    if constexpr (std::is_void_v<return_type>) {
+                        (ptr->*FuncPtr)();
+                        return {};
+                    } else {
+                        return entt::meta_any{(ptr->*FuncPtr)()};
+                    }
+                }
+                return {};
+            };
+        } else {
+            method.invoker = [](entt::meta_any& obj, const std::vector<entt::meta_any>& args) -> entt::meta_any {
+                if (args.size() != arity) {
+                    return {};
+                }
+                if (auto* ptr = obj.try_cast<T>()) {
+                    return detail::invoke_impl<T, FuncPtr, return_type>(
+                        ptr, args, std::make_index_sequence<arity>{}, args_tuple{});
+                }
+                return {};
+            };
+        }
+
+        it->second.methods.push_back(std::move(method));
+    }
 }
 
 // Registration macros for convenience
@@ -210,6 +340,16 @@ void TypeRegistry::register_method(const char* name) {
             } \
         }; \
         static Type##_##Member##_Registrar _reflect_##Type##_##Member; \
+    }
+
+#define ENGINE_REFLECT_METHOD(Type, Method) \
+    namespace { \
+        struct Type##_##Method##_Registrar { \
+            Type##_##Method##_Registrar() { \
+                ::engine::reflect::TypeRegistry::instance().register_method<Type, &Type::Method>(#Method); \
+            } \
+        }; \
+        static Type##_##Method##_Registrar _reflect_##Type##_##Method; \
     }
 
 } // namespace engine::reflect

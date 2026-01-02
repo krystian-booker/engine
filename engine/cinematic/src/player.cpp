@@ -1,5 +1,6 @@
 #include <engine/cinematic/player.hpp>
 #include <engine/core/log.hpp>
+#include <engine/core/job_system.hpp>
 #include <algorithm>
 #include <cmath>
 
@@ -88,7 +89,7 @@ void SequencePlayer::toggle_play_pause() {
     }
 }
 
-void SequencePlayer::seek(float time) {
+void SequencePlayer::seek(float time, scene::World& world) {
     float old_time = m_current_time;
     float duration = get_duration();
 
@@ -97,36 +98,36 @@ void SequencePlayer::seek(float time) {
     if (m_sequence) {
         check_markers(old_time, m_current_time);
         check_sections(old_time, m_current_time);
-        m_sequence->evaluate(m_current_time);
+        m_sequence->evaluate(m_current_time, world);
     }
 }
 
-void SequencePlayer::seek_to_start() {
-    seek(m_use_play_range ? m_play_range_start : 0.0f);
+void SequencePlayer::seek_to_start(scene::World& world) {
+    seek(m_use_play_range ? m_play_range_start : 0.0f, world);
 }
 
-void SequencePlayer::seek_to_end() {
-    seek(m_use_play_range ? m_play_range_end : get_duration());
+void SequencePlayer::seek_to_end(scene::World& world) {
+    seek(m_use_play_range ? m_play_range_end : get_duration(), world);
 }
 
-void SequencePlayer::seek_to_marker(const std::string& marker_name) {
+void SequencePlayer::seek_to_marker(const std::string& marker_name, scene::World& world) {
     if (m_sequence) {
         float time = m_sequence->get_marker_time(marker_name);
         if (time >= 0.0f) {
-            seek(time);
+            seek(time, world);
         }
     }
 }
 
-void SequencePlayer::step_forward() {
+void SequencePlayer::step_forward(scene::World& world) {
     if (m_frame_rate > 0) {
-        seek(m_current_time + 1.0f / m_frame_rate);
+        seek(m_current_time + 1.0f / m_frame_rate, world);
     }
 }
 
-void SequencePlayer::step_backward() {
+void SequencePlayer::step_backward(scene::World& world) {
     if (m_frame_rate > 0) {
-        seek(m_current_time - 1.0f / m_frame_rate);
+        seek(m_current_time - 1.0f / m_frame_rate, world);
     }
 }
 
@@ -149,7 +150,7 @@ float SequencePlayer::get_progress() const {
     return duration > 0.0f ? m_current_time / duration : 0.0f;
 }
 
-void SequencePlayer::update(scene::World& /*world*/, float delta_time) {
+void SequencePlayer::update(scene::World& world, float delta_time) {
     if (m_state != PlaybackState::Playing || !m_sequence) {
         return;
     }
@@ -200,7 +201,7 @@ void SequencePlayer::update(scene::World& /*world*/, float delta_time) {
     check_sections(old_time, m_current_time);
 
     // Evaluate all tracks
-    m_sequence->evaluate(m_current_time);
+    m_sequence->evaluate(m_current_time, world);
 }
 
 void SequencePlayer::add_skip_point(float time) {
@@ -215,13 +216,13 @@ void SequencePlayer::skip_to_next_point() {
 
     for (float point : m_skip_points) {
         if (point > m_current_time + 0.1f) { // Small epsilon to avoid getting stuck
-            seek(point);
+            m_current_time = std::clamp(point, 0.0f, get_duration());
             return;
         }
     }
 
     // No more skip points, go to end
-    seek(get_duration());
+    m_current_time = get_duration();
 }
 
 bool SequencePlayer::can_skip() const {
@@ -299,14 +300,17 @@ CinematicManager& CinematicManager::instance() {
 }
 
 void CinematicManager::register_sequence(const std::string& name, std::unique_ptr<Sequence> sequence) {
+    std::lock_guard<std::mutex> lock(m_mutex);
     m_sequences[name] = std::move(sequence);
 }
 
 void CinematicManager::unregister_sequence(const std::string& name) {
+    std::lock_guard<std::mutex> lock(m_mutex);
     m_sequences.erase(name);
 }
 
 Sequence* CinematicManager::get_sequence(const std::string& name) {
+    std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_sequences.find(name);
     return it != m_sequences.end() ? it->second.get() : nullptr;
 }
@@ -362,11 +366,16 @@ void CinematicManager::preload(const std::string& path) {
     }
 }
 
-void CinematicManager::preload_async(const std::string& /*path*/) {
-    // Would use job system for async loading
-    // JobSystem::instance().schedule([path, this]() {
-    //     preload(path);
-    // });
+void CinematicManager::preload_async(const std::string& path) {
+    core::JobSystem::submit([path, this]() {
+        auto sequence = std::make_unique<Sequence>();
+        if (sequence->load(path)) {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_sequences[sequence->get_name()] = std::move(sequence);
+        } else {
+            core::log(core::LogLevel::Error, "Failed to async load sequence: {}", path);
+        }
+    });
 }
 
 } // namespace engine::cinematic

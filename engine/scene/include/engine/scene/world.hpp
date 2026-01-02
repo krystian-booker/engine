@@ -102,7 +102,7 @@ public:
     const entt::registry& registry() const { return m_registry; }
 
     // Entity count
-    size_t size() const { return m_registry.storage<entt::entity>()->free_list(); }
+    size_t size() const { return m_registry.storage<entt::entity>()->size(); }
     bool empty() const { return size() == 0; }
 
     // Clear all entities

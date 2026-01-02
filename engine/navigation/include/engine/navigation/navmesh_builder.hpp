@@ -88,6 +88,14 @@ struct NavAreaCosts {
     }
 };
 
+// Component for entities that contribute to navmesh building
+struct NavMeshSource {
+    std::vector<Vec3> vertices;
+    std::vector<uint32_t> indices;   // Triangle indices (3 per triangle)
+    uint8_t area_type = 0;           // 0 = walkable, see NavAreaType enum
+    bool enabled = true;             // Include in navmesh builds
+};
+
 // Navmesh builder
 class NavMeshBuilder {
 public:

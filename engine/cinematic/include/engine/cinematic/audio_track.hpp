@@ -2,6 +2,7 @@
 
 #include <engine/cinematic/track.hpp>
 #include <engine/audio/audio_engine.hpp>
+#include <cassert>
 #include <string>
 
 namespace engine::cinematic {
@@ -47,7 +48,7 @@ struct VolumeKeyframe : KeyframeBase {
 class AudioTrack : public Track {
 public:
     explicit AudioTrack(const std::string& name);
-    ~AudioTrack() override = default;
+    ~AudioTrack() override;
 
     // Set audio engine reference
     void set_audio_engine(audio::AudioEngine* engine) { m_audio_engine = engine; }
@@ -58,8 +59,14 @@ public:
     void clear_events();
 
     size_t event_count() const { return m_events.size(); }
-    AudioEvent& get_event(size_t index) { return m_events[index]; }
-    const AudioEvent& get_event(size_t index) const { return m_events[index]; }
+    AudioEvent& get_event(size_t index) {
+        assert(index < m_events.size() && "Event index out of bounds");
+        return m_events[index];
+    }
+    const AudioEvent& get_event(size_t index) const {
+        assert(index < m_events.size() && "Event index out of bounds");
+        return m_events[index];
+    }
 
     // Volume envelope (overall track volume)
     void add_volume_key(const VolumeKeyframe& key);
@@ -72,8 +79,12 @@ public:
 
     // Track interface
     float get_duration() const override;
-    void evaluate(float time) override;
+    void evaluate(float time, scene::World& world) override;
     void reset() override;
+
+    // Serialization
+    void serialize(nlohmann::json& j) const override;
+    void deserialize(const nlohmann::json& j) override;
 
 private:
     void sort_events();
@@ -108,8 +119,12 @@ public:
 
     // Track interface
     float get_duration() const override;
-    void evaluate(float time) override;
+    void evaluate(float time, scene::World& world) override;
     void reset() override;
+
+    // Serialization
+    void serialize(nlohmann::json& j) const override;
+    void deserialize(const nlohmann::json& j) override;
 
 private:
     struct MusicCue {

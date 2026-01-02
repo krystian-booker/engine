@@ -1,4 +1,5 @@
 #include <engine/cinematic/sequence.hpp>
+#include <engine/scene/world.hpp>
 #include <engine/core/log.hpp>
 #include <fstream>
 #include <nlohmann/json.hpp>
@@ -134,10 +135,10 @@ void Sequence::remove_group(const std::string& name) {
     );
 }
 
-void Sequence::evaluate(float time) {
+void Sequence::evaluate(float time, scene::World& world) {
     for (auto& track : m_tracks) {
         if (track->is_enabled() && !track->is_muted()) {
-            track->evaluate(time);
+            track->evaluate(time, world);
         }
     }
 }
@@ -202,13 +203,16 @@ bool Sequence::save(const std::string& path) const {
             });
         }
 
-        // Tracks (basic info - full serialization would need more)
+        // Tracks with full data serialization
+        j["tracks"] = nlohmann::json::array();
         for (const auto& track : m_tracks) {
             nlohmann::json track_json;
             track_json["name"] = track->get_name();
             track_json["type"] = static_cast<int>(track->get_type());
             track_json["enabled"] = track->is_enabled();
             track_json["muted"] = track->is_muted();
+            track_json["locked"] = track->is_locked();
+            track->serialize(track_json["data"]);
             j["tracks"].push_back(track_json);
         }
 
@@ -256,7 +260,45 @@ bool Sequence::load(const std::string& path) {
             }
         }
 
-        // Full track loading would need type-specific deserialization
+        // Load tracks with full data deserialization
+        clear_tracks();
+        if (j.contains("tracks")) {
+            for (const auto& track_json : j["tracks"]) {
+                TrackType type = static_cast<TrackType>(track_json.value("type", 0));
+                std::string name = track_json.value("name", "");
+                Track* track = nullptr;
+
+                switch (type) {
+                    case TrackType::Camera:
+                        track = add_camera_track(name);
+                        break;
+                    case TrackType::Animation:
+                        track = add_animation_track(name);
+                        break;
+                    case TrackType::Transform:
+                        track = add_transform_track(name);
+                        break;
+                    case TrackType::Audio:
+                        track = add_audio_track(name);
+                        break;
+                    case TrackType::Event:
+                        track = add_event_track(name);
+                        break;
+                    default:
+                        break;
+                }
+
+                if (track) {
+                    track->set_enabled(track_json.value("enabled", true));
+                    track->set_muted(track_json.value("muted", false));
+                    track->set_locked(track_json.value("locked", false));
+                    if (track_json.contains("data")) {
+                        track->deserialize(track_json["data"]);
+                    }
+                }
+            }
+        }
+
         return true;
     } catch (const std::exception& e) {
         core::log(core::LogLevel::Error, "Failed to load sequence: {}", e.what());

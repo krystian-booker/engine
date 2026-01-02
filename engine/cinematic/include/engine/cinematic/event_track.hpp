@@ -2,6 +2,7 @@
 
 #include <engine/cinematic/track.hpp>
 #include <engine/scene/entity.hpp>
+#include <cassert>
 #include <functional>
 #include <any>
 #include <variant>
@@ -51,8 +52,14 @@ public:
     void clear_events();
 
     size_t event_count() const { return m_events.size(); }
-    SequenceEvent& get_event(size_t index) { return m_events[index]; }
-    const SequenceEvent& get_event(size_t index) const { return m_events[index]; }
+    SequenceEvent& get_event(size_t index) {
+        assert(index < m_events.size() && "Event index out of bounds");
+        return m_events[index];
+    }
+    const SequenceEvent& get_event(size_t index) const {
+        assert(index < m_events.size() && "Event index out of bounds");
+        return m_events[index];
+    }
 
     // Register event handlers
     void set_handler(SequenceEventHandler handler) { m_handler = std::move(handler); }
@@ -63,8 +70,12 @@ public:
 
     // Track interface
     float get_duration() const override;
-    void evaluate(float time) override;
+    void evaluate(float time, scene::World& world) override;
     void reset() override;
+
+    // Serialization
+    void serialize(nlohmann::json& j) const override;
+    void deserialize(const nlohmann::json& j) override;
 
     // Get events in time range
     std::vector<const SequenceEvent*> get_events_in_range(float from, float to) const;
@@ -129,8 +140,12 @@ public:
 
     // Track interface
     float get_duration() const override;
-    void evaluate(float time) override;
+    void evaluate(float time, scene::World& world) override;
     void reset() override;
+
+    // Serialization
+    void serialize(nlohmann::json& j) const override;
+    void deserialize(const nlohmann::json& j) override;
 
 private:
     std::vector<Subtitle> m_subtitles;

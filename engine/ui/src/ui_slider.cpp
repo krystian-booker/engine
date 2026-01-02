@@ -65,7 +65,8 @@ void UISlider::on_update(float /*dt*/, const UIInputState& input) {
 void UISlider::on_render(UIRenderContext& ctx) {
     render_background(ctx, m_bounds);
 
-    float normalized = (m_value - m_min) / (m_max - m_min);
+    float range = m_max - m_min;
+    float normalized = (range > 0.0f) ? (m_value - m_min) / range : 0.0f;
 
     if (m_orientation == LayoutDirection::Horizontal) {
         // Track
@@ -141,7 +142,8 @@ float UISlider::value_from_position(float pos) {
 }
 
 float UISlider::position_from_value(float value) {
-    return (value - m_min) / (m_max - m_min);
+    float range = m_max - m_min;
+    return (range > 0.0f) ? (value - m_min) / range : 0.0f;
 }
 
 // Progress bar implementation

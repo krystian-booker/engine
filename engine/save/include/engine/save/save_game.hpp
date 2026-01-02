@@ -15,6 +15,7 @@ using namespace engine::core;
 // Save file version for compatibility checking
 constexpr uint32_t SAVE_VERSION = 1;
 constexpr uint32_t SAVE_MAGIC = 0x53415645;  // "SAVE"
+constexpr uint32_t MAX_CHUNK_SIZE = 256 * 1024 * 1024;  // 256 MB max per chunk
 
 // Save game metadata
 struct SaveGameMetadata {

@@ -76,7 +76,7 @@ public:
     void remove_group(const std::string& name);
 
     // Evaluate all tracks at time
-    void evaluate(float time);
+    void evaluate(float time, scene::World& world);
 
     // Reset all tracks
     void reset();

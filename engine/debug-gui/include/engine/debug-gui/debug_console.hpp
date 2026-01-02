@@ -38,6 +38,10 @@ public:
     // Clear all logs
     void clear();
 
+    // Set quit callback (called when "quit" command is executed)
+    using QuitCallback = std::function<void()>;
+    void set_quit_callback(QuitCallback callback) { m_quit_callback = std::move(callback); }
+
 private:
     void execute_command(const char* command);
 
@@ -72,6 +76,9 @@ private:
     bool m_show_error = true;
     bool m_collapse_duplicates = true;
     char m_filter[128] = {};
+
+    // Quit callback
+    QuitCallback m_quit_callback;
 };
 
 } // namespace engine::debug_gui

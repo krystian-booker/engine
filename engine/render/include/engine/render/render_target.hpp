@@ -101,6 +101,7 @@ enum class RenderView : uint16_t {
 
     // Tone mapping / final output
     ToneMap = 61,
+    Tonemapping = ToneMap,
 
     // Debug visualization
     Debug = 62,

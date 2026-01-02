@@ -44,6 +44,10 @@ public:
     const std::vector<uint16_t>& get_indices() const { return m_indices; }
     const std::vector<UIDrawCommand>& get_commands() const { return m_commands; }
 
+    // Get screen dimensions
+    uint32_t get_screen_width() const { return m_screen_width; }
+    uint32_t get_screen_height() const { return m_screen_height; }
+
     // Font manager access
     void set_font_manager(FontManager* manager) { m_font_manager = manager; }
     FontManager* get_font_manager() { return m_font_manager; }

@@ -1,8 +1,11 @@
 #include <engine/save/save_game.hpp>
+#include <engine/core/log.hpp>
 #include <fstream>
 #include <sstream>
 #include <ctime>
 #include <iomanip>
+#include <limits>
+#include <filesystem>
 
 namespace engine::save {
 
@@ -91,7 +94,8 @@ json SaveGame::get_json(const std::string& key) const {
     std::string json_str(bytes.begin(), bytes.end());
     try {
         return json::parse(json_str);
-    } catch (...) {
+    } catch (const std::exception& e) {
+        core::log(core::LogLevel::Error, "SaveGame: Failed to parse JSON for key '{}': {}", key, e.what());
         return json{};
     }
 }
@@ -123,7 +127,12 @@ std::vector<uint64_t> SaveGame::get_all_entity_ids() const {
 }
 
 bool SaveGame::save_to_file(const std::string& path) const {
-    std::ofstream file(path, std::ios::binary);
+    namespace fs = std::filesystem;
+
+    // Write to temp file first for atomic operation
+    std::string temp_path = path + ".tmp";
+
+    std::ofstream file(temp_path, std::ios::binary);
     if (!file.is_open()) return false;
 
     // Write magic number and version
@@ -136,11 +145,19 @@ bool SaveGame::save_to_file(const std::string& path) const {
     mutable_meta.serialize(metadata_archive);
     std::string metadata_json = metadata_archive.to_string();
     std::vector<uint8_t> metadata_bytes(metadata_json.begin(), metadata_json.end());
-    write_chunk(file, SaveChunkType::Metadata, metadata_bytes);
+    if (!write_chunk(file, SaveChunkType::Metadata, metadata_bytes)) {
+        file.close();
+        fs::remove(temp_path);
+        return false;
+    }
 
     // Write thumbnail if present
     if (!m_metadata.thumbnail_data.empty()) {
-        write_chunk(file, SaveChunkType::Thumbnail, m_metadata.thumbnail_data);
+        if (!write_chunk(file, SaveChunkType::Thumbnail, m_metadata.thumbnail_data)) {
+            file.close();
+            fs::remove(temp_path);
+            return false;
+        }
     }
 
     // Write entity data
@@ -150,12 +167,16 @@ bool SaveGame::save_to_file(const std::string& path) const {
     }
     std::string entity_str = entity_json.dump();
     std::vector<uint8_t> entity_bytes(entity_str.begin(), entity_str.end());
-    write_chunk(file, SaveChunkType::EntityData, entity_bytes);
+    if (!write_chunk(file, SaveChunkType::EntityData, entity_bytes)) {
+        file.close();
+        fs::remove(temp_path);
+        return false;
+    }
 
     // Write custom data
     json custom_json;
     for (const auto& [key, data] : m_custom_data) {
-        // Encode binary data as base64 or store as hex
+        // Encode binary data as hex
         std::string hex;
         for (uint8_t byte : data) {
             char buf[3];
@@ -166,13 +187,38 @@ bool SaveGame::save_to_file(const std::string& path) const {
     }
     std::string custom_str = custom_json.dump();
     std::vector<uint8_t> custom_bytes(custom_str.begin(), custom_str.end());
-    write_chunk(file, SaveChunkType::CustomData, custom_bytes);
+    if (!write_chunk(file, SaveChunkType::CustomData, custom_bytes)) {
+        file.close();
+        fs::remove(temp_path);
+        return false;
+    }
 
     // Write end of file marker
     std::vector<uint8_t> empty;
-    write_chunk(file, SaveChunkType::EndOfFile, empty);
+    if (!write_chunk(file, SaveChunkType::EndOfFile, empty)) {
+        file.close();
+        fs::remove(temp_path);
+        return false;
+    }
 
-    return file.good();
+    if (!file.good()) {
+        file.close();
+        fs::remove(temp_path);
+        return false;
+    }
+
+    file.close();
+
+    // Atomic rename: replace target file with temp file
+    std::error_code ec;
+    fs::rename(temp_path, path, ec);
+    if (ec) {
+        core::log(core::LogLevel::Error, "SaveGame: Failed to rename temp file: {}", ec.message());
+        fs::remove(temp_path);
+        return false;
+    }
+
+    return true;
 }
 
 bool SaveGame::load_from_file(const std::string& path) {
@@ -221,7 +267,8 @@ bool SaveGame::load_from_file(const std::string& path) {
                         uint64_t id = std::stoull(id_str);
                         m_entity_data[id] = entity_data.get<std::string>();
                     }
-                } catch (...) {
+                } catch (const std::exception& e) {
+                    core::log(core::LogLevel::Error, "SaveGame: Failed to parse entity data: {}", e.what());
                     m_is_valid = false;
                 }
                 break;
@@ -241,7 +288,8 @@ bool SaveGame::load_from_file(const std::string& path) {
                         }
                         m_custom_data[key] = bytes;
                     }
-                } catch (...) {
+                } catch (const std::exception& e) {
+                    core::log(core::LogLevel::Error, "SaveGame: Failed to parse custom data: {}", e.what());
                     m_is_valid = false;
                 }
                 break;
@@ -270,6 +318,11 @@ std::vector<uint8_t> SaveGame::to_binary() const {
     mutable_meta.serialize(metadata_archive);
     std::string metadata_json = metadata_archive.to_string();
     std::vector<uint8_t> metadata_bytes(metadata_json.begin(), metadata_json.end());
+
+    // Validate size doesn't exceed uint32_t max
+    if (metadata_bytes.size() > std::numeric_limits<uint32_t>::max()) {
+        return {};  // Return empty vector on overflow
+    }
 
     // Write metadata chunk
     SaveChunkHeader header;
@@ -317,6 +370,11 @@ void SaveGame::clear() {
 }
 
 bool SaveGame::write_chunk(std::ostream& stream, SaveChunkType type, const std::vector<uint8_t>& data) const {
+    // Validate size doesn't exceed uint32_t max
+    if (data.size() > std::numeric_limits<uint32_t>::max()) {
+        return false;
+    }
+
     SaveChunkHeader header;
     header.type = type;
     header.size = static_cast<uint32_t>(data.size());
@@ -333,6 +391,12 @@ bool SaveGame::write_chunk(std::ostream& stream, SaveChunkType type, const std::
 bool SaveGame::read_chunk(std::istream& stream, SaveChunkHeader& header, std::vector<uint8_t>& data) {
     stream.read(reinterpret_cast<char*>(&header), sizeof(header));
     if (!stream.good()) return false;
+
+    // Validate chunk size to prevent OOM from corrupted/malicious files
+    if (header.size > MAX_CHUNK_SIZE) {
+        m_is_valid = false;
+        return false;
+    }
 
     if (header.size > 0) {
         data.resize(header.size);

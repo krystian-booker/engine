@@ -59,19 +59,19 @@ void DebugEntityInspector::draw_hierarchy() {
     auto roots = scene::get_root_entities(*m_world);
 
     for (auto entity : roots) {
-        draw_entity_node(entity, 0);
+        draw_entity_node(entity);
     }
 
     // Also show entities without hierarchy component
     auto view = m_world->view<scene::EntityInfo>();
     for (auto entity : view) {
         if (!m_world->has<scene::Hierarchy>(entity)) {
-            draw_entity_node(entity, 0);
+            draw_entity_node(entity);
         }
     }
 }
 
-void DebugEntityInspector::draw_entity_node(scene::Entity entity, int /*depth*/) {
+void DebugEntityInspector::draw_entity_node(scene::Entity entity) {
     if (!m_world || !m_world->valid(entity)) return;
 
     // Get entity info
@@ -142,7 +142,7 @@ void DebugEntityInspector::draw_entity_node(scene::Entity entity, int /*depth*/)
         if (hierarchy) {
             scene::Entity child = hierarchy->first_child;
             while (child != scene::NullEntity) {
-                draw_entity_node(child, 1);
+                draw_entity_node(child);
                 auto* child_hierarchy = m_world->try_get<scene::Hierarchy>(child);
                 child = child_hierarchy ? child_hierarchy->next_sibling : scene::NullEntity;
             }
@@ -159,7 +159,7 @@ void DebugEntityInspector::draw_inspector() {
 
     // Entity header
     auto* info = m_world->try_get<scene::EntityInfo>(m_selected);
-    static char name_buffer[256];
+    char name_buffer[256];
     if (info) {
         strncpy(name_buffer, info->name.c_str(), sizeof(name_buffer) - 1);
         name_buffer[sizeof(name_buffer) - 1] = '\0';
@@ -196,7 +196,7 @@ void DebugEntityInspector::draw_inspector() {
         // Component context menu
         if (ImGui::BeginPopupContextItem()) {
             if (ImGui::MenuItem("Remove Component")) {
-                // TODO: Remove component by name using reflection
+                registry.remove_component_any(m_world->registry(), m_selected, comp_name);
             }
             ImGui::EndPopup();
         }
@@ -215,7 +215,7 @@ void DebugEntityInspector::draw_inspector() {
             if (existing) continue;
 
             if (ImGui::MenuItem(comp_name.c_str())) {
-                // TODO: Add component by name using reflection
+                registry.add_component_any(m_world->registry(), m_selected, comp_name);
             }
         }
         ImGui::EndPopup();
@@ -233,16 +233,86 @@ void DebugEntityInspector::draw_component(const std::string& type_name) {
 
     for (const auto& prop : type_info->properties) {
         if (prop.meta.hidden) continue;
-        draw_property_editor(prop, nullptr);
+        draw_property_editor(prop, comp_any);
     }
 }
 
-void DebugEntityInspector::draw_property_editor(const reflect::PropertyInfo& prop, void* /*component_ptr*/) {
+void DebugEntityInspector::draw_property_editor(const reflect::PropertyInfo& prop, const entt::meta_any& comp_any) {
     const char* label = prop.meta.display_name.empty() ? prop.name.c_str() : prop.meta.display_name.c_str();
 
-    // For now, show property names as read-only
-    // Full implementation would use reflection to get/set values
-    ImGui::LabelText(label, "(reflection required)");
+    // Get property value using the getter
+    auto value = prop.getter(comp_any);
+    if (!value) {
+        ImGui::TextDisabled("%s: (no value)", label);
+        return;
+    }
+
+    auto type_id = prop.type.id();
+
+    // Display based on type
+    if (type_id == entt::type_hash<bool>::value()) {
+        bool v = value.cast<bool>();
+        ImGui::Text("%s: %s", label, v ? "true" : "false");
+    }
+    else if (type_id == entt::type_hash<float>::value()) {
+        float v = value.cast<float>();
+        if (prop.meta.is_angle) {
+            ImGui::Text("%s: %.1f deg", label, glm::degrees(v));
+        } else {
+            ImGui::Text("%s: %.3f", label, v);
+        }
+    }
+    else if (type_id == entt::type_hash<double>::value()) {
+        ImGui::Text("%s: %.3f", label, value.cast<double>());
+    }
+    else if (type_id == entt::type_hash<int32_t>::value()) {
+        ImGui::Text("%s: %d", label, value.cast<int32_t>());
+    }
+    else if (type_id == entt::type_hash<uint32_t>::value()) {
+        ImGui::Text("%s: %u", label, value.cast<uint32_t>());
+    }
+    else if (type_id == entt::type_hash<int64_t>::value()) {
+        ImGui::Text("%s: %lld", label, static_cast<long long>(value.cast<int64_t>()));
+    }
+    else if (type_id == entt::type_hash<uint64_t>::value()) {
+        ImGui::Text("%s: %llu", label, static_cast<unsigned long long>(value.cast<uint64_t>()));
+    }
+    else if (type_id == entt::type_hash<std::string>::value()) {
+        const auto& s = value.cast<std::string>();
+        ImGui::Text("%s: \"%s\"", label, s.c_str());
+    }
+    else if (type_id == entt::type_hash<core::Vec2>::value()) {
+        auto v = value.cast<core::Vec2>();
+        ImGui::Text("%s: (%.2f, %.2f)", label, v.x, v.y);
+    }
+    else if (type_id == entt::type_hash<core::Vec3>::value()) {
+        auto v = value.cast<core::Vec3>();
+        if (prop.meta.is_color) {
+            ImGui::Text("%s:", label);
+            ImGui::SameLine();
+            ImGui::ColorButton("##color", ImVec4(v.x, v.y, v.z, 1.0f), ImGuiColorEditFlags_NoTooltip, ImVec2(60, 14));
+        } else {
+            ImGui::Text("%s: (%.2f, %.2f, %.2f)", label, v.x, v.y, v.z);
+        }
+    }
+    else if (type_id == entt::type_hash<core::Vec4>::value()) {
+        auto v = value.cast<core::Vec4>();
+        if (prop.meta.is_color) {
+            ImGui::Text("%s:", label);
+            ImGui::SameLine();
+            ImGui::ColorButton("##color", ImVec4(v.x, v.y, v.z, v.w), ImGuiColorEditFlags_NoTooltip, ImVec2(60, 14));
+        } else {
+            ImGui::Text("%s: (%.2f, %.2f, %.2f, %.2f)", label, v.x, v.y, v.z, v.w);
+        }
+    }
+    else if (type_id == entt::type_hash<core::Quat>::value()) {
+        auto q = value.cast<core::Quat>();
+        core::Vec3 euler = glm::degrees(glm::eulerAngles(q));
+        ImGui::Text("%s: (%.1f, %.1f, %.1f) deg", label, euler.x, euler.y, euler.z);
+    }
+    else {
+        ImGui::TextDisabled("%s: (unsupported type)", label);
+    }
 
     // Tooltip
     if (!prop.meta.tooltip.empty() && ImGui::IsItemHovered()) {

@@ -1,6 +1,9 @@
 # engine/ui/CMakeLists.txt
 # engine::ui - Retained-mode game UI system
 
+# Include bgfx shader compilation utilities
+include(${bgfx_cmake_SOURCE_DIR}/cmake/bgfxToolUtils.cmake)
+
 add_library(engine_ui STATIC)
 add_library(engine::ui ALIAS engine_ui)
 
@@ -50,3 +53,41 @@ target_link_libraries(engine_ui
 set_target_properties(engine_ui PROPERTIES
     FOLDER "engine"
 )
+
+# Compile UI shaders at build time
+if(TARGET bgfx::shaderc AND ENGINE_COMPILE_SHADERS)
+    set(BGFX_SHADER_INCLUDE_PATH "${bgfx_cmake_SOURCE_DIR}/bgfx/src")
+    set(SHADER_OUTPUT_DIR "${CMAKE_BINARY_DIR}/shaders")
+
+    # UI vertex shader
+    bgfx_compile_shaders(
+        TYPE VERTEX
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vs_ui.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR VS_UI_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
+    # UI fragment shader
+    bgfx_compile_shaders(
+        TYPE FRAGMENT
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fs_ui.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR FS_UI_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
+    # Create custom target for UI shaders
+    add_custom_target(engine_ui_shaders DEPENDS
+        ${VS_UI_OUTPUTS} ${FS_UI_OUTPUTS}
+    )
+
+    add_dependencies(engine_ui engine_ui_shaders)
+
+    # Add UI shaders to the main engine_shaders target if it exists
+    if(TARGET engine_shaders)
+        add_dependencies(engine_shaders engine_ui_shaders)
+    endif()
+endif()

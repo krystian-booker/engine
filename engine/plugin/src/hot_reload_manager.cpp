@@ -57,6 +57,8 @@ void HotReloadManager::shutdown() {
 }
 
 void HotReloadManager::poll() {
+    std::lock_guard<std::mutex> lock(m_reload_mutex);
+
     if (!m_config.enabled || !m_initialized) {
         return;
     }
@@ -99,6 +101,22 @@ void HotReloadManager::set_config(const HotReloadConfig& config) {
 }
 
 void HotReloadManager::do_reload() {
+    // Prevent re-entrancy
+    if (m_reload_in_progress) {
+        return;
+    }
+    m_reload_in_progress = true;
+
+    // Validate context before proceeding
+    if (!m_context || !m_context->world) {
+        core::log(core::LogLevel::Error, "Hot reload failed: invalid context");
+        if (m_callback) {
+            m_callback(false, "Invalid context");
+        }
+        m_reload_in_progress = false;
+        return;
+    }
+
     auto start_time = std::chrono::high_resolution_clock::now();
 
     core::log(core::LogLevel::Info, "=== HOT RELOAD START ===");
@@ -126,7 +144,11 @@ void HotReloadManager::do_reload() {
     // Step 5: Load new plugin (with copy)
     LoadResult result = m_loader.load(m_dll_path, true);
     if (result != LoadResult::Success) {
-        core::log(core::LogLevel::Error, "Hot reload failed: {}", load_result_to_string(result));
+        core::log(core::LogLevel::Error,
+            "Hot reload failed: {}. Game plugin unloaded - restart required.",
+            load_result_to_string(result));
+        m_initialized = false;
+        m_reload_in_progress = false;
 
         if (m_callback) {
             m_callback(false, load_result_to_string(result));
@@ -139,7 +161,10 @@ void HotReloadManager::do_reload() {
 
     // Step 7: Initialize new plugin
     if (!m_loader.call_init(m_context)) {
-        core::log(core::LogLevel::Error, "Hot reload failed: plugin init returned false");
+        core::log(core::LogLevel::Error,
+            "Hot reload failed: plugin init returned false. Restart required.");
+        m_initialized = false;
+        m_reload_in_progress = false;
 
         if (m_callback) {
             m_callback(false, "Plugin initialization failed");
@@ -165,6 +190,8 @@ void HotReloadManager::do_reload() {
     m_reload_count++;
 
     core::log(core::LogLevel::Info, "=== HOT RELOAD COMPLETE ({:.2f}ms) ===", m_last_reload_time_ms);
+
+    m_reload_in_progress = false;
 
     if (m_callback) {
         m_callback(true, "Reload successful");

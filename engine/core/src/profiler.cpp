@@ -1,9 +1,13 @@
 #include <engine/core/profiler.hpp>
+#include <engine/core/log.hpp>
+#include <engine/core/time.hpp>
+#include <engine/render/debug_draw.hpp>
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
 #include <thread>
 #include <cstring>
+#include <format>
 
 namespace engine::core {
 
@@ -191,6 +195,7 @@ const FrameStats& Profiler::get_frame_stats() {
 }
 
 void Profiler::set_draw_stats(uint32_t draw_calls, uint32_t triangles) {
+    std::lock_guard<std::mutex> lock(s_mutex);
     s_current_stats.draw_calls = draw_calls;
     s_current_stats.triangles = triangles;
 }
@@ -261,11 +266,37 @@ std::string Profiler::get_frame_time_graph(int width) {
     return ss.str();
 }
 
-void Profiler::draw_overlay(void* /*renderer*/) {
+void Profiler::draw_overlay(void* renderer_ptr) {
     if (!s_overlay_visible) return;
 
-    // TODO: Render overlay using debug draw or immediate mode UI
-    // This would draw frame time graph, FPS counter, and sample breakdown
+    auto* renderer = static_cast<render::IRenderer*>(renderer_ptr);
+    if (!renderer) return;
+
+    const auto& stats = s_last_stats;
+    float y = 10.0f;
+    const float line_height = 16.0f;
+
+    // FPS and frame time
+    render::DebugDraw::text_2d(10.0f, y, std::format("FPS: {} ({:.2f}ms)",
+        stats.fps, stats.frame_time_ms), render::DebugDraw::WHITE);
+    y += line_height;
+
+    // GPU time
+    if (stats.gpu_time_ms > 0.0) {
+        render::DebugDraw::text_2d(10.0f, y, std::format("GPU: {:.2f}ms",
+            stats.gpu_time_ms), render::DebugDraw::CYAN);
+        y += line_height;
+    }
+
+    // Draw calls and triangles
+    render::DebugDraw::text_2d(10.0f, y, std::format("Draw calls: {} | Tris: {}",
+        stats.draw_calls, stats.triangles), render::DebugDraw::YELLOW);
+    y += line_height;
+
+    // Memory usage
+    size_t mem_mb = MemoryTracker::current_usage() / (1024 * 1024);
+    render::DebugDraw::text_2d(10.0f, y, std::format("Memory: {} MB", mem_mb),
+        render::DebugDraw::GREEN);
 }
 
 void Profiler::set_overlay_visible(bool visible) {
@@ -352,7 +383,7 @@ void* MemoryTracker::allocate(size_t size, const char* tag) {
     alloc.ptr = ptr;
     alloc.size = size;
     alloc.tag = tag;
-    alloc.frame = 0;  // TODO: Get current frame from Profiler
+    alloc.frame = static_cast<uint32_t>(Time::frame_count());
 
     s_allocations[ptr] = alloc;
     s_total_allocated += size;
@@ -412,11 +443,12 @@ void MemoryTracker::dump_leaks() {
         return;
     }
 
-    // TODO: Log memory leaks
+    log(LogLevel::Warn, "=== Memory Leak Report ===");
+    log(LogLevel::Warn, "Leaked allocations: {}", s_allocations.size());
+
     for (const auto& [ptr, alloc] : s_allocations) {
-        (void)ptr;
-        (void)alloc;
-        // Log: "Memory leak: %zu bytes at %p (tag: %s)", alloc.size, alloc.ptr, alloc.tag ? alloc.tag : "none"
+        log(LogLevel::Warn, "  Leak: {} bytes at {} (tag: {}, frame: {})",
+            alloc.size, ptr, alloc.tag ? alloc.tag : "none", alloc.frame);
     }
 }
 
