@@ -9,6 +9,7 @@ target_sources(engine_asset
         src/importer.cpp
         src/hot_reload.cpp
         src/manager.cpp
+        src/asset_registry.cpp
         src/gltf_importer.cpp
         src/obj_importer.cpp
         src/fbx_importer.cpp
@@ -30,6 +31,7 @@ target_sources(engine_asset
             include/engine/asset/asset.hpp
             include/engine/asset/types.hpp
             include/engine/asset/manager.hpp
+            include/engine/asset/asset_registry.hpp
             include/engine/asset/gltf_importer.hpp
             include/engine/asset/obj_importer.hpp
             include/engine/asset/fbx_importer.hpp

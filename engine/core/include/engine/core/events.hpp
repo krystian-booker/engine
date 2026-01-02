@@ -1,8 +1,9 @@
 #pragma once
 
 #include <engine/core/math.hpp>
+#include <engine/core/uuid.hpp>
+#include <engine/core/asset_handle.hpp>
 #include <cstdint>
-#include <string>
 
 namespace engine::core {
 
@@ -53,17 +54,17 @@ struct MouseScrollEvent {
 // ============================================================================
 
 struct AssetLoadedEvent {
-    std::string path;
-    std::string type;  // "mesh", "texture", "material", etc.
+    UUID asset_id;
+    AssetType type;
 };
 
 struct AssetReloadedEvent {
-    std::string path;
-    std::string type;
+    UUID asset_id;
+    AssetType type;
 };
 
 struct AssetUnloadedEvent {
-    std::string path;
+    UUID asset_id;
 };
 
 // ============================================================================
@@ -71,11 +72,11 @@ struct AssetUnloadedEvent {
 // ============================================================================
 
 struct SceneLoadedEvent {
-    std::string path;
+    UUID scene_id;
 };
 
 struct SceneUnloadedEvent {
-    std::string path;
+    UUID scene_id;
 };
 
 // ============================================================================

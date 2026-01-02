@@ -1,6 +1,7 @@
 #pragma once
 
 #include <engine/core/math.hpp>
+#include <engine/core/uuid.hpp>
 #include <engine/render/types.hpp>
 #include <string>
 #include <cstdint>
@@ -12,7 +13,8 @@ using namespace engine::render;
 
 // Base asset class
 struct Asset {
-    std::string path;
+    UUID id;                    // Unique identifier (stable across renames)
+    std::string path;           // Current file path (for loading/hot-reload)
     uint64_t last_modified = 0;
 
     virtual ~Asset() = default;

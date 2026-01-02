@@ -120,58 +120,69 @@ void AssetManager::cleanup_orphans_if_needed() {
     }
 }
 
+UUID AssetManager::ensure_registered(const std::string& path, AssetType type) {
+    return get_asset_registry().register_asset(path, type);
+}
+
 std::shared_ptr<MeshAsset> AssetManager::load_mesh(const std::string& path) {
-    // Check cache
+    // Register and get UUID
+    UUID id = ensure_registered(path, AssetType::Mesh);
+    
+    // Check cache with UUID
     {
         std::shared_lock lock(m_mutex);
-        auto it = m_meshes.find(path);
+        auto it = m_meshes.find(id);
         if (it != m_meshes.end()) return it->second;
     }
 
     // Check loading status
     {
         std::unique_lock lock(m_mutex);
-        if (m_meshes.count(path)) return m_meshes[path];
+        if (m_meshes.count(id)) return m_meshes[id];
 
-        if (m_status[path] == AssetStatus::Loading) {
-            m_load_cv.wait(lock, [this, &path] {
-                return m_status[path] != AssetStatus::Loading;
+        if (m_status[id] == AssetStatus::Loading) {
+            m_load_cv.wait(lock, [this, id] {
+                return m_status[id] != AssetStatus::Loading;
             });
-            if (m_meshes.count(path)) return m_meshes[path];
+            if (m_meshes.count(id)) return m_meshes[id];
             return nullptr;
         }
-        m_status[path] = AssetStatus::Loading;
+        m_status[id] = AssetStatus::Loading;
     }
 
     // Load
-    auto asset = load_mesh_internal(path);
+    auto asset = load_mesh_internal(path, id);
 
     // Update
     {
         std::unique_lock lock(m_mutex);
         if (asset) {
-            m_meshes[path] = asset;
-            m_status[path] = AssetStatus::Loaded;
+            asset->id = id;
+            m_meshes[id] = asset;
+            m_status[id] = AssetStatus::Loaded;
+            get_asset_registry().set_loaded(id, true);
 
             if (m_hot_reload_enabled) {
-                auto alive = m_alive;  // Capture by value for safe lifetime checking
-                HotReload::watch(path, [this, alive](const std::string& p) {
-                    if (!*alive) return;  // Manager was destroyed
-                    auto new_asset = load_mesh_internal(p);
+                auto alive = m_alive;
+                UUID captured_id = id;
+                HotReload::watch(path, [this, alive, captured_id](const std::string& p) {
+                    if (!*alive) return;
+                    auto new_asset = load_mesh_internal(p, captured_id);
                     if (new_asset) {
+                        new_asset->id = captured_id;
                         ReloadCallback cb;
                         {
                             std::unique_lock reload_lock(m_mutex);
-                            if (m_meshes.count(p)) m_orphans.push_back(m_meshes[p]);
-                            m_meshes[p] = new_asset;
+                            if (m_meshes.count(captured_id)) m_orphans.push_back(m_meshes[captured_id]);
+                            m_meshes[captured_id] = new_asset;
                             cb = m_reload_callback;
                         }
-                        if (cb) cb(p);
+                        if (cb) cb(captured_id, p);
                     }
                 });
             }
         } else {
-            m_status[path] = AssetStatus::Failed;
+            m_status[id] = AssetStatus::Failed;
         }
         m_load_cv.notify_all();
     }
@@ -180,51 +191,58 @@ std::shared_ptr<MeshAsset> AssetManager::load_mesh(const std::string& path) {
 }
 
 std::shared_ptr<TextureAsset> AssetManager::load_texture(const std::string& path) {
+    UUID id = ensure_registered(path, AssetType::Texture);
+    
     {
         std::shared_lock lock(m_mutex);
-        auto it = m_textures.find(path);
+        auto it = m_textures.find(id);
         if (it != m_textures.end()) return it->second;
     }
     {
         std::unique_lock lock(m_mutex);
-        if (m_textures.count(path)) return m_textures[path];
+        if (m_textures.count(id)) return m_textures[id];
         
-        if (m_status[path] == AssetStatus::Loading) {
-            m_load_cv.wait(lock, [this, &path] {
-                return m_status[path] != AssetStatus::Loading;
+        if (m_status[id] == AssetStatus::Loading) {
+            m_load_cv.wait(lock, [this, id] {
+                return m_status[id] != AssetStatus::Loading;
             });
-            if (m_textures.count(path)) return m_textures[path];
+            if (m_textures.count(id)) return m_textures[id];
             return nullptr;
         }
-        m_status[path] = AssetStatus::Loading;
+        m_status[id] = AssetStatus::Loading;
     }
 
-    auto asset = load_texture_internal(path);
+    auto asset = load_texture_internal(path, id);
 
     {
         std::unique_lock lock(m_mutex);
         if (asset) {
-            m_textures[path] = asset;
-            m_status[path] = AssetStatus::Loaded;
+            asset->id = id;
+            m_textures[id] = asset;
+            m_status[id] = AssetStatus::Loaded;
+            get_asset_registry().set_loaded(id, true);
+            
             if (m_hot_reload_enabled) {
-                auto alive = m_alive;  // Capture by value for safe lifetime checking
-                HotReload::watch(path, [this, alive](const std::string& p) {
-                    if (!*alive) return;  // Manager was destroyed
-                    auto new_asset = load_texture_internal(p);
+                auto alive = m_alive;
+                UUID captured_id = id;
+                HotReload::watch(path, [this, alive, captured_id](const std::string& p) {
+                    if (!*alive) return;
+                    auto new_asset = load_texture_internal(p, captured_id);
                     if (new_asset) {
+                        new_asset->id = captured_id;
                         ReloadCallback cb;
                         {
                             std::unique_lock reload_lock(m_mutex);
-                            if (m_textures.count(p)) m_orphans.push_back(m_textures[p]);
-                            m_textures[p] = new_asset;
+                            if (m_textures.count(captured_id)) m_orphans.push_back(m_textures[captured_id]);
+                            m_textures[captured_id] = new_asset;
                             cb = m_reload_callback;
                         }
-                        if (cb) cb(p);
+                        if (cb) cb(captured_id, p);
                     }
                 });
             }
         } else {
-            m_status[path] = AssetStatus::Failed;
+            m_status[id] = AssetStatus::Failed;
         }
         m_load_cv.notify_all();
     }
@@ -232,52 +250,58 @@ std::shared_ptr<TextureAsset> AssetManager::load_texture(const std::string& path
 }
 
 std::shared_ptr<ShaderAsset> AssetManager::load_shader(const std::string& path) {
+    UUID id = ensure_registered(path, AssetType::Shader);
+    
     {
         std::shared_lock lock(m_mutex);
-        auto it = m_shaders.find(path);
+        auto it = m_shaders.find(id);
         if (it != m_shaders.end()) return it->second;
     }
     {
         std::unique_lock lock(m_mutex);
-        if (m_shaders.count(path)) return m_shaders[path];
+        if (m_shaders.count(id)) return m_shaders[id];
         
-        if (m_status[path] == AssetStatus::Loading) {
-            m_load_cv.wait(lock, [this, &path] {
-                return m_status[path] != AssetStatus::Loading;
+        if (m_status[id] == AssetStatus::Loading) {
+            m_load_cv.wait(lock, [this, id] {
+                return m_status[id] != AssetStatus::Loading;
             });
-            if (m_shaders.count(path)) return m_shaders[path];
+            if (m_shaders.count(id)) return m_shaders[id];
             return nullptr;
         }
-        m_status[path] = AssetStatus::Loading;
+        m_status[id] = AssetStatus::Loading;
     }
 
-    auto asset = load_shader_internal(path);
+    auto asset = load_shader_internal(path, id);
 
     {
         std::unique_lock lock(m_mutex);
         if (asset) {
-            m_shaders[path] = asset;
-            m_status[path] = AssetStatus::Loaded;
+            asset->id = id;
+            m_shaders[id] = asset;
+            m_status[id] = AssetStatus::Loaded;
+            get_asset_registry().set_loaded(id, true);
             
             if (m_hot_reload_enabled) {
-                auto alive = m_alive;  // Capture by value for safe lifetime checking
-                HotReload::watch(path, [this, alive](const std::string& p) {
-                    if (!*alive) return;  // Manager was destroyed
-                    auto new_asset = load_shader_internal(p);
+                auto alive = m_alive;
+                UUID captured_id = id;
+                HotReload::watch(path, [this, alive, captured_id](const std::string& p) {
+                    if (!*alive) return;
+                    auto new_asset = load_shader_internal(p, captured_id);
                     if (new_asset) {
+                        new_asset->id = captured_id;
                         ReloadCallback cb;
                         {
                             std::unique_lock reload_lock(m_mutex);
-                            if (m_shaders.count(p)) m_orphans.push_back(m_shaders[p]);
-                            m_shaders[p] = new_asset;
+                            if (m_shaders.count(captured_id)) m_orphans.push_back(m_shaders[captured_id]);
+                            m_shaders[captured_id] = new_asset;
                             cb = m_reload_callback;
                         }
-                        if (cb) cb(p);
+                        if (cb) cb(captured_id, p);
                     }
                 });
             }
         } else {
-            m_status[path] = AssetStatus::Failed;
+            m_status[id] = AssetStatus::Failed;
         }
         m_load_cv.notify_all();
     }
@@ -285,51 +309,58 @@ std::shared_ptr<ShaderAsset> AssetManager::load_shader(const std::string& path) 
 }
 
 std::shared_ptr<MaterialAsset> AssetManager::load_material(const std::string& path) {
+    UUID id = ensure_registered(path, AssetType::Material);
+    
     {
         std::shared_lock lock(m_mutex);
-        auto it = m_materials.find(path);
+        auto it = m_materials.find(id);
         if (it != m_materials.end()) return it->second;
     }
     {
         std::unique_lock lock(m_mutex);
-        if (m_materials.count(path)) return m_materials[path];
+        if (m_materials.count(id)) return m_materials[id];
         
-        if (m_status[path] == AssetStatus::Loading) {
-            m_load_cv.wait(lock, [this, &path] {
-                return m_status[path] != AssetStatus::Loading;
+        if (m_status[id] == AssetStatus::Loading) {
+            m_load_cv.wait(lock, [this, id] {
+                return m_status[id] != AssetStatus::Loading;
             });
-            if (m_materials.count(path)) return m_materials[path];
+            if (m_materials.count(id)) return m_materials[id];
             return nullptr;
         }
-        m_status[path] = AssetStatus::Loading;
+        m_status[id] = AssetStatus::Loading;
     }
 
-    auto asset = load_material_internal(path);
+    auto asset = load_material_internal(path, id);
 
     {
         std::unique_lock lock(m_mutex);
         if (asset) {
-            m_materials[path] = asset;
-            m_status[path] = AssetStatus::Loaded;
+            asset->id = id;
+            m_materials[id] = asset;
+            m_status[id] = AssetStatus::Loaded;
+            get_asset_registry().set_loaded(id, true);
+            
             if (m_hot_reload_enabled) {
-                auto alive = m_alive;  // Capture by value for safe lifetime checking
-                HotReload::watch(path, [this, alive](const std::string& p) {
-                    if (!*alive) return;  // Manager was destroyed
-                    auto new_asset = load_material_internal(p);
+                auto alive = m_alive;
+                UUID captured_id = id;
+                HotReload::watch(path, [this, alive, captured_id](const std::string& p) {
+                    if (!*alive) return;
+                    auto new_asset = load_material_internal(p, captured_id);
                     if (new_asset) {
+                        new_asset->id = captured_id;
                         ReloadCallback cb;
                         {
                             std::unique_lock reload_lock(m_mutex);
-                            if (m_materials.count(p)) m_orphans.push_back(m_materials[p]);
-                            m_materials[p] = new_asset;
+                            if (m_materials.count(captured_id)) m_orphans.push_back(m_materials[captured_id]);
+                            m_materials[captured_id] = new_asset;
                             cb = m_reload_callback;
                         }
-                        if (cb) cb(p);
+                        if (cb) cb(captured_id, p);
                     }
                 });
             }
         } else {
-            m_status[path] = AssetStatus::Failed;
+            m_status[id] = AssetStatus::Failed;
         }
         m_load_cv.notify_all();
     }
@@ -337,52 +368,58 @@ std::shared_ptr<MaterialAsset> AssetManager::load_material(const std::string& pa
 }
 
 std::shared_ptr<AudioAsset> AssetManager::load_audio(const std::string& path) {
+    UUID id = ensure_registered(path, AssetType::Audio);
+    
     {
         std::shared_lock lock(m_mutex);
-        auto it = m_audio.find(path);
+        auto it = m_audio.find(id);
         if (it != m_audio.end()) return it->second;
     }
     {
         std::unique_lock lock(m_mutex);
-        if (m_audio.count(path)) return m_audio[path];
+        if (m_audio.count(id)) return m_audio[id];
         
-        if (m_status[path] == AssetStatus::Loading) {
-            m_load_cv.wait(lock, [this, &path] {
-                return m_status[path] != AssetStatus::Loading;
+        if (m_status[id] == AssetStatus::Loading) {
+            m_load_cv.wait(lock, [this, id] {
+                return m_status[id] != AssetStatus::Loading;
             });
-            if (m_audio.count(path)) return m_audio[path];
+            if (m_audio.count(id)) return m_audio[id];
             return nullptr;
         }
-        m_status[path] = AssetStatus::Loading;
+        m_status[id] = AssetStatus::Loading;
     }
 
-    auto asset = load_audio_internal(path);
+    auto asset = load_audio_internal(path, id);
 
     {
         std::unique_lock lock(m_mutex);
         if (asset) {
-            m_audio[path] = asset;
-            m_status[path] = AssetStatus::Loaded;
+            asset->id = id;
+            m_audio[id] = asset;
+            m_status[id] = AssetStatus::Loaded;
+            get_asset_registry().set_loaded(id, true);
 
             if (m_hot_reload_enabled) {
-                auto alive = m_alive;  // Capture by value for safe lifetime checking
-                HotReload::watch(path, [this, alive](const std::string& p) {
-                    if (!*alive) return;  // Manager was destroyed
-                    auto new_asset = load_audio_internal(p);
+                auto alive = m_alive;
+                UUID captured_id = id;
+                HotReload::watch(path, [this, alive, captured_id](const std::string& p) {
+                    if (!*alive) return;
+                    auto new_asset = load_audio_internal(p, captured_id);
                     if (new_asset) {
+                        new_asset->id = captured_id;
                         ReloadCallback cb;
                         {
                             std::unique_lock reload_lock(m_mutex);
-                            if (m_audio.count(p)) m_orphans.push_back(m_audio[p]);
-                            m_audio[p] = new_asset;
+                            if (m_audio.count(captured_id)) m_orphans.push_back(m_audio[captured_id]);
+                            m_audio[captured_id] = new_asset;
                             cb = m_reload_callback;
                         }
-                        if (cb) cb(p);
+                        if (cb) cb(captured_id, p);
                     }
                 });
             }
         } else {
-            m_status[path] = AssetStatus::Failed;
+            m_status[id] = AssetStatus::Failed;
         }
         m_load_cv.notify_all();
     }
@@ -390,23 +427,25 @@ std::shared_ptr<AudioAsset> AssetManager::load_audio(const std::string& path) {
 }
 
 std::shared_ptr<SceneAsset> AssetManager::load_scene(const std::string& path) {
+    UUID id = ensure_registered(path, AssetType::Scene);
+    
     {
         std::shared_lock lock(m_mutex);
-        auto it = m_scenes.find(path);
+        auto it = m_scenes.find(id);
         if (it != m_scenes.end()) return it->second;
     }
     {
         std::unique_lock lock(m_mutex);
-        if (m_scenes.count(path)) return m_scenes[path];
+        if (m_scenes.count(id)) return m_scenes[id];
         
-        if (m_status[path] == AssetStatus::Loading) {
-            m_load_cv.wait(lock, [this, &path] {
-                return m_status[path] != AssetStatus::Loading;
+        if (m_status[id] == AssetStatus::Loading) {
+            m_load_cv.wait(lock, [this, id] {
+                return m_status[id] != AssetStatus::Loading;
             });
-            if (m_scenes.count(path)) return m_scenes[path];
+            if (m_scenes.count(id)) return m_scenes[id];
             return nullptr;
         }
-        m_status[path] = AssetStatus::Loading;
+        m_status[id] = AssetStatus::Loading;
     }
 
     auto asset = SceneLoader::load(path);
@@ -414,28 +453,32 @@ std::shared_ptr<SceneAsset> AssetManager::load_scene(const std::string& path) {
     {
         std::unique_lock lock(m_mutex);
         if (asset) {
-            m_scenes[path] = asset;
-            m_status[path] = AssetStatus::Loaded;
+            asset->id = id;
+            m_scenes[id] = asset;
+            m_status[id] = AssetStatus::Loaded;
+            get_asset_registry().set_loaded(id, true);
 
             if (m_hot_reload_enabled) {
-                auto alive = m_alive;  // Capture by value for safe lifetime checking
-                HotReload::watch(path, [this, alive](const std::string& p) {
-                    if (!*alive) return;  // Manager was destroyed
+                auto alive = m_alive;
+                UUID captured_id = id;
+                HotReload::watch(path, [this, alive, captured_id](const std::string& p) {
+                    if (!*alive) return;
                     auto new_asset = SceneLoader::load(p);
                     if (new_asset) {
+                        new_asset->id = captured_id;
                         ReloadCallback cb;
                         {
                             std::unique_lock reload_lock(m_mutex);
-                            if (m_scenes.count(p)) m_orphans.push_back(m_scenes[p]);
-                            m_scenes[p] = new_asset;
+                            if (m_scenes.count(captured_id)) m_orphans.push_back(m_scenes[captured_id]);
+                            m_scenes[captured_id] = new_asset;
                             cb = m_reload_callback;
                         }
-                        if (cb) cb(p);
+                        if (cb) cb(captured_id, p);
                     }
                 });
             }
         } else {
-            m_status[path] = AssetStatus::Failed;
+            m_status[id] = AssetStatus::Failed;
         }
         m_load_cv.notify_all();
     }
@@ -443,23 +486,25 @@ std::shared_ptr<SceneAsset> AssetManager::load_scene(const std::string& path) {
 }
 
 std::shared_ptr<PrefabAsset> AssetManager::load_prefab(const std::string& path) {
+    UUID id = ensure_registered(path, AssetType::Prefab);
+    
     {
         std::shared_lock lock(m_mutex);
-        auto it = m_prefabs.find(path);
+        auto it = m_prefabs.find(id);
         if (it != m_prefabs.end()) return it->second;
     }
     {
         std::unique_lock lock(m_mutex);
-        if (m_prefabs.count(path)) return m_prefabs[path];
+        if (m_prefabs.count(id)) return m_prefabs[id];
         
-        if (m_status[path] == AssetStatus::Loading) {
-            m_load_cv.wait(lock, [this, &path] {
-                return m_status[path] != AssetStatus::Loading;
+        if (m_status[id] == AssetStatus::Loading) {
+            m_load_cv.wait(lock, [this, id] {
+                return m_status[id] != AssetStatus::Loading;
             });
-            if (m_prefabs.count(path)) return m_prefabs[path];
+            if (m_prefabs.count(id)) return m_prefabs[id];
             return nullptr;
         }
-        m_status[path] = AssetStatus::Loading;
+        m_status[id] = AssetStatus::Loading;
     }
 
     auto asset = PrefabLoader::load(path);
@@ -467,32 +512,121 @@ std::shared_ptr<PrefabAsset> AssetManager::load_prefab(const std::string& path) 
     {
         std::unique_lock lock(m_mutex);
         if (asset) {
-            m_prefabs[path] = asset;
-            m_status[path] = AssetStatus::Loaded;
+            asset->id = id;
+            m_prefabs[id] = asset;
+            m_status[id] = AssetStatus::Loaded;
+            get_asset_registry().set_loaded(id, true);
 
             if (m_hot_reload_enabled) {
-                auto alive = m_alive;  // Capture by value for safe lifetime checking
-                HotReload::watch(path, [this, alive](const std::string& p) {
-                    if (!*alive) return;  // Manager was destroyed
+                auto alive = m_alive;
+                UUID captured_id = id;
+                HotReload::watch(path, [this, alive, captured_id](const std::string& p) {
+                    if (!*alive) return;
                     auto new_asset = PrefabLoader::load(p);
                     if (new_asset) {
+                        new_asset->id = captured_id;
                         ReloadCallback cb;
                         {
                             std::unique_lock reload_lock(m_mutex);
-                            if (m_prefabs.count(p)) m_orphans.push_back(m_prefabs[p]);
-                            m_prefabs[p] = new_asset;
+                            if (m_prefabs.count(captured_id)) m_orphans.push_back(m_prefabs[captured_id]);
+                            m_prefabs[captured_id] = new_asset;
                             cb = m_reload_callback;
                         }
-                        if (cb) cb(p);
+                        if (cb) cb(captured_id, p);
                     }
                 });
             }
         } else {
-            m_status[path] = AssetStatus::Failed;
+            m_status[id] = AssetStatus::Failed;
         }
         m_load_cv.notify_all();
     }
     return asset;
+}
+
+// ============================================================================
+// UUID-based loading (delegates to path-based after registry lookup)
+// ============================================================================
+
+std::shared_ptr<MeshAsset> AssetManager::load_mesh(UUID id) {
+    auto path_opt = get_asset_registry().get_path(id);
+    if (!path_opt) {
+        log(LogLevel::Warn, "load_mesh: Unknown UUID");
+        return nullptr;
+    }
+    return load_mesh(*path_opt);
+}
+
+std::shared_ptr<TextureAsset> AssetManager::load_texture(UUID id) {
+    auto path_opt = get_asset_registry().get_path(id);
+    if (!path_opt) {
+        log(LogLevel::Warn, "load_texture: Unknown UUID");
+        return nullptr;
+    }
+    return load_texture(*path_opt);
+}
+
+std::shared_ptr<ShaderAsset> AssetManager::load_shader(UUID id) {
+    auto path_opt = get_asset_registry().get_path(id);
+    if (!path_opt) {
+        log(LogLevel::Warn, "load_shader: Unknown UUID");
+        return nullptr;
+    }
+    return load_shader(*path_opt);
+}
+
+std::shared_ptr<MaterialAsset> AssetManager::load_material(UUID id) {
+    auto path_opt = get_asset_registry().get_path(id);
+    if (!path_opt) {
+        log(LogLevel::Warn, "load_material: Unknown UUID");
+        return nullptr;
+    }
+    return load_material(*path_opt);
+}
+
+std::shared_ptr<AudioAsset> AssetManager::load_audio(UUID id) {
+    auto path_opt = get_asset_registry().get_path(id);
+    if (!path_opt) {
+        log(LogLevel::Warn, "load_audio: Unknown UUID");
+        return nullptr;
+    }
+    return load_audio(*path_opt);
+}
+
+std::shared_ptr<SceneAsset> AssetManager::load_scene(UUID id) {
+    auto path_opt = get_asset_registry().get_path(id);
+    if (!path_opt) {
+        log(LogLevel::Warn, "load_scene: Unknown UUID");
+        return nullptr;
+    }
+    return load_scene(*path_opt);
+}
+
+std::shared_ptr<PrefabAsset> AssetManager::load_prefab(UUID id) {
+    auto path_opt = get_asset_registry().get_path(id);
+    if (!path_opt) {
+        log(LogLevel::Warn, "load_prefab: Unknown UUID");
+        return nullptr;
+    }
+    return load_prefab(*path_opt);
+}
+
+std::shared_ptr<AnimationAsset> AssetManager::load_animation(UUID id) {
+    auto path_opt = get_asset_registry().get_path(id);
+    if (!path_opt) {
+        log(LogLevel::Warn, "load_animation: Unknown UUID");
+        return nullptr;
+    }
+    return load_animation(*path_opt);
+}
+
+std::shared_ptr<SkeletonAsset> AssetManager::load_skeleton(UUID id) {
+    auto path_opt = get_asset_registry().get_path(id);
+    if (!path_opt) {
+        log(LogLevel::Warn, "load_skeleton: Unknown UUID");
+        return nullptr;
+    }
+    return load_skeleton(*path_opt);
 }
 
 std::future<std::shared_ptr<MeshAsset>> AssetManager::load_mesh_async(const std::string& path) {
@@ -546,33 +680,36 @@ std::shared_ptr<AnimationAsset> AssetManager::load_animation(const std::string& 
         return animations.empty() ? nullptr : animations[0];
     }
 
+    // Register and get UUID for this specific animation path
+    UUID id = ensure_registered(path, AssetType::Animation);
+
     // Check cache first
     {
         std::shared_lock lock(m_mutex);
-        auto it = m_animations.find(path);
+        auto it = m_animations.find(id);
         if (it != m_animations.end()) return it->second;
     }
 
     // Check loading status
     {
         std::unique_lock lock(m_mutex);
-        if (m_animations.count(path)) return m_animations[path];
+        if (m_animations.count(id)) return m_animations[id];
 
-        if (m_status[path] == AssetStatus::Loading) {
-            m_load_cv.wait(lock, [this, &path] {
-                return m_status[path] != AssetStatus::Loading;
+        if (m_status[id] == AssetStatus::Loading) {
+            m_load_cv.wait(lock, [this, id] {
+                return m_status[id] != AssetStatus::Loading;
             });
-            if (m_animations.count(path)) return m_animations[path];
+            if (m_animations.count(id)) return m_animations[id];
             return nullptr;
         }
-        m_status[path] = AssetStatus::Loading;
+        m_status[id] = AssetStatus::Loading;
     }
 
     // Load all animations from the file
     std::string model_path = path.substr(0, hash_pos);
     std::string anim_ref = path.substr(hash_pos + 1);
 
-    auto all_animations = load_animations_internal(model_path);
+    auto all_animations = load_animations_internal(model_path, UUID());
 
     std::shared_ptr<AnimationAsset> target_asset;
 
@@ -601,19 +738,22 @@ std::shared_ptr<AnimationAsset> AssetManager::load_animation(const std::string& 
     {
         std::unique_lock lock(m_mutex);
         if (target_asset) {
+            target_asset->id = id;
             target_asset->path = path;
-            m_animations[path] = target_asset;
-            m_status[path] = AssetStatus::Loaded;
+            m_animations[id] = target_asset;
+            m_status[id] = AssetStatus::Loaded;
+            get_asset_registry().set_loaded(id, true);
 
             if (m_hot_reload_enabled) {
                 auto alive = m_alive;
-                HotReload::watch(model_path, [this, alive, path, model_path](const std::string&) {
+                UUID captured_id = id;
+                HotReload::watch(model_path, [this, alive, captured_id, path, model_path](const std::string&) {
                     if (!*alive) return;
                     // Reload animation from the model file
                     size_t hp = path.find('#');
                     if (hp == std::string::npos) return;
                     std::string anim_ref = path.substr(hp + 1);
-                    auto animations = load_animations_internal(model_path);
+                    auto animations = load_animations_internal(model_path, UUID());
 
                     std::shared_ptr<AnimationAsset> new_asset;
                     if (anim_ref.rfind("animation", 0) == 0 && anim_ref.size() > 9) {
@@ -636,20 +776,21 @@ std::shared_ptr<AnimationAsset> AssetManager::load_animation(const std::string& 
                     }
 
                     if (new_asset) {
+                        new_asset->id = captured_id;
                         new_asset->path = path;
                         ReloadCallback cb;
                         {
                             std::unique_lock reload_lock(m_mutex);
-                            if (m_animations.count(path)) m_orphans.push_back(m_animations[path]);
-                            m_animations[path] = new_asset;
+                            if (m_animations.count(captured_id)) m_orphans.push_back(m_animations[captured_id]);
+                            m_animations[captured_id] = new_asset;
                             cb = m_reload_callback;
                         }
-                        if (cb) cb(path);
+                        if (cb) cb(captured_id, path);
                     }
                 });
             }
         } else {
-            m_status[path] = AssetStatus::Failed;
+            m_status[id] = AssetStatus::Failed;
         }
         m_load_cv.notify_all();
     }
@@ -658,63 +799,66 @@ std::shared_ptr<AnimationAsset> AssetManager::load_animation(const std::string& 
 }
 
 std::vector<std::shared_ptr<AnimationAsset>> AssetManager::load_animations(const std::string& path) {
+    UUID id = ensure_registered(path, AssetType::Animation);
+    
     // Check cache first
     {
         std::shared_lock lock(m_mutex);
-        auto it = m_animation_sets.find(path);
+        auto it = m_animation_sets.find(id);
         if (it != m_animation_sets.end()) return it->second;
     }
 
     // Check loading status
-    std::string status_key = path + "#animations";
     {
         std::unique_lock lock(m_mutex);
-        if (m_animation_sets.count(path)) return m_animation_sets[path];
+        if (m_animation_sets.count(id)) return m_animation_sets[id];
 
-        if (m_status[status_key] == AssetStatus::Loading) {
-            m_load_cv.wait(lock, [this, &status_key] {
-                return m_status[status_key] != AssetStatus::Loading;
+        if (m_status[id] == AssetStatus::Loading) {
+            m_load_cv.wait(lock, [this, id] {
+                return m_status[id] != AssetStatus::Loading;
             });
-            if (m_animation_sets.count(path)) return m_animation_sets[path];
+            if (m_animation_sets.count(id)) return m_animation_sets[id];
             return {};
         }
-        m_status[status_key] = AssetStatus::Loading;
+        m_status[id] = AssetStatus::Loading;
     }
 
     // Load animations
-    auto animations = load_animations_internal(path);
+    auto animations = load_animations_internal(path, id);
 
     // Update cache
     {
         std::unique_lock lock(m_mutex);
         if (!animations.empty()) {
-            m_animation_sets[path] = animations;
-            m_status[status_key] = AssetStatus::Loaded;
+            m_animation_sets[id] = animations;
+            m_status[id] = AssetStatus::Loaded;
+            get_asset_registry().set_loaded(id, true);
 
             if (m_hot_reload_enabled) {
                 auto alive = m_alive;
-                HotReload::watch(path, [this, alive, path](const std::string&) {
+                UUID captured_id = id;
+                HotReload::watch(path, [this, alive, captured_id](const std::string& p) {
                     if (!*alive) return;
-                    auto new_animations = load_animations_internal(path);
+                    auto new_animations = load_animations_internal(p, captured_id);
                     if (!new_animations.empty()) {
                         ReloadCallback cb;
                         {
                             std::unique_lock reload_lock(m_mutex);
                             // Move old animations to orphans
-                            if (m_animation_sets.count(path)) {
-                                for (auto& anim : m_animation_sets[path]) {
+                            if (m_animation_sets.count(captured_id)) {
+                                for (auto& anim : m_animation_sets[captured_id]) {
                                     m_orphans.push_back(anim);
                                 }
                             }
-                            m_animation_sets[path] = new_animations;
+                            m_animation_sets[captured_id] = new_animations;
                             cb = m_reload_callback;
                         }
-                        if (cb) cb(path);
+                        if (cb) cb(captured_id, p);
                     }
                 });
             }
         } else {
-            m_status[status_key] = AssetStatus::Failed;
+            m_status[id] = AssetStatus::Failed;
         }
         m_load_cv.notify_all();
     }
@@ -723,55 +867,61 @@ std::vector<std::shared_ptr<AnimationAsset>> AssetManager::load_animations(const
 }
 
 std::shared_ptr<SkeletonAsset> AssetManager::load_skeleton(const std::string& path) {
+    UUID id = ensure_registered(path, AssetType::Skeleton);
+    
     // Check cache
     {
         std::shared_lock lock(m_mutex);
-        auto it = m_skeletons.find(path);
+        auto it = m_skeletons.find(id);
         if (it != m_skeletons.end()) return it->second;
     }
 
     // Check loading status
     {
         std::unique_lock lock(m_mutex);
-        if (m_skeletons.count(path)) return m_skeletons[path];
+        if (m_skeletons.count(id)) return m_skeletons[id];
 
-        if (m_status[path] == AssetStatus::Loading) {
-            m_load_cv.wait(lock, [this, &path] {
-                return m_status[path] != AssetStatus::Loading;
+        if (m_status[id] == AssetStatus::Loading) {
+            m_load_cv.wait(lock, [this, id] {
+                return m_status[id] != AssetStatus::Loading;
             });
-            if (m_skeletons.count(path)) return m_skeletons[path];
+            if (m_skeletons.count(id)) return m_skeletons[id];
             return nullptr;
         }
-        m_status[path] = AssetStatus::Loading;
+        m_status[id] = AssetStatus::Loading;
     }
 
-    auto asset = load_skeleton_internal(path);
+    auto asset = load_skeleton_internal(path, id);
 
     {
         std::unique_lock lock(m_mutex);
         if (asset) {
-            m_skeletons[path] = asset;
-            m_status[path] = AssetStatus::Loaded;
+            asset->id = id;
+            m_skeletons[id] = asset;
+            m_status[id] = AssetStatus::Loaded;
+            get_asset_registry().set_loaded(id, true);
 
             if (m_hot_reload_enabled) {
                 auto alive = m_alive;
-                HotReload::watch(path, [this, alive](const std::string& p) {
+                UUID captured_id = id;
+                HotReload::watch(path, [this, alive, captured_id](const std::string& p) {
                     if (!*alive) return;
-                    auto new_asset = load_skeleton_internal(p);
+                    auto new_asset = load_skeleton_internal(p, captured_id);
                     if (new_asset) {
+                        new_asset->id = captured_id;
                         ReloadCallback cb;
                         {
                             std::unique_lock reload_lock(m_mutex);
-                            if (m_skeletons.count(p)) m_orphans.push_back(m_skeletons[p]);
-                            m_skeletons[p] = new_asset;
+                            if (m_skeletons.count(captured_id)) m_orphans.push_back(m_skeletons[captured_id]);
+                            m_skeletons[captured_id] = new_asset;
                             cb = m_reload_callback;
                         }
-                        if (cb) cb(p);
+                        if (cb) cb(captured_id, p);
                     }
                 });
             }
         } else {
-            m_status[path] = AssetStatus::Failed;
+            m_status[id] = AssetStatus::Failed;
         }
         m_load_cv.notify_all();
     }
@@ -837,14 +987,26 @@ std::shared_ptr<Asset> AssetManager::load(const std::string& path) {
 }
 
 bool AssetManager::is_loaded(const std::string& path) const {
+    auto id_opt = get_asset_registry().find_by_path(path);
+    if (!id_opt) return false;
+    return is_loaded(*id_opt);
+}
+
+bool AssetManager::is_loaded(UUID id) const {
     std::shared_lock lock(m_mutex);
-    auto it = m_status.find(path);
+    auto it = m_status.find(id);
     return it != m_status.end() && it->second == AssetStatus::Loaded;
 }
 
 AssetStatus AssetManager::get_status(const std::string& path) const {
+    auto id_opt = get_asset_registry().find_by_path(path);
+    if (!id_opt) return AssetStatus::NotLoaded;
+    return get_status(*id_opt);
+}
+
+AssetStatus AssetManager::get_status(UUID id) const {
     std::shared_lock lock(m_mutex);
-    auto it = m_status.find(path);
+    auto it = m_status.find(id);
     return it != m_status.end() ? it->second : AssetStatus::NotLoaded;
 }
 
@@ -875,14 +1037,23 @@ void AssetManager::poll_hot_reload() {
 }
 
 void AssetManager::unload(const std::string& path) {
+    auto id_opt = get_asset_registry().find_by_path(path);
+    if (!id_opt) return;
+    unload(*id_opt);
+}
+
+void AssetManager::unload(UUID id) {
+    auto meta_opt = get_asset_registry().find_by_id(id);
+    std::string path = meta_opt ? meta_opt->path : "";
+    
     std::unique_lock lock(m_mutex);
 
-    if (m_hot_reload_enabled) {
+    if (m_hot_reload_enabled && !path.empty()) {
         HotReload::unwatch(path);
     }
 
     auto remove_from = [&](auto& map) {
-        auto it = map.find(path);
+        auto it = map.find(id);
         if (it != map.end()) {
             destroy_asset(it->second);
             map.erase(it);
@@ -899,7 +1070,8 @@ void AssetManager::unload(const std::string& path) {
     remove_from(m_animations);
     remove_from(m_skeletons);
 
-    m_status.erase(path);
+    m_status.erase(id);
+    get_asset_registry().set_loaded(id, false);
     m_load_cv.notify_all();
 }
 
@@ -938,7 +1110,7 @@ void AssetManager::unload_unused() {
             }
         }
         if (all_unused) {
-            m_status.erase(it->first + "#animations");
+            m_status.erase(it->first);  // UUID key
             it = m_animation_sets.erase(it);
         } else {
             ++it;
@@ -1056,7 +1228,7 @@ void AssetManager::set_reload_callback(ReloadCallback callback) {
 }
 
 // Internal loading implementations
-std::shared_ptr<MeshAsset> AssetManager::load_mesh_internal(const std::string& path) {
+std::shared_ptr<MeshAsset> AssetManager::load_mesh_internal(const std::string& path, UUID id) {
     if (!m_renderer) return nullptr;
 
     log(LogLevel::Debug, ("Loading mesh: " + path).c_str());
@@ -1081,8 +1253,10 @@ std::shared_ptr<MeshAsset> AssetManager::load_mesh_internal(const std::string& p
         return nullptr;
     }
 
-    // Set last_modified timestamp
+    // Set asset metadata
     if (asset) {
+        asset->id = id;
+        asset->path = path;
         asset->last_modified = get_file_modification_time(path);
     }
     return asset;
@@ -1248,7 +1422,7 @@ static void generate_mipmaps_rgba16f(
     }
 }
 
-std::shared_ptr<TextureAsset> AssetManager::load_texture_internal(const std::string& path) {
+std::shared_ptr<TextureAsset> AssetManager::load_texture_internal(const std::string& path, UUID id) {
     if (!m_renderer) return nullptr;
 
     std::string ext = get_extension(path);
@@ -1388,7 +1562,7 @@ std::shared_ptr<TextureAsset> AssetManager::load_texture_internal(const std::str
     return asset;
 }
 
-std::shared_ptr<ShaderAsset> AssetManager::load_shader_internal(const std::string& path) {
+std::shared_ptr<ShaderAsset> AssetManager::load_shader_internal(const std::string& path, UUID id) {
     if (!m_renderer) {
         log(LogLevel::Error, "Cannot load shader: renderer not initialized");
         return nullptr;
@@ -1478,7 +1652,7 @@ std::shared_ptr<ShaderAsset> AssetManager::load_shader_internal(const std::strin
     return asset;
 }
 
-std::shared_ptr<MaterialAsset> AssetManager::load_material_internal(const std::string& path) {
+std::shared_ptr<MaterialAsset> AssetManager::load_material_internal(const std::string& path, UUID id) {
     std::string ext = get_extension(path);
     std::shared_ptr<MaterialAsset> asset;
     std::string file_path = path;
@@ -1512,7 +1686,7 @@ std::shared_ptr<MaterialAsset> AssetManager::load_material_internal(const std::s
     return asset;
 }
 
-std::shared_ptr<AudioAsset> AssetManager::load_audio_internal(const std::string& path) {
+std::shared_ptr<AudioAsset> AssetManager::load_audio_internal(const std::string& path, UUID id) {
     std::vector<uint8_t> pcm_data;
     AudioFormat format;
 
@@ -1533,7 +1707,7 @@ std::shared_ptr<AudioAsset> AssetManager::load_audio_internal(const std::string&
     return asset;
 }
 
-std::vector<std::shared_ptr<AnimationAsset>> AssetManager::load_animations_internal(const std::string& path) {
+std::vector<std::shared_ptr<AnimationAsset>> AssetManager::load_animations_internal(const std::string& path, UUID id) {
     std::vector<std::shared_ptr<AnimationAsset>> result;
 
     std::string ext = get_extension(path);
@@ -1583,7 +1757,7 @@ std::vector<std::shared_ptr<AnimationAsset>> AssetManager::load_animations_inter
     return result;
 }
 
-std::shared_ptr<SkeletonAsset> AssetManager::load_skeleton_internal(const std::string& path) {
+std::shared_ptr<SkeletonAsset> AssetManager::load_skeleton_internal(const std::string& path, UUID id) {
     std::string ext = get_extension(path);
 
     if (ext == ".gltf" || ext == ".glb" || ext == ".fbx") {

@@ -66,6 +66,8 @@ target_include_directories(engine_core
         ${CMAKE_CURRENT_SOURCE_DIR}/../scene/include
         ${CMAKE_CURRENT_SOURCE_DIR}/../render/include
         ${CMAKE_CURRENT_SOURCE_DIR}/../plugin/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../audio/include
+
 )
 
 # Scene headers require EnTT
