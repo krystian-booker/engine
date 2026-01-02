@@ -26,6 +26,8 @@ target_include_directories(engine_audio
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
+    PRIVATE
+        ${miniaudio_SOURCE_DIR}/extras/nodes/ma_reverb_node
 )
 
 target_link_libraries(engine_audio

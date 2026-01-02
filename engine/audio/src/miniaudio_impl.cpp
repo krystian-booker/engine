@@ -1,8 +1,7 @@
 // miniaudio implementation
 // This file contains all miniaudio-specific code
-
-#define MINIAUDIO_IMPLEMENTATION
 #include <miniaudio.h>
+#include <ma_reverb_node.h>
 
 #include <engine/audio/audio_engine.hpp>
 #include <engine/core/log.hpp>
@@ -878,12 +877,27 @@ void set_reverb_params_impl(AudioEngine::Impl* impl, const AudioEngine::ReverbPa
     if (!impl || !impl->initialized) return;
     std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
     
-    ma_reverb_node_set_room_size(&impl->reverb_node, params.room_size);
-    ma_reverb_node_set_damping(&impl->reverb_node, params.damping);
-    ma_reverb_node_set_width(&impl->reverb_node, params.width);
-    ma_reverb_node_set_wet(&impl->reverb_node, params.wet_volume);
-    ma_reverb_node_set_dry(&impl->reverb_node, params.dry_volume);
+    verblib_set_room_size(&impl->reverb_node.reverb, params.room_size);
+    verblib_set_damping(&impl->reverb_node.reverb, params.damping);
+    verblib_set_width(&impl->reverb_node.reverb, params.width);
+    verblib_set_wet(&impl->reverb_node.reverb, params.wet_volume);
+    verblib_set_dry(&impl->reverb_node.reverb, params.dry_volume);
     // mode is not supported in standard miniaudio reverb, it is a basic verbed.
 }
 
 } // namespace engine::audio
+
+// Include reverb node implementation
+// Include implementations (extern "C" to link correctly)
+extern "C" {
+    #include <miniaudio.c>
+    
+    #define VERBLIB_IMPLEMENTATION
+    #include <verblib.h>
+
+    #ifndef MA_ZERO_OBJECT
+    #define MA_ZERO_OBJECT(p) memset((void*)(p), 0, sizeof(*(p)))
+    #endif
+    
+    #include <ma_reverb_node.c>
+}

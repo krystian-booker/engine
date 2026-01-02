@@ -131,6 +131,9 @@ public:
     friend void resume_all_impl(Impl*);
     friend void stop_all_impl(Impl*);
     friend uint32_t get_playing_sound_count_impl(Impl*);
+
+private:
+    std::unique_ptr<Impl> m_impl;
 };
 
 // Global audio engine instance
