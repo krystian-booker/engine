@@ -47,6 +47,10 @@ struct AudioSource {
     // Computed values (updated by audio system)
     float computed_volume = 1.0f;
     float computed_pan = 0.0f;  // -1 = left, 0 = center, 1 = right
+    
+    // For Doppler calculation
+    Vec3 prev_position{0.0f};
+    bool first_update = true;
 };
 
 // Audio listener component (typically on camera/player)
@@ -57,6 +61,8 @@ struct AudioListener {
 
     // Velocity for doppler calculations
     Vec3 velocity{0.0f};
+    Vec3 prev_position{0.0f};
+    bool first_update = true;
 };
 
 // Audio trigger zone (plays sound when entered)

@@ -21,7 +21,7 @@ void AudioSystem::shutdown() {
     // Nothing to cleanup
 }
 
-void AudioSystem::update_listener(World& world, double /*dt*/) {
+void AudioSystem::update_listener(World& world, double dt) {
     auto& audio = get_audio_engine();
 
     // Find the highest-priority active listener
@@ -61,6 +61,16 @@ void AudioSystem::update_listener(World& world, double /*dt*/) {
             up = best_local->up();
         }
 
+        // Calculate listener velocity
+        if (best_listener->first_update) {
+            best_listener->velocity = Vec3{0.0f};
+            best_listener->prev_position = position;
+            best_listener->first_update = false;
+        } else if (dt > 0.0001) {
+            best_listener->velocity = (position - best_listener->prev_position) / static_cast<float>(dt);
+            best_listener->prev_position = position;
+        }
+
         // Update engine listener
         audio.set_listener_position(position);
         audio.set_listener_orientation(forward, up);
@@ -72,7 +82,7 @@ void AudioSystem::update_listener(World& world, double /*dt*/) {
     }
 }
 
-void AudioSystem::update_sources(World& world, double /*dt*/) {
+void AudioSystem::update_sources(World& world, double dt) {
     auto& audio = get_audio_engine();
 
     auto view = world.view<AudioSource, LocalTransform>();
@@ -89,6 +99,16 @@ void AudioSystem::update_sources(World& world, double /*dt*/) {
             position = wt->position();
         }
 
+        // Compute velocity for Doppler
+        Vec3 velocity{0.0f};
+        if (source.first_update) {
+            source.prev_position = position;
+            source.first_update = false;
+        } else if (dt > 0.0001) {
+            velocity = (position - source.prev_position) / static_cast<float>(dt);
+            source.prev_position = position;
+        }
+
         bool currently_playing = audio.is_sound_playing(source.sound);
 
         // Handle play state changes
@@ -99,21 +119,50 @@ void AudioSystem::update_sources(World& world, double /*dt*/) {
             config.pitch = source.pitch;
             config.loop = source.loop;
             config.spatial = source.spatial;
-
+            
+            // Apply play-time config
             if (source.spatial) {
                 audio.play_sound_3d(source.sound, position, config);
+                // Immediately apply all spatial settings
+                audio.set_sound_attenuation_model(source.sound, source.attenuation);
+                audio.set_sound_min_max_distance(source.sound, source.min_distance, source.max_distance);
+                audio.set_sound_rolloff(source.sound, source.rolloff);
+                audio.set_sound_doppler_factor(source.sound, source.enable_doppler ? source.doppler_factor : 0.0f);
+                if (source.use_cone) {
+                    audio.set_sound_cone(source.sound, source.cone_inner_angle, source.cone_outer_angle, source.cone_outer_volume);
+                }
             } else {
                 audio.play_sound(source.sound, config);
             }
         } else if (!source.playing && currently_playing) {
             // Stop playing
             audio.stop_sound(source.sound);
-        } else if (source.playing && currently_playing && source.spatial) {
-            // Update position for moving sources
-            audio.set_sound_position(source.sound, position);
+        } else if (source.playing && currently_playing) {
+            // Update runtime properties
+            if (source.spatial) {
+                audio.set_sound_position(source.sound, position);
+                audio.set_sound_velocity(source.sound, velocity);
+                
+                // Update spatial params in case they changed at runtime
+                audio.set_sound_attenuation_model(source.sound, source.attenuation);
+                audio.set_sound_min_max_distance(source.sound, source.min_distance, source.max_distance);
+                audio.set_sound_rolloff(source.sound, source.rolloff);
+                audio.set_sound_doppler_factor(source.sound, source.enable_doppler ? source.doppler_factor : 0.0f);
+                
+                if (source.use_cone) {
+                    audio.set_sound_cone(source.sound, source.cone_inner_angle, source.cone_outer_angle, source.cone_outer_volume);
+                } else {
+                    // Reset cone if disabled
+                    audio.set_sound_cone(source.sound, 360.0f, 360.0f, 0.0f);
+                }
+            }
+            
+            // Update common properties
+            audio.set_volume(source.sound, source.volume);
+            audio.set_pitch(source.sound, source.pitch);
         }
 
-        // Compute attenuation for visualization/debugging
+        // Compute attenuation for visualization/debugging (keep existing logic for debug views)
         if (source.spatial) {
             float distance = glm::distance(position, s_listener_position);
             source.computed_volume = calculate_attenuation(

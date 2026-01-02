@@ -57,6 +57,13 @@ extern void set_sound_paused_impl(AudioEngine::Impl* impl, SoundHandle h, bool p
 extern void set_sound_volume_handle_impl(AudioEngine::Impl* impl, SoundHandle h, float volume);
 extern void set_sound_pitch_handle_impl(AudioEngine::Impl* impl, SoundHandle h, float pitch);
 
+extern void set_sound_pitch_handle_impl(AudioEngine::Impl* impl, SoundHandle h, float pitch);
+extern void set_sound_attenuation_model_impl(AudioEngine::Impl* impl, SoundHandle h, AttenuationModel model);
+extern void set_sound_rolloff_impl(AudioEngine::Impl* impl, SoundHandle h, float rolloff);
+extern void set_sound_min_max_distance_impl(AudioEngine::Impl* impl, SoundHandle h, float min_dist, float max_dist);
+extern void set_sound_cone_impl(AudioEngine::Impl* impl, SoundHandle h, float inner_angle_deg, float outer_angle_deg, float outer_gain);
+extern void set_sound_doppler_factor_impl(AudioEngine::Impl* impl, SoundHandle h, float factor);
+
 // Constructor and destructor defined in miniaudio_impl.cpp where Impl is complete
 
 void AudioEngine::init(const AudioSettings& settings) {
@@ -264,6 +271,26 @@ void AudioEngine::fade_in(SoundHandle h, float duration) {
 
 void AudioEngine::fade_out(SoundHandle h, float duration) {
     fade_out_impl(m_impl.get(), h, duration);
+}
+
+void AudioEngine::set_sound_attenuation_model(SoundHandle h, AttenuationModel model) {
+    set_sound_attenuation_model_impl(m_impl.get(), h, model);
+}
+
+void AudioEngine::set_sound_rolloff(SoundHandle h, float rolloff) {
+    set_sound_rolloff_impl(m_impl.get(), h, rolloff);
+}
+
+void AudioEngine::set_sound_min_max_distance(SoundHandle h, float min_dist, float max_dist) {
+    set_sound_min_max_distance_impl(m_impl.get(), h, min_dist, max_dist);
+}
+
+void AudioEngine::set_sound_cone(SoundHandle h, float inner_angle_deg, float outer_angle_deg, float outer_gain) {
+    set_sound_cone_impl(m_impl.get(), h, inner_angle_deg, outer_angle_deg, outer_gain);
+}
+
+void AudioEngine::set_sound_doppler_factor(SoundHandle h, float factor) {
+    set_sound_doppler_factor_impl(m_impl.get(), h, factor);
 }
 
 // Global instance

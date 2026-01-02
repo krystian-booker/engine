@@ -3,6 +3,7 @@
 #include <engine/audio/sound.hpp>
 #include <engine/core/math.hpp>
 #include <engine/core/project_settings.hpp>
+#include <engine/audio/audio_components.hpp>
 #include <memory>
 #include <string>
 
@@ -36,6 +37,13 @@ public:
     void play_sound(SoundHandle h, const SoundConfig& config = {});
     void play_sound_3d(SoundHandle h, const Vec3& position, const SoundConfig& config = {});
     void stop_sound(SoundHandle h);
+
+    // Advanced 3D settings
+    void set_sound_attenuation_model(SoundHandle h, AttenuationModel model);
+    void set_sound_rolloff(SoundHandle h, float rolloff);
+    void set_sound_min_max_distance(SoundHandle h, float min_dist, float max_dist);
+    void set_sound_cone(SoundHandle h, float inner_angle_deg, float outer_angle_deg, float outer_gain);
+    void set_sound_doppler_factor(SoundHandle h, float factor);
 
     // Update playing sound properties
     void set_sound_position(SoundHandle h, const Vec3& position);
@@ -130,7 +138,13 @@ public:
     friend void pause_all_impl(Impl*);
     friend void resume_all_impl(Impl*);
     friend void stop_all_impl(Impl*);
+    friend void stop_all_impl(Impl*);
     friend uint32_t get_playing_sound_count_impl(Impl*);
+    friend void set_sound_attenuation_model_impl(Impl*, SoundHandle, AttenuationModel);
+    friend void set_sound_rolloff_impl(Impl*, SoundHandle, float);
+    friend void set_sound_min_max_distance_impl(Impl*, SoundHandle, float, float);
+    friend void set_sound_cone_impl(Impl*, SoundHandle, float, float, float);
+    friend void set_sound_doppler_factor_impl(Impl*, SoundHandle, float);
 
 private:
     std::unique_ptr<Impl> m_impl;

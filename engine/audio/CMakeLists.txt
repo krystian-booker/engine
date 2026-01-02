@@ -48,3 +48,7 @@ add_executable(audio_test tests/audio_manual_test.cpp)
 target_link_libraries(audio_test PRIVATE engine_audio)
 set_target_properties(audio_test PROPERTIES FOLDER "tests")
 
+# 3D Audio Test
+add_executable(audio_3d_test tests/audio_3d_test.cpp)
+target_link_libraries(audio_3d_test PRIVATE engine_audio)
+set_target_properties(audio_3d_test PROPERTIES FOLDER "tests")

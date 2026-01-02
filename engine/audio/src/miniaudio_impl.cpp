@@ -17,9 +17,10 @@ namespace engine::audio {
 using namespace engine::core;
 
 struct AudioEngine::Impl {
-    ma_engine engine;
-    ma_reverb_node reverb_node;
+    ma_engine engine{};
+    ma_reverb_node reverb_node{};
     bool initialized = false;
+    bool reverb_initialized = false;
     
     // Global lock for thread safety
     std::recursive_mutex m_mutex;
@@ -154,6 +155,7 @@ void init_audio_impl(AudioEngine::Impl* impl, const AudioSettings& settings) {
     } else {
         // By default, attach reverb node output to endpoint
         ma_node_attach_output_bus(&impl->reverb_node, 0, ma_engine_get_endpoint(&impl->engine), 0);
+        impl->reverb_initialized = true;
     }
 
     impl->master_volume = settings.master_volume;
@@ -234,8 +236,14 @@ void shutdown_audio_impl(AudioEngine::Impl* impl) {
     }
     impl->buses.clear();
 
-    ma_reverb_node_uninit(&impl->reverb_node, NULL);
+    if (impl->reverb_initialized) {
+        log(LogLevel::Info, "Uninit reverb node...");
+        ma_reverb_node_uninit(&impl->reverb_node, NULL);
+        log(LogLevel::Info, "Uninit reverb node done.");
+    }
+    log(LogLevel::Info, "Uninit engine...");
     ma_engine_uninit(&impl->engine);
+    log(LogLevel::Info, "Uninit engine done.");
     impl->initialized = false;
 }
 
@@ -882,7 +890,64 @@ void set_reverb_params_impl(AudioEngine::Impl* impl, const AudioEngine::ReverbPa
     verblib_set_width(&impl->reverb_node.reverb, params.width);
     verblib_set_wet(&impl->reverb_node.reverb, params.wet_volume);
     verblib_set_dry(&impl->reverb_node.reverb, params.dry_volume);
+    verblib_set_dry(&impl->reverb_node.reverb, params.dry_volume);
     // mode is not supported in standard miniaudio reverb, it is a basic verbed.
+}
+
+ma_attenuation_model map_attenuation_model(AttenuationModel model) {
+    switch (model) {
+        case AttenuationModel::None: return ma_attenuation_model_none;
+        case AttenuationModel::InverseSquare: return ma_attenuation_model_inverse;
+        case AttenuationModel::Linear: return ma_attenuation_model_linear;
+        case AttenuationModel::Logarithmic: return ma_attenuation_model_exponential;
+        default: return ma_attenuation_model_inverse;
+    }
+}
+
+void set_sound_attenuation_model_impl(AudioEngine::Impl* impl, SoundHandle h, AttenuationModel model) {
+    if (!impl) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
+    auto it = impl->sounds.find(h.id);
+    if (it == impl->sounds.end() || !it->second.loaded) return;
+
+    ma_sound_set_attenuation_model(&it->second.sound, map_attenuation_model(model));
+}
+
+void set_sound_rolloff_impl(AudioEngine::Impl* impl, SoundHandle h, float rolloff) {
+    if (!impl) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
+    auto it = impl->sounds.find(h.id);
+    if (it == impl->sounds.end() || !it->second.loaded) return;
+
+    ma_sound_set_rolloff(&it->second.sound, rolloff);
+}
+
+void set_sound_min_max_distance_impl(AudioEngine::Impl* impl, SoundHandle h, float min_dist, float max_dist) {
+    if (!impl) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
+    auto it = impl->sounds.find(h.id);
+    if (it == impl->sounds.end() || !it->second.loaded) return;
+
+    ma_sound_set_min_distance(&it->second.sound, min_dist);
+    ma_sound_set_max_distance(&it->second.sound, max_dist);
+}
+
+void set_sound_cone_impl(AudioEngine::Impl* impl, SoundHandle h, float inner_angle_deg, float outer_angle_deg, float outer_gain) {
+    if (!impl) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
+    auto it = impl->sounds.find(h.id);
+    if (it == impl->sounds.end() || !it->second.loaded) return;
+
+    ma_sound_set_cone(&it->second.sound, glm::radians(inner_angle_deg), glm::radians(outer_angle_deg), outer_gain);
+}
+
+void set_sound_doppler_factor_impl(AudioEngine::Impl* impl, SoundHandle h, float factor) {
+    if (!impl) return;
+    std::lock_guard<std::recursive_mutex> lock(impl->m_mutex);
+    auto it = impl->sounds.find(h.id);
+    if (it == impl->sounds.end() || !it->second.loaded) return;
+
+    ma_sound_set_doppler_factor(&it->second.sound, factor);
 }
 
 } // namespace engine::audio
