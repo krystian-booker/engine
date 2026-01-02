@@ -19,11 +19,15 @@
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
+#include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
+#include <Jolt/Physics/Collision/Shape/ShapeFilter.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/CollideShape.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
 #include <Jolt/Physics/Collision/BroadPhase/BroadPhaseQuery.h>
+#include <Jolt/Physics/Collision/ContactListener.h>
+#include <Jolt/Physics/Body/BodyFilter.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyActivationListener.h>
 #include <Jolt/Physics/Body/BodyLock.h>
@@ -105,6 +109,53 @@ public:
     }
 };
 
+// Helper to check if a layer is enabled in the provided mask
+static bool layer_matches_mask(uint16_t mask, ObjectLayer layer) {
+    if (mask == 0) return false;
+    const uint32_t layer_index = static_cast<uint32_t>(layer);
+    if (layer_index >= 16) return false;
+    return (mask & (1u << layer_index)) != 0;
+}
+
+// Object layer filter that respects the provided layer mask
+class LayerMaskFilter final : public ObjectLayerFilter {
+public:
+    explicit LayerMaskFilter(uint16_t mask) : m_mask(mask) {}
+
+    bool ShouldCollide(ObjectLayer layer) const override {
+        return layer_matches_mask(m_mask, layer);
+    }
+
+private:
+    uint16_t m_mask;
+};
+
+// Convert Jolt vectors to engine vectors
+static Vec3 to_engine_vec3(const RVec3& v) {
+    return Vec3{
+        static_cast<float>(v.GetX()),
+        static_cast<float>(v.GetY()),
+        static_cast<float>(v.GetZ())
+    };
+}
+
+static Vec3 to_engine_vec3(const JPH::Vec3& v) {
+    return Vec3{v.GetX(), v.GetY(), v.GetZ()};
+}
+
+// Forward declaration for contact listener implementation
+class ContactListenerImpl;
+
+// Build a deterministic key for a contact pair
+static uint64_t make_contact_key(const BodyID& a, const BodyID& b) {
+    const uint32_t ida = a.GetIndexAndSequenceNumber();
+    const uint32_t idb = b.GetIndexAndSequenceNumber();
+    if (ida < idb) {
+        return (static_cast<uint64_t>(ida) << 32) | idb;
+    }
+    return (static_cast<uint64_t>(idb) << 32) | ida;
+}
+
 // Physics world implementation
 struct PhysicsWorld::Impl {
     std::unique_ptr<TempAllocatorImpl> temp_allocator;
@@ -122,6 +173,11 @@ struct PhysicsWorld::Impl {
     mutable std::mutex body_map_mutex;
     std::unordered_map<uint32_t, BodyID> body_map;
     uint32_t next_body_id = 1;
+
+    std::unique_ptr<ContactListenerImpl> contact_listener;
+
+    mutable std::mutex contact_mutex;
+    std::unordered_map<uint64_t, ContactPointInfo> active_contacts;
 
     // Constraint storage
     mutable std::mutex constraint_map_mutex;
@@ -147,6 +203,103 @@ struct PhysicsWorld::Impl {
 // Forward declarations for impl functions
 PhysicsWorld::Impl* create_physics_impl();
 void shutdown_physics_impl(PhysicsWorld::Impl* impl);
+
+// Contact listener to feed collision callbacks and collect contact points
+class ContactListenerImpl final : public ContactListener {
+public:
+    explicit ContactListenerImpl(PhysicsWorld::Impl& owner) : m_impl(owner) {}
+
+    void OnContactAdded(const Body& body1, const Body& body2, const ContactManifold& manifold,
+                        ContactSettings&) override {
+        store_contact(body1, body2, manifold, true);
+    }
+
+    void OnContactPersisted(const Body& body1, const Body& body2, const ContactManifold& manifold,
+                            ContactSettings&) override {
+        store_contact(body1, body2, manifold, false);
+    }
+
+    void OnContactRemoved(const SubShapeIDPair& pair) override {
+        const uint64_t key = make_contact_key(pair.GetBody1ID(), pair.GetBody2ID());
+
+        ContactPointInfo info{};
+        bool have_info = false;
+        {
+            std::lock_guard<std::mutex> lock(m_impl.contact_mutex);
+            auto it = m_impl.active_contacts.find(key);
+            if (it != m_impl.active_contacts.end()) {
+                info = it->second;
+                m_impl.active_contacts.erase(it);
+                have_info = true;
+            }
+        }
+
+        if (m_impl.collision_callback) {
+            if (!have_info) {
+                std::lock_guard<std::mutex> map_lock(m_impl.body_map_mutex);
+                info.body_a = m_impl.find_body_id(pair.GetBody1ID());
+                info.body_b = m_impl.find_body_id(pair.GetBody2ID());
+                info.position = Vec3{0.0f};
+                info.normal = Vec3{0.0f, 1.0f, 0.0f};
+                info.penetration_depth = 0.0f;
+            }
+
+            CollisionEvent evt;
+            evt.body_a = info.body_a;
+            evt.body_b = info.body_b;
+            evt.contact.position = info.position;
+            evt.contact.normal = info.normal;
+            evt.contact.penetration_depth = info.penetration_depth;
+            evt.contact.impulse = Vec3{0.0f};
+            evt.is_start = false;
+            m_impl.collision_callback(evt);
+        }
+    }
+
+private:
+    void store_contact(const Body& body1, const Body& body2, const ContactManifold& manifold, bool notify_start) {
+        PhysicsBodyId id_a;
+        PhysicsBodyId id_b;
+        {
+            std::lock_guard<std::mutex> lock(m_impl.body_map_mutex);
+            id_a = m_impl.find_body_id(body1.GetID());
+            id_b = m_impl.find_body_id(body2.GetID());
+        }
+        if (!id_a.valid() || !id_b.valid()) return;
+
+        ContactPointInfo info{};
+        info.body_a = id_a;
+        info.body_b = id_b;
+        info.normal = to_engine_vec3(manifold.mWorldSpaceNormal);
+        info.penetration_depth = manifold.mPenetrationDepth;
+
+        if (manifold.mRelativeContactPointsOn1.size() > 0) {
+            info.position = to_engine_vec3(manifold.GetWorldSpaceContactPointOn1(0));
+        } else {
+            info.position = to_engine_vec3(manifold.mBaseOffset);
+        }
+
+        const uint64_t key = make_contact_key(body1.GetID(), body2.GetID());
+        {
+            std::lock_guard<std::mutex> lock(m_impl.contact_mutex);
+            m_impl.active_contacts[key] = info;
+        }
+
+        if (notify_start && m_impl.collision_callback) {
+            CollisionEvent evt;
+            evt.body_a = id_a;
+            evt.body_b = id_b;
+            evt.contact.position = info.position;
+            evt.contact.normal = info.normal;
+            evt.contact.penetration_depth = info.penetration_depth;
+            evt.contact.impulse = Vec3{0.0f};
+            evt.is_start = true;
+            m_impl.collision_callback(evt);
+        }
+    }
+
+    PhysicsWorld::Impl& m_impl;
+};
 
 // Constructor, destructor and move operations must be defined here where Impl is complete
 PhysicsWorld::PhysicsWorld()
@@ -217,6 +370,9 @@ void init_physics_impl(PhysicsWorld::Impl* impl, const PhysicsSettings& settings
         impl->object_layer_pair_filter
     );
 
+    impl->contact_listener = std::make_unique<ContactListenerImpl>(*impl);
+    impl->physics_system->SetContactListener(impl->contact_listener.get());
+
     impl->gravity = settings.gravity;
     impl->physics_system->SetGravity(Vec3Arg(settings.gravity.x, settings.gravity.y, settings.gravity.z));
 
@@ -227,6 +383,11 @@ void shutdown_physics_impl(PhysicsWorld::Impl* impl) {
     if (!impl || !impl->initialized) return;
 
     impl->body_map.clear();
+    {
+        std::lock_guard<std::mutex> lock(impl->contact_mutex);
+        impl->active_contacts.clear();
+    }
+    impl->contact_listener.reset();
     impl->physics_system.reset();
     impl->job_system.reset();
     impl->temp_allocator.reset();
@@ -243,138 +404,148 @@ void step_physics_impl(PhysicsWorld::Impl* impl, double dt) {
     );
 }
 
+// Helper to apply center/rotation offsets to a shape
+static RefConst<Shape> apply_shape_offsets(const ShapeSettings* settings, RefConst<Shape> shape) {
+    if (!settings || !shape) return shape;
+
+    const bool has_translation = settings->center_offset.x != 0.0f ||
+                                 settings->center_offset.y != 0.0f ||
+                                 settings->center_offset.z != 0.0f;
+    const bool has_rotation = settings->rotation_offset.w != 1.0f ||
+                              settings->rotation_offset.x != 0.0f ||
+                              settings->rotation_offset.y != 0.0f ||
+                              settings->rotation_offset.z != 0.0f;
+
+    if (!has_translation && !has_rotation) {
+        return shape;
+    }
+
+    RotatedTranslatedShapeSettings offset_settings(
+        Vec3Arg(settings->center_offset.x, settings->center_offset.y, settings->center_offset.z),
+        QuatArg(settings->rotation_offset.x, settings->rotation_offset.y, settings->rotation_offset.z, settings->rotation_offset.w),
+        shape
+    );
+    auto offset_result = offset_settings.Create();
+    if (offset_result.IsValid()) {
+        return offset_result.Get();
+    }
+
+    log(LogLevel::Warn, "Failed to apply shape offset, using base shape");
+    return shape;
+}
+
+// Recursively build a Jolt shape from engine shape settings
+static RefConst<Shape> create_shape_from_settings(const ShapeSettings* settings) {
+    if (!settings) {
+        return new BoxShape(Vec3Arg(0.5f, 0.5f, 0.5f));
+    }
+
+    RefConst<Shape> shape;
+
+    switch (settings->type) {
+        case ShapeType::Box: {
+            auto* box = static_cast<const BoxShapeSettings*>(settings);
+            shape = new BoxShape(Vec3Arg(box->half_extents.x, box->half_extents.y, box->half_extents.z));
+            break;
+        }
+        case ShapeType::Sphere: {
+            auto* sphere = static_cast<const SphereShapeSettings*>(settings);
+            shape = new SphereShape(sphere->radius);
+            break;
+        }
+        case ShapeType::Capsule: {
+            auto* capsule = static_cast<const CapsuleShapeSettings*>(settings);
+            shape = new CapsuleShape(capsule->half_height, capsule->radius);
+            break;
+        }
+        case ShapeType::Cylinder: {
+            auto* cyl = static_cast<const CylinderShapeSettings*>(settings);
+            shape = new CylinderShape(cyl->half_height, cyl->radius);
+            break;
+        }
+        case ShapeType::ConvexHull: {
+            auto* hull = static_cast<const ConvexHullShapeSettings*>(settings);
+            if (!hull->points.empty()) {
+                JPH::Array<JPH::Vec3> jolt_points;
+                jolt_points.reserve(hull->points.size());
+                for (const auto& p : hull->points) {
+                    jolt_points.push_back(JPH::Vec3(p.x, p.y, p.z));
+                }
+                JPH::ConvexHullShapeSettings hull_settings(jolt_points.data(), static_cast<int>(jolt_points.size()));
+                auto result = hull_settings.Create();
+                if (result.IsValid()) {
+                    shape = result.Get();
+                } else {
+                    log(LogLevel::Error, "Failed to create convex hull shape");
+                }
+            }
+            break;
+        }
+        case ShapeType::Mesh: {
+            auto* mesh = static_cast<const MeshShapeSettings*>(settings);
+            if (!mesh->vertices.empty() && !mesh->indices.empty()) {
+                JPH::VertexList vertices;
+                vertices.reserve(mesh->vertices.size());
+                for (const auto& v : mesh->vertices) {
+                    vertices.push_back(Float3(v.x, v.y, v.z));
+                }
+
+                JPH::IndexedTriangleList triangles;
+                triangles.reserve(mesh->indices.size() / 3);
+                for (size_t i = 0; i + 2 < mesh->indices.size(); i += 3) {
+                    triangles.push_back(IndexedTriangle(mesh->indices[i], mesh->indices[i + 1], mesh->indices[i + 2]));
+                }
+
+                JPH::MeshShapeSettings mesh_settings(vertices, triangles);
+                auto result = mesh_settings.Create();
+                if (result.IsValid()) {
+                    shape = result.Get();
+                } else {
+                    log(LogLevel::Error, "Failed to create mesh shape");
+                }
+            }
+            break;
+        }
+        case ShapeType::Compound: {
+            auto* compound = static_cast<const CompoundShapeSettings*>(settings);
+            if (!compound->children.empty()) {
+                StaticCompoundShapeSettings compound_settings;
+                for (const auto& child : compound->children) {
+                    if (!child.shape) continue;
+                    RefConst<Shape> child_shape = create_shape_from_settings(child.shape);
+                    if (!child_shape) continue;
+
+                    compound_settings.AddShape(
+                        Vec3Arg(child.position.x, child.position.y, child.position.z),
+                        QuatArg(child.rotation.x, child.rotation.y, child.rotation.z, child.rotation.w),
+                        child_shape
+                    );
+                }
+                auto result = compound_settings.Create();
+                if (result.IsValid()) {
+                    shape = result.Get();
+                } else {
+                    log(LogLevel::Error, "Failed to create compound shape");
+                }
+            }
+            break;
+        }
+        default:
+            break;
+    }
+
+    if (!shape) {
+        shape = new BoxShape(Vec3Arg(0.5f, 0.5f, 0.5f));
+    }
+
+    return apply_shape_offsets(settings, shape);
+}
+
 PhysicsBodyId create_body_impl(PhysicsWorld::Impl* impl, const BodySettings& settings) {
     if (!impl || !impl->initialized) return PhysicsBodyId{};
 
     // Create shape based on settings
-    RefConst<Shape> shape;
-
-    if (settings.shape) {
-        switch (settings.shape->type) {
-            case ShapeType::Box: {
-                auto* box = static_cast<BoxShapeSettings*>(settings.shape);
-                shape = new BoxShape(Vec3Arg(box->half_extents.x, box->half_extents.y, box->half_extents.z));
-                break;
-            }
-            case ShapeType::Sphere: {
-                auto* sphere = static_cast<SphereShapeSettings*>(settings.shape);
-                shape = new SphereShape(sphere->radius);
-                break;
-            }
-            case ShapeType::Capsule: {
-                auto* capsule = static_cast<CapsuleShapeSettings*>(settings.shape);
-                shape = new CapsuleShape(capsule->half_height, capsule->radius);
-                break;
-            }
-            case ShapeType::Cylinder: {
-                auto* cyl = static_cast<CylinderShapeSettings*>(settings.shape);
-                shape = new CylinderShape(cyl->half_height, cyl->radius);
-                break;
-            }
-            case ShapeType::ConvexHull: {
-                auto* hull = static_cast<ConvexHullShapeSettings*>(settings.shape);
-                if (!hull->points.empty()) {
-                    JPH::Array<JPH::Vec3> jolt_points;
-                    jolt_points.reserve(hull->points.size());
-                    for (const auto& p : hull->points) {
-                        jolt_points.push_back(JPH::Vec3(p.x, p.y, p.z));
-                    }
-                    JPH::ConvexHullShapeSettings hull_settings(jolt_points.data(), static_cast<int>(jolt_points.size()));
-                    auto result = hull_settings.Create();
-                    if (result.IsValid()) {
-                        shape = result.Get();
-                    } else {
-                        log(LogLevel::Error, "Failed to create convex hull shape");
-                        shape = new BoxShape(Vec3Arg(0.5f, 0.5f, 0.5f));
-                    }
-                } else {
-                    shape = new BoxShape(Vec3Arg(0.5f, 0.5f, 0.5f));
-                }
-                break;
-            }
-            case ShapeType::Mesh: {
-                auto* mesh = static_cast<MeshShapeSettings*>(settings.shape);
-                if (!mesh->vertices.empty() && !mesh->indices.empty()) {
-                    JPH::VertexList vertices;
-                    vertices.reserve(mesh->vertices.size());
-                    for (const auto& v : mesh->vertices) {
-                        vertices.push_back(Float3(v.x, v.y, v.z));
-                    }
-
-                    JPH::IndexedTriangleList triangles;
-                    triangles.reserve(mesh->indices.size() / 3);
-                    for (size_t i = 0; i + 2 < mesh->indices.size(); i += 3) {
-                        triangles.push_back(IndexedTriangle(
-                            mesh->indices[i], mesh->indices[i + 1], mesh->indices[i + 2]));
-                    }
-
-                    JPH::MeshShapeSettings mesh_settings(vertices, triangles);
-                    auto result = mesh_settings.Create();
-                    if (result.IsValid()) {
-                        shape = result.Get();
-                    } else {
-                        log(LogLevel::Error, "Failed to create mesh shape");
-                        shape = new BoxShape(Vec3Arg(0.5f, 0.5f, 0.5f));
-                    }
-                } else {
-                    shape = new BoxShape(Vec3Arg(0.5f, 0.5f, 0.5f));
-                }
-                break;
-            }
-            case ShapeType::Compound: {
-                auto* compound = static_cast<CompoundShapeSettings*>(settings.shape);
-                if (!compound->children.empty()) {
-                    StaticCompoundShapeSettings compound_settings;
-                    for (const auto& child : compound->children) {
-                        if (!child.shape) continue;
-
-                        RefConst<Shape> child_shape;
-                        // Recursively create child shapes (simplified: only basic shapes)
-                        switch (child.shape->type) {
-                            case ShapeType::Box: {
-                                auto* box = static_cast<BoxShapeSettings*>(child.shape);
-                                child_shape = new BoxShape(Vec3Arg(box->half_extents.x, box->half_extents.y, box->half_extents.z));
-                                break;
-                            }
-                            case ShapeType::Sphere: {
-                                auto* sphere = static_cast<SphereShapeSettings*>(child.shape);
-                                child_shape = new SphereShape(sphere->radius);
-                                break;
-                            }
-                            case ShapeType::Capsule: {
-                                auto* capsule = static_cast<CapsuleShapeSettings*>(child.shape);
-                                child_shape = new CapsuleShape(capsule->half_height, capsule->radius);
-                                break;
-                            }
-                            default:
-                                child_shape = new BoxShape(Vec3Arg(0.5f, 0.5f, 0.5f));
-                                break;
-                        }
-                        compound_settings.AddShape(
-                            Vec3Arg(child.position.x, child.position.y, child.position.z),
-                            QuatArg(child.rotation.x, child.rotation.y, child.rotation.z, child.rotation.w),
-                            child_shape
-                        );
-                    }
-                    auto result = compound_settings.Create();
-                    if (result.IsValid()) {
-                        shape = result.Get();
-                    } else {
-                        log(LogLevel::Error, "Failed to create compound shape");
-                        shape = new BoxShape(Vec3Arg(0.5f, 0.5f, 0.5f));
-                    }
-                } else {
-                    shape = new BoxShape(Vec3Arg(0.5f, 0.5f, 0.5f));
-                }
-                break;
-            }
-            default:
-                shape = new BoxShape(Vec3Arg(0.5f, 0.5f, 0.5f));
-                break;
-        }
-    } else {
-        shape = new BoxShape(Vec3Arg(0.5f, 0.5f, 0.5f));
-    }
+    RefConst<Shape> shape = create_shape_from_settings(settings.shape);
 
     // Determine motion type - use the layer from settings
     EMotionType motion_type;
@@ -748,7 +919,7 @@ bool is_active_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id) {
 RaycastHit raycast_impl(PhysicsWorld::Impl* impl, const Vec3& origin, const Vec3& dir,
                         float max_dist, uint16_t layer_mask) {
     RaycastHit result;
-    if (!impl || !impl->initialized) return result;
+    if (!impl || !impl->initialized || layer_mask == 0) return result;
 
     // Create ray from origin to origin + dir * max_dist
     RRayCast ray;
@@ -756,23 +927,24 @@ RaycastHit raycast_impl(PhysicsWorld::Impl* impl, const Vec3& origin, const Vec3
     ray.mDirection = JPH::Vec3(dir.x * max_dist, dir.y * max_dist, dir.z * max_dist);
 
     RayCastResult hit;
-    if (impl->physics_system->GetNarrowPhaseQuery().CastRay(ray, hit)) {
+    LayerMaskFilter object_filter(layer_mask);
+    BodyFilter body_filter;
+    if (impl->physics_system->GetNarrowPhaseQuery().CastRay(ray, hit, BroadPhaseLayerFilter(), object_filter, body_filter)) {
         result.hit = true;
         result.distance = hit.mFraction * max_dist;
 
         RVec3 hit_point = ray.GetPointOnRay(hit.mFraction);
-        result.point = Vec3{
-            static_cast<float>(hit_point.GetX()),
-            static_cast<float>(hit_point.GetY()),
-            static_cast<float>(hit_point.GetZ())
-        };
+        result.point = to_engine_vec3(hit_point);
 
         // Get normal from the body at hit point
         BodyLockRead lock(impl->physics_system->GetBodyLockInterface(), hit.mBodyID);
         if (lock.Succeeded()) {
             const Body& body = lock.GetBody();
+            if (!layer_matches_mask(layer_mask, body.GetObjectLayer())) {
+                return RaycastHit{};
+            }
             JPH::Vec3 normal = body.GetWorldSpaceSurfaceNormal(hit.mSubShapeID2, hit_point);
-            result.normal = Vec3{normal.GetX(), normal.GetY(), normal.GetZ()};
+            result.normal = to_engine_vec3(normal);
         }
 
         // Map Jolt BodyID back to our PhysicsBodyId
@@ -786,14 +958,25 @@ RaycastHit raycast_impl(PhysicsWorld::Impl* impl, const Vec3& origin, const Vec3
 std::vector<RaycastHit> raycast_all_impl(PhysicsWorld::Impl* impl, const Vec3& origin, const Vec3& dir,
                                           float max_dist, uint16_t layer_mask) {
     std::vector<RaycastHit> results;
-    if (!impl || !impl->initialized) return results;
+    if (!impl || !impl->initialized || layer_mask == 0) return results;
 
     RRayCast ray;
     ray.mOrigin = RVec3(origin.x, origin.y, origin.z);
     ray.mDirection = JPH::Vec3(dir.x * max_dist, dir.y * max_dist, dir.z * max_dist);
 
     AllHitCollisionCollector<CastRayCollector> collector;
-    impl->physics_system->GetNarrowPhaseQuery().CastRay(ray, RayCastSettings(), collector);
+    LayerMaskFilter object_filter(layer_mask);
+    BodyFilter body_filter;
+    ShapeFilter shape_filter;
+    impl->physics_system->GetNarrowPhaseQuery().CastRay(
+        ray,
+        RayCastSettings(),
+        collector,
+        BroadPhaseLayerFilter(),
+        object_filter,
+        body_filter,
+        shape_filter
+    );
 
     collector.Sort();
 
@@ -804,17 +987,16 @@ std::vector<RaycastHit> raycast_all_impl(PhysicsWorld::Impl* impl, const Vec3& o
         result.distance = hit.mFraction * max_dist;
 
         RVec3 hit_point = ray.GetPointOnRay(hit.mFraction);
-        result.point = Vec3{
-            static_cast<float>(hit_point.GetX()),
-            static_cast<float>(hit_point.GetY()),
-            static_cast<float>(hit_point.GetZ())
-        };
+        result.point = to_engine_vec3(hit_point);
 
         BodyLockRead lock(impl->physics_system->GetBodyLockInterface(), hit.mBodyID);
         if (lock.Succeeded()) {
             const Body& body = lock.GetBody();
+            if (!layer_matches_mask(layer_mask, body.GetObjectLayer())) {
+                continue;
+            }
             JPH::Vec3 normal = body.GetWorldSpaceSurfaceNormal(hit.mSubShapeID2, hit_point);
-            result.normal = Vec3{normal.GetX(), normal.GetY(), normal.GetZ()};
+            result.normal = to_engine_vec3(normal);
         }
 
         result.body = impl->find_body_id(hit.mBodyID);
@@ -827,10 +1009,13 @@ std::vector<RaycastHit> raycast_all_impl(PhysicsWorld::Impl* impl, const Vec3& o
 std::vector<PhysicsBodyId> overlap_sphere_impl(PhysicsWorld::Impl* impl, const Vec3& center,
                                                 float radius, uint16_t layer_mask) {
     std::vector<PhysicsBodyId> results;
-    if (!impl || !impl->initialized) return results;
+    if (!impl || !impl->initialized || layer_mask == 0) return results;
 
     SphereShape sphere(radius);
     AllHitCollisionCollector<CollideShapeCollector> collector;
+    LayerMaskFilter object_filter(layer_mask);
+    BodyFilter body_filter;
+    ShapeFilter shape_filter;
 
     impl->physics_system->GetNarrowPhaseQuery().CollideShape(
         &sphere,
@@ -838,7 +1023,11 @@ std::vector<PhysicsBodyId> overlap_sphere_impl(PhysicsWorld::Impl* impl, const V
         RMat44::sTranslation(RVec3(center.x, center.y, center.z)),
         CollideShapeSettings(),
         RVec3::sZero(),
-        collector
+        collector,
+        BroadPhaseLayerFilter(),
+        object_filter,
+        body_filter,
+        shape_filter
     );
 
     std::lock_guard<std::mutex> map_lock(impl->body_map_mutex);
@@ -866,10 +1055,13 @@ std::vector<PhysicsBodyId> overlap_box_impl(PhysicsWorld::Impl* impl, const Vec3
                                              const Vec3& half_extents, const Quat& rotation,
                                              uint16_t layer_mask) {
     std::vector<PhysicsBodyId> results;
-    if (!impl || !impl->initialized) return results;
+    if (!impl || !impl->initialized || layer_mask == 0) return results;
 
     BoxShape box(JPH::Vec3(half_extents.x, half_extents.y, half_extents.z));
     AllHitCollisionCollector<CollideShapeCollector> collector;
+    LayerMaskFilter object_filter(layer_mask);
+    BodyFilter body_filter;
+    ShapeFilter shape_filter;
 
     RMat44 transform = RMat44::sRotationTranslation(
         JPH::Quat(rotation.x, rotation.y, rotation.z, rotation.w),
@@ -882,7 +1074,11 @@ std::vector<PhysicsBodyId> overlap_box_impl(PhysicsWorld::Impl* impl, const Vec3
         transform,
         CollideShapeSettings(),
         RVec3::sZero(),
-        collector
+        collector,
+        BroadPhaseLayerFilter(),
+        object_filter,
+        body_filter,
+        shape_filter
     );
 
     std::lock_guard<std::mutex> map_lock(impl->body_map_mutex);
@@ -1278,9 +1474,11 @@ std::vector<ContactPointInfo> get_contact_points_impl(PhysicsWorld::Impl* impl) 
     std::vector<ContactPointInfo> result;
     if (!impl || !impl->initialized) return result;
 
-    // Jolt doesn't provide a simple contact list - we'd need to set up a ContactListener
-    // For now, return empty. Full implementation would require adding a ContactListener
-    // during init that collects contacts each frame.
+    std::lock_guard<std::mutex> lock(impl->contact_mutex);
+    result.reserve(impl->active_contacts.size());
+    for (const auto& [_, contact] : impl->active_contacts) {
+        result.push_back(contact);
+    }
     return result;
 }
 
