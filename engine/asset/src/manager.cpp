@@ -34,7 +34,11 @@ static uint64_t get_file_modification_time(const std::string& path) {
             ftime - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now()
         );
         return static_cast<uint64_t>(sctp.time_since_epoch().count());
+    } catch (const std::exception& e) {
+        log(LogLevel::Warn, ("Failed to get modification time for " + path + ": " + e.what()).c_str());
+        return 0;
     } catch (...) {
+        log(LogLevel::Warn, ("Failed to get modification time for " + path + ": unknown error").c_str());
         return 0;
     }
 }
@@ -54,10 +58,11 @@ void AssetManager::init(render::IRenderer* renderer) {
 }
 
 void AssetManager::shutdown() {
-    // Signal that manager is shutting down (prevents hot reload callbacks from accessing invalid state)
-    *m_alive = false;
-
+    // First unload all assets (hot reload callbacks may still fire during this)
     unload_all();
+
+    // Now signal shutdown complete - no more hot reload callbacks will access manager state
+    *m_alive = false;
 
     std::unique_lock lock(m_mutex);
     m_renderer = nullptr;
@@ -751,6 +756,12 @@ std::future<std::shared_ptr<AnimationAsset>> AssetManager::load_animation_async(
 std::future<std::vector<std::shared_ptr<AnimationAsset>>> AssetManager::load_animations_async(const std::string& path) {
     return JobSystem::submit_with_result([this, path]() {
         return load_animations(path);
+    });
+}
+
+std::future<std::shared_ptr<SkeletonAsset>> AssetManager::load_skeleton_async(const std::string& path) {
+    return JobSystem::submit_with_result([this, path]() {
+        return load_skeleton(path);
     });
 }
 

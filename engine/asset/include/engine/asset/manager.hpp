@@ -67,6 +67,7 @@ public:
     std::future<std::shared_ptr<PrefabAsset>> load_prefab_async(const std::string& path);
     std::future<std::shared_ptr<AnimationAsset>> load_animation_async(const std::string& path);
     std::future<std::vector<std::shared_ptr<AnimationAsset>>> load_animations_async(const std::string& path);
+    std::future<std::shared_ptr<SkeletonAsset>> load_skeleton_async(const std::string& path);
 
     // Generic load by extension
     std::shared_ptr<Asset> load(const std::string& path);

@@ -109,7 +109,7 @@ public:
 
 private:
     struct Impl;
-    std::unique_ptr<Impl> m_impl;
+    std::shared_ptr<Impl> m_impl;
 };
 
 // Stream handle for tracking async streaming operations

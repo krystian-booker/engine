@@ -34,7 +34,11 @@ uint64_t get_file_time(const std::string& path) {
             ftime - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now()
         );
         return static_cast<uint64_t>(sctp.time_since_epoch().count());
+    } catch (const std::exception& e) {
+        log(LogLevel::Warn, ("Failed to get file time for " + path + ": " + e.what()).c_str());
+        return 0;
     } catch (...) {
+        log(LogLevel::Warn, ("Failed to get file time for " + path + ": unknown error").c_str());
         return 0;
     }
 }
@@ -104,8 +108,10 @@ void HotReload::poll() {
     for (const auto& [path, callback] : to_invoke) {
         try {
             callback(path);
+        } catch (const std::exception& e) {
+            log(LogLevel::Error, ("Hot reload callback failed for: " + path + " - " + e.what()).c_str());
         } catch (...) {
-            log(LogLevel::Error, ("Hot reload callback failed for: " + path).c_str());
+            log(LogLevel::Error, ("Hot reload callback failed for: " + path + " - unknown error").c_str());
         }
     }
 }

@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
+#include <climits>
 
 // dr_libs implementations
 #define DR_WAV_IMPLEMENTATION
@@ -19,6 +20,16 @@
 namespace engine::asset {
 
 static std::string s_last_error;
+
+// Helper to check for multiplication overflow before audio buffer allocation
+static bool check_audio_size_overflow(uint64_t frames, uint32_t channels, size_t bytes_per_sample) {
+    // Check if frames * channels would overflow
+    if (frames > SIZE_MAX / channels) return true;
+    size_t sample_count = static_cast<size_t>(frames * channels);
+    // Check if sample_count * bytes_per_sample would overflow
+    if (sample_count > SIZE_MAX / bytes_per_sample) return true;
+    return false;
+}
 
 static std::string get_extension(const std::string& path) {
     size_t pos = path.rfind('.');
@@ -42,6 +53,13 @@ static bool load_wav(const std::string& path, std::vector<uint8_t>& out_data, Au
     out_format.bits_per_sample = 16;
     out_format.total_frames = wav.totalPCMFrameCount;
 
+    // Check for integer overflow before allocation
+    if (check_audio_size_overflow(wav.totalPCMFrameCount, wav.channels, sizeof(int16_t))) {
+        drwav_uninit(&wav);
+        s_last_error = "Audio file too large (would overflow buffer size): " + path;
+        return false;
+    }
+
     size_t sample_count = static_cast<size_t>(wav.totalPCMFrameCount * wav.channels);
     size_t byte_size = sample_count * sizeof(int16_t);
     out_data.resize(byte_size);
@@ -56,6 +74,7 @@ static bool load_wav(const std::string& path, std::vector<uint8_t>& out_data, Au
 
     if (frames_read != wav.totalPCMFrameCount) {
         s_last_error = "Failed to read all WAV frames";
+        out_data.clear();  // Clear partial data to prevent accidental use
         return false;
     }
 
@@ -77,6 +96,13 @@ static bool load_mp3(const std::string& path, std::vector<uint8_t>& out_data, Au
     drmp3_uint64 total_frames = drmp3_get_pcm_frame_count(&mp3);
     out_format.total_frames = total_frames;
 
+    // Check for integer overflow before allocation
+    if (check_audio_size_overflow(total_frames, mp3.channels, sizeof(int16_t))) {
+        drmp3_uninit(&mp3);
+        s_last_error = "Audio file too large (would overflow buffer size): " + path;
+        return false;
+    }
+
     size_t sample_count = static_cast<size_t>(total_frames * mp3.channels);
     size_t byte_size = sample_count * sizeof(int16_t);
     out_data.resize(byte_size);
@@ -91,6 +117,7 @@ static bool load_mp3(const std::string& path, std::vector<uint8_t>& out_data, Au
 
     if (frames_read != total_frames) {
         s_last_error = "Failed to read all MP3 frames";
+        out_data.clear();  // Clear partial data to prevent accidental use
         return false;
     }
 
@@ -109,6 +136,13 @@ static bool load_flac(const std::string& path, std::vector<uint8_t>& out_data, A
     out_format.bits_per_sample = 16;
     out_format.total_frames = flac->totalPCMFrameCount;
 
+    // Check for integer overflow before allocation
+    if (check_audio_size_overflow(flac->totalPCMFrameCount, flac->channels, sizeof(int16_t))) {
+        drflac_close(flac);
+        s_last_error = "Audio file too large (would overflow buffer size): " + path;
+        return false;
+    }
+
     size_t sample_count = static_cast<size_t>(flac->totalPCMFrameCount * flac->channels);
     size_t byte_size = sample_count * sizeof(int16_t);
     out_data.resize(byte_size);
@@ -119,10 +153,12 @@ static bool load_flac(const std::string& path, std::vector<uint8_t>& out_data, A
         reinterpret_cast<drflac_int16*>(out_data.data())
     );
 
+    uint64_t expected_frames = flac->totalPCMFrameCount;
     drflac_close(flac);
 
-    if (frames_read != flac->totalPCMFrameCount) {
+    if (frames_read != expected_frames) {
         s_last_error = "Failed to read all FLAC frames";
+        out_data.clear();  // Clear partial data to prevent accidental use
         return false;
     }
 
@@ -150,6 +186,13 @@ static bool load_ogg(const std::string& path, std::vector<uint8_t>& out_data, Au
     out_format.channels = static_cast<uint32_t>(channels);
     out_format.bits_per_sample = 16;
     out_format.total_frames = static_cast<uint64_t>(sample_count);
+
+    // Check for integer overflow before allocation
+    if (check_audio_size_overflow(static_cast<uint64_t>(sample_count), static_cast<uint32_t>(channels), sizeof(int16_t))) {
+        free(samples);
+        s_last_error = "Audio file too large (would overflow buffer size): " + path;
+        return false;
+    }
 
     size_t byte_size = static_cast<size_t>(sample_count) * static_cast<size_t>(channels) * sizeof(int16_t);
     out_data.resize(byte_size);

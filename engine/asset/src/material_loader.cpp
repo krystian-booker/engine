@@ -18,6 +18,9 @@ using namespace engine::core;
 using namespace engine::render;
 using json = nlohmann::json;
 
+// Maximum size for embedded texture data (256MB) to prevent DoS from malicious files
+static constexpr size_t MAX_EMBEDDED_TEXTURE_SIZE = 256 * 1024 * 1024;
+
 std::string MaterialLoader::s_last_error;
 
 std::shared_ptr<MaterialAsset> MaterialLoader::load_from_json(
@@ -233,8 +236,17 @@ std::shared_ptr<MaterialAsset> MaterialLoader::load_from_gltf(
 
                 // Decode base64
                 size_t encoded_len = std::strlen(base64_start);
+
+                // Check for excessively large embedded textures (DoS prevention)
+                size_t estimated_decoded_size = (encoded_len * 3) / 4;
+                if (estimated_decoded_size > MAX_EMBEDDED_TEXTURE_SIZE) {
+                    log(LogLevel::Error, ("Embedded texture too large in " + slot_name + " (>" +
+                        std::to_string(MAX_EMBEDDED_TEXTURE_SIZE / (1024 * 1024)) + "MB)").c_str());
+                    return;
+                }
+
                 std::vector<uint8_t> decoded;
-                decoded.reserve((encoded_len * 3) / 4);
+                decoded.reserve(estimated_decoded_size);
 
                 static const unsigned char base64_table[256] = {
                     255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,

@@ -6,6 +6,7 @@
 #include <condition_variable>
 #include <fstream>
 #include <algorithm>
+#include <climits>
 
 // dr_libs for audio decoding (implementations are in audio_loader.cpp)
 #include <dr_wav.h>
@@ -280,7 +281,13 @@ const std::string& AudioStream::path() const {
 // TextureStream Implementation
 // =============================================================================
 
-struct TextureStream::Impl {
+// RAII wrapper for stbi allocations
+struct StbiImageDeleter {
+    void operator()(unsigned char* p) const { if (p) stbi_image_free(p); }
+};
+using StbiImagePtr = std::unique_ptr<unsigned char, StbiImageDeleter>;
+
+struct TextureStream::Impl : public std::enable_shared_from_this<TextureStream::Impl> {
     std::string path;
     render::IRenderer* renderer = nullptr;
     render::TextureHandle handle;
@@ -308,6 +315,11 @@ struct TextureStream::Impl {
     std::vector<PendingMip> pending_mips;
     std::mutex pending_mutex;
 
+    // Thread management for async mip loading
+    std::vector<std::thread> active_threads;
+    std::mutex threads_mutex;
+    std::atomic<bool> stop_requested{false};
+
     // Raw file data for streaming (kept in memory for on-demand mip generation)
     std::vector<uint8_t> file_data;
     int original_channels = 0;
@@ -319,6 +331,20 @@ struct TextureStream::Impl {
     }
 
     void close() {
+        // Signal all threads to stop
+        stop_requested.store(true);
+
+        // Join all active threads before cleanup
+        {
+            std::lock_guard<std::mutex> tlock(threads_mutex);
+            for (auto& t : active_threads) {
+                if (t.joinable()) {
+                    t.join();
+                }
+            }
+            active_threads.clear();
+        }
+
         std::lock_guard<std::mutex> lock(mutex);
         if (renderer && handle.valid()) {
             renderer->destroy_texture(handle);
@@ -333,6 +359,7 @@ struct TextureStream::Impl {
             pending_mips.clear();
         }
         is_open = false;
+        stop_requested.store(false);  // Reset for potential reuse
     }
 
     // Generate a specific mip level from source data
@@ -341,12 +368,18 @@ struct TextureStream::Impl {
         out_width = std::max(1u, width >> level);
         out_height = std::max(1u, height >> level);
 
-        // Load base texture from file data
+        // Check file size before casting to int (stbi limitation)
+        if (file_data.size() > static_cast<size_t>(INT_MAX)) {
+            log(LogLevel::Error, "Texture file too large for streaming (>2GB)");
+            return {};
+        }
+
+        // Load base texture from file data (RAII wrapper handles cleanup)
         int w, h, c;
-        unsigned char* base_data = stbi_load_from_memory(
+        StbiImagePtr base_data(stbi_load_from_memory(
             file_data.data(), static_cast<int>(file_data.size()),
             &w, &h, &c, 4
-        );
+        ));
 
         if (!base_data) {
             return {};
@@ -356,10 +389,10 @@ struct TextureStream::Impl {
 
         if (level == 0) {
             // Level 0 is the base image
-            result.assign(base_data, base_data + w * h * 4);
+            result.assign(base_data.get(), base_data.get() + w * h * 4);
         } else {
             // Generate downsampled mip using box filter
-            std::vector<uint8_t> current(base_data, base_data + w * h * 4);
+            std::vector<uint8_t> current(base_data.get(), base_data.get() + w * h * 4);
             uint32_t curr_w = static_cast<uint32_t>(w);
             uint32_t curr_h = static_cast<uint32_t>(h);
 
@@ -403,12 +436,12 @@ struct TextureStream::Impl {
             result = std::move(current);
         }
 
-        stbi_image_free(base_data);
+        // base_data automatically freed by RAII wrapper
         return result;
     }
 };
 
-TextureStream::TextureStream() : m_impl(std::make_unique<Impl>()) {}
+TextureStream::TextureStream() : m_impl(std::make_shared<Impl>()) {}
 TextureStream::~TextureStream() = default;
 
 TextureStream::TextureStream(TextureStream&& other) noexcept = default;
@@ -431,6 +464,13 @@ bool TextureStream::open(const std::string& path, render::IRenderer* renderer) {
     m_impl->file_data = FileSystem::read_binary(path);
     if (m_impl->file_data.empty()) {
         log(LogLevel::Error, ("Failed to open texture for streaming: " + path).c_str());
+        return false;
+    }
+
+    // Check file size before casting to int (stbi limitation)
+    if (m_impl->file_data.size() > static_cast<size_t>(INT_MAX)) {
+        log(LogLevel::Error, ("Texture file too large for streaming (>2GB): " + path).c_str());
+        m_impl->file_data.clear();
         return false;
     }
 
@@ -516,14 +556,32 @@ void TextureStream::request_mip(uint32_t level) {
     m_impl->mip_requested[level] = true;
     m_impl->mip_loading[level] = true;
 
-    // Capture what we need for the async job
-    auto impl = m_impl.get();
+    // Capture weak_ptr to safely check if Impl is still alive in worker thread
+    std::weak_ptr<Impl> weak_impl = m_impl;
     uint32_t target_level = level;
 
-    // Use a simple async approach - in production, use job system
-    std::thread([impl, target_level]() {
+    // Create thread and store it for proper cleanup
+    std::thread worker([weak_impl, target_level]() {
+        // Try to lock the weak_ptr - if it fails, TextureStream was destroyed
+        auto impl = weak_impl.lock();
+        if (!impl) return;
+
+        // Check if shutdown requested before doing work
+        if (impl->stop_requested.load()) {
+            std::lock_guard<std::mutex> lock(impl->mutex);
+            impl->mip_loading[target_level] = false;
+            return;
+        }
+
         uint32_t mip_w, mip_h;
         auto mip_data = impl->generate_mip(target_level, mip_w, mip_h);
+
+        // Re-check if still alive after potentially long operation
+        if (impl->stop_requested.load()) {
+            std::lock_guard<std::mutex> lock(impl->mutex);
+            impl->mip_loading[target_level] = false;
+            return;
+        }
 
         if (!mip_data.empty()) {
             std::lock_guard<std::mutex> plock(impl->pending_mutex);
@@ -532,7 +590,13 @@ void TextureStream::request_mip(uint32_t level) {
 
         std::lock_guard<std::mutex> lock(impl->mutex);
         impl->mip_loading[target_level] = false;
-    }).detach();
+    });
+
+    // Store thread for proper cleanup in destructor
+    {
+        std::lock_guard<std::mutex> tlock(m_impl->threads_mutex);
+        m_impl->active_threads.push_back(std::move(worker));
+    }
 }
 
 bool TextureStream::is_mip_loaded(uint32_t level) const {
