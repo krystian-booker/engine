@@ -76,6 +76,7 @@ struct AnimGraphState {
     // Internal state
     float time = 0.0f;
     float normalized_time = 0.0f;
+    float weight = 1.0f;
 };
 
 // Root motion data extracted during animation evaluation

@@ -366,6 +366,14 @@ void AnimationStateMachine::evaluate_current_state(float delta_time) {
     float duration = state->motion->get_duration();
     state->normalized_time = duration > 0.0f ? state->time / duration : 0.0f;
 
+    // Apply weight (blend with bind pose if needed)
+    if (state->weight < 0.999f && m_skeleton) {
+        // Blend final_pose towards bind pose based on weight
+        // weight 1.0 = full animation, weight 0.0 = bind pose
+        std::vector<BoneTransform> bind_pose = m_skeleton->get_bind_pose();
+        blend_poses(bind_pose, m_final_pose, state->weight, m_final_pose);
+    }
+
     // Check events
     check_events(*state, prev_time, state->time);
 }

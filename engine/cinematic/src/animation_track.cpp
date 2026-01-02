@@ -85,9 +85,21 @@ void AnimationTrack::evaluate(float time, scene::World& world) {
         if (animator_comp.state_machine) {
             auto* state = animator_comp.state_machine->get_state(active->clip_name);
             if (state) {
+                // Only switch state if we are not already playing it
+                // OR if it's the first time we're evaluating this track
+                if (animator_comp.state_machine->get_current_state_name() != active->clip_name) {
+                    animator_comp.state_machine->set_state(active->clip_name);
+                }
+                
                 state->speed = active->playback_speed;
                 state->loop = active->loop;
-                animator_comp.state_machine->set_state(active->clip_name);
+                state->weight = blend_weight;
+                
+                // Force time update if we just switched to this clip in the track logic
+                // (though set_state handles reset, we might be scrubbing time)
+                // Note: Direct time control of ASM state usually requires manual update mode,
+                // here we trust the ASM update loop, but we might want to sync time for accurate scrubbing.
+                // For now, we rely on ASM internal update, but the weight is the critical fix.
             }
         }
     }
@@ -214,42 +226,76 @@ void TransformTrack::reset() {
 }
 
 template<typename T>
-static T sample_keys(const std::vector<Keyframe<T>>& keys, float time, const T& default_value) {
+static T sample_keys_interpolated(const std::vector<Keyframe<T>>& keys, float time, const T& default_value) {
     if (keys.empty()) {
         return default_value;
     }
 
+    // Before first key
     if (time <= keys.front().time) {
         return keys.front().value;
     }
 
+    // After last key
     if (time >= keys.back().time) {
         return keys.back().value;
     }
 
-    // Find surrounding keys
+    // Find segment
+    size_t index = 0;
     for (size_t i = 0; i < keys.size() - 1; ++i) {
         if (time >= keys[i].time && time < keys[i + 1].time) {
-            float segment_duration = keys[i + 1].time - keys[i].time;
-            float t = (time - keys[i].time) / segment_duration;
-            t = apply_easing(t, keys[i].easing);
-            return interpolate_linear(keys[i].value, keys[i + 1].value, t);
+            index = i;
+            break;
         }
     }
 
-    return keys.back().value;
+    const auto& k0 = keys[index];
+    const auto& k1 = keys[index + 1];
+
+    float segment_duration = k1.time - k0.time;
+    if (segment_duration <= 0.0001f) return k0.value;
+
+    float t = (time - k0.time) / segment_duration;
+    
+    // Apply easing
+    t = apply_easing(t, k0.easing);
+
+    switch (k0.interpolation) {
+        case InterpolationMode::Step:
+            return k0.value;
+            
+        case InterpolationMode::Linear:
+            return interpolate_linear(k0.value, k1.value, t);
+            
+        case InterpolationMode::Bezier:
+            return interpolate_bezier(k0.value, k1.value, k0.tangent_out, k1.tangent_in, t);
+            
+        case InterpolationMode::CatmullRom: {
+            // Need 4 points
+            size_t i0 = index > 0 ? index - 1 : 0;
+            size_t i1 = index;
+            size_t i2 = index + 1;
+            size_t i3 = std::min(index + 2, keys.size() - 1);
+            
+            return evaluate_catmull_rom(keys[i0].value, keys[i1].value, keys[i2].value, keys[i3].value, t);
+        }
+        
+        default:
+            return interpolate_linear(k0.value, k1.value, t);
+    }
 }
 
 Vec3 TransformTrack::sample_position(float time) const {
-    return sample_keys(m_position_keys, time, m_initial_position);
+    return sample_keys_interpolated(m_position_keys, time, m_initial_position);
 }
 
 Quat TransformTrack::sample_rotation(float time) const {
-    return sample_keys(m_rotation_keys, time, m_initial_rotation);
+    return sample_keys_interpolated(m_rotation_keys, time, m_initial_rotation);
 }
 
 Vec3 TransformTrack::sample_scale(float time) const {
-    return sample_keys(m_scale_keys, time, m_initial_scale);
+    return sample_keys_interpolated(m_scale_keys, time, m_initial_scale);
 }
 
 // ============================================================================
@@ -323,7 +369,8 @@ void TransformTrack::serialize(nlohmann::json& j) const {
         j["position_keys"].push_back({
             {"time", key.time},
             {"value", {key.value.x, key.value.y, key.value.z}},
-            {"easing", static_cast<int>(key.easing)}
+            {"easing", static_cast<int>(key.easing)},
+            {"interpolation", static_cast<int>(key.interpolation)}
         });
     }
 
@@ -332,7 +379,8 @@ void TransformTrack::serialize(nlohmann::json& j) const {
         j["rotation_keys"].push_back({
             {"time", key.time},
             {"value", {key.value.w, key.value.x, key.value.y, key.value.z}},
-            {"easing", static_cast<int>(key.easing)}
+            {"easing", static_cast<int>(key.easing)},
+            {"interpolation", static_cast<int>(key.interpolation)}
         });
     }
 
@@ -341,7 +389,8 @@ void TransformTrack::serialize(nlohmann::json& j) const {
         j["scale_keys"].push_back({
             {"time", key.time},
             {"value", {key.value.x, key.value.y, key.value.z}},
-            {"easing", static_cast<int>(key.easing)}
+            {"easing", static_cast<int>(key.easing)},
+            {"interpolation", static_cast<int>(key.interpolation)}
         });
     }
 }
@@ -360,6 +409,7 @@ void TransformTrack::deserialize(const nlohmann::json& j) {
                 key.value = Vec3{v[0], v[1], v[2]};
             }
             key.easing = static_cast<EaseType>(key_json.value("easing", 0));
+            key.interpolation = static_cast<InterpolationMode>(key_json.value("interpolation", 0));
             m_position_keys.push_back(key);
         }
     }
@@ -373,6 +423,7 @@ void TransformTrack::deserialize(const nlohmann::json& j) {
                 key.value = Quat{v[0], v[1], v[2], v[3]};
             }
             key.easing = static_cast<EaseType>(key_json.value("easing", 0));
+            key.interpolation = static_cast<InterpolationMode>(key_json.value("interpolation", 0));
             m_rotation_keys.push_back(key);
         }
     }
@@ -386,6 +437,7 @@ void TransformTrack::deserialize(const nlohmann::json& j) {
                 key.value = Vec3{v[0], v[1], v[2]};
             }
             key.easing = static_cast<EaseType>(key_json.value("easing", 0));
+            key.interpolation = static_cast<InterpolationMode>(key_json.value("interpolation", 0));
             m_scale_keys.push_back(key);
         }
     }
