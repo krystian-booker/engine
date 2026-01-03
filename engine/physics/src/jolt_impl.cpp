@@ -23,6 +23,7 @@
 #include <Jolt/Physics/Collision/ShapeFilter.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/CastResult.h>
+#include <Jolt/Physics/Collision/ShapeCast.h>
 #include <Jolt/Physics/Collision/CollideShape.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
 #include <Jolt/Physics/Collision/BroadPhase/BroadPhaseQuery.h>
@@ -914,6 +915,38 @@ bool is_active_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id) {
     return body_interface.IsActive(jolt_id);
 }
 
+void set_layer_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id, uint16_t layer) {
+    if (!impl || !impl->initialized) return;
+
+    BodyID jolt_id;
+    {
+        std::lock_guard<std::mutex> lock(impl->body_map_mutex);
+        jolt_id = get_jolt_body_id(impl, id);
+    }
+    if (jolt_id.IsInvalid()) return;
+
+    BodyInterface& body_interface = impl->physics_system->GetBodyInterface();
+    body_interface.SetObjectLayer(jolt_id, static_cast<ObjectLayer>(layer));
+}
+
+uint16_t get_layer_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id) {
+    if (!impl || !impl->initialized) return 0;
+
+    BodyID jolt_id;
+    {
+        std::lock_guard<std::mutex> lock(impl->body_map_mutex);
+        jolt_id = get_jolt_body_id(impl, id);
+    }
+    if (jolt_id.IsInvalid()) return 0;
+
+    BodyLockRead lock(impl->physics_system->GetBodyLockInterface(), jolt_id);
+    if (lock.Succeeded()) {
+        const Body& body = lock.GetBody();
+        return static_cast<uint16_t>(body.GetObjectLayer());
+    }
+    return 0;
+}
+
 RaycastHit raycast_impl(PhysicsWorld::Impl* impl, const Vec3& origin, const Vec3& dir,
                         float max_dist, uint16_t layer_mask) {
     RaycastHit result;
@@ -1097,6 +1130,184 @@ std::vector<PhysicsBodyId> overlap_box_impl(PhysicsWorld::Impl* impl, const Vec3
     }
 
     return results;
+}
+
+// Shape casting implementations
+RaycastHit sphere_cast_impl(PhysicsWorld::Impl* impl, const Vec3& origin, const Vec3& dir,
+                            float radius, float max_dist, uint16_t layer_mask) {
+    RaycastHit result;
+    if (!impl || !impl->initialized || layer_mask == 0 || max_dist <= 0.0f) return result;
+
+    // Create sphere shape for casting
+    SphereShape sphere(radius);
+
+    // Create the shape cast
+    RShapeCast shape_cast = RShapeCast::sFromWorldTransform(
+        &sphere,
+        JPH::Vec3::sReplicate(1.0f),
+        RMat44::sTranslation(RVec3(origin.x, origin.y, origin.z)),
+        JPH::Vec3(dir.x * max_dist, dir.y * max_dist, dir.z * max_dist)
+    );
+
+    ClosestHitCollisionCollector<CastShapeCollector> collector;
+    LayerMaskFilter object_filter(layer_mask);
+    BodyFilter body_filter;
+    ShapeFilter shape_filter;
+
+    impl->physics_system->GetNarrowPhaseQuery().CastShape(
+        shape_cast,
+        ShapeCastSettings(),
+        RVec3::sZero(),
+        collector,
+        BroadPhaseLayerFilter(),
+        object_filter,
+        body_filter,
+        shape_filter
+    );
+
+    if (collector.HadHit()) {
+        const ShapeCastResult& hit = collector.mHit;
+        result.hit = true;
+        result.distance = hit.mFraction * max_dist;
+        result.point = to_engine_vec3(hit.mContactPointOn2);
+        result.normal = Vec3{
+            static_cast<float>(hit.mPenetrationAxis.GetX()),
+            static_cast<float>(hit.mPenetrationAxis.GetY()),
+            static_cast<float>(hit.mPenetrationAxis.GetZ())
+        };
+        // Normalize the penetration axis to get normal
+        float len = glm::length(result.normal);
+        if (len > 0.0001f) {
+            result.normal /= len;
+        }
+
+        std::lock_guard<std::mutex> map_lock(impl->body_map_mutex);
+        result.body = impl->find_body_id(hit.mBodyID2);
+    }
+
+    return result;
+}
+
+RaycastHit capsule_cast_impl(PhysicsWorld::Impl* impl, const Vec3& origin, const Vec3& dir,
+                              float radius, float half_height, const Quat& rotation,
+                              float max_dist, uint16_t layer_mask) {
+    RaycastHit result;
+    if (!impl || !impl->initialized || layer_mask == 0 || max_dist <= 0.0f) return result;
+
+    // Create capsule shape for casting
+    CapsuleShape capsule(half_height, radius);
+
+    // Create transform with rotation
+    RMat44 start_transform = RMat44::sRotationTranslation(
+        JPH::Quat(rotation.x, rotation.y, rotation.z, rotation.w),
+        RVec3(origin.x, origin.y, origin.z)
+    );
+
+    // Create the shape cast
+    RShapeCast shape_cast = RShapeCast::sFromWorldTransform(
+        &capsule,
+        JPH::Vec3::sReplicate(1.0f),
+        start_transform,
+        JPH::Vec3(dir.x * max_dist, dir.y * max_dist, dir.z * max_dist)
+    );
+
+    ClosestHitCollisionCollector<CastShapeCollector> collector;
+    LayerMaskFilter object_filter(layer_mask);
+    BodyFilter body_filter;
+    ShapeFilter shape_filter;
+
+    impl->physics_system->GetNarrowPhaseQuery().CastShape(
+        shape_cast,
+        ShapeCastSettings(),
+        RVec3::sZero(),
+        collector,
+        BroadPhaseLayerFilter(),
+        object_filter,
+        body_filter,
+        shape_filter
+    );
+
+    if (collector.HadHit()) {
+        const ShapeCastResult& hit = collector.mHit;
+        result.hit = true;
+        result.distance = hit.mFraction * max_dist;
+        result.point = to_engine_vec3(hit.mContactPointOn2);
+        result.normal = Vec3{
+            static_cast<float>(hit.mPenetrationAxis.GetX()),
+            static_cast<float>(hit.mPenetrationAxis.GetY()),
+            static_cast<float>(hit.mPenetrationAxis.GetZ())
+        };
+        float len = glm::length(result.normal);
+        if (len > 0.0001f) {
+            result.normal /= len;
+        }
+
+        std::lock_guard<std::mutex> map_lock(impl->body_map_mutex);
+        result.body = impl->find_body_id(hit.mBodyID2);
+    }
+
+    return result;
+}
+
+RaycastHit box_cast_impl(PhysicsWorld::Impl* impl, const Vec3& origin, const Vec3& dir,
+                          const Vec3& half_extents, const Quat& rotation,
+                          float max_dist, uint16_t layer_mask) {
+    RaycastHit result;
+    if (!impl || !impl->initialized || layer_mask == 0 || max_dist <= 0.0f) return result;
+
+    // Create box shape for casting
+    BoxShape box(JPH::Vec3(half_extents.x, half_extents.y, half_extents.z));
+
+    // Create transform with rotation
+    RMat44 start_transform = RMat44::sRotationTranslation(
+        JPH::Quat(rotation.x, rotation.y, rotation.z, rotation.w),
+        RVec3(origin.x, origin.y, origin.z)
+    );
+
+    // Create the shape cast
+    RShapeCast shape_cast = RShapeCast::sFromWorldTransform(
+        &box,
+        JPH::Vec3::sReplicate(1.0f),
+        start_transform,
+        JPH::Vec3(dir.x * max_dist, dir.y * max_dist, dir.z * max_dist)
+    );
+
+    ClosestHitCollisionCollector<CastShapeCollector> collector;
+    LayerMaskFilter object_filter(layer_mask);
+    BodyFilter body_filter;
+    ShapeFilter shape_filter;
+
+    impl->physics_system->GetNarrowPhaseQuery().CastShape(
+        shape_cast,
+        ShapeCastSettings(),
+        RVec3::sZero(),
+        collector,
+        BroadPhaseLayerFilter(),
+        object_filter,
+        body_filter,
+        shape_filter
+    );
+
+    if (collector.HadHit()) {
+        const ShapeCastResult& hit = collector.mHit;
+        result.hit = true;
+        result.distance = hit.mFraction * max_dist;
+        result.point = to_engine_vec3(hit.mContactPointOn2);
+        result.normal = Vec3{
+            static_cast<float>(hit.mPenetrationAxis.GetX()),
+            static_cast<float>(hit.mPenetrationAxis.GetY()),
+            static_cast<float>(hit.mPenetrationAxis.GetZ())
+        };
+        float len = glm::length(result.normal);
+        if (len > 0.0001f) {
+            result.normal /= len;
+        }
+
+        std::lock_guard<std::mutex> map_lock(impl->body_map_mutex);
+        result.body = impl->find_body_id(hit.mBodyID2);
+    }
+
+    return result;
 }
 
 void set_collision_callback_impl(PhysicsWorld::Impl* impl, CollisionCallback callback) {
@@ -1624,6 +1835,14 @@ bool PhysicsWorld::is_active(PhysicsBodyId id) const {
     return is_active_impl(m_impl.get(), id);
 }
 
+void PhysicsWorld::set_layer(PhysicsBodyId id, uint16_t layer) {
+    set_layer_impl(m_impl.get(), id, layer);
+}
+
+uint16_t PhysicsWorld::get_layer(PhysicsBodyId id) const {
+    return get_layer_impl(m_impl.get(), id);
+}
+
 void PhysicsWorld::set_motion_type(PhysicsBodyId id, BodyType type) {
     set_motion_type_impl(m_impl.get(), id, type);
 }
@@ -1658,6 +1877,23 @@ std::vector<PhysicsBodyId> PhysicsWorld::overlap_sphere(const Vec3& center, floa
 std::vector<PhysicsBodyId> PhysicsWorld::overlap_box(const Vec3& center, const Vec3& half_extents,
                                                       const Quat& rotation, uint16_t layer_mask) const {
     return overlap_box_impl(m_impl.get(), center, half_extents, rotation, layer_mask);
+}
+
+RaycastHit PhysicsWorld::sphere_cast(const Vec3& origin, const Vec3& direction, float radius,
+                                      float max_distance, uint16_t layer_mask) const {
+    return sphere_cast_impl(m_impl.get(), origin, direction, radius, max_distance, layer_mask);
+}
+
+RaycastHit PhysicsWorld::capsule_cast(const Vec3& origin, const Vec3& direction, float radius,
+                                       float half_height, const Quat& rotation, float max_distance,
+                                       uint16_t layer_mask) const {
+    return capsule_cast_impl(m_impl.get(), origin, direction, radius, half_height, rotation, max_distance, layer_mask);
+}
+
+RaycastHit PhysicsWorld::box_cast(const Vec3& origin, const Vec3& direction, const Vec3& half_extents,
+                                   const Quat& rotation, float max_distance,
+                                   uint16_t layer_mask) const {
+    return box_cast_impl(m_impl.get(), origin, direction, half_extents, rotation, max_distance, layer_mask);
 }
 
 void PhysicsWorld::set_collision_callback(CollisionCallback callback) {

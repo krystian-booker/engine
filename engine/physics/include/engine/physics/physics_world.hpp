@@ -137,6 +137,8 @@ public:
     void set_gravity_factor(PhysicsBodyId id, float factor);
     void set_friction(PhysicsBodyId id, float friction);
     void set_restitution(PhysicsBodyId id, float restitution);
+    void set_layer(PhysicsBodyId id, uint16_t layer);
+    uint16_t get_layer(PhysicsBodyId id) const;
     void activate_body(PhysicsBodyId id);  // Wake up sleeping body
     bool is_active(PhysicsBodyId id) const;
 
@@ -157,6 +159,16 @@ public:
                                               uint16_t layer_mask = 0xFFFF) const;
     std::vector<PhysicsBodyId> overlap_box(const Vec3& center, const Vec3& half_extents,
                                            const Quat& rotation, uint16_t layer_mask = 0xFFFF) const;
+
+    // Shape casting (sweep tests)
+    RaycastHit sphere_cast(const Vec3& origin, const Vec3& direction, float radius,
+                           float max_distance, uint16_t layer_mask = 0xFFFF) const;
+    RaycastHit capsule_cast(const Vec3& origin, const Vec3& direction, float radius,
+                            float half_height, const Quat& rotation, float max_distance,
+                            uint16_t layer_mask = 0xFFFF) const;
+    RaycastHit box_cast(const Vec3& origin, const Vec3& direction, const Vec3& half_extents,
+                        const Quat& rotation, float max_distance,
+                        uint16_t layer_mask = 0xFFFF) const;
 
     // Collision callbacks
     void set_collision_callback(CollisionCallback callback);
@@ -234,6 +246,15 @@ private:
     friend void set_constraint_motor_strength_impl(Impl*, ConstraintId, float);
     friend std::vector<ContactPointInfo> get_contact_points_impl(Impl*);
     friend std::vector<ConstraintInfo> get_all_constraints_impl(Impl*);
+
+    // Shape casting impl functions
+    friend RaycastHit sphere_cast_impl(Impl*, const Vec3&, const Vec3&, float, float, uint16_t);
+    friend RaycastHit capsule_cast_impl(Impl*, const Vec3&, const Vec3&, float, float, const Quat&, float, uint16_t);
+    friend RaycastHit box_cast_impl(Impl*, const Vec3&, const Vec3&, const Vec3&, const Quat&, float, uint16_t);
+
+    // Layer impl functions
+    friend void set_layer_impl(Impl*, PhysicsBodyId, uint16_t);
+    friend uint16_t get_layer_impl(Impl*, PhysicsBodyId);
 };
 
 } // namespace engine::physics
