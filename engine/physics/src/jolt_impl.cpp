@@ -20,7 +20,7 @@
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
-#include <Jolt/Physics/Collision/Shape/ShapeFilter.h>
+#include <Jolt/Physics/Collision/ShapeFilter.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/CollideShape.h>
@@ -139,9 +139,7 @@ static Vec3 to_engine_vec3(const RVec3& v) {
     };
 }
 
-static Vec3 to_engine_vec3(const JPH::Vec3& v) {
-    return Vec3{v.GetX(), v.GetY(), v.GetZ()};
-}
+
 
 // Forward declaration for contact listener implementation
 class ContactListenerImpl;
