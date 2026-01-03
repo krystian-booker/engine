@@ -123,14 +123,14 @@ constexpr const char* EXPORT_SHUTDOWN = "game_shutdown";
     } \
     \
     GAME_API void game_pre_reload(engine::scene::World* world, void* state) { \
-        if (g_game_instance) { \
-            g_game_instance->pre_reload(world, state); \
+        if (g_game_instance && state) { \
+            g_game_instance->pre_reload(world, *static_cast<nlohmann::json*>(state)); \
         } \
     } \
     \
     GAME_API void game_post_reload(engine::scene::World* world, const void* state) { \
-        if (g_game_instance) { \
-            g_game_instance->post_reload(world, state); \
+        if (g_game_instance && state) { \
+            g_game_instance->post_reload(world, *static_cast<const nlohmann::json*>(state)); \
         } \
     } \
     \
