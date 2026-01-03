@@ -125,6 +125,22 @@ struct UIStyle {
         s.min_height = 20.0f;
         return s;
     }
+
+    static UIStyle text_input() {
+        UIStyle s;
+        s.background_color.normal = Vec4(0.12f, 0.12f, 0.12f, 1.0f);
+        s.background_color.focused = Vec4(0.15f, 0.15f, 0.15f, 1.0f);
+        s.border_color.normal = Vec4(0.3f, 0.3f, 0.3f, 1.0f);
+        s.border_color.focused = Vec4(0.3f, 0.5f, 0.9f, 1.0f);
+        s.text_color.normal = Vec4(1.0f, 1.0f, 1.0f, 1.0f);
+        s.text_color.disabled = Vec4(0.5f, 0.5f, 0.5f, 1.0f);
+        s.border_width = 1.0f;
+        s.border_radius = 4.0f;
+        s.padding = EdgeInsets(8.0f, 6.0f);
+        s.min_width = 100.0f;
+        s.min_height = 28.0f;
+        return s;
+    }
 };
 
 // Style class system for reusable styles

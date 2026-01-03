@@ -68,11 +68,22 @@ enum class Overflow : uint8_t {
 
 // Input state
 struct UIInputState {
+    // Mouse input
     Vec2 mouse_position{0.0f};
     Vec2 mouse_delta{0.0f};
     Vec2 scroll_delta{0.0f};
     bool mouse_buttons[3] = {false, false, false};  // Left, Right, Middle
     bool prev_mouse_buttons[3] = {false, false, false};
+
+    // Keyboard input for text entry
+    std::string text_input;           // Characters typed this frame (UTF-8)
+    bool key_backspace = false;
+    bool key_delete = false;
+    bool key_left = false;
+    bool key_right = false;
+    bool key_home = false;
+    bool key_end = false;
+    bool key_enter = false;
 
     bool is_mouse_down(int button) const { return mouse_buttons[button]; }
     bool is_mouse_up(int button) const { return !mouse_buttons[button]; }

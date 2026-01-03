@@ -7,15 +7,32 @@ UIPanel::UIPanel() {
     m_style = UIStyle::panel();
 }
 
+void UIPanel::render(UIRenderContext& ctx) {
+    if (!is_visible()) return;
+
+    // Render self (pushes clip rect if overflow mode)
+    on_render(ctx);
+
+    // Render children
+    for (auto& child : m_children) {
+        child->render(ctx);
+    }
+
+    // Pop clip rect if we pushed one
+    if (m_overflow == Overflow::Hidden || m_overflow == Overflow::Scroll) {
+        ctx.pop_clip_rect();
+    }
+
+    m_dirty = false;
+}
+
 void UIPanel::on_render(UIRenderContext& ctx) {
     render_background(ctx, m_bounds);
 
-    // Handle scrolling/clipping
+    // Handle scrolling/clipping - push clip rect, will be popped in render()
     if (m_overflow == Overflow::Hidden || m_overflow == Overflow::Scroll) {
         ctx.push_clip_rect(m_content_bounds);
     }
-
-    // Children are rendered by parent class
 }
 
 Vec2 UIPanel::on_measure(Vec2 available_size) {

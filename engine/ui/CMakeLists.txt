@@ -17,6 +17,7 @@ target_sources(engine_ui
         src/ui_label.cpp
         src/ui_image.cpp
         src/ui_slider.cpp
+        src/ui_text_input.cpp
         src/ui_font.cpp
         src/ui_renderer.cpp
     PUBLIC

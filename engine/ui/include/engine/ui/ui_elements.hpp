@@ -20,6 +20,8 @@ public:
     void set_overflow(Overflow overflow) { m_overflow = overflow; }
     Overflow get_overflow() const { return m_overflow; }
 
+    void render(UIRenderContext& ctx) override;
+
 protected:
     void on_render(UIRenderContext& ctx) override;
     Vec2 on_measure(Vec2 available_size) override;
@@ -186,6 +188,48 @@ private:
     bool m_checked = false;
     std::string m_label;
     float m_box_size = 18.0f;
+};
+
+// Text input field
+class UITextInput : public UIElement {
+public:
+    UITextInput();
+    explicit UITextInput(const std::string& placeholder);
+
+    void set_text(const std::string& text);
+    const std::string& get_text() const { return m_text; }
+
+    void set_placeholder(const std::string& text) { m_placeholder = text; mark_dirty(); }
+    const std::string& get_placeholder() const { return m_placeholder; }
+
+    void set_max_length(size_t max) { m_max_length = max; }
+    size_t get_max_length() const { return m_max_length; }
+
+    TextChangedCallback on_text_changed;
+    std::function<void(const std::string&)> on_submit;  // Enter pressed
+
+protected:
+    void on_update(float dt, const UIInputState& input) override;
+    void on_render(UIRenderContext& ctx) override;
+    Vec2 on_measure(Vec2 available_size) override;
+    void on_click_internal() override;
+    void on_focus_changed(bool focused) override;
+
+private:
+    void insert_text(const std::string& text);
+    void delete_char_before_cursor();
+    void delete_char_after_cursor();
+    void move_cursor_left();
+    void move_cursor_right();
+
+    std::string m_text;
+    std::string m_placeholder;
+    size_t m_cursor_pos = 0;
+    size_t m_max_length = 256;
+    float m_cursor_blink_timer = 0.0f;
+    bool m_cursor_visible = true;
+
+    static constexpr float CURSOR_BLINK_RATE = 0.53f;
 };
 
 } // namespace engine::ui
