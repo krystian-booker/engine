@@ -12,6 +12,7 @@ target_sources(engine_script
         src/math_bindings.cpp
         src/entity_bindings.cpp
         src/input_bindings.cpp
+        src/localization_bindings.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -37,6 +38,7 @@ target_link_libraries(engine_script
         sol2::sol2
     PRIVATE
         engine_compiler_flags
+        engine::localization
 )
 
 set_target_properties(engine_script PROPERTIES

@@ -45,6 +45,7 @@ void register_all_bindings(LuaState& lua) {
     register_input_bindings(state);
     register_time_bindings(state);
     register_log_bindings(state);
+    register_localization_bindings(state);
 
     core::log(core::LogLevel::Debug, "Registered all Lua bindings");
 }
