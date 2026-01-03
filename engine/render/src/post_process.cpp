@@ -31,6 +31,7 @@ struct PostProcessShaders {
     bgfx::UniformHandle s_history = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_depth = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_velocity = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_volumetric = BGFX_INVALID_HANDLE;
 
     // Fullscreen quad vertex buffer
     bgfx::VertexBufferHandle fullscreen_vb = BGFX_INVALID_HANDLE;
@@ -123,6 +124,7 @@ void PostProcessShaders::create() {
     s_history = bgfx::createUniform("s_history", bgfx::UniformType::Sampler);
     s_depth = bgfx::createUniform("s_depth", bgfx::UniformType::Sampler);
     s_velocity = bgfx::createUniform("s_velocity", bgfx::UniformType::Sampler);
+    s_volumetric = bgfx::createUniform("s_volumetric", bgfx::UniformType::Sampler);
 
     // Create fullscreen quad vertex layout
     fullscreen_layout
@@ -173,6 +175,7 @@ void PostProcessShaders::destroy() {
     if (bgfx::isValid(s_history)) bgfx::destroy(s_history);
     if (bgfx::isValid(s_depth)) bgfx::destroy(s_depth);
     if (bgfx::isValid(s_velocity)) bgfx::destroy(s_velocity);
+    if (bgfx::isValid(s_volumetric)) bgfx::destroy(s_volumetric);
 
     if (bgfx::isValid(fullscreen_vb)) bgfx::destroy(fullscreen_vb);
     if (bgfx::isValid(fullscreen_ib)) bgfx::destroy(fullscreen_ib);
@@ -455,8 +458,21 @@ void PostProcessSystem::render_tonemapping(TextureHandle scene, TextureHandle bl
         }
     }
 
+    // Bind volumetric fog texture if available
+    // The shader composites: final = scene * vol.a + vol.rgb
+    if (m_volumetric_texture.valid()) {
+        uint16_t vol_idx = m_renderer->get_native_texture_handle(m_volumetric_texture);
+        if (vol_idx != bgfx::kInvalidHandle) {
+            bgfx::TextureHandle vol_handle = { vol_idx };
+            bgfx::setTexture(2, s_pp_shaders.s_volumetric, vol_handle);
+        }
+    }
+
     // Draw fullscreen quad
     s_pp_shaders.draw_fullscreen(view_id, s_pp_shaders.tonemap);
+
+    // Clear the volumetric texture for next frame
+    m_volumetric_texture = TextureHandle{};
 }
 
 void PostProcessSystem::process(

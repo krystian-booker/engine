@@ -240,6 +240,16 @@ void RenderPipeline::render(const CameraData& camera,
         depth_prepass(camera, objects);
     }
 
+    // GBuffer pass for normals (needed by SSAO)
+    if (has_flag(m_config.enabled_passes, RenderPassFlags::GBuffer)) {
+        gbuffer_pass(camera, objects);
+    }
+
+    // Motion vectors pass (needed by TAA)
+    if (has_flag(m_config.enabled_passes, RenderPassFlags::TAA) && m_config.taa_config.enabled) {
+        motion_vector_pass(camera, objects);
+    }
+
     if (has_flag(m_config.enabled_passes, RenderPassFlags::SSAO)) {
         ssao_pass(camera);
     }
@@ -355,6 +365,52 @@ void RenderPipeline::create_render_targets() {
         m_depth_target = m_renderer->create_render_target(desc);
     }
 
+    // GBuffer with normals (for SSAO)
+    {
+        RenderTargetDesc desc;
+        desc.width = m_internal_width;
+        desc.height = m_internal_height;
+        desc.color_attachment_count = 1;
+        desc.color_format = TextureFormat::RGBA16F;  // World-space normals
+        desc.has_depth = true;
+        desc.depth_format = TextureFormat::Depth32F;
+        desc.samplable = true;
+        desc.debug_name = "Pipeline_GBuffer";
+
+        m_gbuffer = m_renderer->create_render_target(desc);
+
+        // Configure GBuffer view
+        ViewConfig view_config;
+        view_config.render_target = m_gbuffer;
+        view_config.clear_color_enabled = true;
+        view_config.clear_color = 0x808080FF;  // Neutral normal (0.5, 0.5, 0.5)
+        view_config.clear_depth_enabled = true;
+        view_config.clear_depth = 1.0f;
+        m_renderer->configure_view(RenderView::GBuffer, view_config);
+    }
+
+    // Motion vectors (for TAA)
+    {
+        RenderTargetDesc desc;
+        desc.width = m_internal_width;
+        desc.height = m_internal_height;
+        desc.color_attachment_count = 1;
+        desc.color_format = TextureFormat::RGBA16F;  // RG = motion, BA = unused
+        desc.has_depth = false;
+        desc.samplable = true;
+        desc.debug_name = "Pipeline_MotionVectors";
+
+        m_motion_vectors = m_renderer->create_render_target(desc);
+
+        // Configure motion vector view
+        ViewConfig view_config;
+        view_config.render_target = m_motion_vectors;
+        view_config.clear_color_enabled = true;
+        view_config.clear_color = 0x00000000;  // Zero motion by default
+        view_config.clear_depth_enabled = false;
+        m_renderer->configure_view(RenderView::MotionVectors, view_config);
+    }
+
     // HDR render target
     {
         RenderTargetDesc desc;
@@ -431,6 +487,11 @@ void RenderPipeline::destroy_render_targets() {
     if (m_gbuffer.valid()) {
         m_renderer->destroy_render_target(m_gbuffer);
         m_gbuffer = RenderTargetHandle{};
+    }
+
+    if (m_motion_vectors.valid()) {
+        m_renderer->destroy_render_target(m_motion_vectors);
+        m_motion_vectors = RenderTargetHandle{};
     }
 
     if (m_hdr_target.valid()) {
@@ -665,12 +726,54 @@ void RenderPipeline::depth_prepass(const CameraData& camera,
     }
 }
 
+void RenderPipeline::gbuffer_pass(const CameraData& camera,
+                                   const std::vector<RenderObject>& objects) {
+    // Set view transform for GBuffer pass
+    m_renderer->set_view_transform(RenderView::GBuffer, camera.view_matrix, camera.projection_matrix);
+
+    // Render all visible opaque objects to GBuffer
+    // This outputs world-space normals to the GBuffer color attachment
+    for (const auto* obj : m_visible_opaque) {
+        if (obj->skinned && obj->bone_matrices) {
+            m_renderer->submit_skinned_mesh(RenderView::GBuffer, obj->mesh, obj->material,
+                                             obj->transform, obj->bone_matrices, obj->bone_count);
+        } else {
+            m_renderer->submit_mesh(RenderView::GBuffer, obj->mesh, obj->material, obj->transform);
+        }
+        m_stats.draw_calls++;
+    }
+}
+
+void RenderPipeline::motion_vector_pass(const CameraData& camera,
+                                         const std::vector<RenderObject>& objects) {
+    // Set view transform for motion vector pass
+    m_renderer->set_view_transform(RenderView::MotionVectors, camera.view_matrix, camera.projection_matrix);
+
+    // Render all visible opaque objects to calculate motion vectors
+    // Motion is calculated in the shader using current and previous view-projection matrices
+    // Note: For now we only support camera motion. Per-object motion would require
+    // extending the renderer interface to support previous transforms per-draw.
+    for (const auto* obj : m_visible_opaque) {
+        if (obj->skinned && obj->bone_matrices) {
+            m_renderer->submit_skinned_mesh(RenderView::MotionVectors, obj->mesh, obj->material,
+                                             obj->transform, obj->bone_matrices, obj->bone_count);
+        } else {
+            m_renderer->submit_mesh(RenderView::MotionVectors, obj->mesh, obj->material, obj->transform);
+        }
+        m_stats.draw_calls++;
+    }
+}
+
 void RenderPipeline::ssao_pass(const CameraData& camera) {
     TextureHandle depth_tex = get_depth_texture();
     if (!depth_tex.valid()) return;
 
-    // SSAO requires depth and normal textures
-    TextureHandle normal_tex; // TODO: Get normal texture from GBuffer
+    // Get normal texture from GBuffer
+    TextureHandle normal_tex;
+    if (m_gbuffer.valid()) {
+        normal_tex = m_renderer->get_render_target_texture(m_gbuffer, 0);
+    }
+
     m_ssao_system.render(depth_tex, normal_tex, camera.projection_matrix, camera.view_matrix);
 }
 
@@ -772,18 +875,25 @@ void RenderPipeline::post_process_pass(const CameraData& camera) {
     TextureHandle hdr_tex = m_renderer->get_render_target_texture(m_hdr_target, 0);
     if (!hdr_tex.valid()) return;
 
-    // Apply volumetric fog
+    // Apply volumetric fog compositing
+    // The volumetric texture contains: RGB = in-scattered light, A = transmission
+    // Compositing formula: final = scene * transmission + in_scatter
     if (has_flag(m_config.enabled_passes, RenderPassFlags::Volumetric)) {
         TextureHandle vol_tex = m_volumetric_system.get_volumetric_texture();
         if (vol_tex.valid()) {
-            // TODO: Volumetric fog compositing
+            // Set the volumetric texture for the post-process system to composite
+            // The tone mapping shader will blend: hdr * vol.a + vol.rgb
+            m_post_process_system.set_volumetric_texture(vol_tex);
         }
     }
 
     // Apply TAA
     if (has_flag(m_config.enabled_passes, RenderPassFlags::TAA) && m_config.taa_config.enabled) {
         TextureHandle depth_tex = get_depth_texture();
-        TextureHandle motion_tex; // TODO: Motion vector texture
+        TextureHandle motion_tex;
+        if (m_motion_vectors.valid()) {
+            motion_tex = m_renderer->get_render_target_texture(m_motion_vectors, 0);
+        }
         TextureHandle resolved = m_taa_system.resolve(hdr_tex, depth_tex, motion_tex);
         if (resolved.valid()) {
             hdr_tex = resolved;

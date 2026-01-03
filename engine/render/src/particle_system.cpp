@@ -4,8 +4,39 @@
 #include <algorithm>
 #include <random>
 #include <cmath>
+#include <fstream>
 
 namespace engine::render {
+
+// Shader loading helpers
+static bgfx::ShaderHandle load_particle_shader(const std::string& path) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) return BGFX_INVALID_HANDLE;
+
+    std::streampos pos = file.tellg();
+    if (pos <= 0) return BGFX_INVALID_HANDLE;
+
+    auto size = static_cast<std::streamsize>(pos);
+    file.seekg(0, std::ios::beg);
+
+    const bgfx::Memory* mem = bgfx::alloc(static_cast<uint32_t>(size) + 1);
+    file.read(reinterpret_cast<char*>(mem->data), size);
+    if (file.gcount() != size) return BGFX_INVALID_HANDLE;
+
+    mem->data[size] = '\0';
+    return bgfx::createShader(mem);
+}
+
+static std::string get_particle_shader_path() {
+    auto type = bgfx::getRendererType();
+    switch (type) {
+        case bgfx::RendererType::Direct3D11:
+        case bgfx::RendererType::Direct3D12: return "shaders/dx11/";
+        case bgfx::RendererType::Vulkan: return "shaders/spirv/";
+        case bgfx::RendererType::OpenGL: return "shaders/glsl/";
+        default: return "shaders/spirv/";
+    }
+}
 
 using namespace engine::core;
 
@@ -112,8 +143,19 @@ void ParticleSystem::init(IRenderer* renderer) {
     m_s_texture = bgfx::createUniform("s_texture", bgfx::UniformType::Sampler);
     m_s_depth = bgfx::createUniform("s_depth", bgfx::UniformType::Sampler);
 
-    // TODO: Load particle shader program
-    // m_particle_program = load_program("vs_particle", "fs_particle");
+    // Load particle shader program
+    std::string path = get_particle_shader_path();
+    bgfx::ShaderHandle vs = load_particle_shader(path + "vs_particle.sc.bin");
+    bgfx::ShaderHandle fs = load_particle_shader(path + "fs_particle.sc.bin");
+
+    if (bgfx::isValid(vs) && bgfx::isValid(fs)) {
+        m_particle_program = bgfx::createProgram(vs, fs, true);
+        log(LogLevel::Info, "Particle shaders loaded successfully");
+    } else {
+        log(LogLevel::Warning, "Failed to load particle shaders, particles will not render");
+        if (bgfx::isValid(vs)) bgfx::destroy(vs);
+        if (bgfx::isValid(fs)) bgfx::destroy(fs);
+    }
 
     m_initialized = true;
     log(LogLevel::Info, "Particle system initialized");
@@ -261,7 +303,13 @@ void ParticleSystem::render_emitter(const ParticleEmitterRuntime* runtime,
     bgfx::setUniform(m_u_particle_params, params, 4);
 
     // Set texture
-    // TODO: bgfx::setTexture(0, m_s_texture, texture_handle);
+    if (config.texture.valid()) {
+        uint16_t tex_idx = m_renderer->get_native_texture_handle(config.texture);
+        if (tex_idx != bgfx::kInvalidHandle) {
+            bgfx::TextureHandle tex_handle = { tex_idx };
+            bgfx::setTexture(0, m_s_texture, tex_handle);
+        }
+    }
 
     // Set buffers
     bgfx::setVertexBuffer(0, runtime->vertex_buffer);
@@ -287,9 +335,9 @@ void ParticleSystem::render_emitter(const ParticleEmitterRuntime* runtime,
 
     bgfx::setState(state);
 
-    // Submit draw call
-    // TODO: Use correct view ID for transparent pass
-    // bgfx::submit(view_id, m_particle_program);
+    // Submit draw call to transparent pass
+    uint16_t view_id = static_cast<uint16_t>(RenderView::MainTransparent);
+    bgfx::submit(view_id, m_particle_program);
 }
 
 void ParticleSystem::emit_burst(ParticleEmitterRuntime* runtime,

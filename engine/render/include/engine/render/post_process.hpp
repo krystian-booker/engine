@@ -82,6 +82,11 @@ public:
     TextureHandle get_bloom_texture() const;
     float get_current_exposure() const { return m_current_exposure; }
 
+    // Set volumetric fog texture for compositing during tonemapping
+    // The volumetric texture contains: RGB = in-scattered light, A = transmission
+    // Compositing: final = scene * vol.a + vol.rgb
+    void set_volumetric_texture(TextureHandle vol_tex) { m_volumetric_texture = vol_tex; }
+
 private:
     void create_bloom_chain();
     void destroy_bloom_chain();
@@ -107,6 +112,9 @@ private:
     float m_current_exposure = 1.0f;
     RenderTargetHandle m_luminance_target;
     RenderTargetHandle m_avg_luminance;
+
+    // Volumetric fog texture (set per-frame for compositing)
+    TextureHandle m_volumetric_texture;
 };
 
 // TAA (Temporal Anti-Aliasing) system

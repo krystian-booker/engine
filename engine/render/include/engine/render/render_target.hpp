@@ -61,14 +61,17 @@ enum class RenderView : uint16_t {
     // G-Buffer pass (for deferred rendering)
     GBuffer = 33,
 
+    // Motion vectors (for TAA)
+    MotionVectors = 34,
+
     // Screen-space effects
-    SSAO = 34,
-    SSAOBlur = 35,
-    SSR = 36,
+    SSAO = 35,
+    SSAOBlur = 36,
+    SSR = 37,
 
     // Volumetric lighting
-    VolumetricScatter = 37,
-    VolumetricIntegrate = 38,
+    VolumetricScatter = 38,
+    VolumetricIntegrate = 39,
 
     // Main rendering pass (forward/forward+)
     MainOpaque = 40,

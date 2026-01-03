@@ -224,6 +224,10 @@ private:
                      const std::vector<LightData>& lights);
     void depth_prepass(const CameraData& camera,
                        const std::vector<RenderObject>& objects);
+    void gbuffer_pass(const CameraData& camera,
+                      const std::vector<RenderObject>& objects);
+    void motion_vector_pass(const CameraData& camera,
+                            const std::vector<RenderObject>& objects);
     void ssao_pass(const CameraData& camera);
     void main_pass(const CameraData& camera,
                    const std::vector<RenderObject>& objects,
@@ -261,7 +265,8 @@ private:
 
     // Render targets
     RenderTargetHandle m_depth_target;
-    RenderTargetHandle m_gbuffer;  // For future deferred path
+    RenderTargetHandle m_gbuffer;         // GBuffer with normals for SSAO
+    RenderTargetHandle m_motion_vectors;  // Motion vectors for TAA
     RenderTargetHandle m_hdr_target;
     RenderTargetHandle m_ldr_target;
 
