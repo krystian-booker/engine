@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <functional>
+#include <unordered_map>
 #include <engine/core/math.hpp>
 
 namespace engine::streaming {
@@ -206,5 +207,39 @@ inline StreamingVolume create_level_transition(const std::string& name, const Ve
 }
 
 } // namespace StreamingVolumeFactory
+
+// ============================================================================
+// Portal connectivity graph
+// ============================================================================
+
+struct PortalGraph {
+    struct PortalEdge {
+        std::string target_cell;
+        Vec3 portal_center;
+        Vec3 portal_normal;
+        float width;
+        float height;
+    };
+
+    std::unordered_map<std::string, std::vector<PortalEdge>> adjacency;
+
+    void add_portal(const std::string& from_cell, const PortalEdge& edge);
+    void clear();
+    const std::vector<PortalEdge>* get_portals_from(const std::string& cell) const;
+};
+
+PortalGraph& get_portal_graph();
+
+// ============================================================================
+// ECS Systems
+// ============================================================================
+
+namespace scene { class World; }
+
+// Syncs entity transforms to volumes, forwards load/unload to SceneStreamingSystem
+void streaming_volume_system(scene::World& world, double dt);
+
+// Manages portal visibility and boosts loading priority for visible cells
+void streaming_portal_system(scene::World& world, double dt);
 
 } // namespace engine::streaming

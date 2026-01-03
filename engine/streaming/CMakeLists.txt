@@ -7,6 +7,7 @@ add_library(engine::streaming ALIAS engine_streaming)
 target_sources(engine_streaming
     PRIVATE
         src/scene_streaming.cpp
+        src/streaming_systems.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
