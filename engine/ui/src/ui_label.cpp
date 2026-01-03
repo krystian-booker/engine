@@ -1,5 +1,6 @@
 #include <engine/ui/ui_elements.hpp>
 #include <engine/ui/ui_renderer.hpp>
+#include <engine/ui/ui_context.hpp>
 
 namespace engine::ui {
 
@@ -55,15 +56,16 @@ Vec2 UILabel::on_measure(Vec2 available_size) {
 
     if (!m_text.empty() && (m_style.width_mode == SizeMode::FitContent ||
                             m_style.height_mode == SizeMode::FitContent)) {
-        // Estimate text size
-        float text_width = m_text.length() * m_style.font_size * 0.6f;
-        float text_height = m_style.font_size * 1.2f;
+        UIContext* ctx = get_ui_context();
+        if (ctx) {
+            Vec2 text_size = ctx->font_manager().measure_text(m_style.font, m_text);
 
-        if (m_style.width_mode == SizeMode::FitContent) {
-            size.x = text_width + m_style.padding.horizontal();
-        }
-        if (m_style.height_mode == SizeMode::FitContent) {
-            size.y = text_height + m_style.padding.vertical();
+            if (m_style.width_mode == SizeMode::FitContent) {
+                size.x = text_size.x + m_style.padding.horizontal();
+            }
+            if (m_style.height_mode == SizeMode::FitContent) {
+                size.y = text_size.y + m_style.padding.vertical();
+            }
         }
     }
 

@@ -73,11 +73,17 @@ public:
     void set_cursor(CursorType cursor) { m_cursor = cursor; }
     CursorType get_cursor() const { return m_cursor; }
 
+    // Tooltip settings
+    void set_tooltip_delay(float seconds) { m_tooltip_delay = seconds; }
+    float get_tooltip_delay() const { return m_tooltip_delay; }
+
     // Access subsystems
     FontManager& font_manager() { return m_font_manager; }
     UIRenderer& renderer() { return m_renderer; }
 
 private:
+    void update_tooltip(float dt, const UIInputState& input);
+    void render_tooltip();
     void sort_canvases();
 
     render::IRenderer* m_render = nullptr;
@@ -97,6 +103,13 @@ private:
     float m_dpi_scale = 1.0f;
 
     CursorType m_cursor = CursorType::Arrow;
+
+    // Tooltip state
+    UIElement* m_tooltip_element = nullptr;
+    Vec2 m_tooltip_position{0.0f};
+    float m_tooltip_timer = 0.0f;
+    float m_tooltip_delay = 0.5f;
+    bool m_tooltip_visible = false;
 
     bool m_initialized = false;
 };

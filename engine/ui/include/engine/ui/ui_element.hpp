@@ -83,6 +83,15 @@ public:
     void request_focus();
     void release_focus();
 
+    // Tab order for focus navigation (lower = earlier in navigation order)
+    void set_tab_index(int index) { m_tab_index = index; }
+    int get_tab_index() const { return m_tab_index; }
+
+    // Tooltip
+    void set_tooltip(const std::string& text) { m_tooltip = text; }
+    const std::string& get_tooltip() const { return m_tooltip; }
+    bool has_tooltip() const { return !m_tooltip.empty(); }
+
     // Event callbacks
     ClickCallback on_click;
     HoverCallback on_hover;
@@ -119,6 +128,7 @@ protected:
     void render_background(UIRenderContext& ctx, const Rect& bounds);
 
     std::string m_name;
+    std::string m_tooltip;
     UIStyle m_style;
     std::vector<std::string> m_classes;
 
@@ -142,6 +152,7 @@ protected:
     bool m_focused = false;
     bool m_hovered = false;
     bool m_pressed = false;
+    int m_tab_index = 0;
 
     // Hierarchy
     UIElement* m_parent = nullptr;

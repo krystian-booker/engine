@@ -1,5 +1,6 @@
 #include <engine/ui/ui_elements.hpp>
 #include <engine/ui/ui_renderer.hpp>
+#include <engine/ui/ui_context.hpp>
 #include <algorithm>
 
 namespace engine::ui {
@@ -111,11 +112,14 @@ void UITextInput::on_render(UIRenderContext& ctx) {
 
     // Draw cursor when focused
     if (is_focused() && m_cursor_visible && !show_placeholder) {
-        // Estimate cursor x position based on character count before cursor
         float cursor_x = m_content_bounds.x;
         if (m_cursor_pos > 0) {
-            // Rough estimate - ideally should use font metrics
-            cursor_x += m_cursor_pos * m_style.font_size * 0.6f;
+            UIContext* ui_ctx = get_ui_context();
+            if (ui_ctx) {
+                std::string text_before_cursor = m_text.substr(0, m_cursor_pos);
+                Vec2 text_size = ui_ctx->font_manager().measure_text(m_style.font, text_before_cursor);
+                cursor_x += text_size.x;
+            }
         }
 
         float cursor_y = m_content_bounds.y + 2.0f;

@@ -108,9 +108,77 @@ void UIContext::update(float dt, const UIInputState& input) {
     // Reset cursor
     m_cursor = CursorType::Arrow;
 
+    // Handle gamepad/keyboard navigation
+    NavDirection nav_dir = input.get_nav_direction();
+    if (nav_dir != NavDirection::None) {
+        // Navigate focus on the topmost enabled canvas
+        for (auto it = m_canvas_order.rbegin(); it != m_canvas_order.rend(); ++it) {
+            if ((*it)->is_enabled()) {
+                (*it)->navigate_focus(nav_dir);
+                break;
+            }
+        }
+    }
+
+    // Handle confirm button
+    if (input.was_confirm_pressed()) {
+        for (auto it = m_canvas_order.rbegin(); it != m_canvas_order.rend(); ++it) {
+            if ((*it)->is_enabled() && (*it)->get_focused_element()) {
+                (*it)->activate_focused();
+                break;
+            }
+        }
+    }
+
+    // Handle tab navigation
+    if (input.key_tab) {
+        for (auto it = m_canvas_order.rbegin(); it != m_canvas_order.rend(); ++it) {
+            if ((*it)->is_enabled()) {
+                (*it)->focus_next();
+                break;
+            }
+        }
+    }
+
     // Update all canvases
     for (auto* canvas : m_canvas_order) {
         canvas->update(dt, input);
+    }
+
+    // Update tooltip
+    update_tooltip(dt, input);
+}
+
+void UIContext::update_tooltip(float dt, const UIInputState& input) {
+    // Find element under mouse
+    UIElement* hovered = nullptr;
+    for (auto it = m_canvas_order.rbegin(); it != m_canvas_order.rend(); ++it) {
+        UICanvas* canvas = *it;
+        if (canvas->is_enabled()) {
+            hovered = canvas->find_element_at(input.mouse_position);
+            if (hovered) break;
+        }
+    }
+
+    // Check if hovered element has tooltip
+    UIElement* tooltip_source = nullptr;
+    if (hovered && hovered->has_tooltip()) {
+        tooltip_source = hovered;
+    }
+
+    // Update tooltip state
+    if (tooltip_source != m_tooltip_element) {
+        m_tooltip_element = tooltip_source;
+        m_tooltip_timer = 0.0f;
+        m_tooltip_visible = false;
+        m_tooltip_position = input.mouse_position;
+    } else if (m_tooltip_element) {
+        m_tooltip_timer += dt;
+        if (m_tooltip_timer >= m_tooltip_delay && !m_tooltip_visible) {
+            m_tooltip_visible = true;
+            // Position tooltip below and to the right of cursor
+            m_tooltip_position = input.mouse_position + Vec2(12.0f, 16.0f);
+        }
     }
 }
 
@@ -127,11 +195,50 @@ void UIContext::render(render::RenderView view) {
         }
     }
 
+    // Render tooltip on top
+    render_tooltip();
+
     // End render context
     m_render_context.end();
 
     // Submit to renderer
     m_renderer.render(m_render_context, view);
+}
+
+void UIContext::render_tooltip() {
+    if (!m_tooltip_visible || !m_tooltip_element) return;
+
+    const std::string& tooltip_text = m_tooltip_element->get_tooltip();
+    if (tooltip_text.empty()) return;
+
+    // Measure text
+    FontHandle font = m_font_manager.get_default_font();
+    float font_size = 14.0f;
+    Vec2 text_size = m_font_manager.measure_text(font, tooltip_text);
+
+    // Calculate tooltip bounds with padding
+    float padding = 6.0f;
+    Vec2 tooltip_size(text_size.x + padding * 2, text_size.y + padding * 2);
+
+    // Clamp position to screen bounds
+    Vec2 pos = m_tooltip_position;
+    if (pos.x + tooltip_size.x > m_screen_width) {
+        pos.x = m_screen_width - tooltip_size.x;
+    }
+    if (pos.y + tooltip_size.y > m_screen_height) {
+        pos.y = m_tooltip_position.y - tooltip_size.y - 8.0f;
+    }
+
+    Rect tooltip_rect(pos.x, pos.y, tooltip_size.x, tooltip_size.y);
+
+    // Draw background
+    m_render_context.draw_rect_rounded(tooltip_rect, Vec4(0.1f, 0.1f, 0.1f, 0.95f), 4.0f);
+    m_render_context.draw_rect_outline_rounded(tooltip_rect, Vec4(0.3f, 0.3f, 0.3f, 1.0f), 1.0f, 4.0f);
+
+    // Draw text
+    Vec2 text_pos(tooltip_rect.x + padding, tooltip_rect.y + padding + text_size.y * 0.5f);
+    m_render_context.draw_text(tooltip_text, text_pos, font, font_size,
+                                Vec4(0.95f, 0.95f, 0.95f, 1.0f), HAlign::Left);
 }
 
 FontHandle UIContext::load_font(const std::string& path, float size_pixels) {

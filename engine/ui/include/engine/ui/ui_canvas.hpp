@@ -56,6 +56,12 @@ public:
     void set_focused_element(UIElement* element);
     UIElement* get_focused_element() { return m_focused_element; }
 
+    // Focus navigation
+    void navigate_focus(NavDirection direction);
+    void focus_next();
+    void focus_previous();
+    void activate_focused();  // Trigger click on focused element
+
     // Hit testing
     UIElement* find_element_at(Vec2 point);
 
@@ -65,6 +71,8 @@ public:
 
 private:
     void layout_root();
+    void collect_focusable_elements(UIElement* element, std::vector<UIElement*>& out);
+    UIElement* find_nearest_in_direction(UIElement* from, NavDirection dir);
 
     std::unique_ptr<UIElement> m_root;
 

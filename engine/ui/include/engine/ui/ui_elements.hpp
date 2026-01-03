@@ -20,18 +20,37 @@ public:
     void set_overflow(Overflow overflow) { m_overflow = overflow; }
     Overflow get_overflow() const { return m_overflow; }
 
+    // Scroll control
+    void set_scroll_offset(Vec2 offset);
+    Vec2 get_scroll_offset() const { return m_scroll_offset; }
+    Vec2 get_content_size() const { return m_content_size; }
+    Vec2 get_max_scroll() const;
+    void scroll_to_top() { set_scroll_offset({0.0f, 0.0f}); }
+    void scroll_to_bottom();
+
+    // Scroll bar visibility
+    void set_show_scrollbar(bool show) { m_show_scrollbar = show; }
+    bool get_show_scrollbar() const { return m_show_scrollbar; }
+
     void render(UIRenderContext& ctx) override;
 
 protected:
+    void on_update(float dt, const UIInputState& input) override;
     void on_render(UIRenderContext& ctx) override;
     Vec2 on_measure(Vec2 available_size) override;
     void on_layout(const Rect& bounds) override;
 
 private:
+    void render_scrollbar(UIRenderContext& ctx);
+    Vec2 calculate_content_size();
+
     LayoutDirection m_layout_direction = LayoutDirection::Vertical;
     float m_spacing = 4.0f;
     Overflow m_overflow = Overflow::Visible;
     Vec2 m_scroll_offset{0.0f};
+    Vec2 m_content_size{0.0f};
+    bool m_show_scrollbar = true;
+    float m_scrollbar_width = 8.0f;
 };
 
 // Label - text display
@@ -230,6 +249,145 @@ private:
     bool m_cursor_visible = true;
 
     static constexpr float CURSOR_BLINK_RATE = 0.53f;
+};
+
+// Dropdown item
+struct DropdownItem {
+    std::string id;
+    std::string label;
+};
+
+// Dropdown/Select - value selection from a list
+class UIDropdown : public UIElement {
+public:
+    UIDropdown();
+
+    // Items management
+    void add_item(const std::string& id, const std::string& label);
+    void clear_items();
+    const std::vector<DropdownItem>& get_items() const { return m_items; }
+
+    // Selection
+    void set_selected_id(const std::string& id);
+    const std::string& get_selected_id() const { return m_selected_id; }
+    const std::string& get_selected_label() const;
+
+    // Placeholder when nothing selected
+    void set_placeholder(const std::string& text) { m_placeholder = text; mark_dirty(); }
+    const std::string& get_placeholder() const { return m_placeholder; }
+
+    // Dropdown state
+    bool is_open() const { return m_is_open; }
+    void open();
+    void close();
+    void toggle() { if (m_is_open) close(); else open(); }
+
+    // Max visible items before scrolling
+    void set_max_visible_items(int count) { m_max_visible_items = count; }
+    int get_max_visible_items() const { return m_max_visible_items; }
+
+    // Callbacks
+    std::function<void(const std::string& id, const std::string& label)> on_selection_changed;
+
+    void render(UIRenderContext& ctx) override;
+
+protected:
+    void on_update(float dt, const UIInputState& input) override;
+    void on_render(UIRenderContext& ctx) override;
+    Vec2 on_measure(Vec2 available_size) override;
+    void on_click_internal() override;
+
+private:
+    void render_dropdown_list(UIRenderContext& ctx);
+    int get_item_at_position(Vec2 pos) const;
+
+    std::vector<DropdownItem> m_items;
+    std::string m_selected_id;
+    std::string m_placeholder = "Select...";
+
+    bool m_is_open = false;
+    int m_hovered_item = -1;
+    int m_max_visible_items = 5;
+    float m_item_height = 28.0f;
+    float m_dropdown_scroll = 0.0f;
+
+    Rect m_dropdown_bounds;
+};
+
+// Dialog button configuration
+enum class DialogButtons : uint8_t {
+    OK,             // Single OK button
+    OKCancel,       // OK and Cancel buttons
+    YesNo,          // Yes and No buttons
+    YesNoCancel     // Yes, No, and Cancel buttons
+};
+
+// Dialog result
+enum class DialogResult : uint8_t {
+    None,
+    OK,
+    Cancel,
+    Yes,
+    No
+};
+
+// Modal dialog
+class UIDialog : public UIElement {
+public:
+    UIDialog();
+
+    // Configuration
+    void set_title(const std::string& title) { m_title = title; mark_dirty(); }
+    const std::string& get_title() const { return m_title; }
+
+    void set_message(const std::string& message) { m_message = message; mark_dirty(); }
+    const std::string& get_message() const { return m_message; }
+
+    void set_buttons(DialogButtons buttons) { m_buttons = buttons; rebuild_buttons(); }
+    DialogButtons get_buttons() const { return m_buttons; }
+
+    // Show/hide
+    void show();
+    void hide();
+    bool is_showing() const { return m_is_showing; }
+
+    // Result
+    DialogResult get_result() const { return m_result; }
+
+    // Callbacks
+    std::function<void(DialogResult)> on_result;
+
+    void render(UIRenderContext& ctx) override;
+
+protected:
+    void on_update(float dt, const UIInputState& input) override;
+    void on_render(UIRenderContext& ctx) override;
+    Vec2 on_measure(Vec2 available_size) override;
+
+private:
+    void rebuild_buttons();
+    void handle_button_click(DialogResult result);
+
+    std::string m_title;
+    std::string m_message;
+    DialogButtons m_buttons = DialogButtons::OK;
+    DialogResult m_result = DialogResult::None;
+    bool m_is_showing = false;
+
+    // Button layout
+    struct DialogButton {
+        std::string label;
+        DialogResult result;
+        Rect bounds;
+        bool hovered = false;
+        bool pressed = false;
+    };
+    std::vector<DialogButton> m_dialog_buttons;
+
+    float m_dialog_width = 350.0f;
+    float m_button_height = 32.0f;
+    float m_button_spacing = 8.0f;
+    float m_padding = 20.0f;
 };
 
 } // namespace engine::ui

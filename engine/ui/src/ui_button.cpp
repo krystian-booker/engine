@@ -1,5 +1,6 @@
 #include <engine/ui/ui_elements.hpp>
 #include <engine/ui/ui_renderer.hpp>
+#include <engine/ui/ui_context.hpp>
 
 namespace engine::ui {
 
@@ -31,9 +32,11 @@ Vec2 UIButton::on_measure(Vec2 available_size) {
 
     // Measure text if we need to fit content
     if (!m_text.empty() && m_style.width_mode == SizeMode::FitContent) {
-        // Estimate text size (proper implementation would use FontManager)
-        float text_width = m_text.length() * m_style.font_size * 0.6f;
-        size.x = text_width + m_style.padding.horizontal();
+        UIContext* ctx = get_ui_context();
+        if (ctx) {
+            Vec2 text_size = ctx->font_manager().measure_text(m_style.font, m_text);
+            size.x = text_size.x + m_style.padding.horizontal();
+        }
     }
 
     return size;

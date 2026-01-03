@@ -66,6 +66,15 @@ enum class Overflow : uint8_t {
     Scroll      // Enable scrolling
 };
 
+// Navigation direction for gamepad/keyboard focus navigation
+enum class NavDirection : uint8_t {
+    None,
+    Up,
+    Down,
+    Left,
+    Right
+};
+
 // Input state
 struct UIInputState {
     // Mouse input
@@ -84,11 +93,48 @@ struct UIInputState {
     bool key_home = false;
     bool key_end = false;
     bool key_enter = false;
+    bool key_tab = false;
+    bool key_escape = false;
 
+    // Gamepad/navigation input
+    bool nav_up = false;
+    bool nav_down = false;
+    bool nav_left = false;
+    bool nav_right = false;
+    bool nav_confirm = false;      // A button / Enter / Space
+    bool nav_cancel = false;       // B button / Escape
+    bool prev_nav_up = false;
+    bool prev_nav_down = false;
+    bool prev_nav_left = false;
+    bool prev_nav_right = false;
+    bool prev_nav_confirm = false;
+    bool prev_nav_cancel = false;
+
+    // Mouse helpers
     bool is_mouse_down(int button) const { return mouse_buttons[button]; }
     bool is_mouse_up(int button) const { return !mouse_buttons[button]; }
     bool was_mouse_pressed(int button) const { return mouse_buttons[button] && !prev_mouse_buttons[button]; }
     bool was_mouse_released(int button) const { return !mouse_buttons[button] && prev_mouse_buttons[button]; }
+
+    // Navigation helpers
+    bool was_nav_pressed(NavDirection dir) const {
+        switch (dir) {
+            case NavDirection::Up: return nav_up && !prev_nav_up;
+            case NavDirection::Down: return nav_down && !prev_nav_down;
+            case NavDirection::Left: return nav_left && !prev_nav_left;
+            case NavDirection::Right: return nav_right && !prev_nav_right;
+            default: return false;
+        }
+    }
+    bool was_confirm_pressed() const { return nav_confirm && !prev_nav_confirm; }
+    bool was_cancel_pressed() const { return nav_cancel && !prev_nav_cancel; }
+    NavDirection get_nav_direction() const {
+        if (nav_up && !prev_nav_up) return NavDirection::Up;
+        if (nav_down && !prev_nav_down) return NavDirection::Down;
+        if (nav_left && !prev_nav_left) return NavDirection::Left;
+        if (nav_right && !prev_nav_right) return NavDirection::Right;
+        return NavDirection::None;
+    }
 };
 
 // Rectangle for UI bounds
