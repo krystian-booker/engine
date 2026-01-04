@@ -1731,6 +1731,183 @@ std::vector<ConstraintInfo> get_all_constraints_impl(PhysicsWorld::Impl* impl) {
 }
 
 // ============================================================================
+// Buoyancy API
+// ============================================================================
+
+float get_body_mass_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id) {
+    if (!impl || !impl->initialized || !id.valid()) return 0.0f;
+
+    BodyID jolt_id;
+    {
+        std::lock_guard<std::mutex> lock(impl->body_map_mutex);
+        auto it = impl->body_map.find(id.id);
+        if (it == impl->body_map.end()) return 0.0f;
+        jolt_id = it->second;
+    }
+
+    BodyLockRead lock(impl->physics_system->GetBodyLockInterface(), jolt_id);
+    if (!lock.Succeeded()) return 0.0f;
+
+    const Body& body = lock.GetBody();
+    if (body.GetMotionType() == EMotionType::Static) {
+        return 0.0f;  // Static bodies have infinite mass
+    }
+    return 1.0f / body.GetMotionProperties()->GetInverseMass();
+}
+
+float get_body_volume_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id) {
+    if (!impl || !impl->initialized || !id.valid()) return 0.0f;
+
+    BodyID jolt_id;
+    {
+        std::lock_guard<std::mutex> lock(impl->body_map_mutex);
+        auto it = impl->body_map.find(id.id);
+        if (it == impl->body_map.end()) return 0.0f;
+        jolt_id = it->second;
+    }
+
+    BodyLockRead lock(impl->physics_system->GetBodyLockInterface(), jolt_id);
+    if (!lock.Succeeded()) return 0.0f;
+
+    const Body& body = lock.GetBody();
+    const Shape* shape = body.GetShape();
+
+    // Get world-space bounds and estimate volume
+    AABox bounds = shape->GetLocalBounds();
+    JPH::Vec3 size = bounds.GetSize();
+
+    // Rough volume estimation based on shape type
+    // For more accurate results, would need shape-specific calculations
+    float box_volume = size.GetX() * size.GetY() * size.GetZ();
+
+    // Use 60% fill factor for non-box shapes (approximation)
+    return box_volume * 0.6f;
+}
+
+Vec3 get_body_bounds_min_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id) {
+    if (!impl || !impl->initialized || !id.valid()) return Vec3{0.0f};
+
+    BodyID jolt_id;
+    {
+        std::lock_guard<std::mutex> lock(impl->body_map_mutex);
+        auto it = impl->body_map.find(id.id);
+        if (it == impl->body_map.end()) return Vec3{0.0f};
+        jolt_id = it->second;
+    }
+
+    BodyLockRead lock(impl->physics_system->GetBodyLockInterface(), jolt_id);
+    if (!lock.Succeeded()) return Vec3{0.0f};
+
+    const Body& body = lock.GetBody();
+    AABox bounds = body.GetWorldSpaceBounds();
+    auto min = bounds.mMin;
+    return Vec3{static_cast<float>(min.GetX()),
+                static_cast<float>(min.GetY()),
+                static_cast<float>(min.GetZ())};
+}
+
+Vec3 get_body_bounds_max_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id) {
+    if (!impl || !impl->initialized || !id.valid()) return Vec3{0.0f};
+
+    BodyID jolt_id;
+    {
+        std::lock_guard<std::mutex> lock(impl->body_map_mutex);
+        auto it = impl->body_map.find(id.id);
+        if (it == impl->body_map.end()) return Vec3{0.0f};
+        jolt_id = it->second;
+    }
+
+    BodyLockRead lock(impl->physics_system->GetBodyLockInterface(), jolt_id);
+    if (!lock.Succeeded()) return Vec3{0.0f};
+
+    const Body& body = lock.GetBody();
+    AABox bounds = body.GetWorldSpaceBounds();
+    auto max = bounds.mMax;
+    return Vec3{static_cast<float>(max.GetX()),
+                static_cast<float>(max.GetY()),
+                static_cast<float>(max.GetZ())};
+}
+
+float calculate_submerged_volume_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id, float water_surface_y) {
+    if (!impl || !impl->initialized || !id.valid()) return 0.0f;
+
+    Vec3 bounds_min = get_body_bounds_min_impl(impl, id);
+    Vec3 bounds_max = get_body_bounds_max_impl(impl, id);
+
+    // If completely above water
+    if (bounds_min.y >= water_surface_y) return 0.0f;
+
+    // If completely below water
+    float total_volume = get_body_volume_impl(impl, id);
+    if (bounds_max.y <= water_surface_y) return total_volume;
+
+    // Partially submerged - linear interpolation based on height
+    float total_height = bounds_max.y - bounds_min.y;
+    if (total_height <= 0.0f) return 0.0f;
+
+    float submerged_height = water_surface_y - bounds_min.y;
+    float submerged_fraction = std::clamp(submerged_height / total_height, 0.0f, 1.0f);
+
+    return total_volume * submerged_fraction;
+}
+
+float apply_buoyancy_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id, float water_surface_y,
+                           float water_density, float buoyancy_multiplier) {
+    if (!impl || !impl->initialized || !id.valid()) return 0.0f;
+
+    float submerged_volume = calculate_submerged_volume_impl(impl, id, water_surface_y);
+    if (submerged_volume <= 0.0f) return 0.0f;
+
+    // Buoyancy force: F = ρ * g * V
+    constexpr float GRAVITY = 9.81f;
+    float buoyancy_force = water_density * GRAVITY * submerged_volume * buoyancy_multiplier;
+
+    // Apply upward force
+    add_force_impl(impl, id, Vec3{0.0f, buoyancy_force, 0.0f});
+
+    return buoyancy_force;
+}
+
+void apply_water_drag_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id, float submerged_fraction,
+                            float linear_drag, float angular_drag) {
+    if (!impl || !impl->initialized || !id.valid()) return;
+    if (submerged_fraction <= 0.001f) return;
+
+    BodyID jolt_id;
+    {
+        std::lock_guard<std::mutex> lock(impl->body_map_mutex);
+        auto it = impl->body_map.find(id.id);
+        if (it == impl->body_map.end()) return;
+        jolt_id = it->second;
+    }
+
+    BodyLockWrite lock(impl->physics_system->GetBodyLockInterface(), jolt_id);
+    if (!lock.Succeeded()) return;
+
+    Body& body = lock.GetBody();
+    if (body.GetMotionType() == EMotionType::Static) return;
+
+    // Get current velocities
+    JPH::Vec3 linear_vel = body.GetLinearVelocity();
+    JPH::Vec3 angular_vel = body.GetAngularVelocity();
+
+    // Apply drag (quadratic drag model)
+    float linear_speed = linear_vel.Length();
+    if (linear_speed > 0.01f) {
+        float drag_magnitude = linear_drag * submerged_fraction * linear_speed;
+        JPH::Vec3 drag_force = -linear_vel.Normalized() * drag_magnitude;
+        body.AddForce(drag_force);
+    }
+
+    float angular_speed = angular_vel.Length();
+    if (angular_speed > 0.01f) {
+        float torque_magnitude = angular_drag * submerged_fraction * angular_speed;
+        JPH::Vec3 drag_torque = -angular_vel.Normalized() * torque_magnitude;
+        body.AddTorque(drag_torque);
+    }
+}
+
+// ============================================================================
 // PhysicsWorld method implementations (forwarding to impl functions)
 // ============================================================================
 
@@ -1966,6 +2143,16 @@ uint32_t PhysicsWorld::get_active_body_count() const {
 
 std::vector<PhysicsBodyId> PhysicsWorld::get_all_body_ids() const {
     return get_all_body_ids_impl(m_impl.get());
+}
+
+void* PhysicsWorld::get_jolt_system() const {
+    if (!m_impl || !m_impl->initialized) return nullptr;
+    return m_impl->physics_system.get();
+}
+
+void* PhysicsWorld::get_temp_allocator() const {
+    if (!m_impl || !m_impl->initialized) return nullptr;
+    return m_impl->temp_allocator.get();
 }
 
 } // namespace engine::physics

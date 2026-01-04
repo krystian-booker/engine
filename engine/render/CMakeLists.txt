@@ -37,6 +37,12 @@ target_sources(engine_render
         src/occlusion_culling.cpp
         src/camera_effects.cpp
         src/animation_events.cpp
+        src/render_systems.cpp
+        src/billboard.cpp
+        src/render_to_texture.cpp
+        src/material_instance.cpp
+        src/oit.cpp
+        src/render_component_registration.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -74,6 +80,11 @@ target_sources(engine_render
             include/engine/render/occlusion_culling.hpp
             include/engine/render/camera_effects.hpp
             include/engine/render/animation_events.hpp
+            include/engine/render/render_systems.hpp
+            include/engine/render/billboard.hpp
+            include/engine/render/render_to_texture.hpp
+            include/engine/render/material_instance.hpp
+            include/engine/render/oit.hpp
 )
 
 target_include_directories(engine_render
@@ -85,6 +96,7 @@ target_include_directories(engine_render
 target_link_libraries(engine_render
     PUBLIC
         engine::core
+        engine::scene
         bgfx::bgfx
         bgfx::bimg
     PRIVATE
@@ -259,6 +271,100 @@ if(TARGET bgfx::shaderc AND ENGINE_COMPILE_SHADERS)
         INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
     )
 
+    # Skybox shaders
+    bgfx_compile_shaders(
+        TYPE VERTEX
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vs_skybox.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_skybox.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR VS_SKYBOX_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
+    bgfx_compile_shaders(
+        TYPE FRAGMENT
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fs_skybox.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_skybox.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR FS_SKYBOX_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
+    # Billboard shaders
+    bgfx_compile_shaders(
+        TYPE VERTEX
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vs_billboard.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_billboard.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR VS_BILLBOARD_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
+    bgfx_compile_shaders(
+        TYPE FRAGMENT
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fs_billboard.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_billboard.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR FS_BILLBOARD_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
+    # OIT shaders
+    bgfx_compile_shaders(
+        TYPE FRAGMENT
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fs_oit_accumulate.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_fullscreen.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR FS_OIT_ACCUM_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
+    bgfx_compile_shaders(
+        TYPE FRAGMENT
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fs_oit_composite.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_fullscreen.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR FS_OIT_COMPOSITE_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
+    # SSR shaders
+    bgfx_compile_shaders(
+        TYPE FRAGMENT
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fs_ssr_hiz.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_ssr.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR FS_SSR_HIZ_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
+    bgfx_compile_shaders(
+        TYPE FRAGMENT
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fs_ssr_trace.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_ssr.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR FS_SSR_TRACE_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
+    bgfx_compile_shaders(
+        TYPE FRAGMENT
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fs_ssr_resolve.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_ssr.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR FS_SSR_RESOLVE_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
+    bgfx_compile_shaders(
+        TYPE FRAGMENT
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fs_ssr_composite.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_ssr.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR FS_SSR_COMPOSITE_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
     # Create custom target for shaders
     add_custom_target(engine_shaders DEPENDS
         ${VS_DEFAULT_OUTPUTS} ${FS_DEFAULT_OUTPUTS}
@@ -271,6 +377,11 @@ if(TARGET bgfx::shaderc AND ENGINE_COMPILE_SHADERS)
         ${VS_SKINNED_PBR_OUTPUTS}
         ${FS_VOLUMETRIC_OUTPUTS}
         ${VS_DEBUG_OUTPUTS} ${FS_DEBUG_OUTPUTS}
+        ${VS_SKYBOX_OUTPUTS} ${FS_SKYBOX_OUTPUTS}
+        ${VS_BILLBOARD_OUTPUTS} ${FS_BILLBOARD_OUTPUTS}
+        ${FS_OIT_ACCUM_OUTPUTS} ${FS_OIT_COMPOSITE_OUTPUTS}
+        ${FS_SSR_HIZ_OUTPUTS} ${FS_SSR_TRACE_OUTPUTS}
+        ${FS_SSR_RESOLVE_OUTPUTS} ${FS_SSR_COMPOSITE_OUTPUTS}
     )
 
     # Copy compiled shaders next to the runtime binaries so the renderer can find them

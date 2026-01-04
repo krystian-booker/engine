@@ -258,6 +258,19 @@ SoundHandle AudioEngine::play(const std::string& path, float volume, bool loop) 
     return handle;
 }
 
+SoundHandle AudioEngine::play_3d(const std::string& path, const Vec3& position, float volume, bool loop) {
+    SoundHandle handle = load_sound(path);
+    if (!handle.valid()) {
+        return {};
+    }
+
+    SoundConfig config;
+    config.volume = volume;
+    config.loop = loop;
+    play_sound_3d(handle, position, config);
+    return handle;
+}
+
 void AudioEngine::stop(SoundHandle h) {
     stop_sound(h);
 }

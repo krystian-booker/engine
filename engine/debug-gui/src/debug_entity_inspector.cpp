@@ -237,7 +237,7 @@ void DebugEntityInspector::draw_component(const std::string& type_name) {
     }
 }
 
-void DebugEntityInspector::draw_property_editor(const reflect::PropertyInfo& prop, const entt::meta_any& comp_any) {
+void DebugEntityInspector::draw_property_editor(const reflect::PropertyInfo& prop, entt::meta_any& comp_any) {
     const char* label = prop.meta.display_name.empty() ? prop.name.c_str() : prop.meta.display_name.c_str();
 
     // Get property value using the getter
@@ -249,66 +249,106 @@ void DebugEntityInspector::draw_property_editor(const reflect::PropertyInfo& pro
 
     auto type_id = prop.type.id();
 
-    // Display based on type
+    // Create unique ID for this property to avoid ImGui ID conflicts
+    ImGui::PushID(prop.name.c_str());
+
+    // Edit based on type
     if (type_id == entt::type_hash<bool>::value()) {
         bool v = value.cast<bool>();
-        ImGui::Text("%s: %s", label, v ? "true" : "false");
+        if (ImGui::Checkbox(label, &v)) {
+            prop.setter(comp_any, entt::meta_any{v});
+        }
     }
     else if (type_id == entt::type_hash<float>::value()) {
         float v = value.cast<float>();
         if (prop.meta.is_angle) {
-            ImGui::Text("%s: %.1f deg", label, glm::degrees(v));
+            float degrees = glm::degrees(v);
+            if (ImGui::DragFloat(label, &degrees, 0.5f, -360.0f, 360.0f, "%.1f deg")) {
+                prop.setter(comp_any, entt::meta_any{glm::radians(degrees)});
+            }
         } else {
-            ImGui::Text("%s: %.3f", label, v);
+            if (ImGui::DragFloat(label, &v, 0.01f, 0.0f, 0.0f, "%.3f")) {
+                prop.setter(comp_any, entt::meta_any{v});
+            }
         }
     }
     else if (type_id == entt::type_hash<double>::value()) {
-        ImGui::Text("%s: %.3f", label, value.cast<double>());
+        double v = value.cast<double>();
+        float fv = static_cast<float>(v);
+        if (ImGui::DragFloat(label, &fv, 0.01f, 0.0f, 0.0f, "%.6f")) {
+            prop.setter(comp_any, entt::meta_any{static_cast<double>(fv)});
+        }
     }
     else if (type_id == entt::type_hash<int32_t>::value()) {
-        ImGui::Text("%s: %d", label, value.cast<int32_t>());
+        int32_t v = value.cast<int32_t>();
+        if (ImGui::DragInt(label, &v, 1.0f)) {
+            prop.setter(comp_any, entt::meta_any{v});
+        }
     }
     else if (type_id == entt::type_hash<uint32_t>::value()) {
-        ImGui::Text("%s: %u", label, value.cast<uint32_t>());
+        uint32_t v = value.cast<uint32_t>();
+        if (ImGui::DragScalar(label, ImGuiDataType_U32, &v, 1.0f)) {
+            prop.setter(comp_any, entt::meta_any{v});
+        }
     }
     else if (type_id == entt::type_hash<int64_t>::value()) {
-        ImGui::Text("%s: %lld", label, static_cast<long long>(value.cast<int64_t>()));
+        int64_t v = value.cast<int64_t>();
+        if (ImGui::DragScalar(label, ImGuiDataType_S64, &v, 1.0f)) {
+            prop.setter(comp_any, entt::meta_any{v});
+        }
     }
     else if (type_id == entt::type_hash<uint64_t>::value()) {
-        ImGui::Text("%s: %llu", label, static_cast<unsigned long long>(value.cast<uint64_t>()));
+        uint64_t v = value.cast<uint64_t>();
+        if (ImGui::DragScalar(label, ImGuiDataType_U64, &v, 1.0f)) {
+            prop.setter(comp_any, entt::meta_any{v});
+        }
     }
     else if (type_id == entt::type_hash<std::string>::value()) {
-        const auto& s = value.cast<std::string>();
-        ImGui::Text("%s: \"%s\"", label, s.c_str());
+        std::string s = value.cast<std::string>();
+        char buffer[256];
+        strncpy(buffer, s.c_str(), sizeof(buffer) - 1);
+        buffer[sizeof(buffer) - 1] = '\0';
+        if (ImGui::InputText(label, buffer, sizeof(buffer))) {
+            prop.setter(comp_any, entt::meta_any{std::string(buffer)});
+        }
     }
     else if (type_id == entt::type_hash<core::Vec2>::value()) {
-        auto v = value.cast<core::Vec2>();
-        ImGui::Text("%s: (%.2f, %.2f)", label, v.x, v.y);
+        core::Vec2 v = value.cast<core::Vec2>();
+        if (ImGui::DragFloat2(label, &v.x, 0.01f)) {
+            prop.setter(comp_any, entt::meta_any{v});
+        }
     }
     else if (type_id == entt::type_hash<core::Vec3>::value()) {
-        auto v = value.cast<core::Vec3>();
+        core::Vec3 v = value.cast<core::Vec3>();
         if (prop.meta.is_color) {
-            ImGui::Text("%s:", label);
-            ImGui::SameLine();
-            ImGui::ColorButton("##color", ImVec4(v.x, v.y, v.z, 1.0f), ImGuiColorEditFlags_NoTooltip, ImVec2(60, 14));
+            if (ImGui::ColorEdit3(label, &v.x, ImGuiColorEditFlags_Float)) {
+                prop.setter(comp_any, entt::meta_any{v});
+            }
         } else {
-            ImGui::Text("%s: (%.2f, %.2f, %.2f)", label, v.x, v.y, v.z);
+            if (ImGui::DragFloat3(label, &v.x, 0.01f)) {
+                prop.setter(comp_any, entt::meta_any{v});
+            }
         }
     }
     else if (type_id == entt::type_hash<core::Vec4>::value()) {
-        auto v = value.cast<core::Vec4>();
+        core::Vec4 v = value.cast<core::Vec4>();
         if (prop.meta.is_color) {
-            ImGui::Text("%s:", label);
-            ImGui::SameLine();
-            ImGui::ColorButton("##color", ImVec4(v.x, v.y, v.z, v.w), ImGuiColorEditFlags_NoTooltip, ImVec2(60, 14));
+            if (ImGui::ColorEdit4(label, &v.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_AlphaBar)) {
+                prop.setter(comp_any, entt::meta_any{v});
+            }
         } else {
-            ImGui::Text("%s: (%.2f, %.2f, %.2f, %.2f)", label, v.x, v.y, v.z, v.w);
+            if (ImGui::DragFloat4(label, &v.x, 0.01f)) {
+                prop.setter(comp_any, entt::meta_any{v});
+            }
         }
     }
     else if (type_id == entt::type_hash<core::Quat>::value()) {
-        auto q = value.cast<core::Quat>();
+        core::Quat q = value.cast<core::Quat>();
         core::Vec3 euler = glm::degrees(glm::eulerAngles(q));
-        ImGui::Text("%s: (%.1f, %.1f, %.1f) deg", label, euler.x, euler.y, euler.z);
+        if (ImGui::DragFloat3(label, &euler.x, 0.5f, -180.0f, 180.0f, "%.1f deg")) {
+            core::Quat new_q = core::Quat(glm::radians(euler));
+            prop.setter(comp_any, entt::meta_any{new_q});
+        }
     }
     else {
         ImGui::TextDisabled("%s: (unsupported type)", label);
@@ -318,6 +358,8 @@ void DebugEntityInspector::draw_property_editor(const reflect::PropertyInfo& pro
     if (!prop.meta.tooltip.empty() && ImGui::IsItemHovered()) {
         ImGui::SetTooltip("%s", prop.meta.tooltip.c_str());
     }
+
+    ImGui::PopID();
 }
 
 } // namespace engine::debug_gui

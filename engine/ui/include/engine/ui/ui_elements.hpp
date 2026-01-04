@@ -59,8 +59,16 @@ public:
     UILabel();
     explicit UILabel(const std::string& text);
 
-    void set_text(const std::string& text) { m_text = text; mark_dirty(); }
+    void set_text(const std::string& text) { m_text = text; m_text_key.clear(); mark_dirty(); }
     const std::string& get_text() const { return m_text; }
+
+    // Localization key support
+    void set_text_key(const std::string& key) { m_text_key = key; mark_dirty(); }
+    const std::string& get_text_key() const { return m_text_key; }
+    bool uses_localization() const { return !m_text_key.empty(); }
+
+    // Get resolved text (localized if using key, otherwise literal)
+    std::string get_resolved_text() const;
 
 protected:
     void on_render(UIRenderContext& ctx) override;
@@ -68,6 +76,7 @@ protected:
 
 private:
     std::string m_text;
+    std::string m_text_key;  // Localization key (if set, overrides m_text)
 };
 
 // Button - clickable element
@@ -76,8 +85,14 @@ public:
     UIButton();
     explicit UIButton(const std::string& text);
 
-    void set_text(const std::string& text) { m_text = text; mark_dirty(); }
+    void set_text(const std::string& text) { m_text = text; m_text_key.clear(); mark_dirty(); }
     const std::string& get_text() const { return m_text; }
+
+    // Localization key support
+    void set_text_key(const std::string& key) { m_text_key = key; mark_dirty(); }
+    const std::string& get_text_key() const { return m_text_key; }
+    bool uses_localization() const { return !m_text_key.empty(); }
+    std::string get_resolved_text() const;
 
 protected:
     void on_render(UIRenderContext& ctx) override;
@@ -86,6 +101,7 @@ protected:
 
 private:
     std::string m_text;
+    std::string m_text_key;
 };
 
 // Image - texture display
@@ -337,11 +353,17 @@ public:
     UIDialog();
 
     // Configuration
-    void set_title(const std::string& title) { m_title = title; mark_dirty(); }
+    void set_title(const std::string& title) { m_title = title; m_title_key.clear(); mark_dirty(); }
     const std::string& get_title() const { return m_title; }
 
-    void set_message(const std::string& message) { m_message = message; mark_dirty(); }
+    void set_message(const std::string& message) { m_message = message; m_message_key.clear(); mark_dirty(); }
     const std::string& get_message() const { return m_message; }
+
+    // Localization key support
+    void set_title_key(const std::string& key) { m_title_key = key; mark_dirty(); }
+    void set_message_key(const std::string& key) { m_message_key = key; mark_dirty(); }
+    std::string get_resolved_title() const;
+    std::string get_resolved_message() const;
 
     void set_buttons(DialogButtons buttons) { m_buttons = buttons; rebuild_buttons(); }
     DialogButtons get_buttons() const { return m_buttons; }
@@ -370,6 +392,8 @@ private:
 
     std::string m_title;
     std::string m_message;
+    std::string m_title_key;
+    std::string m_message_key;
     DialogButtons m_buttons = DialogButtons::OK;
     DialogResult m_result = DialogResult::None;
     bool m_is_showing = false;

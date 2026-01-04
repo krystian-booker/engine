@@ -22,6 +22,19 @@ target_sources(engine_ui
         src/ui_dialog.cpp
         src/ui_font.cpp
         src/ui_renderer.cpp
+        src/ui_system.cpp
+        src/ui_animation.cpp
+        src/ui_9slice.cpp
+        src/ui_rich_text.cpp
+        src/ui_rich_label.cpp
+        src/ui_list_view.cpp
+        src/ui_grid_view.cpp
+        src/ui_world_canvas.cpp
+        src/ui_component_registration.cpp
+        src/ui_ecs_systems.cpp
+        src/ui_shortcuts.cpp
+        src/ui_radio_group.cpp
+        src/ui_popup_menu.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -36,6 +49,18 @@ target_sources(engine_ui
             include/engine/ui/ui_font.hpp
             include/engine/ui/ui_renderer.hpp
             include/engine/ui/ui_types.hpp
+            include/engine/ui/ui_system.hpp
+            include/engine/ui/ui_animation.hpp
+            include/engine/ui/ui_9slice.hpp
+            include/engine/ui/ui_rich_text.hpp
+            include/engine/ui/ui_rich_label.hpp
+            include/engine/ui/ui_list_view.hpp
+            include/engine/ui/ui_grid_view.hpp
+            include/engine/ui/ui_world_canvas.hpp
+            include/engine/ui/ui_components.hpp
+            include/engine/ui/ui_shortcuts.hpp
+            include/engine/ui/ui_radio_group.hpp
+            include/engine/ui/ui_popup_menu.hpp
 )
 
 target_include_directories(engine_ui
@@ -48,6 +73,9 @@ target_link_libraries(engine_ui
     PUBLIC
         engine::core
         engine::render
+        engine::localization
+        engine::scene
+        engine::reflect
         stb::stb
     PRIVATE
         engine_compiler_flags

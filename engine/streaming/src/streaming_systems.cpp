@@ -205,4 +205,157 @@ void streaming_portal_system(scene::World& world, double /*dt*/) {
     }
 }
 
+// ============================================================================
+// Streaming Zone System
+// ============================================================================
+
+void streaming_zone_system(scene::World& world, double /*dt*/) {
+    using namespace engine::scene;
+
+    auto& streaming = get_scene_streaming();
+
+    // Find active camera/player position
+    Vec3 player_position{0.0f};
+    auto camera_view = world.view<Camera, WorldTransform>();
+    for (auto entity : camera_view) {
+        auto& cam = camera_view.get<Camera>(entity);
+        if (cam.active) {
+            auto& world_tf = camera_view.get<WorldTransform>(entity);
+            player_position = world_tf.position();
+            break;
+        }
+    }
+
+    // Process all streaming zone entities
+    auto zone_view = world.view<StreamingZoneComponent, WorldTransform>();
+    for (auto entity : zone_view) {
+        auto& zone = zone_view.get<StreamingZoneComponent>(entity);
+        auto& world_tf = zone_view.get<WorldTransform>(entity);
+
+        // Skip if already triggered (one-shot)
+        if (zone.one_shot && zone.triggered) {
+            continue;
+        }
+
+        // Calculate distance from player to zone center
+        Vec3 zone_pos = world_tf.position();
+        float distance = glm::length(player_position - zone_pos);
+
+        // Check if player is within activation radius
+        if (distance <= zone.activation_radius) {
+            // Request loads
+            for (const auto& cell : zone.cells_to_load) {
+                streaming.request_load(cell, StreamingPriority::High);
+            }
+
+            // Request unloads
+            for (const auto& cell : zone.cells_to_unload) {
+                streaming.request_unload(cell);
+            }
+
+            // Mark as triggered if one-shot
+            if (zone.one_shot) {
+                zone.triggered = true;
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Streaming Entity System
+// ============================================================================
+
+void streaming_entity_system(scene::World& world, double /*dt*/) {
+    using namespace engine::scene;
+
+    auto& streaming = get_scene_streaming();
+
+    // Find player's current cell (for persist migration)
+    Vec3 player_position{0.0f};
+    auto camera_view = world.view<Camera, WorldTransform>();
+    for (auto entity : camera_view) {
+        auto& cam = camera_view.get<Camera>(entity);
+        if (cam.active) {
+            auto& world_tf = camera_view.get<WorldTransform>(entity);
+            player_position = world_tf.position();
+            break;
+        }
+    }
+
+    // Determine which cell the player is currently in
+    std::string player_cell;
+    for (const auto& cell_name : streaming.get_loaded_cell_names()) {
+        const auto* cell = streaming.get_cell(cell_name);
+        if (cell && point_in_aabb(player_position, cell->bounds)) {
+            player_cell = cell_name;
+            break;
+        }
+    }
+
+    // Process all entities with StreamingComponent
+    auto streaming_view = world.view<StreamingComponent>();
+    for (auto entity : streaming_view) {
+        auto& comp = streaming_view.get<StreamingComponent>(entity);
+
+        // Handle stream_with_player - keep entity's cell loaded
+        if (comp.stream_with_player && !comp.cell_name.empty()) {
+            streaming.request_load(comp.cell_name, StreamingPriority::Critical);
+        }
+
+        // Handle persist_across_cells - migrate entity when cell is unloading
+        if (comp.persist_across_cells && !comp.cell_name.empty()) {
+            auto* cell = streaming.get_cell(comp.cell_name);
+            if (cell && cell->state == CellState::Unloading && !player_cell.empty()) {
+                // Migrate entity to player's current cell
+                // Remove from old cell's entity list
+                auto& entity_ids = cell->entity_ids;
+                entity_ids.erase(
+                    std::remove(entity_ids.begin(), entity_ids.end(), static_cast<uint32_t>(entity)),
+                    entity_ids.end()
+                );
+
+                // Update component to reference new cell
+                comp.cell_name = player_cell;
+
+                // Add to new cell's entity list
+                auto* new_cell = streaming.get_cell(player_cell);
+                if (new_cell) {
+                    new_cell->entity_ids.push_back(static_cast<uint32_t>(entity));
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Core Streaming Update System
+// ============================================================================
+
+void streaming_update_system(scene::World& world, double dt) {
+    auto& streaming = get_scene_streaming();
+
+    // Auto-initialize if needed
+    if (!streaming.is_initialized()) {
+        streaming.init();
+    }
+
+    // Find active camera position for streaming origin
+    Vec3 player_pos{0.0f};
+    Vec3 camera_pos{0.0f};
+
+    auto camera_view = world.view<scene::Camera, scene::WorldTransform>();
+    for (auto entity : camera_view) {
+        auto& cam = camera_view.get<scene::Camera>(entity);
+        if (cam.active) {
+            auto& world_tf = camera_view.get<scene::WorldTransform>(entity);
+            camera_pos = world_tf.position();
+            player_pos = camera_pos;
+            break;
+        }
+    }
+
+    // Update the streaming system - processes load/unload queues
+    streaming.update(static_cast<float>(dt), player_pos, camera_pos);
+}
+
 } // namespace engine::streaming

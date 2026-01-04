@@ -80,6 +80,17 @@ public:
     // Screen output
     virtual void blit_to_screen(RenderView view, TextureHandle source) = 0;
 
+    // Skybox rendering
+    virtual void submit_skybox(RenderView view, TextureHandle cubemap,
+                                const Mat4& inverse_view_proj,
+                                float intensity, float rotation) = 0;
+
+    // Billboard rendering
+    virtual void submit_billboard(RenderView view, MeshHandle quad_mesh, TextureHandle texture,
+                                   const Mat4& transform, const Vec4& color,
+                                   const Vec2& uv_offset, const Vec2& uv_scale,
+                                   bool depth_test, bool depth_write) = 0;
+
     // SSAO texture
     virtual void set_ao_texture(TextureHandle texture) = 0;
 

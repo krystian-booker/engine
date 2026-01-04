@@ -254,6 +254,11 @@ void RenderPipeline::render(const CameraData& camera,
         ssao_pass(camera);
     }
 
+    // Skybox pass (after depth prepass but before main opaque to use early-z)
+    if (has_flag(m_config.enabled_passes, RenderPassFlags::Skybox)) {
+        skybox_pass(camera);
+    }
+
     if (has_flag(m_config.enabled_passes, RenderPassFlags::MainOpaque)) {
         main_pass(camera, objects, lights);
     }
@@ -286,6 +291,91 @@ void RenderPipeline::render(const CameraData& camera,
 
 void RenderPipeline::end_frame() {
     // Nothing to do for now
+}
+
+void RenderPipeline::render_to_target(RenderTargetHandle target,
+                                       const CameraData& camera,
+                                       const std::vector<RenderObject>& objects,
+                                       const std::vector<LightData>& lights,
+                                       RenderPassFlags passes) {
+    if (!m_initialized || !target.valid()) return;
+
+    // Save original config
+    RenderPassFlags original_passes = m_config.enabled_passes;
+    RenderTargetHandle original_hdr = m_hdr_target;
+
+    // Temporarily use the custom target and passes
+    m_config.enabled_passes = passes;
+
+    // Configure view to render to the custom target
+    ViewConfig view_config;
+    view_config.render_target = target;
+    view_config.clear_color_enabled = true;
+    view_config.clear_color = 0x000000FF;
+    view_config.clear_depth_enabled = true;
+    view_config.clear_depth = 1.0f;
+    m_renderer->configure_view(RenderView::MainOpaque, view_config);
+
+    // Use the target as our HDR target temporarily
+    m_hdr_target = target;
+
+    // Render using the standard pipeline
+    // Update camera uniforms
+    update_camera_uniforms(camera);
+
+    // Cull objects
+    cull_objects(camera, objects, m_visible_opaque);
+
+    // Separate opaque and transparent
+    m_visible_transparent.clear();
+    auto it = std::partition(m_visible_opaque.begin(), m_visible_opaque.end(),
+        [](const RenderObject* obj) {
+            return obj->blend_mode <= 1;
+        });
+    m_visible_transparent.assign(it, m_visible_opaque.end());
+    m_visible_opaque.erase(it, m_visible_opaque.end());
+
+    // Sort
+    sort_objects_front_to_back(camera, m_visible_opaque);
+    sort_objects_back_to_front(camera, m_visible_transparent);
+
+    // Find shadow casters
+    m_shadow_casters.clear();
+    for (const auto* obj : m_visible_opaque) {
+        if (obj->casts_shadows) {
+            m_shadow_casters.push_back(obj);
+        }
+    }
+
+    // Execute enabled passes
+    if (has_flag(passes, RenderPassFlags::Shadows)) {
+        shadow_pass(camera, objects, lights);
+    }
+
+    if (has_flag(passes, RenderPassFlags::Skybox)) {
+        skybox_pass(camera);
+    }
+
+    if (has_flag(passes, RenderPassFlags::MainOpaque)) {
+        main_pass(camera, objects, lights);
+    }
+
+    if (has_flag(passes, RenderPassFlags::Transparent)) {
+        transparent_pass(camera, objects, lights);
+    }
+
+    // Restore original config
+    m_config.enabled_passes = original_passes;
+    m_hdr_target = original_hdr;
+
+    // Restore original view config
+    ViewConfig restore_config;
+    restore_config.render_target = m_hdr_target;
+    restore_config.clear_color_enabled = true;
+    restore_config.clear_color = 0x000000FF;
+    restore_config.clear_depth_enabled = true;
+    restore_config.clear_depth = 1.0f;
+    m_renderer->configure_view(RenderView::MainOpaque, restore_config);
 }
 
 void RenderPipeline::submit_object(const RenderObject& object) {
@@ -917,6 +1007,39 @@ void RenderPipeline::final_pass() {
     if (ldr_tex.valid()) {
         m_renderer->blit_to_screen(RenderView::Final, ldr_tex);
     }
+}
+
+void RenderPipeline::skybox_pass(const CameraData& camera) {
+    if (!m_skybox_cubemap.valid()) {
+        return;
+    }
+
+    // Configure skybox view to render to HDR target
+    ViewConfig view_config;
+    view_config.render_target = m_hdr_target;
+    view_config.clear_color_enabled = false;  // Don't clear - skybox writes to background
+    view_config.clear_depth_enabled = false;
+    m_renderer->configure_view(RenderView::Skybox, view_config);
+
+    // Set view transform (identity for fullscreen pass)
+    m_renderer->set_view_transform(RenderView::Skybox, Mat4{1.0f}, Mat4{1.0f});
+
+    // Render skybox using fullscreen triangle with cubemap sampling
+    m_renderer->submit_skybox(RenderView::Skybox, m_skybox_cubemap,
+                               camera.inverse_view_projection,
+                               m_skybox_intensity, m_skybox_rotation);
+}
+
+void RenderPipeline::set_skybox(TextureHandle cubemap, float intensity, float rotation) {
+    m_skybox_cubemap = cubemap;
+    m_skybox_intensity = intensity;
+    m_skybox_rotation = rotation;
+}
+
+void RenderPipeline::clear_skybox() {
+    m_skybox_cubemap = TextureHandle{};
+    m_skybox_intensity = 1.0f;
+    m_skybox_rotation = 0.0f;
 }
 
 // Helper functions

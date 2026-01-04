@@ -41,6 +41,9 @@ struct NavMeshSettings {
     // Tile settings (for tiled navmesh)
     bool use_tiles = false;
     float tile_size = 48.0f;         // In world units
+
+    // Tile cache settings (for dynamic obstacles)
+    int max_layers = 32;             // Max layers per tile for TileCache
 };
 
 // Polygon reference type
@@ -86,6 +89,11 @@ public:
     // Get navmesh bounds
     AABB get_bounds() const;
 
+    // Tile cache support (for dynamic obstacles)
+    bool supports_tile_cache() const { return m_supports_tile_cache; }
+    const std::vector<std::vector<uint8_t>>& get_tile_cache_layers() const { return m_tile_cache_layers; }
+    void set_tile_cache_layers(std::vector<std::vector<uint8_t>> layers);
+
     // Debug visualization data
     struct DebugVertex {
         Vec3 position;
@@ -105,6 +113,10 @@ private:
 
     std::unique_ptr<dtNavMesh, NavMeshDeleter> m_navmesh;
     NavMeshSettings m_settings;
+
+    // Tile cache support
+    bool m_supports_tile_cache = false;
+    std::vector<std::vector<uint8_t>> m_tile_cache_layers;
 };
 
 } // namespace engine::navigation

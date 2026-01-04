@@ -116,6 +116,9 @@ enum class RenderView : uint16_t {
     // Final composite to backbuffer
     Final = 64,
 
+    // Skybox rendering
+    Skybox = 66,
+
     // Maximum view count
     Count = 80
 };

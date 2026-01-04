@@ -4,6 +4,8 @@
 #include <engine/ui/ui_font.hpp>
 #include <engine/ui/ui_renderer.hpp>
 #include <engine/ui/ui_style.hpp>
+#include <engine/ui/ui_animation.hpp>
+#include <engine/ui/ui_shortcuts.hpp>
 #include <engine/render/render_target.hpp>
 #include <memory>
 #include <string>
@@ -12,9 +14,12 @@
 
 namespace engine::render {
     class IRenderer;
+    struct CameraData;
 }
 
 namespace engine::ui {
+
+class UIWorldCanvas;
 
 // Main UI system context
 class UIContext {
@@ -31,6 +36,18 @@ public:
     void destroy_canvas(const std::string& name);
     UICanvas* get_canvas(const std::string& name);
     const std::vector<UICanvas*>& get_all_canvases() const { return m_canvas_order; }
+
+    // World canvas management (for 3D UI elements like health bars)
+    UIWorldCanvas* create_world_canvas(const std::string& name);
+    void destroy_world_canvas(const std::string& name);
+    UIWorldCanvas* get_world_canvas(const std::string& name);
+    const std::vector<UIWorldCanvas*>& get_all_world_canvases() const { return m_world_canvas_order; }
+
+    // Update world canvases with camera data (call before render)
+    void update_world_canvases(const render::CameraData& camera);
+
+    // Render world canvases (typically after screen-space UI)
+    void render_world_canvases(render::RenderView view);
 
     // Update all canvases
     void update(float dt, const UIInputState& input);
@@ -80,6 +97,19 @@ public:
     // Access subsystems
     FontManager& font_manager() { return m_font_manager; }
     UIRenderer& renderer() { return m_renderer; }
+    UIAnimator& animator() { return m_animator; }
+    UIShortcutManager& shortcuts() { return m_shortcut_manager; }
+    const UIShortcutManager& shortcuts() const { return m_shortcut_manager; }
+
+    // Popup menu management
+    // Shows a popup menu (takes ownership, closes any existing popup)
+    void show_popup(std::unique_ptr<class UIPopupMenu> menu, Vec2 position);
+    void close_popup();
+    bool has_popup() const { return m_active_popup != nullptr; }
+    UIPopupMenu* get_popup() { return m_active_popup.get(); }
+
+    // Process keyboard shortcuts (call from update with shortcut input state)
+    void process_shortcuts(const ShortcutInputState& input);
 
 private:
     void update_tooltip(float dt, const UIInputState& input);
@@ -91,9 +121,13 @@ private:
     std::unordered_map<std::string, std::unique_ptr<UICanvas>> m_canvases;
     std::vector<UICanvas*> m_canvas_order;  // Sorted by sort_order
 
+    std::unordered_map<std::string, std::unique_ptr<UIWorldCanvas>> m_world_canvases;
+    std::vector<UIWorldCanvas*> m_world_canvas_order;  // Sorted by distance (back to front)
+
     FontManager m_font_manager;
     UIRenderer m_renderer;
     UIRenderContext m_render_context;
+    UIAnimator m_animator;
 
     UIStyleSheet m_style_sheet;
     UITheme m_theme;
@@ -110,6 +144,12 @@ private:
     float m_tooltip_timer = 0.0f;
     float m_tooltip_delay = 0.5f;
     bool m_tooltip_visible = false;
+
+    // Shortcut manager
+    UIShortcutManager m_shortcut_manager;
+
+    // Active popup menu (only one at a time)
+    std::unique_ptr<class UIPopupMenu> m_active_popup;
 
     bool m_initialized = false;
 };

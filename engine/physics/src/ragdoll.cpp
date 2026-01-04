@@ -587,7 +587,28 @@ Vec3 Ragdoll::get_position() const {
 }
 
 void Ragdoll::set_rotation(const Quat& rot) {
-    // Would rotate all bodies around the root
+    if (!m_initialized || !m_world) return;
+
+    // Get root body position as rotation center
+    auto root_it = m_bone_to_body.find(m_definition.root_body);
+    if (root_it == m_bone_to_body.end()) return;
+
+    Vec3 center = m_world->get_position(root_it->second);
+    Quat current_root_rot = m_world->get_rotation(root_it->second);
+    Quat rotation_delta = rot * glm::inverse(current_root_rot);
+
+    // Rotate all bodies around center
+    for (auto& [name, body_id] : m_bone_to_body) {
+        Vec3 pos = m_world->get_position(body_id);
+        Quat body_rot = m_world->get_rotation(body_id);
+
+        // Rotate position around center
+        Vec3 offset = pos - center;
+        Vec3 rotated_offset = rotation_delta * offset;
+
+        m_world->set_position(body_id, center + rotated_offset);
+        m_world->set_rotation(body_id, rotation_delta * body_rot);
+    }
 }
 
 Quat Ragdoll::get_rotation() const {
@@ -617,7 +638,13 @@ std::vector<PhysicsBodyId> Ragdoll::get_all_bodies() const {
 
 void Ragdoll::set_collision_layer(uint16_t layer) {
     m_collision_layer = layer;
-    // Would update all body layers
+
+    if (!m_initialized || !m_world) return;
+
+    // Update all body layers
+    for (auto& [name, body_id] : m_bone_to_body) {
+        m_world->set_layer(body_id, layer);
+    }
 }
 
 uint16_t Ragdoll::get_collision_layer() const {

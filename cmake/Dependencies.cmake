@@ -50,6 +50,7 @@ endif()
 add_library(stb INTERFACE)
 add_library(stb::stb ALIAS stb)
 target_include_directories(stb INTERFACE ${stb_SOURCE_DIR})
+include_directories(${stb_SOURCE_DIR})
 
 # ============================================================================
 # cgltf (glTF loading - header only)
@@ -213,6 +214,19 @@ if(CMAKE_BUILD_TYPE)
 endif()
 
 FetchContent_MakeAvailable(bgfx_cmake)
+
+# Fix broken imstb_textedit.h wrapper in bgfx's dear-imgui bundle
+# The bundled imstb_textedit.h is a 47-line wrapper that incorrectly bridges to stb_textedit.h,
+# but imgui_widgets.cpp expects the full 1470-line DearImGui-modified version.
+# The correct file is already present in bgfx's stb directory, so we copy it over.
+if(EXISTS "${bgfx_cmake_SOURCE_DIR}/bgfx/3rdparty/stb/stb_textedit.h")
+    file(COPY_FILE
+        "${bgfx_cmake_SOURCE_DIR}/bgfx/3rdparty/stb/stb_textedit.h"
+        "${bgfx_cmake_SOURCE_DIR}/bgfx/3rdparty/dear-imgui/imstb_textedit.h"
+        ONLY_IF_DIFFERENT
+    )
+    message(STATUS "Patched bgfx dear-imgui imstb_textedit.h")
+endif()
 
 # Create namespace aliases
 add_library(bgfx::bgfx ALIAS bgfx)

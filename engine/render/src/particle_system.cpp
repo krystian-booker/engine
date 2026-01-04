@@ -6,6 +6,10 @@
 #include <cmath>
 #include <fstream>
 
+#ifdef Warn
+#undef Warn
+#endif
+
 namespace engine::render {
 
 // Shader loading helpers
@@ -152,7 +156,7 @@ void ParticleSystem::init(IRenderer* renderer) {
         m_particle_program = bgfx::createProgram(vs, fs, true);
         log(LogLevel::Info, "Particle shaders loaded successfully");
     } else {
-        log(LogLevel::Warning, "Failed to load particle shaders, particles will not render");
+        log(LogLevel::Warn, "Failed to load particle shaders, particles will not render");
         if (bgfx::isValid(vs)) bgfx::destroy(vs);
         if (bgfx::isValid(fs)) bgfx::destroy(fs);
     }

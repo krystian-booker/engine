@@ -570,6 +570,7 @@ void StreamingVolumeManager::update(const Vec3& player_position, uint32_t player
     m_pending_unloads.clear();
     m_pending_preloads.clear();
     m_blocking = false;
+    m_blocking_progress = 0.0f;
 
     std::vector<std::string> new_active_volumes;
 
@@ -636,6 +637,20 @@ void StreamingVolumeManager::update(const Vec3& player_position, uint32_t player
     }
 
     m_active_volumes = std::move(new_active_volumes);
+
+    // Calculate blocking progress based on pending cell load states
+    if (m_blocking && !m_pending_loads.empty()) {
+        auto& streaming = get_scene_streaming();
+        size_t loaded_count = 0;
+        for (const auto& cell_name : m_pending_loads) {
+            if (streaming.is_cell_loaded(cell_name)) {
+                loaded_count++;
+            }
+        }
+        m_blocking_progress = static_cast<float>(loaded_count) / static_cast<float>(m_pending_loads.size());
+    } else if (m_blocking) {
+        m_blocking_progress = 1.0f;  // No pending loads, blocking complete
+    }
 }
 
 std::vector<std::string> StreamingVolumeManager::get_volumes_at_point(const Vec3& point) const {

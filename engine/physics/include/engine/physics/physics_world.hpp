@@ -204,6 +204,29 @@ public:
     // Body iteration (for debug rendering)
     std::vector<PhysicsBodyId> get_all_body_ids() const;
 
+    // Body mass and volume (for buoyancy calculations)
+    float get_body_mass(PhysicsBodyId id) const;
+    float get_body_volume(PhysicsBodyId id) const;
+    Vec3 get_body_bounds_min(PhysicsBodyId id) const;
+    Vec3 get_body_bounds_max(PhysicsBodyId id) const;
+
+    // Buoyancy helpers
+    // Calculate approximate submerged volume for a body at given water surface height
+    float calculate_submerged_volume(PhysicsBodyId id, float water_surface_y) const;
+
+    // Apply buoyancy force to a body (convenience method)
+    // Returns the applied force magnitude
+    float apply_buoyancy(PhysicsBodyId id, float water_surface_y,
+                         float water_density = 1000.0f, float buoyancy_multiplier = 1.0f);
+
+    // Apply water drag forces to a body
+    void apply_water_drag(PhysicsBodyId id, float submerged_fraction,
+                          float linear_drag = 0.5f, float angular_drag = 0.1f);
+
+    // Internal access for CharacterController (returns JPH::PhysicsSystem*)
+    void* get_jolt_system() const;
+    void* get_temp_allocator() const;
+
 private:
     std::unique_ptr<Impl> m_impl;
 

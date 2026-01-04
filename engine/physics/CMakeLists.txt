@@ -12,6 +12,18 @@ target_sources(engine_physics
         src/character_controller.cpp
         src/ragdoll.cpp
         src/physics_system.cpp
+        src/rigid_body_component.cpp
+        # Water/Buoyancy/Boat physics
+        src/water_volume.cpp
+        src/buoyancy.cpp
+        src/boat.cpp
+        src/water_component_registration.cpp
+        # Vehicle physics
+        src/vehicle.cpp
+        src/vehicle_component_registration.cpp
+        # Cloth physics
+        src/cloth.cpp
+        src/cloth_component_registration.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -26,6 +38,17 @@ target_sources(engine_physics
             include/engine/physics/debug_renderer.hpp
             include/engine/physics/character_controller.hpp
             include/engine/physics/ragdoll.hpp
+            include/engine/physics/rigid_body_component.hpp
+            # Water/Buoyancy/Boat physics
+            include/engine/physics/water_volume.hpp
+            include/engine/physics/buoyancy_component.hpp
+            include/engine/physics/boat.hpp
+            # Vehicle physics
+            include/engine/physics/vehicle.hpp
+            include/engine/physics/vehicle_component.hpp
+            # Cloth physics
+            include/engine/physics/cloth.hpp
+            include/engine/physics/cloth_component.hpp
 )
 
 target_include_directories(engine_physics
@@ -37,10 +60,8 @@ target_include_directories(engine_physics
 target_link_libraries(engine_physics
     PUBLIC
         engine::core
-        engine::core
         engine::render
         engine::scene
-        Jolt
         Jolt
     PRIVATE
         engine_compiler_flags

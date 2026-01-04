@@ -2,6 +2,7 @@
 
 #include <engine/ui/ui_types.hpp>
 #include <engine/ui/ui_style.hpp>
+#include <engine/ui/ui_animation.hpp>
 #include <memory>
 #include <vector>
 #include <string>
@@ -92,13 +93,33 @@ public:
     const std::string& get_tooltip() const { return m_tooltip; }
     bool has_tooltip() const { return !m_tooltip.empty(); }
 
+    // Animation convenience methods (requires UIAnimator to be set)
+    uint32_t animate_opacity(float target, float duration,
+                             EaseType ease = EaseType::EaseOutQuad,
+                             float delay = 0.0f,
+                             AnimationCallback on_complete = nullptr);
+    uint32_t animate_position(Vec2 target, float duration,
+                              EaseType ease = EaseType::EaseOutQuad,
+                              float delay = 0.0f,
+                              AnimationCallback on_complete = nullptr);
+    uint32_t animate_size(Vec2 target, float duration,
+                          EaseType ease = EaseType::EaseOutQuad,
+                          float delay = 0.0f,
+                          AnimationCallback on_complete = nullptr);
+    uint32_t animate_scale(float target, float duration,
+                           EaseType ease = EaseType::EaseOutQuad,
+                           float delay = 0.0f,
+                           AnimationCallback on_complete = nullptr);
+    void stop_animations();
+    bool is_animating() const;
+
     // Event callbacks
     ClickCallback on_click;
     HoverCallback on_hover;
 
     // Update and render (called by UICanvas)
     void update(float dt, const UIInputState& input);
-    void render(UIRenderContext& ctx);
+    virtual void render(UIRenderContext& ctx);
 
     // Layout
     void layout(const Rect& parent_bounds);

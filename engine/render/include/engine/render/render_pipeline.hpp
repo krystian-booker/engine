@@ -33,9 +33,10 @@ enum class RenderPassFlags : uint32_t {
     Debug         = 1 << 11,
     UI            = 1 << 12,
     Final         = 1 << 13,
+    Skybox        = 1 << 14,
 
     // Common combinations
-    AllOpaque     = Shadows | DepthPrepass | MainOpaque,
+    AllOpaque     = Shadows | DepthPrepass | MainOpaque | Skybox,
     AllEffects    = SSAO | Volumetric | Particles | SSR | PostProcess | TAA,
     All           = 0xFFFFFFFF
 };
@@ -188,6 +189,13 @@ public:
                 const std::vector<LightData>& lights);
     void end_frame();
 
+    // Render to a specific target (for RTT/multi-camera)
+    void render_to_target(RenderTargetHandle target,
+                           const CameraData& camera,
+                           const std::vector<RenderObject>& objects,
+                           const std::vector<LightData>& lights,
+                           RenderPassFlags passes = RenderPassFlags::All);
+
     // Submit individual render objects
     void submit_object(const RenderObject& object);
     void submit_light(const LightData& light);
@@ -217,11 +225,16 @@ public:
     TAASystem* get_taa_system() { return &m_taa_system; }
     VolumetricSystem* get_volumetric_system() { return &m_volumetric_system; }
 
+    // Skybox settings
+    void set_skybox(TextureHandle cubemap, float intensity = 1.0f, float rotation = 0.0f);
+    void clear_skybox();
+
 private:
     // Render passes
     void shadow_pass(const CameraData& camera,
                      const std::vector<RenderObject>& objects,
                      const std::vector<LightData>& lights);
+    void skybox_pass(const CameraData& camera);
     void depth_prepass(const CameraData& camera,
                        const std::vector<RenderObject>& objects);
     void gbuffer_pass(const CameraData& camera,
@@ -290,6 +303,12 @@ private:
 
     // Frame counter
     uint32_t m_frame_count = 0;
+
+    // Skybox
+    TextureHandle m_skybox_cubemap;
+    float m_skybox_intensity = 1.0f;
+    float m_skybox_rotation = 0.0f;
+    ShaderHandle m_skybox_shader;
 };
 
 // Helper to build camera data from common parameters

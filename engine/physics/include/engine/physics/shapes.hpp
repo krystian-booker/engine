@@ -3,6 +3,7 @@
 #include <engine/core/math.hpp>
 #include <cstdint>
 #include <vector>
+#include <variant>
 
 namespace engine::physics {
 
@@ -18,6 +19,8 @@ enum class ShapeType : uint8_t {
     Mesh,
     Compound
 };
+
+
 
 // Base shape settings
 struct ShapeSettings {
@@ -86,5 +89,16 @@ struct CompoundShapeSettings : ShapeSettings {
 
     CompoundShapeSettings() { type = ShapeType::Compound; }
 };
+
+// Variant type for shape settings
+using ShapeVariant = std::variant<
+    BoxShapeSettings,
+    SphereShapeSettings,
+    CapsuleShapeSettings,
+    CylinderShapeSettings,
+    ConvexHullShapeSettings,
+    MeshShapeSettings,
+    CompoundShapeSettings
+>;
 
 } // namespace engine::physics

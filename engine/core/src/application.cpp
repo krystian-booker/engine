@@ -8,8 +8,15 @@
 #include <engine/scene/systems.hpp>
 #include <engine/scene/transform.hpp>
 #include <engine/render/renderer.hpp>
+#include <engine/render/render_pipeline.hpp>
+#include <engine/render/render_systems.hpp>
 #include <engine/plugin/plugin.hpp>
 #include <engine/audio/audio_system.hpp>
+#include <engine/streaming/streaming_volume.hpp>
+#include <engine/cinematic/cinematic.hpp>
+#include <engine/navigation/navigation_systems.hpp>
+#include <engine/ui/ui_context.hpp>
+#include <engine/ui/ui_system.hpp>
 
 #include <cstring>
 
@@ -72,6 +79,28 @@ int Application::run(int argc, char** argv) {
         if (!m_renderer->init(m_native_window, m_window_width, m_window_height)) {
             log(LogLevel::Error, "Failed to initialize renderer");
             m_renderer.reset();
+        } else {
+            // Create and initialize render pipeline
+            m_render_pipeline = std::make_unique<render::RenderPipeline>();
+            render::RenderPipelineConfig pipeline_config;
+            m_render_pipeline->init(m_renderer.get(), pipeline_config);
+
+            // Initialize and register render systems
+            render::init_render_systems(m_render_pipeline.get(), m_renderer.get());
+            render::register_render_systems(*m_engine_scheduler);
+
+            // Initialize UI system
+            m_ui_context = std::make_unique<ui::UIContext>();
+            m_ui_input_state = std::make_unique<ui::UIInputState>();
+            if (m_ui_context->init(m_renderer.get())) {
+                m_ui_context->set_screen_size(m_window_width, m_window_height);
+                ui::set_ui_context(m_ui_context.get());
+                log(LogLevel::Info, "UI system initialized");
+            } else {
+                log(LogLevel::Error, "Failed to initialize UI system");
+                m_ui_context.reset();
+                m_ui_input_state.reset();
+            }
         }
     }
 
@@ -90,6 +119,11 @@ int Application::run(int argc, char** argv) {
 
     // Main loop
     while (!m_quit_requested) {
+        // Begin UI input frame before processing events
+        if (m_ui_input_state) {
+            ui::ui_input_begin_frame(*m_ui_input_state);
+        }
+
         // Poll window events
         if (!poll_events()) {
             m_quit_requested = true;
@@ -138,6 +172,12 @@ int Application::run(int argc, char** argv) {
             m_system_registry->run(*m_world, dt, scene::Phase::PostUpdate);
         }
 
+        // Update UI system
+        if (m_ui_context && m_ui_input_state) {
+            m_ui_context->update(static_cast<float>(dt), *m_ui_input_state);
+            ui::ui_input_end_frame(*m_ui_input_state);
+        }
+
         // Run PreRender phase
         if (m_system_registry) {
             m_system_registry->run(*m_world, dt, scene::Phase::PreRender);
@@ -145,6 +185,12 @@ int Application::run(int argc, char** argv) {
 
         // Rendering
         on_render(m_clock.get_alpha());
+
+        // Render UI (after 3D scene, before PostRender)
+        if (m_ui_context && m_renderer) {
+            // Use specific view ID for UI rendering to ensure it draws on top
+            m_ui_context->render(static_cast<render::RenderView>(200));
+        }
 
         // Run PostRender phase
         if (m_system_registry) {
@@ -161,6 +207,27 @@ int Application::run(int argc, char** argv) {
     // Destroy engine systems
     m_system_registry.reset();
     m_engine_scheduler.reset();
+
+    // Shutdown navigation system
+    navigation::navigation_shutdown();
+
+    // Shutdown render systems
+    render::shutdown_render_systems();
+
+    // Shutdown UI system before renderer
+    if (m_ui_context) {
+        ui::set_ui_context(nullptr);
+        m_ui_context->shutdown();
+        m_ui_context.reset();
+    }
+    m_ui_input_state.reset();
+
+    // Shutdown render pipeline before renderer
+    if (m_render_pipeline) {
+        m_render_pipeline->shutdown();
+        m_render_pipeline.reset();
+    }
+
     if (m_renderer) {
         m_renderer->shutdown();
     }
@@ -196,6 +263,7 @@ bool Application::load_game_plugin(const std::filesystem::path& dll_path) {
     m_game_context->world = m_world.get();
     m_game_context->scheduler = m_engine_scheduler.get();
     m_game_context->renderer = m_renderer.get();
+    m_game_context->ui_context = m_ui_context.get();
     m_game_context->app = this;
 
     // Create and initialize hot reload manager
@@ -290,6 +358,10 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
                 uint32_t height = HIWORD(lParam);
                 if (width > 0 && height > 0) {
                     events().dispatch(WindowResizeEvent{width, height});
+                    // Update UI screen size
+                    if (app->get_ui_context()) {
+                        app->get_ui_context()->set_screen_size(width, height);
+                    }
                 }
             }
             return 0;
@@ -302,6 +374,106 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             events().dispatch(WindowFocusEvent{false});
             return 0;
 
+        // UI input handling
+        case WM_MOUSEMOVE:
+            if (app && app->get_ui_context()) {
+                auto* state = app->get_ui_input_state();
+                if (state) {
+                    float x = static_cast<float>(LOWORD(lParam));
+                    float y = static_cast<float>(HIWORD(lParam));
+                    state->mouse_delta.x = x - state->mouse_position.x;
+                    state->mouse_delta.y = y - state->mouse_position.y;
+                    state->mouse_position.x = x;
+                    state->mouse_position.y = y;
+                }
+            }
+            return 0;
+
+        case WM_LBUTTONDOWN:
+            if (app && app->get_ui_input_state()) {
+                app->get_ui_input_state()->mouse_buttons[0] = true;
+            }
+            return 0;
+
+        case WM_LBUTTONUP:
+            if (app && app->get_ui_input_state()) {
+                app->get_ui_input_state()->mouse_buttons[0] = false;
+            }
+            return 0;
+
+        case WM_RBUTTONDOWN:
+            if (app && app->get_ui_input_state()) {
+                app->get_ui_input_state()->mouse_buttons[1] = true;
+            }
+            return 0;
+
+        case WM_RBUTTONUP:
+            if (app && app->get_ui_input_state()) {
+                app->get_ui_input_state()->mouse_buttons[1] = false;
+            }
+            return 0;
+
+        case WM_MBUTTONDOWN:
+            if (app && app->get_ui_input_state()) {
+                app->get_ui_input_state()->mouse_buttons[2] = true;
+            }
+            return 0;
+
+        case WM_MBUTTONUP:
+            if (app && app->get_ui_input_state()) {
+                app->get_ui_input_state()->mouse_buttons[2] = false;
+            }
+            return 0;
+
+        case WM_MOUSEWHEEL:
+            if (app && app->get_ui_input_state()) {
+                float delta = static_cast<float>(GET_WHEEL_DELTA_WPARAM(wParam)) / WHEEL_DELTA;
+                app->get_ui_input_state()->scroll_delta.y = delta;
+            }
+            return 0;
+
+        case WM_CHAR:
+            if (app && app->get_ui_input_state() && wParam >= 32) {
+                // Append character to text input (UTF-8)
+                char utf8[5] = {};
+                if (wParam < 0x80) {
+                    utf8[0] = static_cast<char>(wParam);
+                } else if (wParam < 0x800) {
+                    utf8[0] = static_cast<char>(0xC0 | (wParam >> 6));
+                    utf8[1] = static_cast<char>(0x80 | (wParam & 0x3F));
+                }
+                app->get_ui_input_state()->text_input += utf8;
+            }
+            return 0;
+
+        case WM_KEYDOWN:
+            if (app && app->get_ui_input_state()) {
+                switch (wParam) {
+                    case VK_BACK: app->get_ui_input_state()->key_backspace = true; break;
+                    case VK_DELETE: app->get_ui_input_state()->key_delete = true; break;
+                    case VK_LEFT: app->get_ui_input_state()->key_left = true; break;
+                    case VK_RIGHT: app->get_ui_input_state()->key_right = true; break;
+                    case VK_HOME: app->get_ui_input_state()->key_home = true; break;
+                    case VK_END: app->get_ui_input_state()->key_end = true; break;
+                    case VK_RETURN: app->get_ui_input_state()->key_enter = true; break;
+                    case VK_TAB: app->get_ui_input_state()->key_tab = true; break;
+                    case VK_ESCAPE: app->get_ui_input_state()->key_escape = true; break;
+                    case VK_UP: app->get_ui_input_state()->nav_up = true; break;
+                    case VK_DOWN: app->get_ui_input_state()->nav_down = true; break;
+                    case VK_SPACE: app->get_ui_input_state()->nav_confirm = true; break;
+                }
+            }
+            return 0;
+
+        case WM_KEYUP:
+            if (app && app->get_ui_input_state()) {
+                switch (wParam) {
+                    case VK_UP: app->get_ui_input_state()->nav_up = false; break;
+                    case VK_DOWN: app->get_ui_input_state()->nav_down = false; break;
+                    case VK_SPACE: app->get_ui_input_state()->nav_confirm = false; break;
+                }
+            }
+            return 0;
     }
 
     return DefWindowProc(hwnd, msg, wParam, lParam);
@@ -405,14 +577,31 @@ void Application::register_engine_systems() {
     // Transform system in FixedUpdate for physics (priority 10 = runs first)
     m_engine_scheduler->add(scene::Phase::FixedUpdate, scene::transform_system, "transform_fixed", 10);
 
+    // Navigation behaviors in FixedUpdate (priority 6, before agents)
+    m_engine_scheduler->add(scene::Phase::FixedUpdate, navigation::navigation_behavior_system, "nav_behaviors", 6);
+
+    // Navigation agents in FixedUpdate (priority 5, after behaviors)
+    m_engine_scheduler->add(scene::Phase::FixedUpdate, navigation::navigation_agent_system, "nav_agents", 5);
+
+    // Navigation obstacles in FixedUpdate (priority 4, after agents)
+    m_engine_scheduler->add(scene::Phase::FixedUpdate, navigation::navigation_obstacle_system, "nav_obstacles", 4);
+
     // Transform system in PostUpdate for audio/render (priority 10 = runs first)
     m_engine_scheduler->add(scene::Phase::PostUpdate, scene::transform_system, "transform", 10);
+
+    // Streaming systems in PostUpdate, after transform (priority 8-6)
+    m_engine_scheduler->add(scene::Phase::PostUpdate, streaming::streaming_update_system, "streaming_update", 8);
+    m_engine_scheduler->add(scene::Phase::PostUpdate, streaming::streaming_volume_system, "streaming_volumes", 7);
+    m_engine_scheduler->add(scene::Phase::PostUpdate, streaming::streaming_portal_system, "streaming_portals", 6);
 
     // Audio systems in PostUpdate, after transform (lower priority = runs later)
     m_engine_scheduler->add(scene::Phase::PostUpdate, audio::AudioSystem::update_listener, "audio_listener", 5);
     m_engine_scheduler->add(scene::Phase::PostUpdate, audio::AudioSystem::update_sources, "audio_sources", 4);
     m_engine_scheduler->add(scene::Phase::PostUpdate, audio::AudioSystem::process_triggers, "audio_triggers", 3);
     m_engine_scheduler->add(scene::Phase::PostUpdate, audio::AudioSystem::update_reverb_zones, "audio_reverb", 2);
+
+    // Cinematic system in Update phase (priority 0 = runs after game logic)
+    m_engine_scheduler->add(scene::Phase::Update, cinematic::cinematic_update_system, "cinematic", 0);
 }
 
 } // namespace engine::core

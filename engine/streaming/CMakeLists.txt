@@ -8,6 +8,7 @@ target_sources(engine_streaming
     PRIVATE
         src/scene_streaming.cpp
         src/streaming_systems.cpp
+        src/streaming_component_registration.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -30,6 +31,7 @@ target_link_libraries(engine_streaming
         engine::scene
         engine::asset
     PRIVATE
+        engine::reflect
         engine_compiler_flags
 )
 

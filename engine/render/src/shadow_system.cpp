@@ -20,6 +20,7 @@ void ShadowSystem::init(IRenderer* renderer, const ShadowConfig& config) {
     m_initialized = true;
 
     create_cascade_render_targets();
+    create_shadow_atlas();
 
     log(LogLevel::Info, "Shadow system initialized");
 }
@@ -28,10 +29,7 @@ void ShadowSystem::shutdown() {
     if (!m_initialized) return;
 
     destroy_cascade_render_targets();
-
-    if (m_shadow_atlas.valid()) {
-        m_renderer->destroy_render_target(m_shadow_atlas);
-    }
+    destroy_shadow_atlas();
 
     m_initialized = false;
     m_renderer = nullptr;
@@ -189,16 +187,98 @@ RenderView ShadowSystem::get_cascade_view(uint32_t cascade) const {
     }
 }
 
-RenderTargetHandle ShadowSystem::allocate_shadow_map(uint32_t light_index, uint8_t /*light_type*/) {
-    // For now, return cascade 0 - TODO: implement proper atlas allocation
-    if (light_index < 4) {
-        return m_cascade_render_targets[light_index];
+RenderTargetHandle ShadowSystem::allocate_shadow_map(uint32_t light_index, uint8_t light_type) {
+    // Check if this light already has an allocated slot
+    auto it = m_light_to_slot.find(light_index);
+    if (it != m_light_to_slot.end()) {
+        // Light already has a slot, return the atlas
+        return m_shadow_atlas;
     }
+
+    // Find a free slot in the atlas
+    for (uint32_t i = 0; i < m_atlas_slots.size(); ++i) {
+        if (!m_atlas_slots[i].in_use) {
+            // Allocate this slot
+            m_atlas_slots[i].in_use = true;
+            m_atlas_slots[i].light_index = light_index;
+            m_light_to_slot[light_index] = i;
+
+            log(LogLevel::Debug, "Shadow atlas: allocated slot {} for light {} at ({}, {})",
+                i, light_index, m_atlas_slots[i].x, m_atlas_slots[i].y);
+
+            return m_shadow_atlas;
+        }
+    }
+
+    // No free slots available
+    log(LogLevel::Warn, "Shadow atlas: no free slots available for light {}", light_index);
     return RenderTargetHandle{};
 }
 
-void ShadowSystem::free_shadow_map(uint32_t /*light_index*/) {
-    // TODO: implement proper atlas deallocation
+void ShadowSystem::free_shadow_map(uint32_t light_index) {
+    auto it = m_light_to_slot.find(light_index);
+    if (it != m_light_to_slot.end()) {
+        uint32_t slot_index = it->second;
+
+        if (slot_index < m_atlas_slots.size()) {
+            m_atlas_slots[slot_index].in_use = false;
+            m_atlas_slots[slot_index].light_index = UINT32_MAX;
+
+            log(LogLevel::Debug, "Shadow atlas: freed slot {} from light {}", slot_index, light_index);
+        }
+
+        m_light_to_slot.erase(it);
+    }
+}
+
+void ShadowSystem::create_shadow_atlas() {
+    // Calculate number of tiles that fit in the atlas
+    uint32_t tiles_per_side = m_atlas_size / m_atlas_tile_size;
+    uint32_t total_slots = tiles_per_side * tiles_per_side;
+
+    // Create atlas render target
+    RenderTargetDesc desc;
+    desc.width = m_atlas_size;
+    desc.height = m_atlas_size;
+    desc.color_attachment_count = 0;  // Depth only
+    desc.has_depth = true;
+    desc.depth_format = TextureFormat::Depth32F;
+    desc.samplable = true;
+    desc.debug_name = "ShadowAtlas";
+
+    m_shadow_atlas = m_renderer->create_render_target(desc);
+    m_shadow_atlas_texture = m_renderer->get_render_target_texture(m_shadow_atlas, UINT32_MAX);
+
+    // Initialize atlas slots
+    m_atlas_slots.clear();
+    m_atlas_slots.reserve(total_slots);
+
+    for (uint32_t y = 0; y < tiles_per_side; ++y) {
+        for (uint32_t x = 0; x < tiles_per_side; ++x) {
+            AtlasSlot slot;
+            slot.x = x * m_atlas_tile_size;
+            slot.y = y * m_atlas_tile_size;
+            slot.size = m_atlas_tile_size;
+            slot.in_use = false;
+            slot.light_index = UINT32_MAX;
+            m_atlas_slots.push_back(slot);
+        }
+    }
+
+    m_light_to_slot.clear();
+
+    log(LogLevel::Info, "Shadow atlas created: {}x{} with {} slots of {}x{}",
+        m_atlas_size, m_atlas_size, total_slots, m_atlas_tile_size, m_atlas_tile_size);
+}
+
+void ShadowSystem::destroy_shadow_atlas() {
+    if (m_shadow_atlas.valid()) {
+        m_renderer->destroy_render_target(m_shadow_atlas);
+        m_shadow_atlas = RenderTargetHandle{};
+    }
+    m_shadow_atlas_texture = TextureHandle{};
+    m_atlas_slots.clear();
+    m_light_to_slot.clear();
 }
 
 void ShadowSystem::resize(uint32_t new_resolution) {

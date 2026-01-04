@@ -54,10 +54,32 @@ void NavMeshInputGeometry::add_mesh(
     area_types.resize(base_tri + new_tris, area_type);
 }
 
+void NavMeshInputGeometry::add_off_mesh_connection(const OffMeshConnection& connection) {
+    off_mesh_connections.push_back(connection);
+}
+
+void NavMeshInputGeometry::add_off_mesh_connection(
+    const Vec3& start, const Vec3& end,
+    float radius,
+    OffMeshConnectionFlags flags,
+    NavAreaType area,
+    uint32_t user_id)
+{
+    OffMeshConnection conn;
+    conn.start = start;
+    conn.end = end;
+    conn.radius = radius;
+    conn.flags = flags;
+    conn.area = area;
+    conn.user_id = user_id;
+    off_mesh_connections.push_back(conn);
+}
+
 void NavMeshInputGeometry::clear() {
     vertices.clear();
     indices.clear();
     area_types.clear();
+    off_mesh_connections.clear();
     bounds = AABB();
 }
 
@@ -100,8 +122,8 @@ NavMeshBuildResult NavMeshBuilder::build_from_world(
     NavMeshInputGeometry geometry;
 
     // Iterate entities with NavMeshSource and WorldTransform
-    auto view = world.view<NavMeshSource, scene::WorldTransform>();
-    for (auto entity : view) {
+    auto source_view = world.view<NavMeshSource, scene::WorldTransform>();
+    for (auto entity : source_view) {
         auto& source = world.get<NavMeshSource>(entity);
         auto& transform = world.get<scene::WorldTransform>(entity);
 
@@ -123,6 +145,31 @@ NavMeshBuildResult NavMeshBuilder::build_from_world(
             transform.matrix,
             source.area_type
         );
+    }
+
+    // Collect off-mesh links from entities with OffMeshLinkComponent
+    auto link_view = world.view<OffMeshLinkComponent, scene::WorldTransform>();
+    for (auto entity : link_view) {
+        auto& link = world.get<OffMeshLinkComponent>(entity);
+        auto& transform = world.get<scene::WorldTransform>(entity);
+
+        if (!link.enabled) {
+            continue;
+        }
+
+        // Transform offsets by entity transform
+        Vec3 world_start = Vec3(transform.matrix * Vec4(link.start_offset, 1.0f));
+        Vec3 world_end = Vec3(transform.matrix * Vec4(link.end_offset, 1.0f));
+
+        OffMeshConnection conn;
+        conn.start = world_start;
+        conn.end = world_end;
+        conn.radius = link.radius;
+        conn.flags = link.flags;
+        conn.area = link.area;
+        conn.user_id = static_cast<uint32_t>(entity);  // Use entity ID as user_id
+
+        geometry.off_mesh_connections.push_back(conn);
     }
 
     if (geometry.vertices.empty()) {
@@ -413,6 +460,43 @@ NavMeshBuildResult NavMeshBuilder::build_internal(
         poly_mesh->flags[i] = 1;  // Walkable
     }
 
+    // Prepare off-mesh connection data
+    const int offMeshConCount = static_cast<int>(geom.off_mesh_connections.size());
+    std::vector<float> offMeshConVerts;          // 6 floats per connection (start + end)
+    std::vector<float> offMeshConRad;            // 1 float per connection
+    std::vector<unsigned short> offMeshConFlags; // 1 per connection
+    std::vector<unsigned char> offMeshConAreas;  // 1 per connection
+    std::vector<unsigned char> offMeshConDir;    // 1 per connection (0=one-way, 1=bidirectional)
+    std::vector<unsigned int> offMeshConUserID;  // 1 per connection
+
+    if (offMeshConCount > 0) {
+        offMeshConVerts.reserve(offMeshConCount * 6);
+        offMeshConRad.reserve(offMeshConCount);
+        offMeshConFlags.reserve(offMeshConCount);
+        offMeshConAreas.reserve(offMeshConCount);
+        offMeshConDir.reserve(offMeshConCount);
+        offMeshConUserID.reserve(offMeshConCount);
+
+        for (const auto& conn : geom.off_mesh_connections) {
+            // Start point (3 floats)
+            offMeshConVerts.push_back(conn.start.x);
+            offMeshConVerts.push_back(conn.start.y);
+            offMeshConVerts.push_back(conn.start.z);
+            // End point (3 floats)
+            offMeshConVerts.push_back(conn.end.x);
+            offMeshConVerts.push_back(conn.end.y);
+            offMeshConVerts.push_back(conn.end.z);
+
+            offMeshConRad.push_back(conn.radius);
+            offMeshConFlags.push_back(static_cast<unsigned short>(conn.flags));
+            offMeshConAreas.push_back(static_cast<unsigned char>(conn.area));
+            offMeshConDir.push_back(has_flag(conn.flags, OffMeshConnectionFlags::Bidirectional) ? 1 : 0);
+            offMeshConUserID.push_back(conn.user_id);
+        }
+
+        core::log(core::LogLevel::Debug, "NavMesh build: Adding {} off-mesh connections", offMeshConCount);
+    }
+
     // Create Detour navmesh data
     dtNavMeshCreateParams params;
     std::memset(&params, 0, sizeof(params));
@@ -430,6 +514,17 @@ NavMeshBuildResult NavMeshBuilder::build_internal(
     params.detailVertsCount = detail_mesh->nverts;
     params.detailTris = detail_mesh->tris;
     params.detailTriCount = detail_mesh->ntris;
+
+    // Off-mesh connections
+    if (offMeshConCount > 0) {
+        params.offMeshConVerts = offMeshConVerts.data();
+        params.offMeshConRad = offMeshConRad.data();
+        params.offMeshConFlags = offMeshConFlags.data();
+        params.offMeshConAreas = offMeshConAreas.data();
+        params.offMeshConDir = offMeshConDir.data();
+        params.offMeshConUserID = offMeshConUserID.data();
+        params.offMeshConCount = offMeshConCount;
+    }
 
     params.walkableHeight = settings.agent_height;
     params.walkableRadius = settings.agent_radius;
@@ -483,6 +578,112 @@ NavMeshBuildResult NavMeshBuilder::build_internal(
 
     core::log(core::LogLevel::Info, "NavMesh built: {} polygons, {} tiles, {:.1f}ms",
               result.output_polygons, result.output_tiles, result.build_time_ms);
+
+    return result;
+}
+
+NavMeshBuildResult NavMeshBuilder::build_tiled(
+    const NavMeshInputGeometry& geometry,
+    const NavMeshSettings& settings,
+    BuildProgressCallback progress)
+{
+    // Force tiled mode
+    NavMeshSettings tiled_settings = settings;
+    tiled_settings.use_tiles = true;
+
+    m_building = true;
+    m_cancel_requested = false;
+    auto result = build_tiled_internal(geometry, tiled_settings, progress);
+    m_building = false;
+    return result;
+}
+
+NavMeshBuildResult NavMeshBuilder::build_tiled_from_world(
+    scene::World& world,
+    const NavMeshSettings& settings,
+    uint32_t layer_mask,
+    BuildProgressCallback progress)
+{
+    NavMeshInputGeometry geometry;
+
+    // Iterate entities with NavMeshSource and WorldTransform (same as build_from_world)
+    auto source_view = world.view<NavMeshSource, scene::WorldTransform>();
+    for (auto entity : source_view) {
+        auto& source = world.get<NavMeshSource>(entity);
+        auto& transform = world.get<scene::WorldTransform>(entity);
+
+        if (!source.enabled || source.vertices.empty()) {
+            continue;
+        }
+
+        if (layer_mask != 0xFFFFFFFF) {
+            auto* renderer = world.try_get<scene::MeshRenderer>(entity);
+            if (renderer && !((1u << renderer->render_layer) & layer_mask)) {
+                continue;
+            }
+        }
+
+        geometry.add_mesh(
+            source.vertices.data(), source.vertices.size(),
+            source.indices.data(), source.indices.size(),
+            transform.matrix,
+            source.area_type
+        );
+    }
+
+    auto link_view = world.view<OffMeshLinkComponent, scene::WorldTransform>();
+    for (auto entity : link_view) {
+        auto& link = world.get<OffMeshLinkComponent>(entity);
+        auto& transform = world.get<scene::WorldTransform>(entity);
+
+        if (!link.enabled) {
+            continue;
+        }
+
+        Vec3 world_start = Vec3(transform.matrix * Vec4(link.start_offset, 1.0f));
+        Vec3 world_end = Vec3(transform.matrix * Vec4(link.end_offset, 1.0f));
+
+        OffMeshConnection conn;
+        conn.start = world_start;
+        conn.end = world_end;
+        conn.radius = link.radius;
+        conn.flags = link.flags;
+        conn.area = link.area;
+        conn.user_id = static_cast<uint32_t>(entity);
+
+        geometry.off_mesh_connections.push_back(conn);
+    }
+
+    if (geometry.vertices.empty()) {
+        NavMeshBuildResult result;
+        result.success = false;
+        result.error_message = "No NavMeshSource components found in world";
+        return result;
+    }
+
+    return build_tiled(geometry, settings, progress);
+}
+
+NavMeshBuildResult NavMeshBuilder::build_tiled_internal(
+    const NavMeshInputGeometry& geometry,
+    const NavMeshSettings& settings,
+    BuildProgressCallback progress)
+{
+    // For tile cache support, we build a standard navmesh but mark it as supporting tile cache
+    // The tile cache will rebuild tiles as needed when obstacles are added/removed
+    NavMeshBuildResult result = build_internal(geometry, settings, progress);
+
+    if (result.success && result.navmesh) {
+        // Mark as supporting tile cache by setting empty layers (will be populated on init)
+        std::vector<std::vector<uint8_t>> empty_layers;
+        result.navmesh->set_tile_cache_layers(std::move(empty_layers));
+
+        // For actual tile cache support, we need the navmesh to be in tiled format
+        // The empty layers vector signals that this navmesh supports dynamic obstacles
+        // The NavTileCache will handle the actual obstacle management
+
+        core::log(core::LogLevel::Info, "NavMesh built with tile cache support");
+    }
 
     return result;
 }

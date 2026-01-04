@@ -6,6 +6,8 @@
 #include <unordered_map>
 #include <engine/core/math.hpp>
 
+namespace engine::scene { class World; }
+
 namespace engine::streaming {
 
 using namespace engine::core;
@@ -234,12 +236,20 @@ PortalGraph& get_portal_graph();
 // ECS Systems
 // ============================================================================
 
-namespace scene { class World; }
+// Handles StreamingComponent: stream_with_player and persist_across_cells
+// Should run FIRST to migrate entities before unload processing
+void streaming_entity_system(engine::scene::World& world, double dt);
+
+// Processes StreamingZoneComponent radius-based triggers
+void streaming_zone_system(engine::scene::World& world, double dt);
 
 // Syncs entity transforms to volumes, forwards load/unload to SceneStreamingSystem
-void streaming_volume_system(scene::World& world, double dt);
+void streaming_volume_system(engine::scene::World& world, double dt);
 
 // Manages portal visibility and boosts loading priority for visible cells
-void streaming_portal_system(scene::World& world, double dt);
+void streaming_portal_system(engine::scene::World& world, double dt);
+
+// Core streaming update - processes load/unload queues, should run LAST
+void streaming_update_system(engine::scene::World& world, double dt);
 
 } // namespace engine::streaming

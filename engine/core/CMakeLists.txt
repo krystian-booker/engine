@@ -54,6 +54,7 @@ target_link_libraries(engine_core
         glm::glm
         nlohmann_json::nlohmann_json
         bgfx::bx
+        bgfx::bgfx
     PRIVATE
         engine_compiler_flags
 )
@@ -67,7 +68,10 @@ target_include_directories(engine_core
         ${CMAKE_CURRENT_SOURCE_DIR}/../render/include
         ${CMAKE_CURRENT_SOURCE_DIR}/../plugin/include
         ${CMAKE_CURRENT_SOURCE_DIR}/../audio/include
-
+        ${CMAKE_CURRENT_SOURCE_DIR}/../streaming/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../cinematic/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../navigation/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../ui/include
 )
 
 # Scene headers require EnTT

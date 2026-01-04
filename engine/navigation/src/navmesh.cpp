@@ -32,13 +32,19 @@ NavMesh::~NavMesh() = default;
 
 NavMesh::NavMesh(NavMesh&& other) noexcept
     : m_navmesh(std::move(other.m_navmesh))
-    , m_settings(other.m_settings) {
+    , m_settings(other.m_settings)
+    , m_supports_tile_cache(other.m_supports_tile_cache)
+    , m_tile_cache_layers(std::move(other.m_tile_cache_layers)) {
+    other.m_supports_tile_cache = false;
 }
 
 NavMesh& NavMesh::operator=(NavMesh&& other) noexcept {
     if (this != &other) {
         m_navmesh = std::move(other.m_navmesh);
         m_settings = other.m_settings;
+        m_supports_tile_cache = other.m_supports_tile_cache;
+        m_tile_cache_layers = std::move(other.m_tile_cache_layers);
+        other.m_supports_tile_cache = false;
     }
     return *this;
 }
@@ -330,6 +336,11 @@ std::vector<NavMesh::DebugVertex> NavMesh::get_debug_geometry() const {
     }
 
     return vertices;
+}
+
+void NavMesh::set_tile_cache_layers(std::vector<std::vector<uint8_t>> layers) {
+    m_tile_cache_layers = std::move(layers);
+    m_supports_tile_cache = !m_tile_cache_layers.empty();
 }
 
 } // namespace engine::navigation

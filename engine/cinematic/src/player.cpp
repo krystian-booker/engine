@@ -378,4 +378,12 @@ void CinematicManager::preload_async(const std::string& path) {
     });
 }
 
+// ============================================================================
+// Cinematic ECS System
+// ============================================================================
+
+void cinematic_update_system(scene::World& world, double dt) {
+    CinematicManager::instance().update(world, static_cast<float>(dt));
+}
+
 } // namespace engine::cinematic

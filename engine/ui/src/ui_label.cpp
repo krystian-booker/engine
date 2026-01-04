@@ -1,8 +1,16 @@
 #include <engine/ui/ui_elements.hpp>
 #include <engine/ui/ui_renderer.hpp>
 #include <engine/ui/ui_context.hpp>
+#include <engine/localization/localization.hpp>
 
 namespace engine::ui {
+
+std::string UILabel::get_resolved_text() const {
+    if (!m_text_key.empty()) {
+        return localization::loc(m_text_key);
+    }
+    return m_text;
+}
 
 UILabel::UILabel() {
     m_style = UIStyle::label();
@@ -15,7 +23,8 @@ UILabel::UILabel(const std::string& text) : UILabel() {
 void UILabel::on_render(UIRenderContext& ctx) {
     render_background(ctx, m_bounds);
 
-    if (!m_text.empty()) {
+    std::string text = get_resolved_text();
+    if (!text.empty()) {
         StyleState state = get_current_state();
         const Vec4& text_color = m_style.text_color.get(state);
 
@@ -46,7 +55,7 @@ void UILabel::on_render(UIRenderContext& ctx) {
                 break;
         }
 
-        ctx.draw_text(m_text, text_pos, m_style.font,
+        ctx.draw_text(text, text_pos, m_style.font,
                       m_style.font_size, text_color, m_style.text_align);
     }
 }
@@ -54,11 +63,12 @@ void UILabel::on_render(UIRenderContext& ctx) {
 Vec2 UILabel::on_measure(Vec2 available_size) {
     Vec2 size = UIElement::on_measure(available_size);
 
-    if (!m_text.empty() && (m_style.width_mode == SizeMode::FitContent ||
-                            m_style.height_mode == SizeMode::FitContent)) {
+    std::string text = get_resolved_text();
+    if (!text.empty() && (m_style.width_mode == SizeMode::FitContent ||
+                          m_style.height_mode == SizeMode::FitContent)) {
         UIContext* ctx = get_ui_context();
         if (ctx) {
-            Vec2 text_size = ctx->font_manager().measure_text(m_style.font, m_text);
+            Vec2 text_size = ctx->font_manager().measure_text(m_style.font, text);
 
             if (m_style.width_mode == SizeMode::FitContent) {
                 size.x = text_size.x + m_style.padding.horizontal();

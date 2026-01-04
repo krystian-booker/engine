@@ -78,6 +78,17 @@ void CameraTrack::evaluate(float time, scene::World& world) {
     // Apply shake
     sampled.position = apply_shake(sampled.position, time);
 
+    // Apply look-at target (overrides keyframe rotation)
+    if (m_look_at_target != scene::NullEntity && world.has<scene::WorldTransform>(m_look_at_target)) {
+        const auto& target_transform = world.get<scene::WorldTransform>(m_look_at_target);
+        Vec3 direction = target_transform.position() - sampled.position;
+        float length = glm::length(direction);
+        if (length > 0.0001f) {
+            direction /= length;
+            sampled.rotation = glm::quatLookAt(direction, Vec3{0.0f, 1.0f, 0.0f});
+        }
+    }
+
     // Apply to target camera entity
     if (m_target_camera != scene::NullEntity) {
         // Apply position/rotation to LocalTransform

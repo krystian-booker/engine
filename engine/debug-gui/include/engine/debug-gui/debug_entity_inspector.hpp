@@ -34,7 +34,7 @@ private:
     void draw_entity_node(scene::Entity entity);
     void draw_inspector();
     void draw_component(const std::string& type_name);
-    void draw_property_editor(const reflect::PropertyInfo& prop, const entt::meta_any& comp_any);
+    void draw_property_editor(const reflect::PropertyInfo& prop, entt::meta_any& comp_any);
 
     scene::World* m_world = nullptr;
     scene::Entity m_selected = scene::NullEntity;

@@ -148,6 +148,19 @@ private:
     void deserialize_light(Light& light, const std::string& json) const;
     void deserialize_particle_emitter(ParticleEmitter& emitter, const std::string& json) const;
 
+    // Custom component serialization (using reflection)
+    bool serialize_custom_component(World& world, Entity entity, const std::string& type_name, std::string& out_json) const;
+    bool deserialize_custom_component(World& world, Entity entity, const std::string& type_name, const std::string& json);
+
+    // Asset handle serialization helpers
+    std::string serialize_asset_handle(const MeshHandle& handle, const char* asset_type) const;
+    std::string serialize_asset_handle(const MaterialHandle& handle, const char* asset_type) const;
+    std::string serialize_asset_handle(const TextureHandle& handle, const char* asset_type) const;
+    
+    template<typename HandleType>
+    HandleType deserialize_asset_handle(const std::string& json, const char* asset_type) const;
+
+
     SerializerConfig m_config;
     std::unordered_map<std::string, ComponentSerializer> m_component_serializers;
     std::unordered_map<std::string, ComponentDeserializer> m_component_deserializers;

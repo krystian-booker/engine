@@ -111,9 +111,20 @@ public:
     // Find entity by name (slow, for editor use)
     Entity find_by_name(const std::string& name) const;
 
+    // Scene metadata
+    const std::string& get_scene_name() const { return m_scene_name; }
+    void set_scene_name(const std::string& name) { m_scene_name = name; }
+    
+    const std::unordered_map<std::string, std::string>& get_scene_metadata() const { return m_scene_metadata; }
+    std::unordered_map<std::string, std::string>& get_scene_metadata() { return m_scene_metadata; }
+
 private:
     entt::registry m_registry;
     uint64_t m_next_uuid = 1;
+    
+    // Scene metadata
+    std::string m_scene_name = "Untitled";
+    std::unordered_map<std::string, std::string> m_scene_metadata;
 };
 
 } // namespace engine::scene

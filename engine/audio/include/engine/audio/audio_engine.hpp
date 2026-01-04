@@ -159,6 +159,7 @@ public:
 
     // Convenience helpers used by cinematic tracks (minimal implementations)
     SoundHandle play(const std::string& path, float volume = 1.0f, bool loop = false);
+    SoundHandle play_3d(const std::string& path, const Vec3& position, float volume = 1.0f, bool loop = false);
     void stop(SoundHandle h);
     void pause(SoundHandle h);
     void resume(SoundHandle h);

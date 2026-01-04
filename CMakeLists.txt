@@ -24,6 +24,8 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
 # Dependencies (bgfx.cmake, EnTT, GLM, etc.)
+set(BGFX_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(BGFX_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
 include(Dependencies)
 
 # Compiler flags

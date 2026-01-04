@@ -1,9 +1,24 @@
 #include <engine/ui/ui_elements.hpp>
 #include <engine/ui/ui_renderer.hpp>
 #include <engine/ui/ui_context.hpp>
+#include <engine/localization/localization.hpp>
 #include <algorithm>
 
 namespace engine::ui {
+
+std::string UIDialog::get_resolved_title() const {
+    if (!m_title_key.empty()) {
+        return localization::loc(m_title_key);
+    }
+    return m_title;
+}
+
+std::string UIDialog::get_resolved_message() const {
+    if (!m_message_key.empty()) {
+        return localization::loc(m_message_key);
+    }
+    return m_message;
+}
 
 UIDialog::UIDialog() {
     m_style = UIStyle::panel();
@@ -100,15 +115,18 @@ void UIDialog::render(UIRenderContext& ctx) {
     float font_size = 14.0f;
     FontHandle font = ui_ctx->font_manager().get_default_font();
 
-    Vec2 title_size = ui_ctx->font_manager().measure_text(font, m_title);
-    Vec2 message_size = ui_ctx->font_manager().measure_text(font, m_message);
+    std::string title = get_resolved_title();
+    std::string message = get_resolved_message();
+
+    Vec2 title_size = ui_ctx->font_manager().measure_text(font, title);
+    Vec2 message_size = ui_ctx->font_manager().measure_text(font, message);
 
     float content_width = std::max({m_dialog_width, title_size.x + m_padding * 2, message_size.x + m_padding * 2});
     float button_area_width = m_dialog_buttons.size() * 80.0f + (m_dialog_buttons.size() - 1) * m_button_spacing;
     content_width = std::max(content_width, button_area_width + m_padding * 2);
 
-    float title_height = m_title.empty() ? 0.0f : 30.0f;
-    float message_height = m_message.empty() ? 0.0f : message_size.y + m_padding;
+    float title_height = title.empty() ? 0.0f : 30.0f;
+    float message_height = message.empty() ? 0.0f : message_size.y + m_padding;
     float button_area_height = m_button_height + m_padding;
 
     float dialog_height = title_height + message_height + button_area_height + m_padding;
@@ -137,17 +155,17 @@ void UIDialog::render(UIRenderContext& ctx) {
     float y = dialog_rect.y + m_padding;
 
     // Draw title
-    if (!m_title.empty()) {
+    if (!title.empty()) {
         Vec2 title_pos(dialog_rect.center().x, y + font_size * 0.5f);
-        ctx.draw_text(m_title, title_pos, font, font_size + 2,
+        ctx.draw_text(title, title_pos, font, font_size + 2,
                       Vec4(1.0f, 1.0f, 1.0f, 1.0f), HAlign::Center);
         y += title_height;
     }
 
     // Draw message
-    if (!m_message.empty()) {
+    if (!message.empty()) {
         Vec2 message_pos(dialog_rect.center().x, y + font_size * 0.5f);
-        ctx.draw_text(m_message, message_pos, font, font_size,
+        ctx.draw_text(message, message_pos, font, font_size,
                       Vec4(0.85f, 0.85f, 0.85f, 1.0f), HAlign::Center);
         y += message_height;
     }

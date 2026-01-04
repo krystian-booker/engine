@@ -47,6 +47,15 @@ extern uint32_t get_active_body_count_impl(PhysicsWorld::Impl* impl);
 extern CollisionFilter& get_collision_filter_impl(PhysicsWorld::Impl* impl);
 extern std::vector<PhysicsBodyId> get_all_body_ids_impl(PhysicsWorld::Impl* impl);
 
+// Buoyancy functions
+extern float get_body_mass_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id);
+extern float get_body_volume_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id);
+extern Vec3 get_body_bounds_min_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id);
+extern Vec3 get_body_bounds_max_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id);
+extern float calculate_submerged_volume_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id, float water_surface_y);
+extern float apply_buoyancy_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id, float water_surface_y, float water_density, float buoyancy_multiplier);
+extern void apply_water_drag_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id, float submerged_fraction, float linear_drag, float angular_drag);
+
 // Constructor and destructor defined in jolt_impl.cpp where Impl is complete
 
 // Move operations need to be in jolt_impl.cpp too since they may destroy Impl
@@ -204,6 +213,36 @@ uint32_t PhysicsWorld::get_active_body_count() const {
 
 std::vector<PhysicsBodyId> PhysicsWorld::get_all_body_ids() const {
     return get_all_body_ids_impl(m_impl.get());
+}
+
+float PhysicsWorld::get_body_mass(PhysicsBodyId id) const {
+    return get_body_mass_impl(m_impl.get(), id);
+}
+
+float PhysicsWorld::get_body_volume(PhysicsBodyId id) const {
+    return get_body_volume_impl(m_impl.get(), id);
+}
+
+Vec3 PhysicsWorld::get_body_bounds_min(PhysicsBodyId id) const {
+    return get_body_bounds_min_impl(m_impl.get(), id);
+}
+
+Vec3 PhysicsWorld::get_body_bounds_max(PhysicsBodyId id) const {
+    return get_body_bounds_max_impl(m_impl.get(), id);
+}
+
+float PhysicsWorld::calculate_submerged_volume(PhysicsBodyId id, float water_surface_y) const {
+    return calculate_submerged_volume_impl(m_impl.get(), id, water_surface_y);
+}
+
+float PhysicsWorld::apply_buoyancy(PhysicsBodyId id, float water_surface_y,
+                                    float water_density, float buoyancy_multiplier) {
+    return apply_buoyancy_impl(m_impl.get(), id, water_surface_y, water_density, buoyancy_multiplier);
+}
+
+void PhysicsWorld::apply_water_drag(PhysicsBodyId id, float submerged_fraction,
+                                     float linear_drag, float angular_drag) {
+    apply_water_drag_impl(m_impl.get(), id, submerged_fraction, linear_drag, angular_drag);
 }
 
 } // namespace engine::physics

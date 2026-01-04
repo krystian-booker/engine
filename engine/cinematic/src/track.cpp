@@ -187,4 +187,18 @@ Vec3 interpolate_bezier(const Vec3& a, const Vec3& b,
            t_cu * b;
 }
 
+template<>
+Quat interpolate_bezier(const Quat& a, const Quat& b,
+                        const Vec2& /*tangent_out*/, const Vec2& /*tangent_in*/,
+                        float t) {
+    // Fallback to slerp for quaternion bezier (tangents are 2D, mapping is ambiguous)
+    return glm::slerp(a, b, t);
+}
+
+template<>
+Quat evaluate_catmull_rom(const Quat& /*p0*/, const Quat& p1, const Quat& p2, const Quat& /*p3*/, float t) {
+    // Fallback to slerp for now - proper squad implementation requires intermediate point calculation
+    return glm::slerp(p1, p2, t);
+}
+
 } // namespace engine::cinematic

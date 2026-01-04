@@ -1,6 +1,7 @@
 #include <engine/scene/scene_serializer.hpp>
 #include <engine/scene/world.hpp>
 #include <engine/scene/transform.hpp>
+#include <engine/reflect/type_registry.hpp>
 #include <engine/core/log.hpp>
 #include <random>
 #include <chrono>
@@ -63,7 +64,7 @@ SceneSerializer::SceneSerializer(const SerializerConfig& config)
 
 std::string SceneSerializer::serialize(World& world) const {
     SerializedScene scene;
-    scene.name = "Scene";  // TODO: Get from world metadata
+    scene.name = world.get_scene_name();
 
     // Get all root entities
     auto roots = get_root_entities(world);
@@ -118,6 +119,12 @@ bool SceneSerializer::deserialize(World& world, const std::string& json) {
     try {
         SerializedScene scene = parse_scene_json(json);
 
+        // Store scene metadata
+        world.set_scene_name(scene.name);
+        for (const auto& [key, value] : scene.metadata) {
+            world.get_scene_metadata()[key] = value;
+        }
+
         // Build UUID to entity mapping for parent resolution
         std::unordered_map<uint64_t, Entity> uuid_to_entity;
 
@@ -167,12 +174,16 @@ bool SceneSerializer::deserialize(World& world, const std::string& json) {
                     ParticleEmitter& emitter = world.emplace_or_replace<ParticleEmitter>(entity);
                     deserialize_particle_emitter(emitter, comp.json_data);
                 } else {
-                    // Try custom deserializer
+                    // Try custom deserializer first
                     auto deserializer_it = m_component_deserializers.find(comp.type_name);
                     if (deserializer_it != m_component_deserializers.end()) {
-                        // Custom component - need type registration
-                        log(LogLevel::Warn, "Custom component deserialization not implemented: {}",
-                            comp.type_name);
+                        // Use registered custom deserializer
+                        deserializer_it->second(nullptr, comp.json_data);
+                    } else {
+                        // Use reflection system to dynamically deserialize
+                        if (!deserialize_custom_component(world, entity, comp.type_name, comp.json_data)) {
+                            log(LogLevel::Warn, "Unknown component type '{}' - skipping", comp.type_name);
+                        }
                     }
                 }
             }
@@ -410,8 +421,8 @@ std::string SceneSerializer::serialize_transform(const LocalTransform& transform
 std::string SceneSerializer::serialize_mesh_renderer(const MeshRenderer& renderer) const {
     std::ostringstream ss;
     ss << "{\n";
-    ss << "  \"mesh\": " << renderer.mesh.id << ",\n";
-    ss << "  \"material\": " << renderer.material.id << ",\n";
+    ss << "  \"mesh\": " << serialize_asset_handle(renderer.mesh, "mesh") << ",\n";
+    ss << "  \"material\": " << serialize_asset_handle(renderer.material, "material") << ",\n";
     ss << "  \"render_layer\": " << static_cast<int>(renderer.render_layer) << ",\n";
     ss << "  \"visible\": " << (renderer.visible ? "true" : "false") << ",\n";
     ss << "  \"cast_shadows\": " << (renderer.cast_shadows ? "true" : "false") << ",\n";
@@ -491,20 +502,24 @@ void SceneSerializer::deserialize_transform(LocalTransform& transform, const std
 }
 
 void SceneSerializer::deserialize_mesh_renderer(MeshRenderer& renderer, const std::string& json) const {
-    std::regex mesh_re(R"("mesh"\s*:\s*(\d+))");
-    std::regex mat_re(R"("material"\s*:\s*(\d+))");
     std::regex layer_re(R"("render_layer"\s*:\s*(\d+))");
     std::regex visible_re(R"("visible"\s*:\s*(true|false))");
     std::regex cast_re(R"("cast_shadows"\s*:\s*(true|false))");
     std::regex recv_re(R"("receive_shadows"\s*:\s*(true|false))");
 
     std::smatch match;
+    
+    // Deserialize asset handles (supports both raw IDs and path-validated handles)
+    std::regex mesh_re(R"("mesh"\s*:\s*(\{[^}]+\}|\d+))");  
     if (std::regex_search(json, match, mesh_re)) {
-        renderer.mesh.id = safe_stoul(match[1].str());
+        renderer.mesh = deserialize_asset_handle<MeshHandle>(match[1].str(), "mesh");
     }
+    
+    std::regex mat_re(R"("material"\s*:\s*(\{[^}]+\}|\d+))");
     if (std::regex_search(json, match, mat_re)) {
-        renderer.material.id = safe_stoul(match[1].str());
+        renderer.material = deserialize_asset_handle<MaterialHandle>(match[1].str(), "material");
     }
+    
     if (std::regex_search(json, match, layer_re)) {
         renderer.render_layer = static_cast<uint8_t>(safe_stoul(match[1].str()));
     }
@@ -964,5 +979,262 @@ size_t count_entities(World& world) {
 }
 
 } // namespace scene_utils
+
+// Custom component serialization/deserialization using reflection
+bool SceneSerializer::serialize_custom_component(World& world, Entity entity, const std::string& type_name, std::string& out_json) const {
+    using namespace engine::reflect;
+    
+    auto& registry = TypeRegistry::instance();
+    auto* type_info = registry.get_type_info(type_name);
+    
+    if (!type_info || !type_info->is_component) {
+        return false;
+    }
+    
+    // Get component from entity
+    auto comp_any = registry.get_component_any(world.registry(), entity, type_name);
+    if (!comp_any) {
+        return false;
+    }
+    
+    // Serialize properties to JSON
+    std::ostringstream ss;
+    ss << std::fixed << std::setprecision(6);
+    ss << "{\n";
+    
+    for (size_t i = 0; i < type_info->properties.size(); ++i) {
+        const auto& prop = type_info->properties[i];
+        if (!prop.getter) continue;
+        
+        auto value = prop.getter(comp_any);
+        if (!value) continue;
+        
+        ss << "  \"" << prop.name << "\": ";
+        
+        // Serialize based on property type
+        auto type_id = value.type().id();
+        if (type_id == entt::type_hash<bool>::value()) {
+            ss << (value.cast<bool>() ? "true" : "false");
+        } else if (type_id == entt::type_hash<int32_t>::value()) {
+            ss << value.cast<int32_t>();
+        } else if (type_id == entt::type_hash<uint32_t>::value()) {
+            ss << value.cast<uint32_t>();
+        } else if (type_id == entt::type_hash<int64_t>::value()) {
+            ss << value.cast<int64_t>();
+        } else if (type_id == entt::type_hash<uint64_t>::value()) {
+            ss << value.cast<uint64_t>();
+        } else if (type_id == entt::type_hash<float>::value()) {
+            ss << value.cast<float>();
+        } else if (type_id == entt::type_hash<double>::value()) {
+            ss << value.cast<double>();
+        } else if (type_id == entt::type_hash<std::string>::value()) {
+            ss << "\"" << value.cast<std::string>() << "\"";
+        } else if (type_id == entt::type_hash<Vec3>::value()) {
+            ss << to_json(value.cast<Vec3>());
+        } else if (type_id == entt::type_hash<Vec4>::value()) {
+            ss << to_json(value.cast<Vec4>());
+        } else if (type_id == entt::type_hash<Quat>::value()) {
+            ss << to_json(value.cast<Quat>());
+        } else {
+            // Unknown type, skip
+            continue;
+        }
+        
+        if (i < type_info->properties.size() - 1) {
+            ss << ",";
+        }
+        ss << "\n";
+    }
+    
+    ss << "}";
+    out_json = ss.str();
+    return true;
+}
+
+bool SceneSerializer::deserialize_custom_component(World& world, Entity entity, const std::string& type_name, const std::string& json) {
+    using namespace engine::reflect;
+    
+    auto& registry = TypeRegistry::instance();
+    auto* type_info = registry.get_type_info(type_name);
+    
+    if (!type_info || !type_info->is_component) {
+        return false;
+    }
+    
+    // Create component on entity
+    if (!registry.add_component_any(world.registry(), entity, type_name)) {
+        return false;
+    }
+    
+    // Get component handle
+    auto comp_any = registry.get_component_any(world.registry(), entity, type_name);
+    if (!comp_any) {
+        return false;
+    }
+    
+    // Parse and set each property
+    for (const auto& prop : type_info->properties) {
+        if (!prop.setter) continue;
+        
+        // Build regex to extract property value from JSON
+        std::string pattern = "\"" + prop.name + "\"\\s*:\\s*";
+        std::regex prop_re(pattern + R"(([^,}\n]+))");
+        std::smatch match;
+        
+        if (!std::regex_search(json, match, prop_re)) {
+            continue;
+        }
+        
+        std::string value_str = match[1].str();
+        
+        // Trim whitespace
+        value_str.erase(0, value_str.find_first_not_of(" \t\r\n"));
+        value_str.erase(value_str.find_last_not_of(" \t\r\n") + 1);
+        
+        // Parse based on property type
+        auto type_id = prop.type.id();
+        entt::meta_any value;
+        
+        if (type_id == entt::type_hash<bool>::value()) {
+            value = entt::meta_any{value_str == "true"};
+        } else if (type_id == entt::type_hash<int32_t>::value()) {
+            value = entt::meta_any{static_cast<int32_t>(std::stoi(value_str))};
+        } else if (type_id == entt::type_hash<uint32_t>::value()) {
+            value = entt::meta_any{static_cast<uint32_t>(std::stoul(value_str))};
+        } else if (type_id == entt::type_hash<int64_t>::value()) {
+            value = entt::meta_any{static_cast<int64_t>(std::stoll(value_str))};
+        } else if (type_id == entt::type_hash<uint64_t>::value()) {
+            value = entt::meta_any{static_cast<uint64_t>(std::stoull(value_str))};
+        } else if (type_id == entt::type_hash<float>::value()) {
+            value = entt::meta_any{safe_stof(value_str)};
+        } else if (type_id == entt::type_hash<double>::value()) {
+            value = entt::meta_any{std::stod(value_str)};
+        } else if (type_id == entt::type_hash<std::string>::value()) {
+            // Remove quotes
+            if (value_str.front() == '"' && value_str.back() == '"') {
+                value_str = value_str.substr(1, value_str.length() - 2);
+            }
+            value = entt::meta_any{value_str};
+        } else if (type_id == entt::type_hash<Vec3>::value()) {
+            value = entt::meta_any{parse_vec3(value_str)};
+        } else if (type_id == entt::type_hash<Vec4>::value()) {
+            value = entt::meta_any{parse_vec4(value_str)};
+        } else if (type_id == entt::type_hash<Quat>::value()) {
+            value = entt::meta_any{parse_quat(value_str)};
+        } else {
+            // Unknown type, skip
+            continue;
+        }
+        
+        if (value) {
+            prop.setter(comp_any, value);
+        }
+    }
+    
+    return true;
+}
+
+// Asset handle serialization helpers
+std::string SceneSerializer::serialize_asset_handle(const MeshHandle& handle, const char* asset_type) const {
+    if (!m_asset_resolver) {
+        // No resolver, just serialize raw ID
+        return std::to_string(handle.id);
+    }
+    
+    // Resolve asset to get path and serialize both ID and path
+    AssetReference ref = m_asset_resolver(handle.id);
+    std::ostringstream ss;
+    ss << "{\"id\": " << handle.id;
+    if (!ref.path.empty()) {
+        ss << ", \"path\": \"" << ref.path << "\"";
+    }
+    ss << "}";
+    return ss.str();
+}
+
+std::string SceneSerializer::serialize_asset_handle(const MaterialHandle& handle, const char* asset_type) const {
+    if (!m_asset_resolver) {
+        return std::to_string(handle.id);
+    }
+    
+    AssetReference ref = m_asset_resolver(handle.id);
+    std::ostringstream ss;
+    ss << "{\"id\": " << handle.id;
+    if (!ref.path.empty()) {
+        ss << ", \"path\": \"" << ref.path << "\"";
+    }
+    ss << "}";
+    return ss.str();
+}
+
+std::string SceneSerializer::serialize_asset_handle(const TextureHandle& handle, const char* asset_type) const {
+    if (!m_asset_resolver) {
+        return std::to_string(handle.id);
+    }
+    
+    AssetReference ref = m_asset_resolver(handle.id);
+    std::ostringstream ss;
+    ss << "{\"id\": " << handle.id;
+    if (!ref.path.empty()) {
+        ss << ", \"path\": \"" << ref.path << "\"";
+    }
+    ss << "}";
+    return ss.str();
+}
+
+template<typename HandleType>
+HandleType SceneSerializer::deserialize_asset_handle(const std::string& json, const char* asset_type) const {
+    HandleType handle;
+    
+    // Check if JSON is an object (contains path) or just a number
+    if (json.find('{') != std::string::npos) {
+        // Parse object with ID and optional path
+        std::regex id_re(R"("id"\s*:\s*(\d+))");
+        // Use standard string escaping to avoid potential raw string literal issues across compilers
+        std::regex path_re("\"path\"\\s*:\\s*\"([^\"]+)\"");
+        std::smatch match;
+        
+        uint32_t id = UINT32_MAX;
+        std::string path;
+        
+        if (std::regex_search(json, match, id_re)) {
+            id = safe_stoul(match[1].str());
+        }
+        if (std::regex_search(json, match, path_re)) {
+            path = match[1].str();
+        }
+        
+        // If we have an asset loader and a path, try to reload/validate
+        if (m_asset_loader && !path.empty()) {
+            AssetReference ref;
+            ref.path = path;
+            ref.type = asset_type;
+            
+            uint32_t loaded_id = m_asset_loader(ref);
+            if (loaded_id != UINT32_MAX) {
+                // Successfully loaded from path
+                if (loaded_id != id && id != UINT32_MAX) {
+                    log(LogLevel::Warn, "Asset ID mismatch for '{}': stored={}, loaded={}. Using loaded ID.",
+                        path, id, loaded_id);
+                }
+                handle.id = loaded_id;
+                return handle;
+            }
+        }
+        
+        // Fall back to stored ID
+        handle.id = id;
+    } else {
+        // Just a raw number
+        handle.id = safe_stoul(json);
+    }
+    
+    return handle;
+}
+
+// Template instantiations for the handle types
+template MeshHandle SceneSerializer::deserialize_asset_handle<MeshHandle>(const std::string&, const char*) const;
+template MaterialHandle SceneSerializer::deserialize_asset_handle<MaterialHandle>(const std::string&, const char*) const;
+template TextureHandle SceneSerializer::deserialize_asset_handle<TextureHandle>(const std::string&, const char*) const;
 
 } // namespace engine::scene

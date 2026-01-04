@@ -6,7 +6,7 @@
 #include <memory>
 #include <functional>
 
-namespace entt { class registry; }
+#include <entt/entity/fwd.hpp>
 
 namespace engine::render {
 

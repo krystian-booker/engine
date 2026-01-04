@@ -146,11 +146,21 @@ void AudioTrack::sort_events() {
 void AudioTrack::process_event(const AudioEvent& event, float /*current_time*/) {
     switch (event.type) {
         case AudioEventType::Play: {
-            audio::SoundHandle handle = m_audio_engine->play(
-                event.sound_path,
-                event.volume * m_master_volume,
-                event.loop
-            );
+            audio::SoundHandle handle;
+            if (event.spatial) {
+                handle = m_audio_engine->play_3d(
+                    event.sound_path,
+                    event.position,
+                    event.volume * m_master_volume,
+                    event.loop
+                );
+            } else {
+                handle = m_audio_engine->play(
+                    event.sound_path,
+                    event.volume * m_master_volume,
+                    event.loop
+                );
+            }
             if (handle.valid()) {
                 m_active_sounds[event.sound_path] = handle;
                 if (event.pitch != 1.0f) {
@@ -183,11 +193,21 @@ void AudioTrack::process_event(const AudioEvent& event, float /*current_time*/) 
             break;
 
         case AudioEventType::FadeIn: {
-            audio::SoundHandle handle = m_audio_engine->play(
-                event.sound_path,
-                0.0f,
-                event.loop
-            );
+            audio::SoundHandle handle;
+            if (event.spatial) {
+                handle = m_audio_engine->play_3d(
+                    event.sound_path,
+                    event.position,
+                    0.0f,
+                    event.loop
+                );
+            } else {
+                handle = m_audio_engine->play(
+                    event.sound_path,
+                    0.0f,
+                    event.loop
+                );
+            }
             if (handle.valid()) {
                 m_active_sounds[event.sound_path] = handle;
                 m_audio_engine->fade_in(handle, event.fade_duration);

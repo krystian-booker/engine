@@ -295,4 +295,55 @@ StyleState UIElement::get_current_state() const {
     return StyleState::Normal;
 }
 
+// Animation convenience methods
+uint32_t UIElement::animate_opacity(float target, float duration,
+                                     EaseType ease, float delay,
+                                     AnimationCallback on_complete) {
+    auto* animator = get_ui_animator();
+    if (!animator) return 0;
+    return animator->animate(this, AnimProperty::Opacity, target, duration, ease, delay, std::move(on_complete));
+}
+
+uint32_t UIElement::animate_position(Vec2 target, float duration,
+                                      EaseType ease, float delay,
+                                      AnimationCallback on_complete) {
+    auto* animator = get_ui_animator();
+    if (!animator) return 0;
+
+    // Animate X and Y separately, only callback on the last one
+    animator->animate(this, AnimProperty::PositionX, target.x, duration, ease, delay, nullptr);
+    return animator->animate(this, AnimProperty::PositionY, target.y, duration, ease, delay, std::move(on_complete));
+}
+
+uint32_t UIElement::animate_size(Vec2 target, float duration,
+                                  EaseType ease, float delay,
+                                  AnimationCallback on_complete) {
+    auto* animator = get_ui_animator();
+    if (!animator) return 0;
+
+    // Animate width and height separately, only callback on the last one
+    animator->animate(this, AnimProperty::SizeWidth, target.x, duration, ease, delay, nullptr);
+    return animator->animate(this, AnimProperty::SizeHeight, target.y, duration, ease, delay, std::move(on_complete));
+}
+
+uint32_t UIElement::animate_scale(float target, float duration,
+                                   EaseType ease, float delay,
+                                   AnimationCallback on_complete) {
+    auto* animator = get_ui_animator();
+    if (!animator) return 0;
+    return animator->animate(this, AnimProperty::Scale, target, duration, ease, delay, std::move(on_complete));
+}
+
+void UIElement::stop_animations() {
+    auto* animator = get_ui_animator();
+    if (animator) {
+        animator->stop_all(this);
+    }
+}
+
+bool UIElement::is_animating() const {
+    auto* animator = get_ui_animator();
+    return animator && animator->is_animating(const_cast<UIElement*>(this));
+}
+
 } // namespace engine::ui

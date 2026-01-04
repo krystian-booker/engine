@@ -4,6 +4,7 @@
 #include <engine/core/math.hpp>
 #include <vector>
 #include <cstdint>
+#include <functional>
 
 namespace engine::scene {
     class World;
@@ -20,6 +21,15 @@ enum class NavAgentState : uint8_t {
     Waiting,        // Waiting for obstacle/crowd
     Arrived,        // Reached destination
     Failed          // Path not found or unreachable
+};
+
+// Agent event types for callbacks
+enum class NavAgentEvent : uint8_t {
+    Arrived,        // Agent reached destination
+    Failed,         // Pathfinding failed or path is unreachable
+    PathBlocked,    // Path became blocked during movement
+    Waiting,        // Agent is waiting (crowd congestion)
+    Rerouted        // Agent recalculated path due to obstacle
 };
 
 // Agent avoidance quality
@@ -48,6 +58,10 @@ struct NavAgentComponent {
     AvoidanceQuality avoidance = AvoidanceQuality::Medium;
     int avoidance_priority = 50;     // 0-99, lower = higher priority
 
+    // Crowd simulation settings
+    bool use_crowd = true;           // Use crowd simulation for local avoidance
+    float separation_weight = 2.0f;  // Weight for separation behavior in crowd
+
     // Path settings
     bool auto_repath = true;         // Automatically recalculate on failure
     float repath_interval = 0.5f;    // Minimum time between repaths
@@ -63,15 +77,25 @@ struct NavAgentComponent {
     float current_speed = 0.0f;      // Current speed magnitude
     bool has_target = false;
 
-    // Path data (runtime)
+    // Path data (runtime - used when not using crowd)
     std::vector<Vec3> path;          // Current path
     size_t path_index = 0;           // Current path segment
     float path_distance = 0.0f;      // Distance remaining on path
     float time_since_repath = 0.0f;  // Time since last path calculation
 
+    // Crowd agent data (runtime - used when using crowd)
+    int crowd_agent_index = -1;      // Index in crowd (-1 if not registered)
+
     // Debug
     bool debug_draw = false;         // Draw path and state
+
+    // Callbacks (runtime - not serialized)
+    std::function<void(NavAgentEvent)> on_event;  // Called on state changes
+    NavAgentState previous_state = NavAgentState::Idle;  // For change detection
 };
+
+// Forward declaration
+class NavCrowd;
 
 // Nav agent system - updates all agents
 class NavAgentSystem {
@@ -79,8 +103,12 @@ public:
     NavAgentSystem();
     ~NavAgentSystem();
 
-    // Initialize with pathfinder
+    // Initialize with pathfinder (simple mode without crowd)
     void init(Pathfinder* pathfinder);
+
+    // Initialize with pathfinder and crowd (enables local avoidance)
+    void init(Pathfinder* pathfinder, NavCrowd* crowd);
+
     void shutdown();
 
     // Set target for agent
@@ -101,13 +129,33 @@ public:
     // Get remaining distance to target
     float get_remaining_distance(scene::World& world, uint32_t entity_id) const;
 
+    // Set event callback for agent
+    void set_callback(scene::World& world, uint32_t entity_id,
+                      std::function<void(NavAgentEvent)> callback);
+
+    // Clear event callback for agent
+    void clear_callback(scene::World& world, uint32_t entity_id);
+
+    // Crowd access
+    NavCrowd* get_crowd() { return m_crowd; }
+    bool has_crowd() const { return m_crowd != nullptr; }
+
     // Crowd simulation settings
     void set_max_agents(int max_agents);
     int get_max_agents() const { return m_max_agents; }
 
 private:
-    // Update single agent
-    void update_agent(NavAgentComponent& agent, Vec3& position, float dt);
+    // Update single agent (simple mode)
+    void update_agent_simple(NavAgentComponent& agent, Vec3& position, float dt);
+
+    // Update single agent (crowd mode)
+    void update_agent_crowd(NavAgentComponent& agent, Vec3& position, float dt);
+
+    // Register agent with crowd
+    void register_crowd_agent(NavAgentComponent& agent, const Vec3& position);
+
+    // Unregister agent from crowd
+    void unregister_crowd_agent(NavAgentComponent& agent);
 
     // Calculate path for agent
     void calculate_path(NavAgentComponent& agent, const Vec3& position);
@@ -119,6 +167,7 @@ private:
     void smooth_path(NavAgentComponent& agent);
 
     Pathfinder* m_pathfinder = nullptr;
+    NavCrowd* m_crowd = nullptr;
     int m_max_agents = 128;
 };
 

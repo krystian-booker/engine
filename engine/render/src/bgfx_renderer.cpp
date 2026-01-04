@@ -978,6 +978,19 @@ public:
         }
     }
 
+    void submit_skybox(RenderView view, TextureHandle cubemap,
+                                const Mat4& inverse_view_proj,
+                                float intensity, float rotation) override {
+        // TODO: Implement skybox rendering
+    }
+
+    void submit_billboard(RenderView view, MeshHandle quad_mesh, TextureHandle texture,
+                                   const Mat4& transform, const Vec4& color,
+                                   const Vec2& uv_offset, const Vec2& uv_scale,
+                                   bool depth_test, bool depth_write) override {
+        // TODO: Implement billboard rendering
+    }
+
     void set_ao_texture(TextureHandle texture) override {
         auto it = m_textures.find(texture.id);
         if (it != m_textures.end()) {

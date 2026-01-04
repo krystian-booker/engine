@@ -18,4 +18,8 @@ namespace engine::cinematic {
 constexpr int VERSION_MAJOR = 1;
 constexpr int VERSION_MINOR = 0;
 
+// ECS system function - updates all active cinematic players
+// Registered in Application::register_engine_systems() at Update phase
+void cinematic_update_system(scene::World& world, double dt);
+
 } // namespace engine::cinematic

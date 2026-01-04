@@ -2,17 +2,111 @@
 #include <engine/scene/world.hpp>
 #include <engine/scene/transform.hpp>
 #include <engine/core/log.hpp>
-#include <algorithm>
 
+// Jolt includes for CharacterVirtual
+#include <Jolt/Jolt.h>
+#include <Jolt/Physics/PhysicsSystem.h>
+#include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
+#include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
+#include <Jolt/Physics/Character/CharacterVirtual.h>
+#include <Jolt/Core/TempAllocator.h>
+
+#include <algorithm>
 
 namespace engine::physics {
 
-// Simple implementation without Jolt internals
-// A full implementation would use Jolt's CharacterVirtual class
+using namespace JPH;
+
+// Helper to convert engine Vec3 to Jolt Vec3
+static JPH::Vec3 to_jolt(const Vec3& v) {
+    return JPH::Vec3(v.x, v.y, v.z);
+}
+
+// Helper to convert Jolt Vec3 to engine Vec3
+static Vec3 to_engine(const JPH::Vec3& v) {
+    return Vec3{v.GetX(), v.GetY(), v.GetZ()};
+}
+
+#ifdef JPH_DOUBLE_PRECISION
+static Vec3 to_engine(const JPH::RVec3& v) {
+    return Vec3{
+        static_cast<float>(v.GetX()),
+        static_cast<float>(v.GetY()),
+        static_cast<float>(v.GetZ())
+    };
+}
+#endif
+
+// Helper to convert engine Quat to Jolt Quat
+static JPH::Quat to_jolt(const core::Quat& q) {
+    return JPH::Quat(q.x, q.y, q.z, q.w);
+}
+
+// Helper to convert Jolt Quat to engine Quat
+static core::Quat to_engine(const JPH::Quat& q) {
+    return core::Quat{q.GetW(), q.GetX(), q.GetY(), q.GetZ()};
+}
+
+// Broad phase layer filter that allows all layers
+class CharacterBroadPhaseLayerFilter : public BroadPhaseLayerFilter {
+public:
+    bool ShouldCollide(BroadPhaseLayer) const override { return true; }
+};
+
+// Object layer filter based on layer mask
+class CharacterObjectLayerFilter : public ObjectLayerFilter {
+public:
+    explicit CharacterObjectLayerFilter(uint16_t mask) : m_mask(mask) {}
+
+    bool ShouldCollide(ObjectLayer layer) const override {
+        if (m_mask == 0) return false;
+        const uint32_t layer_index = static_cast<uint32_t>(layer);
+        if (layer_index >= 16) return false;
+        return (m_mask & (1u << layer_index)) != 0;
+    }
+
+private:
+    uint16_t m_mask;
+};
+
+// Body filter that ignores specific bodies
+class CharacterBodyFilter : public BodyFilter {
+public:
+    bool ShouldCollide(const BodyID&) const override { return true; }
+    bool ShouldCollideLocked(const Body&) const override { return true; }
+};
+
+// Shape filter
+class CharacterShapeFilter : public ShapeFilter {
+public:
+    bool ShouldCollide(const Shape*, const SubShapeID&) const override { return true; }
+};
+
+// Character contact listener for handling contacts
+class EngineCharacterContactListener : public JPH::CharacterContactListener {
+public:
+    void OnAdjustBodyVelocity(const CharacterVirtual*, const Body&, JPH::Vec3&, JPH::Vec3&) override {}
+
+    bool OnContactValidate(const CharacterVirtual*, const BodyID&, const SubShapeID&) override {
+        return true;
+    }
+
+    void OnContactAdded(const CharacterVirtual*, const BodyID&, const SubShapeID&,
+                        RVec3Arg, JPH::Vec3Arg, CharacterContactSettings&) override {}
+
+    void OnContactSolve(const CharacterVirtual*, const BodyID&, const SubShapeID&,
+                        RVec3Arg, JPH::Vec3Arg, JPH::Vec3Arg, const PhysicsMaterial*,
+                        JPH::Vec3Arg, JPH::Vec3&) override {}
+};
 
 struct CharacterController::Impl {
-    // Jolt-specific data would go here
-    // For now, we use a simplified physics simulation
+    Ref<CharacterVirtual> character;
+    Ref<Shape> shape;
+    EngineCharacterContactListener contact_listener;
+
+    // Cached physics system pointer
+    PhysicsSystem* physics_system = nullptr;
+    TempAllocator* temp_allocator = nullptr;
 };
 
 CharacterController::CharacterController()
@@ -28,10 +122,71 @@ CharacterController::CharacterController(CharacterController&&) noexcept = defau
 CharacterController& CharacterController::operator=(CharacterController&&) noexcept = default;
 
 void CharacterController::init(PhysicsWorld& world, const CharacterSettings& settings) {
+    if (m_initialized) {
+        shutdown();
+    }
+
     m_world = &world;
     m_settings = settings;
     m_position = settings.position;
     m_rotation = settings.rotation;
+
+    // Get Jolt physics system
+    m_impl->physics_system = static_cast<PhysicsSystem*>(world.get_jolt_system());
+    m_impl->temp_allocator = static_cast<TempAllocator*>(world.get_temp_allocator());
+
+    if (!m_impl->physics_system || !m_impl->temp_allocator) {
+        core::log(core::LogLevel::Error, "CharacterController::init failed: PhysicsWorld not initialized");
+        return;
+    }
+
+    // Create capsule shape for character
+    // Jolt capsule is oriented along Y axis, total height = 2*half_height + 2*radius
+    float half_height = (settings.height - 2.0f * settings.radius) * 0.5f;
+    if (half_height < 0.01f) {
+        half_height = 0.01f;
+    }
+
+    // Create a capsule and offset it so the bottom is at y=0
+    Ref<CapsuleShape> capsule = new CapsuleShape(half_height, settings.radius);
+
+    // Offset the shape so character origin is at feet
+    float center_offset_y = half_height + settings.radius;
+    RotatedTranslatedShapeSettings offset_settings(
+        JPH::Vec3(0.0f, center_offset_y, 0.0f),
+        JPH::Quat::sIdentity(),
+        capsule
+    );
+    auto result = offset_settings.Create();
+    if (!result.IsValid()) {
+        core::log(core::LogLevel::Error, "CharacterController::init failed: Could not create character shape");
+        return;
+    }
+    m_impl->shape = result.Get();
+
+    // Create CharacterVirtual settings
+    CharacterVirtualSettings char_settings;
+    char_settings.mMaxSlopeAngle = glm::radians(settings.max_slope_angle);
+    char_settings.mMaxStrength = settings.push_force;
+    char_settings.mShape = m_impl->shape;
+    char_settings.mMass = settings.mass;
+    char_settings.mPredictiveContactDistance = settings.skin_width;
+    char_settings.mPenetrationRecoverySpeed = 1.0f;
+    char_settings.mCharacterPadding = 0.02f;
+    char_settings.mUp = JPH::Vec3(0.0f, 1.0f, 0.0f);
+    char_settings.mSupportingVolume = Plane(JPH::Vec3(0.0f, 1.0f, 0.0f), -settings.radius);
+
+    // Create the character
+    m_impl->character = new CharacterVirtual(
+        &char_settings,
+        RVec3(settings.position.x, settings.position.y, settings.position.z),
+        to_jolt(settings.rotation),
+        0,  // User data
+        m_impl->physics_system
+    );
+
+    m_impl->character->SetListener(&m_impl->contact_listener);
+
     m_initialized = true;
 
     core::log(core::LogLevel::Debug, "CharacterController initialized at ({}, {}, {})",
@@ -41,6 +196,10 @@ void CharacterController::init(PhysicsWorld& world, const CharacterSettings& set
 void CharacterController::shutdown() {
     if (!m_initialized) return;
 
+    m_impl->character = nullptr;
+    m_impl->shape = nullptr;
+    m_impl->physics_system = nullptr;
+    m_impl->temp_allocator = nullptr;
     m_world = nullptr;
     m_initialized = false;
 }
@@ -51,17 +210,29 @@ bool CharacterController::is_initialized() const {
 
 void CharacterController::set_position(const Vec3& pos) {
     m_position = pos;
+    if (m_impl->character) {
+        m_impl->character->SetPosition(RVec3(pos.x, pos.y, pos.z));
+    }
 }
 
 Vec3 CharacterController::get_position() const {
+    if (m_impl->character) {
+        return to_engine(m_impl->character->GetPosition());
+    }
     return m_position;
 }
 
 void CharacterController::set_rotation(const Quat& rot) {
     m_rotation = rot;
+    if (m_impl->character) {
+        m_impl->character->SetRotation(to_jolt(rot));
+    }
 }
 
 Quat CharacterController::get_rotation() const {
+    if (m_impl->character) {
+        return to_engine(m_impl->character->GetRotation());
+    }
     return m_rotation;
 }
 
@@ -95,9 +266,9 @@ bool CharacterController::can_jump() const {
 }
 
 void CharacterController::update(float dt) {
-    if (!m_initialized || !m_enabled || !m_world) return;
+    if (!m_initialized || !m_enabled || !m_world || !m_impl->character) return;
 
-    // Update ground state
+    // Update ground state from CharacterVirtual
     update_ground_state(dt);
 
     // Handle jump buffering
@@ -123,16 +294,49 @@ void CharacterController::update(float dt) {
     // Apply gravity
     apply_gravity(dt);
 
-    // Handle step up for stairs/small obstacles
-    handle_step_up();
+    // Calculate desired velocity for the character
+    JPH::Vec3 desired_velocity = to_jolt(m_velocity);
 
-    // Update position
-    m_position += m_velocity * dt;
+    // Handle moving platforms - add ground velocity
+    if (m_ground_state.on_ground && m_ground_state.ground_body.valid()) {
+        desired_velocity += to_jolt(m_ground_state.ground_velocity);
+    }
 
-    // Ground clamping when on ground
-    if (m_ground_state.on_ground && m_velocity.y <= 0.0f) {
-        // Project position onto ground
-        // In a full implementation, this would use the ground contact point
+    // Set up filters for collision
+    CharacterBroadPhaseLayerFilter broad_phase_filter;
+    CharacterObjectLayerFilter object_filter(m_settings.collide_with);
+    CharacterBodyFilter body_filter;
+    CharacterShapeFilter shape_filter;
+
+    // Use ExtendedUpdate for proper stair stepping and collision
+    CharacterVirtual::ExtendedUpdateSettings update_settings;
+    update_settings.mStickToFloorStepDown = JPH::Vec3(0.0f, -m_settings.step_height, 0.0f);
+    update_settings.mWalkStairsStepUp = JPH::Vec3(0.0f, m_settings.step_height, 0.0f);
+    update_settings.mWalkStairsMinStepForward = 0.02f;
+    update_settings.mWalkStairsStepForwardTest = 0.15f;
+    update_settings.mWalkStairsCosAngleForwardContact = glm::cos(glm::radians(75.0f));
+    update_settings.mWalkStairsStepDownExtra = JPH::Vec3::sZero();
+
+    m_impl->character->ExtendedUpdate(
+        dt,
+        to_jolt(m_world->get_gravity() * m_gravity_scale),
+        update_settings,
+        broad_phase_filter,
+        object_filter,
+        body_filter,
+        shape_filter,
+        *m_impl->temp_allocator
+    );
+
+    // Update velocity based on character's actual movement
+    m_impl->character->SetLinearVelocity(desired_velocity);
+
+    // Get updated position from character
+    m_position = to_engine(m_impl->character->GetPosition());
+
+    // Snap vertical velocity if grounded and moving down
+    if (m_ground_state.on_ground && m_velocity.y < 0.0f) {
+        m_velocity.y = 0.0f;
     }
 
     // Reset jump state when landing
@@ -241,54 +445,68 @@ void CharacterController::teleport(const Vec3& position, const Quat& rotation) {
     m_position = position;
     m_rotation = rotation;
     m_velocity = Vec3{0.0f};
+
+    if (m_impl->character) {
+        m_impl->character->SetPosition(RVec3(position.x, position.y, position.z));
+        m_impl->character->SetRotation(to_jolt(rotation));
+        m_impl->character->SetLinearVelocity(JPH::Vec3::sZero());
+    }
+
     refresh_ground_state();
 }
 
 void CharacterController::refresh_ground_state() {
-    // Use a small dt for manual refresh - this only affects time_since_grounded accumulation
-    // A more robust approach would store last dt, but 0 is safe for refresh purposes
     update_ground_state(0.0f);
 }
 
 void CharacterController::update_ground_state(float dt) {
-    if (!m_world) return;
+    if (!m_impl->character) return;
 
     m_ground_state.was_on_ground = m_ground_state.on_ground;
 
-    // Raycast down to detect ground
-    float cast_distance = m_settings.skin_width + 0.1f;
-    Vec3 cast_origin = m_position;
-    cast_origin.y += m_settings.radius;  // Start from bottom of capsule
+    // Get ground state from CharacterVirtual
+    CharacterVirtual::EGroundState jolt_ground_state = m_impl->character->GetGroundState();
 
-    RaycastHit hit = m_world->raycast(cast_origin, Vec3{0.0f, -1.0f, 0.0f}, cast_distance);
-
-    if (hit.hit) {
-        m_ground_state.ground_normal = hit.normal;
-        m_ground_state.ground_point = hit.point;
-        m_ground_state.ground_body = hit.body;
-
-        // Calculate slope angle
-        float dot = glm::dot(hit.normal, Vec3{0.0f, 1.0f, 0.0f});
-        m_ground_state.slope_angle = std::acos(glm::clamp(dot, -1.0f, 1.0f));
-
-        float max_slope_rad = glm::radians(m_settings.max_slope_angle);
-
-        if (m_ground_state.slope_angle <= max_slope_rad) {
+    switch (jolt_ground_state) {
+        case CharacterVirtual::EGroundState::OnGround:
             m_ground_state.on_ground = true;
-            m_ground_state.on_slope = m_ground_state.slope_angle > 0.01f;
             m_ground_state.sliding = false;
             m_ground_state.time_since_grounded = 0.0f;
-        } else {
-            // Too steep - sliding
+            break;
+
+        case CharacterVirtual::EGroundState::OnSteepGround:
             m_ground_state.on_ground = false;
             m_ground_state.on_slope = true;
             m_ground_state.sliding = true;
-        }
+            break;
+
+        case CharacterVirtual::EGroundState::NotSupported:
+        case CharacterVirtual::EGroundState::InAir:
+        default:
+            m_ground_state.on_ground = false;
+            m_ground_state.on_slope = false;
+            m_ground_state.sliding = false;
+            break;
+    }
+
+    // Get ground normal and velocity
+    if (jolt_ground_state != CharacterVirtual::EGroundState::InAir) {
+        m_ground_state.ground_normal = to_engine(m_impl->character->GetGroundNormal());
+        m_ground_state.ground_velocity = to_engine(m_impl->character->GetGroundVelocity());
+        m_ground_state.ground_point = to_engine(m_impl->character->GetGroundPosition());
+
+        // Calculate slope angle
+        float dot = glm::dot(m_ground_state.ground_normal, Vec3{0.0f, 1.0f, 0.0f});
+        m_ground_state.slope_angle = std::acos(glm::clamp(dot, -1.0f, 1.0f));
+        m_ground_state.on_slope = m_ground_state.slope_angle > 0.01f;
+
+        // Map ground body ID - we'd need to look it up from Jolt's BodyID
+        // For now, just use an invalid ID unless we implement the mapping
+        m_ground_state.ground_body = PhysicsBodyId{};
     } else {
-        m_ground_state.on_ground = false;
-        m_ground_state.on_slope = false;
-        m_ground_state.sliding = false;
         m_ground_state.ground_normal = Vec3{0.0f, 1.0f, 0.0f};
+        m_ground_state.ground_velocity = Vec3{0.0f};
+        m_ground_state.slope_angle = 0.0f;
     }
 
     // Update time since grounded
@@ -305,8 +523,8 @@ void CharacterController::apply_movement(float dt) {
     // Project to horizontal plane
     forward.y = 0.0f;
     right.y = 0.0f;
-    forward = glm::normalize(forward);
-    right = glm::normalize(right);
+    if (glm::length(forward) > 0.001f) forward = glm::normalize(forward);
+    if (glm::length(right) > 0.001f) right = glm::normalize(right);
 
     // Calculate desired velocity
     Vec3 desired_velocity = (right * m_movement_input.x + forward * m_movement_input.z) * m_movement_speed;
@@ -315,7 +533,6 @@ void CharacterController::apply_movement(float dt) {
     Vec3 current_horizontal{m_velocity.x, 0.0f, m_velocity.z};
 
     float control = m_ground_state.on_ground ? 1.0f : m_air_control;
-    float friction = m_ground_state.on_ground ? m_friction : m_air_friction;
 
     // Apply friction/deceleration when no input
     if (glm::length(m_movement_input) < 0.01f) {
@@ -323,7 +540,11 @@ void CharacterController::apply_movement(float dt) {
         float speed = glm::length(current_horizontal);
         if (speed > 0.0f) {
             float new_speed = std::max(0.0f, speed - decel);
-            current_horizontal = glm::normalize(current_horizontal) * new_speed;
+            if (speed > 0.001f) {
+                current_horizontal = glm::normalize(current_horizontal) * new_speed;
+            } else {
+                current_horizontal = Vec3{0.0f};
+            }
         }
     } else {
         // Accelerate towards desired velocity
@@ -337,11 +558,15 @@ void CharacterController::apply_movement(float dt) {
         current_horizontal += velocity_diff;
     }
 
-    // Apply friction
-    float friction_force = friction * dt;
-    float horizontal_speed = glm::length(current_horizontal);
-    if (horizontal_speed > friction_force && m_ground_state.on_ground && glm::length(m_movement_input) < 0.01f) {
-        current_horizontal -= glm::normalize(current_horizontal) * friction_force;
+    // Apply friction when grounded and no input
+    if (m_ground_state.on_ground && glm::length(m_movement_input) < 0.01f) {
+        float friction_force = m_friction * dt;
+        float horizontal_speed = glm::length(current_horizontal);
+        if (horizontal_speed > friction_force) {
+            current_horizontal -= glm::normalize(current_horizontal) * friction_force;
+        } else {
+            current_horizontal = Vec3{0.0f};
+        }
     }
 
     // Update velocity
@@ -354,7 +579,6 @@ void CharacterController::apply_movement(float dt) {
         slide_dir.y = 0.0f;
         if (glm::length(slide_dir) > 0.01f) {
             slide_dir = glm::normalize(slide_dir);
-            // Use world gravity magnitude for slide acceleration
             Vec3 gravity = m_world->get_gravity();
             float gravity_magnitude = std::abs(gravity.y);
             m_velocity += slide_dir * gravity_magnitude * dt;
@@ -375,37 +599,8 @@ void CharacterController::apply_gravity(float dt) {
 }
 
 void CharacterController::handle_step_up() {
-    // Simplified step-up handling
-    // A full implementation would cast a shape forward, then up, then down
-    // to detect and climb small steps
-
-    if (!m_ground_state.on_ground || !m_world) return;
-
-    Vec3 move_dir{m_velocity.x, 0.0f, m_velocity.z};
-    float move_speed = glm::length(move_dir);
-
-    if (move_speed < 0.01f) return;
-
-    move_dir /= move_speed;
-
-    // Cast forward to check for obstacle
-    RaycastHit forward_hit = m_world->raycast(
-        m_position + Vec3{0.0f, m_settings.step_height * 0.5f, 0.0f},
-        move_dir,
-        m_settings.radius + 0.1f
-    );
-
-    if (forward_hit.hit) {
-        // Cast from step height to check if we can step up
-        Vec3 step_origin = m_position + Vec3{0.0f, m_settings.step_height + 0.05f, 0.0f} + move_dir * (m_settings.radius + 0.1f);
-        RaycastHit down_hit = m_world->raycast(step_origin, Vec3{0.0f, -1.0f, 0.0f}, m_settings.step_height + 0.1f);
-
-        if (down_hit.hit && down_hit.distance < m_settings.step_height) {
-            // Can step up - adjust position
-            float step_up_amount = m_settings.step_height - down_hit.distance + 0.05f;
-            m_position.y += step_up_amount;
-        }
-    }
+    // Step-up is handled by CharacterVirtual::ExtendedUpdate
+    // This function is kept for API compatibility but no longer needed
 }
 
 // System function

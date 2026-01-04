@@ -1,4 +1,5 @@
 #include <engine/navigation/nav_agent.hpp>
+#include <engine/navigation/nav_crowd.hpp>
 #include <engine/scene/world.hpp>
 #include <engine/scene/components.hpp>
 #include <engine/core/log.hpp>
@@ -12,11 +13,20 @@ NavAgentSystem::~NavAgentSystem() = default;
 
 void NavAgentSystem::init(Pathfinder* pathfinder) {
     m_pathfinder = pathfinder;
-    core::log(core::LogLevel::Info, "NavAgentSystem initialized");
+    m_crowd = nullptr;
+    core::log(core::LogLevel::Info, "NavAgentSystem initialized (simple mode)");
+}
+
+void NavAgentSystem::init(Pathfinder* pathfinder, NavCrowd* crowd) {
+    m_pathfinder = pathfinder;
+    m_crowd = crowd;
+    core::log(core::LogLevel::Info, "NavAgentSystem initialized (crowd mode, max {} agents)",
+              crowd ? crowd->get_max_agents() : 0);
 }
 
 void NavAgentSystem::shutdown() {
     m_pathfinder = nullptr;
+    m_crowd = nullptr;
 }
 
 void NavAgentSystem::set_destination(scene::World& world, uint32_t entity_id, const Vec3& target) {
@@ -42,8 +52,23 @@ void NavAgentSystem::set_destination(scene::World& world, uint32_t entity_id, co
     agent->has_target = true;
     agent->state = NavAgentState::Moving;
 
-    // Calculate initial path
-    calculate_path(*agent, position);
+    // Handle crowd mode
+    if (m_crowd && agent->use_crowd) {
+        // Register with crowd if not already
+        if (agent->crowd_agent_index < 0) {
+            register_crowd_agent(*agent, position);
+        }
+
+        // Set target in crowd
+        if (agent->crowd_agent_index >= 0) {
+            CrowdAgentHandle handle;
+            handle.index = agent->crowd_agent_index;
+            m_crowd->set_target(handle, target);
+        }
+    } else {
+        // Simple mode - calculate path directly
+        calculate_path(*agent, position);
+    }
 }
 
 void NavAgentSystem::stop(scene::World& world, uint32_t entity_id) {
@@ -62,6 +87,13 @@ void NavAgentSystem::stop(scene::World& world, uint32_t entity_id) {
     agent->path_index = 0;
     agent->state = NavAgentState::Idle;
     agent->velocity = Vec3(0.0f);
+
+    // Stop crowd agent if using crowd
+    if (m_crowd && agent->crowd_agent_index >= 0) {
+        CrowdAgentHandle handle;
+        handle.index = agent->crowd_agent_index;
+        m_crowd->stop(handle);
+    }
 }
 
 void NavAgentSystem::warp(scene::World& world, uint32_t entity_id, const Vec3& position) {
@@ -82,8 +114,21 @@ void NavAgentSystem::warp(scene::World& world, uint32_t entity_id, const Vec3& p
         agent->path_index = 0;
         agent->velocity = Vec3(0.0f);
 
-        // Recalculate path if we have a target
-        if (agent->has_target) {
+        // Handle crowd mode
+        if (m_crowd && agent->crowd_agent_index >= 0) {
+            // Warp crowd agent - need to remove and re-add
+            unregister_crowd_agent(*agent);
+            if (agent->use_crowd) {
+                register_crowd_agent(*agent, position);
+                // Re-set target if we had one
+                if (agent->has_target && agent->crowd_agent_index >= 0) {
+                    CrowdAgentHandle handle;
+                    handle.index = agent->crowd_agent_index;
+                    m_crowd->set_target(handle, agent->target);
+                }
+            }
+        } else if (agent->has_target) {
+            // Simple mode - recalculate path
             calculate_path(*agent, position);
         }
     }
@@ -94,6 +139,11 @@ void NavAgentSystem::update(scene::World& world, float dt) {
         return;
     }
 
+    // Update crowd simulation first (if using crowd mode)
+    if (m_crowd && m_crowd->is_initialized()) {
+        m_crowd->update(dt);
+    }
+
     auto view = world.registry().view<NavAgentComponent, scene::LocalTransform>();
 
     for (auto entity : view) {
@@ -101,12 +151,43 @@ void NavAgentSystem::update(scene::World& world, float dt) {
         auto& transform = view.get<scene::LocalTransform>(entity);
 
         Vec3 position = transform.position;
-        update_agent(agent, position, dt);
+
+        // Choose update mode based on agent settings and crowd availability
+        if (m_crowd && agent.use_crowd && agent.crowd_agent_index >= 0) {
+            update_agent_crowd(agent, position, dt);
+        } else {
+            update_agent_simple(agent, position, dt);
+        }
+
         transform.position = position;
+
+        // Fire callback if state changed
+        if (agent.on_event && agent.state != agent.previous_state) {
+            NavAgentEvent event;
+            switch (agent.state) {
+                case NavAgentState::Arrived:
+                    event = NavAgentEvent::Arrived;
+                    break;
+                case NavAgentState::Failed:
+                    event = NavAgentEvent::Failed;
+                    break;
+                case NavAgentState::Waiting:
+                    event = NavAgentEvent::Waiting;
+                    break;
+                default:
+                    // Don't fire for Idle or Moving transitions
+                    agent.previous_state = agent.state;
+                    continue;
+            }
+            agent.on_event(event);
+            agent.previous_state = agent.state;
+        } else {
+            agent.previous_state = agent.state;
+        }
     }
 }
 
-void NavAgentSystem::update_agent(NavAgentComponent& agent, Vec3& position, float dt) {
+void NavAgentSystem::update_agent_simple(NavAgentComponent& agent, Vec3& position, float dt) {
     if (!agent.has_target) {
         agent.state = NavAgentState::Idle;
         return;
@@ -129,6 +210,73 @@ void NavAgentSystem::update_agent(NavAgentComponent& agent, Vec3& position, floa
 
     // Follow path
     follow_path(agent, position, dt);
+}
+
+void NavAgentSystem::update_agent_crowd(NavAgentComponent& agent, Vec3& position, float dt) {
+    if (!m_crowd || agent.crowd_agent_index < 0) {
+        // Fall back to simple mode
+        update_agent_simple(agent, position, dt);
+        return;
+    }
+
+    CrowdAgentHandle handle;
+    handle.index = agent.crowd_agent_index;
+
+    // Get state from crowd
+    CrowdAgentState crowd_state = m_crowd->get_agent_state(handle);
+
+    // Update position from crowd
+    position = crowd_state.position;
+    agent.velocity = crowd_state.velocity;
+    agent.current_speed = glm::length(agent.velocity);
+
+    // Update agent state based on crowd state
+    if (!agent.has_target) {
+        agent.state = NavAgentState::Idle;
+    } else if (crowd_state.at_target) {
+        agent.state = NavAgentState::Arrived;
+        agent.has_target = false;
+    } else if (crowd_state.partial_path) {
+        agent.state = NavAgentState::Waiting;
+    } else {
+        agent.state = NavAgentState::Moving;
+    }
+
+    // Calculate remaining distance
+    if (agent.has_target) {
+        agent.path_distance = glm::length(position - agent.target);
+    } else {
+        agent.path_distance = 0.0f;
+    }
+}
+
+void NavAgentSystem::register_crowd_agent(NavAgentComponent& agent, const Vec3& position) {
+    if (!m_crowd) return;
+
+    CrowdAgentParams params;
+    params.radius = agent.avoidance_radius;
+    params.height = agent.height;
+    params.max_acceleration = agent.acceleration;
+    params.max_speed = agent.speed;
+    params.separation_weight = agent.separation_weight;
+    params.avoidance_quality = static_cast<int>(agent.avoidance);
+    params.obstacle_avoidance_type = static_cast<int>(agent.avoidance);
+
+    CrowdAgentHandle handle = m_crowd->add_agent(position, params);
+    agent.crowd_agent_index = handle.index;
+
+    if (handle.valid()) {
+        core::log(core::LogLevel::Debug, "Registered crowd agent at index {}", handle.index);
+    }
+}
+
+void NavAgentSystem::unregister_crowd_agent(NavAgentComponent& agent) {
+    if (!m_crowd || agent.crowd_agent_index < 0) return;
+
+    CrowdAgentHandle handle;
+    handle.index = agent.crowd_agent_index;
+    m_crowd->remove_agent(handle);
+    agent.crowd_agent_index = -1;
 }
 
 void NavAgentSystem::calculate_path(NavAgentComponent& agent, const Vec3& position) {
@@ -318,6 +466,35 @@ float NavAgentSystem::get_remaining_distance(scene::World& world, uint32_t entit
 
 void NavAgentSystem::set_max_agents(int max_agents) {
     m_max_agents = max_agents;
+}
+
+void NavAgentSystem::set_callback(scene::World& world, uint32_t entity_id,
+                                  std::function<void(NavAgentEvent)> callback) {
+    auto entity = static_cast<entt::entity>(entity_id);
+    if (!world.registry().valid(entity)) {
+        return;
+    }
+
+    auto* agent = world.registry().try_get<NavAgentComponent>(entity);
+    if (!agent) {
+        return;
+    }
+
+    agent->on_event = std::move(callback);
+}
+
+void NavAgentSystem::clear_callback(scene::World& world, uint32_t entity_id) {
+    auto entity = static_cast<entt::entity>(entity_id);
+    if (!world.registry().valid(entity)) {
+        return;
+    }
+
+    auto* agent = world.registry().try_get<NavAgentComponent>(entity);
+    if (!agent) {
+        return;
+    }
+
+    agent->on_event = nullptr;
 }
 
 } // namespace engine::navigation

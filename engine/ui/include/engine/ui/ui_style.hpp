@@ -86,6 +86,7 @@ struct UIStyle {
 
     // Effects
     float opacity = 1.0f;
+    float scale = 1.0f;
 
     // Constructor with common defaults
     static UIStyle panel() {

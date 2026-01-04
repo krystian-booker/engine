@@ -1,8 +1,42 @@
 #include <engine/render/ssr.hpp>
+#include <engine/core/log.hpp>
 #include <cmath>
 #include <algorithm>
+#include <fstream>
 
 namespace engine::render {
+
+using namespace engine::core;
+
+// Shader loading helpers
+static bgfx::ShaderHandle load_ssr_shader(const std::string& path) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) return BGFX_INVALID_HANDLE;
+
+    std::streampos pos = file.tellg();
+    if (pos <= 0) return BGFX_INVALID_HANDLE;
+
+    auto size = static_cast<std::streamsize>(pos);
+    file.seekg(0, std::ios::beg);
+
+    const bgfx::Memory* mem = bgfx::alloc(static_cast<uint32_t>(size) + 1);
+    file.read(reinterpret_cast<char*>(mem->data), size);
+    if (file.gcount() != size) return BGFX_INVALID_HANDLE;
+
+    mem->data[size] = '\0';
+    return bgfx::createShader(mem);
+}
+
+static std::string get_ssr_shader_path() {
+    auto type = bgfx::getRendererType();
+    switch (type) {
+        case bgfx::RendererType::Direct3D11:
+        case bgfx::RendererType::Direct3D12: return "shaders/dx11/";
+        case bgfx::RendererType::Vulkan: return "shaders/spirv/";
+        case bgfx::RendererType::OpenGL: return "shaders/glsl/";
+        default: return "shaders/spirv/";
+    }
+}
 
 // Global instance
 static SSRSystem* s_ssr_system = nullptr;
@@ -202,12 +236,67 @@ void SSRSystem::destroy_textures() {
 }
 
 void SSRSystem::create_programs() {
-    // Programs would be loaded from compiled shaders
-    // For now, these are placeholder handles
-    m_hiz_program = BGFX_INVALID_HANDLE;
-    m_trace_program = BGFX_INVALID_HANDLE;
-    m_resolve_program = BGFX_INVALID_HANDLE;
-    m_composite_program = BGFX_INVALID_HANDLE;
+    std::string path = get_ssr_shader_path();
+
+    // Load fullscreen vertex shader (shared by all SSR passes)
+    bgfx::ShaderHandle vs = load_ssr_shader(path + "vs_fullscreen.sc.bin");
+    if (!bgfx::isValid(vs)) {
+        log(LogLevel::Warn, "Failed to load SSR vertex shader");
+        return;
+    }
+
+    // Hi-Z program
+    {
+        bgfx::ShaderHandle fs = load_ssr_shader(path + "fs_ssr_hiz.sc.bin");
+        if (bgfx::isValid(fs)) {
+            m_hiz_program = bgfx::createProgram(vs, fs, false);
+            bgfx::destroy(fs);
+            log(LogLevel::Debug, "SSR Hi-Z shader loaded");
+        } else {
+            log(LogLevel::Warn, "Failed to load SSR Hi-Z fragment shader");
+        }
+    }
+
+    // Trace program
+    {
+        bgfx::ShaderHandle fs = load_ssr_shader(path + "fs_ssr_trace.sc.bin");
+        if (bgfx::isValid(fs)) {
+            m_trace_program = bgfx::createProgram(vs, fs, false);
+            bgfx::destroy(fs);
+            log(LogLevel::Debug, "SSR trace shader loaded");
+        } else {
+            log(LogLevel::Warn, "Failed to load SSR trace fragment shader");
+        }
+    }
+
+    // Resolve program
+    {
+        bgfx::ShaderHandle fs = load_ssr_shader(path + "fs_ssr_resolve.sc.bin");
+        if (bgfx::isValid(fs)) {
+            m_resolve_program = bgfx::createProgram(vs, fs, false);
+            bgfx::destroy(fs);
+            log(LogLevel::Debug, "SSR resolve shader loaded");
+        } else {
+            log(LogLevel::Warn, "Failed to load SSR resolve fragment shader");
+        }
+    }
+
+    // Composite program
+    {
+        bgfx::ShaderHandle fs = load_ssr_shader(path + "fs_ssr_composite.sc.bin");
+        if (bgfx::isValid(fs)) {
+            m_composite_program = bgfx::createProgram(vs, fs, false);
+            bgfx::destroy(fs);
+            log(LogLevel::Debug, "SSR composite shader loaded");
+        } else {
+            log(LogLevel::Warn, "Failed to load SSR composite fragment shader");
+        }
+    }
+
+    // Destroy shared vertex shader
+    bgfx::destroy(vs);
+
+    log(LogLevel::Info, "SSR shaders initialized");
 }
 
 void SSRSystem::destroy_programs() {

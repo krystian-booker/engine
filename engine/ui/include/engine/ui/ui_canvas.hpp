@@ -13,7 +13,7 @@ namespace engine::ui {
 class UICanvas {
 public:
     UICanvas();
-    ~UICanvas();
+    virtual ~UICanvas();
 
     // Set root element
     void set_root(std::unique_ptr<UIElement> root);

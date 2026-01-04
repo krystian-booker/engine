@@ -71,6 +71,26 @@ struct Skybox {
     float rotation = 0.0f;  // Y-axis rotation in radians
 };
 
+// Billboard orientation mode
+enum class BillboardMode : uint8_t {
+    ScreenAligned,    // Always face camera
+    AxisAligned,      // Rotate around Y axis only
+    Fixed             // No automatic rotation
+};
+
+// Billboard component for world-space 2D elements
+struct Billboard {
+    TextureHandle texture;
+    Vec2 size{1.0f, 1.0f};
+    Vec4 color{1.0f};
+    Vec2 uv_offset{0.0f};      // For sprite sheets
+    Vec2 uv_scale{1.0f};       // For sprite sheets
+    BillboardMode mode = BillboardMode::ScreenAligned;
+    float rotation = 0.0f;      // Z-axis rotation in radians
+    bool depth_test = true;
+    bool visible = true;
+};
+
 // Particle emitter settings
 struct ParticleEmitter {
     uint32_t max_particles = 1000;

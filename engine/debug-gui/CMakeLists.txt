@@ -71,8 +71,8 @@ target_include_directories(engine_debug_gui
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
-    PRIVATE
         ${IMGUI_DIR}
+    PRIVATE
         ${PROJECT_BINARY_DIR}/_deps/stb-src
 )
 

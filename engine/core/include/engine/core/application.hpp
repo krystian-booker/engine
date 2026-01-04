@@ -14,12 +14,18 @@ namespace engine::scene {
 
 namespace engine::render {
     class IRenderer;
+    class RenderPipeline;
 }
 
 namespace engine::plugin {
     class HotReloadManager;
     class SystemRegistry;
     struct GameContext;
+}
+
+namespace engine::ui {
+    class UIContext;
+    struct UIInputState;
 }
 
 namespace engine::core {
@@ -54,7 +60,10 @@ public:
     // Access engine systems (for plugins)
     scene::World* get_world() { return m_world.get(); }
     render::IRenderer* get_renderer() { return m_renderer.get(); }
+    render::RenderPipeline* get_render_pipeline() { return m_render_pipeline.get(); }
     plugin::SystemRegistry* get_system_registry() { return m_system_registry.get(); }
+    ui::UIContext* get_ui_context() { return m_ui_context.get(); }
+    ui::UIInputState* get_ui_input_state() { return m_ui_input_state.get(); }
 
 protected:
     // Override these in your application
@@ -94,7 +103,10 @@ private:
     // Engine systems
     std::unique_ptr<scene::World> m_world;
     std::unique_ptr<render::IRenderer> m_renderer;
+    std::unique_ptr<render::RenderPipeline> m_render_pipeline;
     std::unique_ptr<scene::Scheduler> m_engine_scheduler;
+    std::unique_ptr<ui::UIContext> m_ui_context;
+    std::unique_ptr<ui::UIInputState> m_ui_input_state;
 
     // Plugin system
     std::unique_ptr<plugin::SystemRegistry> m_system_registry;

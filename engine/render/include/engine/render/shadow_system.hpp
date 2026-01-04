@@ -5,6 +5,7 @@
 #include <engine/core/math.hpp>
 #include <array>
 #include <vector>
+#include <unordered_map>
 
 namespace engine::render {
 
@@ -100,7 +101,24 @@ private:
     // Shadow atlas for point/spot lights
     RenderTargetHandle m_shadow_atlas;
     TextureHandle m_shadow_atlas_texture;
-    std::vector<bool> m_atlas_slots;  // Which slots are in use
+
+    // Atlas slot management
+    struct AtlasSlot {
+        uint32_t x = 0;           // X position in atlas
+        uint32_t y = 0;           // Y position in atlas
+        uint32_t size = 0;        // Size of this slot (square)
+        uint32_t light_index = UINT32_MAX;  // Light using this slot
+        bool in_use = false;
+    };
+    std::vector<AtlasSlot> m_atlas_slots;
+    std::unordered_map<uint32_t, uint32_t> m_light_to_slot;  // light_index -> slot_index
+
+    // Atlas configuration
+    uint32_t m_atlas_size = 4096;     // Total atlas texture size
+    uint32_t m_atlas_tile_size = 512; // Size of each slot (max shadow lights = (atlas_size/tile_size)^2)
+
+    void create_shadow_atlas();
+    void destroy_shadow_atlas();
 };
 
 // Helper functions for shadow calculations

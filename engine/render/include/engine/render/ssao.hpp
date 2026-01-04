@@ -1,5 +1,6 @@
 #pragma once
 
+#include <engine/render/render_target.hpp>
 #include <engine/render/types.hpp>
 #include <engine/render/render_target.hpp>
 #include <engine/core/math.hpp>
