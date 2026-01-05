@@ -8,6 +8,7 @@
 #include <QWidget>
 #include <QTimer>
 #include <memory>
+#include <set>
 
 namespace editor {
 
@@ -51,6 +52,9 @@ public:
 
     bool show_gizmo() const { return m_show_gizmo; }
     void set_show_gizmo(bool show) { m_show_gizmo = show; }
+
+    // Check if fly mode is active (RMB held for camera control)
+    bool is_fly_mode_active() const { return m_fly_mode; }
 
 signals:
     void entity_picked(engine::scene::Entity entity);
@@ -96,6 +100,9 @@ private:
     Qt::MouseButtons m_pressed_buttons;
     bool m_orbit_mode = false;
     bool m_pan_mode = false;
+    bool m_fly_mode = false;  // WASD fly camera active (when RMB held)
+    std::set<int> m_keys_pressed;  // Currently pressed keys
+    float m_fly_speed = 5.0f;  // Fly camera movement speed
 
     // Rendering state
     uint16_t m_view_id = 0;

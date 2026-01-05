@@ -11,6 +11,8 @@ add_executable(editor WIN32
     src/editor_state.cpp
     src/viewport_widget.hpp
     src/viewport_widget.cpp
+    src/game_view_widget.hpp
+    src/game_view_widget.cpp
     src/hierarchy_panel.hpp
     src/hierarchy_panel.cpp
     src/inspector_panel.hpp

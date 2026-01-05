@@ -1,6 +1,7 @@
 #include "editor_state.hpp"
 #include <engine/scene/transform.hpp>
 #include <engine/scene/components.hpp>
+#include <engine/scene/render_components.hpp>
 #include <algorithm>
 
 namespace editor {
@@ -12,6 +13,9 @@ EditorState::EditorState(QObject* parent)
     m_scheduler = std::make_unique<engine::scene::Scheduler>();
     m_scheduler->add(engine::scene::Phase::PreRender,
                      engine::scene::transform_system, "transform", 0);
+
+    // Update active game camera when world changes
+    connect(this, &EditorState::world_changed, this, &EditorState::update_active_game_camera);
 }
 
 EditorState::~EditorState() = default;
@@ -88,6 +92,38 @@ void EditorState::set_playing(bool playing) {
     if (m_playing != playing) {
         m_playing = playing;
         emit play_state_changed(playing);
+    }
+}
+
+void EditorState::update_active_game_camera() {
+    if (!m_world) {
+        if (m_active_game_camera != engine::scene::NullEntity) {
+            m_active_game_camera = engine::scene::NullEntity;
+            emit active_camera_changed(m_active_game_camera);
+        }
+        return;
+    }
+
+    Entity best = engine::scene::NullEntity;
+    uint8_t best_priority = 0;
+
+    // Scan all entities with Camera component
+    auto view = m_world->view<engine::scene::Camera>();
+    for (auto entity : view) {
+        const auto& cam = view.get<engine::scene::Camera>(entity);
+        if (cam.active) {
+            // Higher priority wins, or first one found if priority is equal
+            if (best == engine::scene::NullEntity || cam.priority > best_priority) {
+                best = entity;
+                best_priority = cam.priority;
+            }
+        }
+    }
+
+    // Only emit signal if camera actually changed
+    if (best != m_active_game_camera) {
+        m_active_game_camera = best;
+        emit active_camera_changed(m_active_game_camera);
     }
 }
 

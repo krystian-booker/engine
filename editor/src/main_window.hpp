@@ -5,11 +5,13 @@
 #include <engine/render/renderer.hpp>
 #include <QMainWindow>
 #include <QShowEvent>
+#include <QTabWidget>
 #include <memory>
 
 namespace editor {
 
 class ViewportWidget;
+class GameViewWidget;
 class HierarchyPanel;
 class InspectorPanel;
 class AssetBrowser;
@@ -25,6 +27,7 @@ public:
 protected:
     void showEvent(QShowEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
 
 private slots:
     // File menu
@@ -53,6 +56,8 @@ private slots:
     void on_toggle_assets();
     void on_toggle_console();
     void on_reset_layout();
+    void on_switch_to_scene_view();
+    void on_switch_to_game_view();
 
     // Play controls
     void on_play();
@@ -82,8 +87,12 @@ private:
     std::unique_ptr<engine::scene::World> m_world;
     std::unique_ptr<engine::render::IRenderer> m_renderer;
 
+    // Central tabbed widget
+    QTabWidget* m_central_tabs = nullptr;
+
     // UI panels
     ViewportWidget* m_viewport = nullptr;
+    GameViewWidget* m_game_view = nullptr;
     HierarchyPanel* m_hierarchy = nullptr;
     InspectorPanel* m_inspector = nullptr;
     AssetBrowser* m_assets = nullptr;

@@ -194,8 +194,9 @@ void ViewportWidget::mousePressEvent(QMouseEvent* event) {
         // MMB alone for pan
         m_pan_mode = true;
     } else if (event->button() == Qt::RightButton) {
-        // RMB for orbit
+        // RMB for orbit + fly mode (WASD enabled)
         m_orbit_mode = true;
+        m_fly_mode = true;
     } else if (event->button() == Qt::LeftButton) {
         // Left click for selection
         auto picked = pick_entity(event->pos().x(), event->pos().y());
@@ -215,6 +216,9 @@ void ViewportWidget::mouseReleaseEvent(QMouseEvent* event) {
 
     if (event->button() == Qt::LeftButton || event->button() == Qt::RightButton) {
         m_orbit_mode = false;
+    }
+    if (event->button() == Qt::RightButton) {
+        m_fly_mode = false;
     }
     if (event->button() == Qt::MiddleButton) {
         m_pan_mode = false;
@@ -242,7 +246,9 @@ void ViewportWidget::wheelEvent(QWheelEvent* event) {
 }
 
 void ViewportWidget::keyPressEvent(QKeyEvent* event) {
-    // Handle camera movement with WASD
+    // Track pressed keys for fly camera
+    m_keys_pressed.insert(event->key());
+
     switch (event->key()) {
         case Qt::Key_F:
             focus_selection();
@@ -254,6 +260,7 @@ void ViewportWidget::keyPressEvent(QKeyEvent* event) {
         case Qt::Key_Q:
         case Qt::Key_E:
             // Handled in update_editor_camera
+            event->accept();
             break;
         default:
             QWidget::keyPressEvent(event);
@@ -262,11 +269,53 @@ void ViewportWidget::keyPressEvent(QKeyEvent* event) {
 }
 
 void ViewportWidget::keyReleaseEvent(QKeyEvent* event) {
+    m_keys_pressed.erase(event->key());
     QWidget::keyReleaseEvent(event);
 }
 
-void ViewportWidget::update_editor_camera(float /*dt*/) {
-    // Camera position is updated through orbit/pan/zoom handlers
+void ViewportWidget::update_editor_camera(float dt) {
+    // WASD fly camera movement (only when RMB is held)
+    if (!m_fly_mode || m_keys_pressed.empty()) {
+        return;
+    }
+
+    // Calculate camera direction vectors
+    Vec3 forward = glm::normalize(m_camera_target - m_camera_pos);
+    Vec3 right = glm::normalize(glm::cross(forward, Vec3{0.0f, 1.0f, 0.0f}));
+    Vec3 up{0.0f, 1.0f, 0.0f};
+
+    Vec3 movement{0.0f};
+
+    // W/S - Forward/Backward
+    if (m_keys_pressed.count(Qt::Key_W)) {
+        movement += forward;
+    }
+    if (m_keys_pressed.count(Qt::Key_S)) {
+        movement -= forward;
+    }
+
+    // A/D - Strafe Left/Right
+    if (m_keys_pressed.count(Qt::Key_A)) {
+        movement -= right;
+    }
+    if (m_keys_pressed.count(Qt::Key_D)) {
+        movement += right;
+    }
+
+    // Q/E - Down/Up
+    if (m_keys_pressed.count(Qt::Key_Q)) {
+        movement -= up;
+    }
+    if (m_keys_pressed.count(Qt::Key_E)) {
+        movement += up;
+    }
+
+    // Apply movement if any key pressed
+    if (glm::length(movement) > 0.0f) {
+        movement = glm::normalize(movement) * m_fly_speed * dt;
+        m_camera_pos += movement;
+        m_camera_target += movement;
+    }
 }
 
 void ViewportWidget::handle_camera_orbit(const QPoint& delta) {

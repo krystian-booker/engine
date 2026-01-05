@@ -1,9 +1,11 @@
 #include "main_window.hpp"
 #include "viewport_widget.hpp"
+#include "game_view_widget.hpp"
 #include "hierarchy_panel.hpp"
 #include "inspector_panel.hpp"
 #include "asset_browser.hpp"
 #include "console_panel.hpp"
+#include <engine/render/render_to_texture.hpp>
 #include <engine/scene/transform.hpp>
 #include <engine/scene/render_components.hpp>
 #include <engine/scene/components.hpp>
@@ -17,6 +19,7 @@
 #include <QMessageBox>
 #include <QSettings>
 #include <QCloseEvent>
+#include <QKeyEvent>
 #include <QApplication>
 #include <QDir>
 
@@ -58,6 +61,32 @@ void MainWindow::closeEvent(QCloseEvent* event) {
     save_layout();
     shutdown_engine();
     event->accept();
+}
+
+void MainWindow::keyPressEvent(QKeyEvent* event) {
+    // If viewport is in fly mode (RMB held), let it handle WASD/QE for camera control
+    if (m_viewport && m_viewport->is_fly_mode_active()) {
+        QMainWindow::keyPressEvent(event);
+        return;
+    }
+
+    // Otherwise, handle transform mode shortcuts
+    switch (event->key()) {
+        case Qt::Key_Q:
+            m_select_action->trigger();
+            return;
+        case Qt::Key_W:
+            m_translate_action->trigger();
+            return;
+        case Qt::Key_E:
+            m_rotate_action->trigger();
+            return;
+        case Qt::Key_R:
+            m_scale_action->trigger();
+            return;
+    }
+
+    QMainWindow::keyPressEvent(event);
 }
 
 void MainWindow::setup_ui() {
@@ -145,6 +174,17 @@ void MainWindow::setup_menus() {
     // View menu
     auto* view_menu = menuBar()->addMenu("&View");
 
+    // Viewport tabs
+    auto* scene_view_action = view_menu->addAction("&Scene View");
+    scene_view_action->setShortcut(QKeySequence("Ctrl+1"));
+    connect(scene_view_action, &QAction::triggered, this, &MainWindow::on_switch_to_scene_view);
+
+    auto* game_view_action = view_menu->addAction("&Game View");
+    game_view_action->setShortcut(QKeySequence("Ctrl+2"));
+    connect(game_view_action, &QAction::triggered, this, &MainWindow::on_switch_to_game_view);
+
+    view_menu->addSeparator();
+
     auto* hierarchy_action = view_menu->addAction("&Hierarchy");
     hierarchy_action->setCheckable(true);
     hierarchy_action->setChecked(true);
@@ -181,11 +221,11 @@ void MainWindow::setup_toolbar() {
     toolbar->setIconSize(QSize(20, 20));
 
     // Transform mode buttons with icons
+    // Note: Shortcuts (Q/W/E/R) are handled in keyPressEvent to avoid conflicts with fly camera
     m_select_action = toolbar->addAction(QIcon(":/icons/select.svg"), "");
     m_select_action->setCheckable(true);
     m_select_action->setChecked(true);
     m_select_action->setToolTip("Select (Q)");
-    m_select_action->setShortcut(QKeySequence("Q"));
     connect(m_select_action, &QAction::triggered, [this]() {
         m_state->set_mode(EditorState::Mode::Select);
     });
@@ -193,7 +233,6 @@ void MainWindow::setup_toolbar() {
     m_translate_action = toolbar->addAction(QIcon(":/icons/move.svg"), "");
     m_translate_action->setCheckable(true);
     m_translate_action->setToolTip("Move (W)");
-    m_translate_action->setShortcut(QKeySequence("W"));
     connect(m_translate_action, &QAction::triggered, [this]() {
         m_state->set_mode(EditorState::Mode::Translate);
     });
@@ -201,7 +240,6 @@ void MainWindow::setup_toolbar() {
     m_rotate_action = toolbar->addAction(QIcon(":/icons/rotate.svg"), "");
     m_rotate_action->setCheckable(true);
     m_rotate_action->setToolTip("Rotate (E)");
-    m_rotate_action->setShortcut(QKeySequence("E"));
     connect(m_rotate_action, &QAction::triggered, [this]() {
         m_state->set_mode(EditorState::Mode::Rotate);
     });
@@ -209,7 +247,6 @@ void MainWindow::setup_toolbar() {
     m_scale_action = toolbar->addAction(QIcon(":/icons/scale.svg"), "");
     m_scale_action->setCheckable(true);
     m_scale_action->setToolTip("Scale (R)");
-    m_scale_action->setShortcut(QKeySequence("R"));
     connect(m_scale_action, &QAction::triggered, [this]() {
         m_state->set_mode(EditorState::Mode::Scale);
     });
@@ -249,9 +286,20 @@ void MainWindow::setup_toolbar() {
 }
 
 void MainWindow::setup_panels() {
-    // Create viewport (central widget)
+    // Create tabbed central widget for Scene/Game views
+    m_central_tabs = new QTabWidget(this);
+    m_central_tabs->setTabPosition(QTabWidget::North);
+    m_central_tabs->setDocumentMode(true);
+
+    // Create Scene View (viewport)
     m_viewport = new ViewportWidget(m_state.get(), this);
-    setCentralWidget(m_viewport);
+    m_central_tabs->addTab(m_viewport, "Scene");
+
+    // Create Game View
+    m_game_view = new GameViewWidget(m_state.get(), this);
+    m_central_tabs->addTab(m_game_view, "Game");
+
+    setCentralWidget(m_central_tabs);
 
     // Create hierarchy panel (left)
     m_hierarchy = new HierarchyPanel(m_state.get(), this);
@@ -302,6 +350,15 @@ void MainWindow::init_engine() {
             m_state->set_renderer(m_renderer.get());
             m_engine_initialized = true;
 
+            // Initialize RTT system for Game View
+            auto& rtt_system = engine::render::get_rtt_system();
+            rtt_system.init(m_renderer.get());
+
+            // Initialize Game View RTT
+            if (m_game_view) {
+                m_game_view->init_rtt();
+            }
+
             if (m_console) {
                 m_console->log(engine::core::LogLevel::Info,
                               "Renderer initialized", "Engine");
@@ -319,6 +376,15 @@ void MainWindow::init_engine() {
 
 void MainWindow::shutdown_engine() {
     if (!m_engine_initialized) return;
+
+    // Shutdown Game View RTT before renderer
+    if (m_game_view) {
+        m_game_view->shutdown_rtt();
+    }
+
+    // Shutdown RTT system
+    auto& rtt_system = engine::render::get_rtt_system();
+    rtt_system.shutdown();
 
     // Clear renderer from state BEFORE destroying it to prevent use-after-free
     // in viewport widget's render timer callback
@@ -520,6 +586,18 @@ void MainWindow::on_toggle_assets() {
 
 void MainWindow::on_toggle_console() {
     m_console->setVisible(!m_console->isVisible());
+}
+
+void MainWindow::on_switch_to_scene_view() {
+    if (m_central_tabs) {
+        m_central_tabs->setCurrentWidget(m_viewport);
+    }
+}
+
+void MainWindow::on_switch_to_game_view() {
+    if (m_central_tabs) {
+        m_central_tabs->setCurrentWidget(m_game_view);
+    }
 }
 
 void MainWindow::on_reset_layout() {

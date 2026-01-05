@@ -2,6 +2,7 @@
 
 #include <engine/scene/world.hpp>
 #include <engine/scene/entity.hpp>
+#include <engine/scene/render_components.hpp>
 #include <engine/render/renderer.hpp>
 #include <engine/scene/systems.hpp>
 #include <QObject>
@@ -64,11 +65,16 @@ public:
     bool is_playing() const { return m_playing; }
     void set_playing(bool playing);
 
+    // Active game camera tracking
+    Entity active_game_camera() const { return m_active_game_camera; }
+    void update_active_game_camera();
+
 signals:
     void selection_changed();
     void mode_changed(Mode mode);
     void world_changed();
     void play_state_changed(bool playing);
+    void active_camera_changed(engine::scene::Entity camera);
 
 private:
     World* m_world = nullptr;
@@ -80,6 +86,7 @@ private:
     bool m_grid_enabled = false;
     bool m_playing = false;
     std::unique_ptr<engine::scene::Scheduler> m_scheduler;
+    Entity m_active_game_camera = engine::scene::NullEntity;
 };
 
 // Base command for undo/redo
