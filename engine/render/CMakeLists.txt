@@ -43,6 +43,7 @@ target_sources(engine_render
         src/material_instance.cpp
         src/oit.cpp
         src/render_component_registration.cpp
+        src/water_renderer.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -85,6 +86,7 @@ target_sources(engine_render
             include/engine/render/render_to_texture.hpp
             include/engine/render/material_instance.hpp
             include/engine/render/oit.hpp
+            include/engine/render/water_renderer.hpp
 )
 
 target_include_directories(engine_render

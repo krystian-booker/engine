@@ -70,6 +70,25 @@ enum class GamepadButton : uint8_t {
     Count
 };
 
+// Haptic feedback presets for common game events
+enum class HapticPreset : uint8_t {
+    None = 0,
+    LightImpact,      // Light hit, footstep
+    MediumImpact,     // Standard hit
+    HeavyImpact,      // Heavy attack, explosion nearby
+    Explosion,        // Large explosion
+    Damage,           // Player takes damage
+    CriticalDamage,   // Player takes heavy damage
+    Footstep,         // Walking footstep
+    Landing,          // Landing from jump/fall
+    PickupItem,       // Collecting item
+    UIConfirm,        // UI selection
+    UICancel,         // UI cancel/back
+    EngineRumble,     // Continuous vehicle engine
+    Gunfire,          // Weapon fire
+    Heartbeat,        // Low health heartbeat
+};
+
 class Input {
 public:
     static void init();
@@ -112,6 +131,19 @@ public:
     static bool action_down(const std::string& action);
     static bool action_released(const std::string& action);
     static float action_value(const std::string& action);  // For analog inputs (0-1)
+
+    // Haptic feedback (controller vibration)
+    // Motor values are 0.0 to 1.0 intensity
+    static void set_vibration(int gamepad_index, float left_motor, float right_motor);
+    static void set_vibration_timed(int gamepad_index, float left_motor, float right_motor, float duration_seconds);
+    static void stop_vibration(int gamepad_index);
+    static void stop_all_vibration();
+
+    // Haptic presets for common game feel
+    static void play_haptic(int gamepad_index, HapticPreset preset, float intensity = 1.0f);
+
+    // Update timed vibrations (called internally by update())
+    static void update_haptics(float dt);
 
     // Called by platform layer to update input state
     static void on_key_event(Key k, bool pressed);

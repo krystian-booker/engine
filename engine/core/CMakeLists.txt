@@ -19,6 +19,7 @@ target_sources(engine_core
         src/allocators.cpp
         src/uuid.cpp
         src/math.cpp
+        src/scene_transition.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -42,6 +43,7 @@ target_sources(engine_core
             include/engine/core/string_hash.hpp
             include/engine/core/uuid.hpp
             include/engine/core/asset_handle.hpp
+            include/engine/core/scene_transition.hpp
 )
 
 target_include_directories(engine_core

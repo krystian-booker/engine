@@ -13,6 +13,7 @@ target_sources(engine_scene
         src/scene_serializer.cpp
         src/component_registration.cpp
         src/prefab_instance.cpp
+        src/interaction.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -27,6 +28,7 @@ target_sources(engine_scene
             include/engine/scene/render_components.hpp
             include/engine/scene/scene_serializer.hpp
             include/engine/scene/prefab_instance.hpp
+            include/engine/scene/interaction.hpp
 )
 
 target_include_directories(engine_scene

@@ -5,6 +5,7 @@
 #include <engine/core/log.hpp>
 #include <engine/core/filesystem.hpp>
 #include <engine/core/serialize.hpp>
+#include <nlohmann/json.hpp>
 #include <algorithm>
 #include <sstream>
 #include <regex>
@@ -220,8 +221,34 @@ const PrefabData* PrefabManager::load_prefab(const std::string& path) {
     data.path = path;
     data.json_data = content;
 
-    // TODO: Parse JSON to extract root_uuid and entity_uuids
-    // For now, we'll parse these when instantiating
+    // Parse JSON to extract root_uuid and entity_uuids
+    try {
+        nlohmann::json j = nlohmann::json::parse(content);
+
+        // Extract root entity UUID if present
+        if (j.contains("root_uuid") && j["root_uuid"].is_number_unsigned()) {
+            data.root_uuid = j["root_uuid"].get<uint64_t>();
+        } else if (j.contains("root") && j["root"].is_object() && j["root"].contains("uuid")) {
+            data.root_uuid = j["root"]["uuid"].get<uint64_t>();
+        }
+
+        // Extract all entity UUIDs from the entities array
+        if (j.contains("entities") && j["entities"].is_array()) {
+            for (const auto& entity : j["entities"]) {
+                if (entity.contains("uuid") && entity["uuid"].is_number_unsigned()) {
+                    data.entity_uuids.push_back(entity["uuid"].get<uint64_t>());
+                }
+            }
+        }
+
+        // If root_uuid wasn't explicitly set but we have entities, use the first one
+        if (data.root_uuid == 0 && !data.entity_uuids.empty()) {
+            data.root_uuid = data.entity_uuids.front();
+        }
+    } catch (const nlohmann::json::exception& e) {
+        core::log(core::LogLevel::Warn, "PrefabManager: JSON parsing error in '{}': {}", path, e.what());
+        // Continue with empty UUIDs - will be parsed at instantiation time as fallback
+    }
 
     m_cache[path] = std::move(data);
     return &m_cache[path];

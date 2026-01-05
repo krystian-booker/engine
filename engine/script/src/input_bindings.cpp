@@ -81,6 +81,28 @@ void register_input_bindings(sol::state& lua) {
         return Input::gamepad_right_trigger(index);
     });
 
+    // Haptic feedback (controller vibration)
+    input.set_function("set_vibration", [](int index, float left, float right) {
+        Input::set_vibration(index, left, right);
+    });
+
+    input.set_function("set_vibration_timed", [](int index, float left, float right, float duration) {
+        Input::set_vibration_timed(index, left, right, duration);
+    });
+
+    input.set_function("stop_vibration", [](int index) {
+        Input::stop_vibration(index);
+    });
+
+    input.set_function("stop_all_vibration", []() {
+        Input::stop_all_vibration();
+    });
+
+    input.set_function("play_haptic", [](int index, int preset, sol::optional<float> intensity) {
+        float i = intensity.value_or(1.0f);
+        Input::play_haptic(index, static_cast<HapticPreset>(preset), i);
+    });
+
     // Action system
     input.set_function("bind_action", [](const std::string& action, int key_code) {
         Input::bind(action, static_cast<Key>(key_code));
@@ -122,6 +144,23 @@ void register_input_bindings(sol::state& lua) {
     input["GAMEPAD_DPAD_RIGHT"] = static_cast<int>(GamepadButton::DpadRight);
     input["GAMEPAD_DPAD_DOWN"] = static_cast<int>(GamepadButton::DpadDown);
     input["GAMEPAD_DPAD_LEFT"] = static_cast<int>(GamepadButton::DpadLeft);
+
+    // Haptic preset constants
+    input["HAPTIC_NONE"] = static_cast<int>(HapticPreset::None);
+    input["HAPTIC_LIGHT_IMPACT"] = static_cast<int>(HapticPreset::LightImpact);
+    input["HAPTIC_MEDIUM_IMPACT"] = static_cast<int>(HapticPreset::MediumImpact);
+    input["HAPTIC_HEAVY_IMPACT"] = static_cast<int>(HapticPreset::HeavyImpact);
+    input["HAPTIC_EXPLOSION"] = static_cast<int>(HapticPreset::Explosion);
+    input["HAPTIC_DAMAGE"] = static_cast<int>(HapticPreset::Damage);
+    input["HAPTIC_CRITICAL_DAMAGE"] = static_cast<int>(HapticPreset::CriticalDamage);
+    input["HAPTIC_FOOTSTEP"] = static_cast<int>(HapticPreset::Footstep);
+    input["HAPTIC_LANDING"] = static_cast<int>(HapticPreset::Landing);
+    input["HAPTIC_PICKUP_ITEM"] = static_cast<int>(HapticPreset::PickupItem);
+    input["HAPTIC_UI_CONFIRM"] = static_cast<int>(HapticPreset::UIConfirm);
+    input["HAPTIC_UI_CANCEL"] = static_cast<int>(HapticPreset::UICancel);
+    input["HAPTIC_ENGINE_RUMBLE"] = static_cast<int>(HapticPreset::EngineRumble);
+    input["HAPTIC_GUNFIRE"] = static_cast<int>(HapticPreset::Gunfire);
+    input["HAPTIC_HEARTBEAT"] = static_cast<int>(HapticPreset::Heartbeat);
 }
 
 } // namespace engine::script

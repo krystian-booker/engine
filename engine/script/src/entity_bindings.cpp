@@ -3,6 +3,7 @@
 #include <engine/scene/world.hpp>
 #include <engine/scene/transform.hpp>
 #include <engine/scene/entity.hpp>
+#include <engine/scene/interaction.hpp>
 #include <engine/reflect/reflect.hpp>
 #include <engine/reflect/type_registry.hpp>
 #include <engine/core/log.hpp>
@@ -514,6 +515,116 @@ void register_entity_bindings(sol::state& lua) {
 
         return static_cast<uint32_t>(world->registry().storage<entt::entity>().size());
     });
+
+    // --- Interaction System ---
+
+    auto interaction = lua.create_named_table("Interaction");
+
+    // Find best interactable near a position
+    interaction.set_function("find_best", [](float px, float py, float pz,
+                                              float fx, float fy, float fz,
+                                              sol::optional<float> max_dist) -> sol::table {
+        auto* world = get_current_script_world();
+        sol::state_view lua_view = sol::state_view(get_current_lua_state());
+        sol::table result = lua_view.create_table();
+
+        if (!world) {
+            result["entity"] = static_cast<uint32_t>(NullEntity);
+            return result;
+        }
+
+        Vec3 pos{px, py, pz};
+        Vec3 fwd = glm::normalize(Vec3{fx, fy, fz});
+        float dist = max_dist.value_or(3.0f);
+
+        auto candidate = interactions().find_best_interactable(*world, pos, fwd, dist);
+        if (candidate) {
+            result["entity"] = static_cast<uint32_t>(candidate->entity);
+            result["distance"] = candidate->distance;
+            result["id"] = candidate->interaction_id;
+            result["name"] = candidate->display_name;
+            result["type"] = static_cast<int>(candidate->type);
+            result["hold_to_interact"] = candidate->hold_to_interact;
+            result["hold_duration"] = candidate->hold_duration;
+        } else {
+            result["entity"] = static_cast<uint32_t>(NullEntity);
+        }
+
+        return result;
+    });
+
+    // Find all interactables
+    interaction.set_function("find_all", [](float px, float py, float pz,
+                                             float fx, float fy, float fz,
+                                             sol::optional<float> max_dist) -> std::vector<sol::table> {
+        auto* world = get_current_script_world();
+        std::vector<sol::table> results;
+
+        if (!world) {
+            return results;
+        }
+
+        sol::state_view lua_view = sol::state_view(get_current_lua_state());
+        Vec3 pos{px, py, pz};
+        Vec3 fwd = glm::normalize(Vec3{fx, fy, fz});
+        float dist = max_dist.value_or(5.0f);
+
+        auto candidates = interactions().find_all_interactables(*world, pos, fwd, dist);
+        for (const auto& c : candidates) {
+            sol::table t = lua_view.create_table();
+            t["entity"] = static_cast<uint32_t>(c.entity);
+            t["distance"] = c.distance;
+            t["id"] = c.interaction_id;
+            t["name"] = c.display_name;
+            t["type"] = static_cast<int>(c.type);
+            t["hold_to_interact"] = c.hold_to_interact;
+            t["hold_duration"] = c.hold_duration;
+            results.push_back(t);
+        }
+
+        return results;
+    });
+
+    // Perform interaction
+    interaction.set_function("interact", [](uint32_t interactor_id, uint32_t target_id) {
+        auto* world = get_current_script_world();
+        if (!world) return;
+
+        auto interactor = static_cast<Entity>(interactor_id);
+        auto target = static_cast<Entity>(target_id);
+        interactions().interact(*world, interactor, target);
+    });
+
+    // Hold interaction management
+    interaction.set_function("begin_hold", [](uint32_t interactor_id, uint32_t target_id) {
+        auto interactor = static_cast<Entity>(interactor_id);
+        auto target = static_cast<Entity>(target_id);
+        interactions().begin_hold(interactor, target);
+    });
+
+    interaction.set_function("update_hold", [](float dt) -> bool {
+        return interactions().update_hold(dt);
+    });
+
+    interaction.set_function("cancel_hold", []() {
+        interactions().cancel_hold();
+    });
+
+    interaction.set_function("get_hold_progress", []() -> float {
+        return interactions().get_hold_progress();
+    });
+
+    // Interaction type constants
+    interaction["TYPE_GENERIC"] = static_cast<int>(InteractionType::Generic);
+    interaction["TYPE_PICKUP"] = static_cast<int>(InteractionType::Pickup);
+    interaction["TYPE_DOOR"] = static_cast<int>(InteractionType::Door);
+    interaction["TYPE_LEVER"] = static_cast<int>(InteractionType::Lever);
+    interaction["TYPE_TALK"] = static_cast<int>(InteractionType::Talk);
+    interaction["TYPE_EXAMINE"] = static_cast<int>(InteractionType::Examine);
+    interaction["TYPE_USE"] = static_cast<int>(InteractionType::Use);
+    interaction["TYPE_CLIMB"] = static_cast<int>(InteractionType::Climb);
+    interaction["TYPE_VEHICLE"] = static_cast<int>(InteractionType::Vehicle);
+    interaction["TYPE_CUSTOM"] = static_cast<int>(InteractionType::Custom);
 }
 
 } // namespace engine::script

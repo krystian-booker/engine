@@ -4,6 +4,7 @@
 #include <engine/scene/world.hpp>
 #include <engine/scene/entity.hpp>
 #include <engine/core/log.hpp>
+#include <engine/core/scene_transition.hpp>
 
 namespace engine::script {
 
@@ -195,6 +196,101 @@ void register_scene_bindings(sol::state& lua) {
     scene.set_function("generate_uuid", []() -> uint64_t {
         return SceneSerializer::generate_uuid();
     });
+
+    // --- Scene Transitions ---
+
+    scene.set_function("transition_to", [](const std::string& scene_path,
+                                            sol::optional<sol::table> options) {
+        using namespace engine::core;
+
+        TransitionSettings settings;
+
+        if (options.has_value()) {
+            auto& opts = options.value();
+
+            if (opts["fade_out_duration"].valid()) {
+                settings.fade_out_duration = opts["fade_out_duration"].get<float>();
+            }
+            if (opts["fade_in_duration"].valid()) {
+                settings.fade_in_duration = opts["fade_in_duration"].get<float>();
+            }
+            if (opts["hold_duration"].valid()) {
+                settings.hold_duration = opts["hold_duration"].get<float>();
+            }
+            if (opts["type"].valid()) {
+                settings.type = static_cast<TransitionType>(opts["type"].get<int>());
+            }
+            if (opts["color"].valid()) {
+                auto color = opts["color"].get<sol::table>();
+                settings.fade_color = Vec4{
+                    color[1].get_or(0.0f),
+                    color[2].get_or(0.0f),
+                    color[3].get_or(0.0f),
+                    color[4].get_or(1.0f)
+                };
+            }
+        }
+
+        scene_transitions().transition_to(scene_path, settings);
+    });
+
+    scene.set_function("begin_transition", [](sol::optional<sol::table> options) {
+        using namespace engine::core;
+
+        TransitionSettings settings;
+
+        if (options.has_value()) {
+            auto& opts = options.value();
+
+            if (opts["fade_out_duration"].valid()) {
+                settings.fade_out_duration = opts["fade_out_duration"].get<float>();
+            }
+            if (opts["fade_in_duration"].valid()) {
+                settings.fade_in_duration = opts["fade_in_duration"].get<float>();
+            }
+            if (opts["hold_duration"].valid()) {
+                settings.hold_duration = opts["hold_duration"].get<float>();
+            }
+            if (opts["type"].valid()) {
+                settings.type = static_cast<TransitionType>(opts["type"].get<int>());
+            }
+        }
+
+        scene_transitions().begin_transition(settings);
+    });
+
+    scene.set_function("end_transition", []() {
+        engine::core::scene_transitions().end_transition();
+    });
+
+    scene.set_function("is_transitioning", []() -> bool {
+        return engine::core::scene_transitions().is_transitioning();
+    });
+
+    scene.set_function("get_transition_phase", []() -> int {
+        return static_cast<int>(engine::core::scene_transitions().get_phase());
+    });
+
+    scene.set_function("get_fade_alpha", []() -> float {
+        return engine::core::scene_transitions().get_fade_alpha();
+    });
+
+    scene.set_function("set_loading_progress", [](float progress) {
+        engine::core::scene_transitions().set_loading_progress(progress);
+    });
+
+    // Transition type constants
+    scene["TRANSITION_NONE"] = static_cast<int>(core::TransitionType::None);
+    scene["TRANSITION_FADE"] = static_cast<int>(core::TransitionType::Fade);
+    scene["TRANSITION_FADE_WHITE"] = static_cast<int>(core::TransitionType::FadeWhite);
+    scene["TRANSITION_FADE_COLOR"] = static_cast<int>(core::TransitionType::FadeColor);
+    scene["TRANSITION_CROSSFADE"] = static_cast<int>(core::TransitionType::Crossfade);
+
+    // Transition phase constants
+    scene["PHASE_IDLE"] = static_cast<int>(core::TransitionPhase::Idle);
+    scene["PHASE_FADING_OUT"] = static_cast<int>(core::TransitionPhase::FadingOut);
+    scene["PHASE_LOADING"] = static_cast<int>(core::TransitionPhase::Loading);
+    scene["PHASE_FADING_IN"] = static_cast<int>(core::TransitionPhase::FadingIn);
 }
 
 } // namespace engine::script
