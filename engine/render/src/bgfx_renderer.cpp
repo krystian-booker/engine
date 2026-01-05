@@ -282,6 +282,57 @@ public:
         // Create bone matrices uniform (128 bones * 4 vec4s per matrix = 512 vec4s)
         m_u_boneMatrices = bgfx::createUniform("u_boneMatrices", bgfx::UniformType::Vec4, 512);
 
+        // Load skybox shader
+        bgfx::ShaderHandle skybox_vsh = load_shader_from_file(shader_path + "vs_skybox.sc.bin");
+        bgfx::ShaderHandle skybox_fsh = load_shader_from_file(shader_path + "fs_skybox.sc.bin");
+
+        if (bgfx::isValid(skybox_vsh) && bgfx::isValid(skybox_fsh)) {
+            m_skybox_program = bgfx::createProgram(skybox_vsh, skybox_fsh, true);
+            log(LogLevel::Info, "Skybox shader program loaded successfully");
+        } else {
+            log(LogLevel::Warn, "Failed to load skybox shader program");
+        }
+
+        // Create skybox uniforms
+        m_u_skyboxParams = bgfx::createUniform("u_skyboxParams", bgfx::UniformType::Vec4);
+        m_u_customInvViewProj = bgfx::createUniform("u_customInvViewProj", bgfx::UniformType::Mat4);
+        m_s_skybox = bgfx::createUniform("s_skybox", bgfx::UniformType::Sampler);
+
+        // Create fullscreen triangle vertex buffer for skybox
+        // Uses a single triangle that covers the entire screen (NDC -1 to 3)
+        m_skybox_vertex_layout
+            .begin()
+            .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+            .end();
+
+        struct SkyboxVertex { float x, y, z; };
+        static SkyboxVertex fullscreen_triangle[] = {
+            {-1.0f, -1.0f, 0.0f},
+            { 3.0f, -1.0f, 0.0f},
+            {-1.0f,  3.0f, 0.0f}
+        };
+        m_fullscreen_triangle_vb = bgfx::createVertexBuffer(
+            bgfx::makeRef(fullscreen_triangle, sizeof(fullscreen_triangle)),
+            m_skybox_vertex_layout
+        );
+
+        // Load billboard shader
+        bgfx::ShaderHandle billboard_vsh = load_shader_from_file(shader_path + "vs_billboard.sc.bin");
+        bgfx::ShaderHandle billboard_fsh = load_shader_from_file(shader_path + "fs_billboard.sc.bin");
+
+        if (bgfx::isValid(billboard_vsh) && bgfx::isValid(billboard_fsh)) {
+            m_billboard_program = bgfx::createProgram(billboard_vsh, billboard_fsh, true);
+            log(LogLevel::Info, "Billboard shader program loaded successfully");
+        } else {
+            log(LogLevel::Warn, "Failed to load billboard shader program");
+        }
+
+        // Create billboard uniforms
+        m_u_billboardColor = bgfx::createUniform("u_billboardColor", bgfx::UniformType::Vec4);
+        m_u_billboardUV = bgfx::createUniform("u_billboardUV", bgfx::UniformType::Vec4);
+        m_u_billboardParams = bgfx::createUniform("u_billboardParams", bgfx::UniformType::Vec4);
+        m_s_billboard = bgfx::createUniform("s_billboard", bgfx::UniformType::Sampler);
+
         // Create PBR uniforms
         s_pbr_uniforms.create();
 
@@ -334,9 +385,53 @@ public:
             bgfx::destroy(m_skinned_pbr_program);
             m_skinned_pbr_program = BGFX_INVALID_HANDLE;
         }
+        if (bgfx::isValid(m_skybox_program)) {
+            bgfx::destroy(m_skybox_program);
+            m_skybox_program = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_billboard_program)) {
+            bgfx::destroy(m_billboard_program);
+            m_billboard_program = BGFX_INVALID_HANDLE;
+        }
         if (bgfx::isValid(m_u_boneMatrices)) {
             bgfx::destroy(m_u_boneMatrices);
             m_u_boneMatrices = BGFX_INVALID_HANDLE;
+        }
+
+        // Destroy skybox resources
+        if (bgfx::isValid(m_fullscreen_triangle_vb)) {
+            bgfx::destroy(m_fullscreen_triangle_vb);
+            m_fullscreen_triangle_vb = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_u_skyboxParams)) {
+            bgfx::destroy(m_u_skyboxParams);
+            m_u_skyboxParams = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_u_customInvViewProj)) {
+            bgfx::destroy(m_u_customInvViewProj);
+            m_u_customInvViewProj = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_s_skybox)) {
+            bgfx::destroy(m_s_skybox);
+            m_s_skybox = BGFX_INVALID_HANDLE;
+        }
+
+        // Destroy billboard resources
+        if (bgfx::isValid(m_u_billboardColor)) {
+            bgfx::destroy(m_u_billboardColor);
+            m_u_billboardColor = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_u_billboardUV)) {
+            bgfx::destroy(m_u_billboardUV);
+            m_u_billboardUV = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_u_billboardParams)) {
+            bgfx::destroy(m_u_billboardParams);
+            m_u_billboardParams = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_s_billboard)) {
+            bgfx::destroy(m_s_billboard);
+            m_s_billboard = BGFX_INVALID_HANDLE;
         }
 
         // Destroy PBR uniforms
@@ -981,14 +1076,99 @@ public:
     void submit_skybox(RenderView view, TextureHandle cubemap,
                                 const Mat4& inverse_view_proj,
                                 float intensity, float rotation) override {
-        // TODO: Implement skybox rendering
+        // Validate we have the required resources
+        if (!bgfx::isValid(m_skybox_program) || !bgfx::isValid(m_fullscreen_triangle_vb)) {
+            return;
+        }
+
+        // Find the cubemap texture
+        auto it = m_textures.find(cubemap.id);
+        if (it == m_textures.end() || !bgfx::isValid(it->second)) {
+            return;
+        }
+
+        uint16_t view_id = static_cast<uint16_t>(view);
+
+        // Set inverse view-projection matrix uniform
+        bgfx::setUniform(m_u_customInvViewProj, glm::value_ptr(inverse_view_proj));
+
+        // Set skybox parameters: x=intensity, y=rotation (in radians)
+        Vec4 skybox_params(intensity, rotation, 0.0f, 0.0f);
+        bgfx::setUniform(m_u_skyboxParams, glm::value_ptr(skybox_params));
+
+        // Bind cubemap texture
+        bgfx::setTexture(0, m_s_skybox, it->second);
+
+        // Set vertex buffer (fullscreen triangle)
+        bgfx::setVertexBuffer(0, m_fullscreen_triangle_vb);
+
+        // Set render state: write RGB, no depth write, depth test at far plane
+        uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_DEPTH_TEST_LEQUAL;
+
+        bgfx::setState(state);
+        bgfx::submit(view_id, m_skybox_program);
     }
 
     void submit_billboard(RenderView view, MeshHandle quad_mesh, TextureHandle texture,
                                    const Mat4& transform, const Vec4& color,
                                    const Vec2& uv_offset, const Vec2& uv_scale,
                                    bool depth_test, bool depth_write) override {
-        // TODO: Implement billboard rendering
+        // Validate we have the required resources
+        if (!bgfx::isValid(m_billboard_program)) {
+            return;
+        }
+
+        // Find the mesh
+        auto mesh_it = m_meshes.find(quad_mesh.id);
+        if (mesh_it == m_meshes.end()) {
+            return;
+        }
+        const BGFXMesh& mesh = mesh_it->second;
+
+        // Find the texture
+        auto tex_it = m_textures.find(texture.id);
+        bgfx::TextureHandle tex_handle = m_white_texture;
+        if (tex_it != m_textures.end() && bgfx::isValid(tex_it->second)) {
+            tex_handle = tex_it->second;
+        }
+
+        uint16_t view_id = static_cast<uint16_t>(view);
+
+        // Set transform
+        bgfx::setTransform(glm::value_ptr(transform));
+
+        // Set billboard color uniform
+        bgfx::setUniform(m_u_billboardColor, glm::value_ptr(color));
+
+        // Set UV offset and scale: xy=offset, zw=scale
+        Vec4 uv_params(uv_offset.x, uv_offset.y, uv_scale.x, uv_scale.y);
+        bgfx::setUniform(m_u_billboardUV, glm::value_ptr(uv_params));
+
+        // Set billboard params (depth fade distance, unused)
+        Vec4 billboard_params(0.5f, 0.0f, 0.0f, 0.0f);
+        bgfx::setUniform(m_u_billboardParams, glm::value_ptr(billboard_params));
+
+        // Bind texture
+        bgfx::setTexture(0, m_s_billboard, tex_handle);
+
+        // Set vertex and index buffers
+        bgfx::setVertexBuffer(0, mesh.vbh);
+        if (bgfx::isValid(mesh.ibh)) {
+            bgfx::setIndexBuffer(mesh.ibh);
+        }
+
+        // Configure render state
+        uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_BLEND_ALPHA;
+
+        if (depth_test) {
+            state |= BGFX_STATE_DEPTH_TEST_LESS;
+        }
+        if (depth_write) {
+            state |= BGFX_STATE_WRITE_Z;
+        }
+
+        bgfx::setState(state);
+        bgfx::submit(view_id, m_billboard_program);
     }
 
     void set_ao_texture(TextureHandle texture) override {
@@ -1198,6 +1378,18 @@ public:
         return bgfx::kInvalidHandle;
     }
 
+    MeshBufferInfo get_mesh_buffer_info(MeshHandle mesh) const override {
+        MeshBufferInfo info{0, 0, 0, false};
+        auto it = m_meshes.find(mesh.id);
+        if (it != m_meshes.end()) {
+            info.vertex_buffer = it->second.vbh.idx;
+            info.index_buffer = it->second.ibh.idx;
+            info.index_count = it->second.index_count;
+            info.valid = bgfx::isValid(it->second.vbh);
+        }
+        return info;
+    }
+
 private:
     // Internal mesh structure
     struct BGFXMesh {
@@ -1361,6 +1553,21 @@ private:
     bgfx::ProgramHandle m_shadow_program = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_debug_program = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_skinned_pbr_program = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_skybox_program = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_billboard_program = BGFX_INVALID_HANDLE;
+
+    // Skybox resources
+    bgfx::VertexBufferHandle m_fullscreen_triangle_vb = BGFX_INVALID_HANDLE;
+    bgfx::VertexLayout m_skybox_vertex_layout;
+    bgfx::UniformHandle m_u_skyboxParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle m_u_customInvViewProj = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle m_s_skybox = BGFX_INVALID_HANDLE;
+
+    // Billboard resources
+    bgfx::UniformHandle m_u_billboardColor = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle m_u_billboardUV = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle m_u_billboardParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle m_s_billboard = BGFX_INVALID_HANDLE;
 
     // Skinned mesh uniform (128 bones * 4 vec4s per matrix = 512 vec4s)
     bgfx::UniformHandle m_u_boneMatrices = BGFX_INVALID_HANDLE;

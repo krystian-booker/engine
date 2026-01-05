@@ -8,6 +8,8 @@ target_sources(engine_vegetation
     PRIVATE
         src/grass.cpp
         src/foliage.cpp
+        src/vegetation_component_registration.cpp
+        src/vegetation_systems.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -16,6 +18,7 @@ target_sources(engine_vegetation
             include/engine/vegetation/vegetation.hpp
             include/engine/vegetation/grass.hpp
             include/engine/vegetation/foliage.hpp
+            include/engine/vegetation/vegetation_systems.hpp
 )
 
 target_include_directories(engine_vegetation
@@ -29,6 +32,8 @@ target_link_libraries(engine_vegetation
         engine::core
         engine::render
         engine::terrain
+        engine::reflect
+        engine::scene
     PRIVATE
         engine_compiler_flags
 )

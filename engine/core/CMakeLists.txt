@@ -18,6 +18,7 @@ target_sources(engine_core
         src/event_dispatcher.cpp
         src/allocators.cpp
         src/uuid.cpp
+        src/math.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -71,7 +72,11 @@ target_include_directories(engine_core
         ${CMAKE_CURRENT_SOURCE_DIR}/../streaming/include
         ${CMAKE_CURRENT_SOURCE_DIR}/../cinematic/include
         ${CMAKE_CURRENT_SOURCE_DIR}/../navigation/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../navigation/include
         ${CMAKE_CURRENT_SOURCE_DIR}/../ui/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../terrain/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../vegetation/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../physics/include
 )
 
 # Scene headers require EnTT

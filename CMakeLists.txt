@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.21)
 
 project(Engine
     VERSION 0.1.0
-    LANGUAGES CXX
+    LANGUAGES C CXX
     DESCRIPTION "C++ Game Engine"
 )
 

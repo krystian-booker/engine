@@ -4,12 +4,51 @@
 #include <algorithm>
 #include <random>
 
+// Note: stb_image implementation is in a separate compilation unit to avoid multiple definitions
+// We only need declarations here
+#include <stb_image.h>
+#include <stb_image_write.h>
+
 namespace engine::terrain {
 
 bool Heightmap::load_from_file(const std::string& path, HeightmapFormat format) {
-    // For now, use load_raw which expects a raw binary file
-    // A full implementation would use image loading library (stb_image, etc.)
-    return false;
+    int width, height, channels;
+
+    // Try to load as 16-bit first for better precision
+    if (stbi_is_16_bit(path.c_str())) {
+        stbi_us* data = stbi_load_16(path.c_str(), &width, &height, &channels, 1);
+        if (data) {
+            m_width = static_cast<uint32_t>(width);
+            m_height = static_cast<uint32_t>(height);
+            m_data.resize(m_width * m_height);
+
+            for (size_t i = 0; i < m_data.size(); ++i) {
+                m_data[i] = data[i] / 65535.0f;
+            }
+
+            stbi_image_free(data);
+            recalculate_bounds();
+            return true;
+        }
+    }
+
+    // Fall back to 8-bit loading
+    stbi_uc* data = stbi_load(path.c_str(), &width, &height, &channels, 1);
+    if (!data) {
+        return false;
+    }
+
+    m_width = static_cast<uint32_t>(width);
+    m_height = static_cast<uint32_t>(height);
+    m_data.resize(m_width * m_height);
+
+    for (size_t i = 0; i < m_data.size(); ++i) {
+        m_data[i] = data[i] / 255.0f;
+    }
+
+    stbi_image_free(data);
+    recalculate_bounds();
+    return true;
 }
 
 bool Heightmap::load_from_memory(const void* data, uint32_t width, uint32_t height, HeightmapFormat format) {
@@ -511,8 +550,24 @@ float Heightmap::cubic_interpolate(float p0, float p1, float p2, float p3, float
 // SplatMap implementation
 
 bool SplatMap::load_from_file(const std::string& path) {
-    // Would use image loading library
-    return false;
+    int width, height, channels;
+    stbi_uc* data = stbi_load(path.c_str(), &width, &height, &channels, 4);  // Force RGBA
+    if (!data) {
+        return false;
+    }
+
+    m_width = static_cast<uint32_t>(width);
+    m_height = static_cast<uint32_t>(height);
+    m_channels = 4;
+    m_data.resize(m_width * m_height * m_channels);
+
+    // Convert from 8-bit to float
+    for (size_t i = 0; i < m_data.size(); ++i) {
+        m_data[i] = data[i] / 255.0f;
+    }
+
+    stbi_image_free(data);
+    return true;
 }
 
 bool SplatMap::load_from_memory(const void* data, uint32_t width, uint32_t height, uint32_t channels) {
@@ -692,14 +747,57 @@ void SplatMap::paint(float u, float v, uint32_t channel, float strength, float r
 }
 
 bool SplatMap::save_to_file(const std::string& path) const {
-    // Would use image saving library
-    return false;
+    if (!is_valid()) return false;
+
+    // Convert float data to 8-bit
+    std::vector<uint8_t> byte_data(m_data.size());
+    for (size_t i = 0; i < m_data.size(); ++i) {
+        byte_data[i] = static_cast<uint8_t>(std::clamp(m_data[i] * 255.0f, 0.0f, 255.0f));
+    }
+
+    // Determine format from extension
+    std::string ext = path.substr(path.find_last_of('.'));
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+
+    int result = 0;
+    if (ext == ".png") {
+        result = stbi_write_png(path.c_str(), m_width, m_height, m_channels,
+                                byte_data.data(), m_width * m_channels);
+    } else if (ext == ".bmp") {
+        result = stbi_write_bmp(path.c_str(), m_width, m_height, m_channels, byte_data.data());
+    } else if (ext == ".tga") {
+        result = stbi_write_tga(path.c_str(), m_width, m_height, m_channels, byte_data.data());
+    } else if (ext == ".jpg" || ext == ".jpeg") {
+        result = stbi_write_jpg(path.c_str(), m_width, m_height, m_channels, byte_data.data(), 90);
+    } else {
+        // Default to PNG
+        result = stbi_write_png(path.c_str(), m_width, m_height, m_channels,
+                                byte_data.data(), m_width * m_channels);
+    }
+
+    return result != 0;
 }
 
 // HoleMap implementation
 
 bool HoleMap::load_from_file(const std::string& path) {
-    return false;
+    int width, height, channels;
+    stbi_uc* data = stbi_load(path.c_str(), &width, &height, &channels, 1);  // Load as grayscale
+    if (!data) {
+        return false;
+    }
+
+    m_width = static_cast<uint32_t>(width);
+    m_height = static_cast<uint32_t>(height);
+    m_data.resize(m_width * m_height);
+
+    // Threshold: values < 128 are holes
+    for (size_t i = 0; i < m_data.size(); ++i) {
+        m_data[i] = (data[i] < 128);
+    }
+
+    stbi_image_free(data);
+    return true;
 }
 
 void HoleMap::generate(uint32_t width, uint32_t height, bool fill_value) {

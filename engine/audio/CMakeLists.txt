@@ -10,6 +10,7 @@ target_sources(engine_audio
         src/miniaudio_impl.cpp
         src/audio_components.cpp
         src/audio_system.cpp
+        src/audio_component_registration.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -34,6 +35,7 @@ target_link_libraries(engine_audio
     PUBLIC
         engine::core
         engine::scene
+        engine::reflect
         miniaudio::miniaudio
     PRIVATE
         engine_compiler_flags

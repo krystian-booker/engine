@@ -117,6 +117,8 @@ private:
     void collect_visible(const QuadtreeNode* node, const Frustum& frustum,
                          std::vector<uint32_t>& out_chunks) const;
     void collect_leaves(const QuadtreeNode* node, std::vector<const QuadtreeNode*>& out_leaves) const;
+    void reset_to_leaves(QuadtreeNode* node);
+    void assign_chunk_indices(QuadtreeNode* node, uint32_t& chunk_index);
 
     std::unique_ptr<QuadtreeNode> m_root;
     uint32_t m_max_depth = 5;

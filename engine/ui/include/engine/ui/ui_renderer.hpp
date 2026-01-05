@@ -9,6 +9,13 @@
 
 namespace engine::ui {
 
+// Transform state for world canvas rendering
+struct UITransform {
+    Vec2 offset{0.0f, 0.0f};
+    float scale{1.0f};
+    float alpha{1.0f};
+};
+
 // Render context for drawing UI elements
 class UIRenderContext {
 public:
@@ -22,6 +29,11 @@ public:
     void push_clip_rect(const Rect& rect);
     void pop_clip_rect();
     const Rect& get_clip_rect() const;
+
+    // Transform stack for world canvas rendering
+    void push_transform(float x, float y, float scale, float alpha);
+    void pop_transform();
+    const UITransform& get_current_transform() const { return m_current_transform; }
 
     // Drawing primitives
     void draw_rect(const Rect& rect, const Vec4& color);
@@ -64,6 +76,8 @@ private:
     std::vector<UIDrawCommand> m_commands;
 
     std::vector<Rect> m_clip_stack;
+    std::vector<UITransform> m_transform_stack;
+    UITransform m_current_transform;
     uint32_t m_current_texture = 0;
     bool m_current_is_text = false;
     uint32_t m_screen_width = 0;

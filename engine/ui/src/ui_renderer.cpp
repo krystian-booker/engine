@@ -67,11 +67,15 @@ void UIRenderContext::begin(uint32_t screen_width, uint32_t screen_height) {
     m_indices.clear();
     m_commands.clear();
     m_clip_stack.clear();
+    m_transform_stack.clear();
 
     m_screen_width = screen_width;
     m_screen_height = screen_height;
     m_current_texture = 0;
     m_current_is_text = false;
+
+    // Reset transform to identity
+    m_current_transform = UITransform{};
 
     // Start with full screen clip rect
     m_clip_stack.push_back(Rect(0, 0,
@@ -105,13 +109,42 @@ const Rect& UIRenderContext::get_clip_rect() const {
     return m_clip_stack.empty() ? default_rect : m_clip_stack.back();
 }
 
+void UIRenderContext::push_transform(float x, float y, float scale, float alpha) {
+    // Save current transform to stack
+    m_transform_stack.push_back(m_current_transform);
+
+    // Compose new transform with current
+    // New offset is current offset + new offset scaled by current scale
+    m_current_transform.offset.x += x * m_current_transform.scale;
+    m_current_transform.offset.y += y * m_current_transform.scale;
+    m_current_transform.scale *= scale;
+    m_current_transform.alpha *= alpha;
+}
+
+void UIRenderContext::pop_transform() {
+    if (!m_transform_stack.empty()) {
+        m_current_transform = m_transform_stack.back();
+        m_transform_stack.pop_back();
+    }
+}
+
 void UIRenderContext::draw_rect(const Rect& rect, const Vec4& color) {
     new_command(0);
 
-    uint32_t packed_color = pack_color(color);
+    // Apply transform to rect and color
+    Rect transformed_rect(
+        m_current_transform.offset.x + rect.x * m_current_transform.scale,
+        m_current_transform.offset.y + rect.y * m_current_transform.scale,
+        rect.width * m_current_transform.scale,
+        rect.height * m_current_transform.scale
+    );
+    Vec4 transformed_color = color;
+    transformed_color.a *= m_current_transform.alpha;
+
+    uint32_t packed_color = pack_color(transformed_color);
     uint32_t base = static_cast<uint32_t>(m_vertices.size());
 
-    add_rect_vertices(rect, Vec2(0, 0), Vec2(1, 1), packed_color);
+    add_rect_vertices(transformed_rect, Vec2(0, 0), Vec2(1, 1), packed_color);
 
     m_indices.push_back(base + 0);
     m_indices.push_back(base + 1);
@@ -132,8 +165,19 @@ void UIRenderContext::draw_rect_rounded(const Rect& rect, const Vec4& color, flo
 
     new_command(0);
 
-    uint32_t packed_color = pack_color(color);
-    add_rounded_rect_vertices(rect, radius, packed_color);
+    // Apply transform to rect, radius, and color
+    Rect transformed_rect(
+        m_current_transform.offset.x + rect.x * m_current_transform.scale,
+        m_current_transform.offset.y + rect.y * m_current_transform.scale,
+        rect.width * m_current_transform.scale,
+        rect.height * m_current_transform.scale
+    );
+    float transformed_radius = radius * m_current_transform.scale;
+    Vec4 transformed_color = color;
+    transformed_color.a *= m_current_transform.alpha;
+
+    uint32_t packed_color = pack_color(transformed_color);
+    add_rounded_rect_vertices(transformed_rect, transformed_radius, packed_color);
 }
 
 void UIRenderContext::draw_rect_outline(const Rect& rect, const Vec4& color, float thickness) {
@@ -162,14 +206,24 @@ void UIRenderContext::draw_image_uv(const Rect& rect, render::TextureHandle text
                                      Vec2 uv_min, Vec2 uv_max, const Vec4& tint) {
     new_command(texture.id, false);
 
-    uint32_t packed_color = pack_color(tint);
+    // Apply transform to rect and color
+    Rect transformed_rect(
+        m_current_transform.offset.x + rect.x * m_current_transform.scale,
+        m_current_transform.offset.y + rect.y * m_current_transform.scale,
+        rect.width * m_current_transform.scale,
+        rect.height * m_current_transform.scale
+    );
+    Vec4 transformed_tint = tint;
+    transformed_tint.a *= m_current_transform.alpha;
+
+    uint32_t packed_color = pack_color(transformed_tint);
     uint32_t base = static_cast<uint32_t>(m_vertices.size());
 
     // Add vertices with texture coordinates
-    m_vertices.push_back({Vec2(rect.x, rect.y), uv_min, packed_color});
-    m_vertices.push_back({Vec2(rect.right(), rect.y), Vec2(uv_max.x, uv_min.y), packed_color});
-    m_vertices.push_back({Vec2(rect.right(), rect.bottom()), uv_max, packed_color});
-    m_vertices.push_back({Vec2(rect.x, rect.bottom()), Vec2(uv_min.x, uv_max.y), packed_color});
+    m_vertices.push_back({Vec2(transformed_rect.x, transformed_rect.y), uv_min, packed_color});
+    m_vertices.push_back({Vec2(transformed_rect.right(), transformed_rect.y), Vec2(uv_max.x, uv_min.y), packed_color});
+    m_vertices.push_back({Vec2(transformed_rect.right(), transformed_rect.bottom()), uv_max, packed_color});
+    m_vertices.push_back({Vec2(transformed_rect.x, transformed_rect.bottom()), Vec2(uv_min.x, uv_max.y), packed_color});
 
     m_indices.push_back(base + 0);
     m_indices.push_back(base + 1);
@@ -211,6 +265,7 @@ void UIRenderContext::draw_text(const std::string& text, Vec2 position, FontHand
     // Adjust for vertical centering (roughly)
     offset.y -= atlas->get_metrics().ascent * 0.5f;
 
+    // Transform is applied in draw_text_layout
     draw_text_layout(layout, offset, font, color);
 }
 
@@ -223,21 +278,33 @@ void UIRenderContext::draw_text_layout(const TextLayout& layout, Vec2 position,
 
     new_command(atlas->get_texture().id, true);
 
-    uint32_t packed_color = pack_color(color);
+    // Apply transform to color
+    Vec4 transformed_color = color;
+    transformed_color.a *= m_current_transform.alpha;
+    uint32_t packed_color = pack_color(transformed_color);
+
+    // Apply transform to position
+    Vec2 transformed_pos(
+        m_current_transform.offset.x + position.x * m_current_transform.scale,
+        m_current_transform.offset.y + position.y * m_current_transform.scale
+    );
+    float scale = m_current_transform.scale;
 
     for (const auto& glyph : layout.glyphs) {
         if (!glyph.glyph) continue;
 
-        float x = position.x + glyph.x;
-        float y = position.y + glyph.y;
+        float x = transformed_pos.x + glyph.x * scale;
+        float y = transformed_pos.y + glyph.y * scale;
+        float w = glyph.width * scale;
+        float h = glyph.height * scale;
 
         uint32_t base = static_cast<uint32_t>(m_vertices.size());
 
         // Glyph quad
         m_vertices.push_back({Vec2(x, y), Vec2(glyph.glyph->x0, glyph.glyph->y0), packed_color});
-        m_vertices.push_back({Vec2(x + glyph.width, y), Vec2(glyph.glyph->x1, glyph.glyph->y0), packed_color});
-        m_vertices.push_back({Vec2(x + glyph.width, y + glyph.height), Vec2(glyph.glyph->x1, glyph.glyph->y1), packed_color});
-        m_vertices.push_back({Vec2(x, y + glyph.height), Vec2(glyph.glyph->x0, glyph.glyph->y1), packed_color});
+        m_vertices.push_back({Vec2(x + w, y), Vec2(glyph.glyph->x1, glyph.glyph->y0), packed_color});
+        m_vertices.push_back({Vec2(x + w, y + h), Vec2(glyph.glyph->x1, glyph.glyph->y1), packed_color});
+        m_vertices.push_back({Vec2(x, y + h), Vec2(glyph.glyph->x0, glyph.glyph->y1), packed_color});
 
         m_indices.push_back(base + 0);
         m_indices.push_back(base + 1);

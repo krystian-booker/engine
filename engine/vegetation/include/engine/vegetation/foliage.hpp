@@ -7,6 +7,11 @@
 #include <unordered_map>
 #include <engine/core/math.hpp>
 #include <engine/vegetation/grass.hpp>
+#include <bgfx/bgfx.h>
+
+namespace engine::render {
+class IRenderer;
+}
 
 namespace engine::vegetation {
 
@@ -160,7 +165,8 @@ public:
     ~FoliageSystem();
 
     // Initialize
-    void init(const AABB& bounds, const FoliageSettings& settings = {});
+    void init(const AABB& bounds, const FoliageSettings& settings = {},
+              render::IRenderer* renderer = nullptr);
     void shutdown();
     bool is_initialized() const { return m_initialized; }
 
@@ -231,6 +237,9 @@ private:
     void render_instances(uint16_t view_id, bool shadow_pass);
     void render_billboards(uint16_t view_id);
 
+    void create_gpu_resources();
+    void destroy_gpu_resources();
+
     FoliageSettings m_settings;
     AABB m_bounds;
     bool m_initialized = false;
@@ -246,10 +255,23 @@ private:
     // Wind state
     float m_wind_time = 0.0f;
 
-    // GPU resources
+    // Legacy GPU resource handles (deprecated)
     uint32_t m_instance_buffer = UINT32_MAX;
     uint32_t m_billboard_buffer = UINT32_MAX;
     uint32_t m_billboard_shader = UINT32_MAX;
+
+    // Shader programs
+    bgfx::ProgramHandle m_foliage_program = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_shadow_program = BGFX_INVALID_HANDLE;
+
+    // Uniforms
+    bgfx::UniformHandle m_u_foliage_wind = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle m_u_foliage_params = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle m_s_albedo = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle m_s_normal = BGFX_INVALID_HANDLE;
+
+    // Renderer reference for mesh buffer access
+    render::IRenderer* m_renderer = nullptr;
 
     // Cached camera position for LOD updates
     Vec3 m_last_camera_pos;
@@ -277,7 +299,7 @@ public:
     static VegetationManager& instance();
 
     // Initialize for a terrain
-    void init(const AABB& terrain_bounds);
+    void init(const AABB& terrain_bounds, render::IRenderer* renderer = nullptr);
     void shutdown();
 
     // Access subsystems

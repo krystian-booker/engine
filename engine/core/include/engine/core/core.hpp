@@ -16,4 +16,6 @@
 #include <engine/core/string_hash.hpp>
 #include <engine/core/uuid.hpp>
 #include <engine/core/asset_handle.hpp>
+#include <engine/core/allocators.hpp>
+#include <engine/core/profiler.hpp>
 

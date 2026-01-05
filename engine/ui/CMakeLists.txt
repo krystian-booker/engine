@@ -35,6 +35,7 @@ target_sources(engine_ui
         src/ui_shortcuts.cpp
         src/ui_radio_group.cpp
         src/ui_popup_menu.cpp
+        src/ui_tab_control.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -61,6 +62,7 @@ target_sources(engine_ui
             include/engine/ui/ui_shortcuts.hpp
             include/engine/ui/ui_radio_group.hpp
             include/engine/ui/ui_popup_menu.hpp
+            include/engine/ui/ui_tab_control.hpp
 )
 
 target_include_directories(engine_ui

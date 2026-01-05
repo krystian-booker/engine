@@ -4,25 +4,59 @@
 #include <engine/render/lod.hpp>
 #include <engine/render/camera_effects.hpp>
 #include <engine/render/debug_draw.hpp>
+#include <engine/render/particle_system.hpp>
+#include <engine/render/decal_system.hpp>
 #include <engine/scene/world.hpp>
 #include <engine/scene/transform.hpp>
 #include <engine/scene/render_components.hpp>
+#include <unordered_map>
 
 namespace engine::render {
 
 // Global render context
 static RenderContext s_render_context;
 
+// Global particle system
+static ParticleSystem s_particle_system;
+
+// Map from entity to particle runtime (for lifecycle management)
+static std::unordered_map<uint32_t, ParticleEmitterRuntime*> s_entity_particle_runtimes;
+
 RenderContext& get_render_context() {
     return s_render_context;
+}
+
+ParticleSystem& get_particle_system() {
+    return s_particle_system;
 }
 
 void init_render_systems(RenderPipeline* pipeline, IRenderer* renderer) {
     s_render_context.pipeline = pipeline;
     s_render_context.renderer = renderer;
+
+    // Initialize particle system
+    s_particle_system.init(renderer);
+
+    // Initialize decal system
+    DecalSystemConfig decal_config;
+    decal_config.max_decals = 1024;
+    decal_config.max_definitions = 64;
+    get_decal_system().init(decal_config);
 }
 
 void shutdown_render_systems() {
+    // Clean up particle runtimes
+    for (auto& [entity_id, runtime] : s_entity_particle_runtimes) {
+        s_particle_system.destroy_emitter_runtime(runtime);
+    }
+    s_entity_particle_runtimes.clear();
+
+    // Shutdown particle system
+    s_particle_system.shutdown();
+
+    // Shutdown decal system
+    get_decal_system().shutdown();
+
     s_render_context.pipeline = nullptr;
     s_render_context.renderer = nullptr;
     s_render_context.clear();
@@ -516,6 +550,125 @@ void debug_draw_system(scene::World& world, double dt) {
 }
 
 // ============================================================================
+// PARTICLE UPDATE SYSTEM
+// ============================================================================
+
+// Convert ParticleEmitter component to ParticleEmitterConfig
+static ParticleEmitterConfig emitter_to_config(const scene::ParticleEmitter& emitter) {
+    ParticleEmitterConfig config;
+    config.max_particles = emitter.max_particles;
+    config.emission_rate = emitter.emission_rate;
+    config.lifetime = emitter.lifetime;
+    config.initial_velocity = Vec3(0.0f, emitter.initial_speed, 0.0f);
+    config.velocity_variance = emitter.initial_velocity_variance;
+    config.initial_size = emitter.start_size;
+    config.gravity = emitter.gravity;
+    config.enabled = emitter.enabled;
+    config.loop = true;
+
+    // Set up color gradient
+    config.color_over_life.keys.clear();
+    config.color_over_life.keys.push_back({emitter.start_color, 0.0f});
+    config.color_over_life.keys.push_back({emitter.end_color, 1.0f});
+
+    // Set up size curve
+    config.size_over_life.keys.clear();
+    config.size_over_life.keys.push_back({1.0f, 0.0f});
+    float size_ratio = emitter.end_size / std::max(emitter.start_size, 0.001f);
+    config.size_over_life.keys.push_back({size_ratio, 1.0f});
+
+    return config;
+}
+
+void particle_update_system(scene::World& world, double dt) {
+    using namespace scene;
+
+    float fdt = static_cast<float>(dt);
+
+    auto view = world.view<ParticleEmitter, WorldTransform>();
+    for (auto entity : view) {
+        auto& emitter = view.get<ParticleEmitter>(entity);
+        auto& world_tf = view.get<WorldTransform>(entity);
+
+        uint32_t entity_id = static_cast<uint32_t>(entity);
+
+        // Get or create runtime for this entity
+        auto it = s_entity_particle_runtimes.find(entity_id);
+        ParticleEmitterRuntime* runtime = nullptr;
+
+        if (it == s_entity_particle_runtimes.end()) {
+            // Create new runtime
+            ParticleEmitterConfig config = emitter_to_config(emitter);
+            runtime = s_particle_system.create_emitter_runtime(config);
+            if (runtime) {
+                s_entity_particle_runtimes[entity_id] = runtime;
+            }
+        } else {
+            runtime = it->second;
+        }
+
+        if (!runtime) {
+            continue;
+        }
+
+        // Update the emitter
+        if (emitter.enabled) {
+            ParticleEmitterConfig config = emitter_to_config(emitter);
+            s_particle_system.update_emitter(runtime, config, world_tf.matrix, fdt);
+        }
+    }
+
+    // Render particles if we have an active camera
+    auto& ctx = get_render_context();
+    if (ctx.has_active_camera) {
+        s_particle_system.render(ctx.camera);
+    }
+}
+
+// ============================================================================
+// DECAL UPDATE SYSTEM
+// ============================================================================
+
+void decal_update_system(scene::World& world, double dt) {
+    using namespace scene;
+
+    float fdt = static_cast<float>(dt);
+
+    // Update the global decal system timing
+    get_decal_system().update(fdt);
+
+    // Update decal positions for entities with DecalComponent
+    auto view = world.view<DecalComponent, WorldTransform>();
+    for (auto entity : view) {
+        auto& decal = view.get<DecalComponent>(entity);
+        auto& world_tf = view.get<WorldTransform>(entity);
+
+        // Skip if no valid decal handle or not following entity
+        if (decal.decal_handle == INVALID_DECAL || !decal.follow_entity) {
+            continue;
+        }
+
+        // Get the decal instance and update its position
+        DecalInstance* instance = get_decal_system().get_instance(decal.decal_handle);
+        if (instance) {
+            // Calculate world position with local offset
+            Vec3 world_pos = world_tf.position();
+            Quat world_rot = world_tf.rotation();
+
+            // Apply local offset in entity space
+            instance->position = world_pos + world_rot * decal.local_offset;
+            instance->rotation = world_rot * decal.local_rotation;
+        }
+    }
+
+    // Update camera position for decal culling
+    auto& ctx = get_render_context();
+    if (ctx.has_active_camera) {
+        get_decal_system().set_camera_position(ctx.camera.position);
+    }
+}
+
+// ============================================================================
 // REGISTRATION
 // ============================================================================
 
@@ -525,6 +678,8 @@ void register_render_systems(scene::Scheduler& scheduler) {
     // Animation systems (Update phase)
     scheduler.add(Phase::Update, animation_update_system, "render_animation", 5);
     scheduler.add(Phase::Update, ik_update_system, "render_ik", 4);
+    scheduler.add(Phase::Update, particle_update_system, "render_particles", 3);
+    scheduler.add(Phase::Update, decal_update_system, "render_decals", 2);
 
     // Camera controller (PostUpdate phase)
     scheduler.add(Phase::PostUpdate, camera_controller_system, "render_camera_controller", 5);

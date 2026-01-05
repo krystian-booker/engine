@@ -21,6 +21,7 @@
 #include <engine/ui/ui_world_canvas.hpp>
 #include <engine/ui/ui_radio_group.hpp>
 #include <engine/ui/ui_popup_menu.hpp>
+#include <engine/ui/ui_tab_control.hpp>
 
 // ECS integration
 #include <engine/ui/ui_components.hpp>

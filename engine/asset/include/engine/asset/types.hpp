@@ -38,6 +38,7 @@ struct TextureAsset : Asset {
     TextureFormat format = TextureFormat::RGBA8;  // Actual texture format for memory calculations
     bool has_alpha = false;
     bool is_hdr = false;
+    bool is_cubemap = false;
 };
 
 // Shader asset

@@ -138,9 +138,10 @@ FetchContent_GetProperties(ufbx)
 if(NOT ufbx_POPULATED)
     FetchContent_Populate(ufbx)
 endif()
-add_library(ufbx INTERFACE)
+add_library(ufbx STATIC ${ufbx_SOURCE_DIR}/ufbx.c)
 add_library(ufbx::ufbx ALIAS ufbx)
-target_include_directories(ufbx INTERFACE ${ufbx_SOURCE_DIR})
+target_include_directories(ufbx PUBLIC ${ufbx_SOURCE_DIR})
+target_compile_definitions(ufbx PUBLIC UFBX_REAL_IS_FLOAT)
 
 # ============================================================================
 # Jolt Physics

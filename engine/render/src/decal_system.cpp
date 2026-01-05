@@ -41,7 +41,7 @@ void DecalSystem::init(const DecalSystemConfig& config) {
     u_decal_params = bgfx::createUniform("u_decalParams", bgfx::UniformType::Vec4);
     u_decal_color = bgfx::createUniform("u_decalColor", bgfx::UniformType::Vec4);
     u_decal_size = bgfx::createUniform("u_decalSize", bgfx::UniformType::Vec4);
-    u_inv_view_proj = bgfx::createUniform("u_invViewProj", bgfx::UniformType::Mat4);
+    u_inv_view_proj = bgfx::createUniform("u_customInvViewProj", bgfx::UniformType::Mat4);
     s_depth = bgfx::createUniform("s_depth", bgfx::UniformType::Sampler);
     s_gbuffer_normal = bgfx::createUniform("s_gbufferNormal", bgfx::UniformType::Sampler);
     s_decal_albedo = bgfx::createUniform("s_decalAlbedo", bgfx::UniformType::Sampler);

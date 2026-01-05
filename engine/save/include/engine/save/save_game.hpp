@@ -108,6 +108,9 @@ public:
     bool is_valid() const { return m_is_valid; }
     uint32_t get_version() const { return m_metadata.version; }
 
+    // Set version (used during migration)
+    void set_version(uint32_t version) { m_metadata.version = version; }
+
 private:
     bool write_chunk(std::ostream& stream, SaveChunkType type, const std::vector<uint8_t>& data) const;
     bool read_chunk(std::istream& stream, SaveChunkHeader& header, std::vector<uint8_t>& data);

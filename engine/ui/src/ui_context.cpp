@@ -185,12 +185,10 @@ void UIContext::render_world_canvases(render::RenderView view) {
         float x = screen_pos.x - canvas_w * 0.5f;
         float y = screen_pos.y - canvas_h * 0.5f;
 
-        // Note: UIRenderContext currently doesn't support transform stack for world rendering.
-        // For now we render without transform which might be incorrect but fixes compilation.
-        // TODO: Implement push_transform/pop_transform in UIRenderContext
-        // m_render_context.push_transform(x, y, scale, alpha);
+        // Apply transform for world canvas rendering
+        m_render_context.push_transform(x, y, scale, alpha);
         canvas->render(m_render_context);
-        // m_render_context.pop_transform();
+        m_render_context.pop_transform();
     }
 
     m_render_context.end();

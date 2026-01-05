@@ -15,6 +15,8 @@
 #include <engine/streaming/streaming_volume.hpp>
 #include <engine/cinematic/cinematic.hpp>
 #include <engine/navigation/navigation_systems.hpp>
+#include <engine/terrain/terrain.hpp>
+#include <engine/vegetation/vegetation_systems.hpp>
 #include <engine/ui/ui_context.hpp>
 #include <engine/ui/ui_system.hpp>
 
@@ -27,6 +29,31 @@
 #include <windows.h>
 #endif
 
+
+#include <engine/physics/physics_world.hpp>
+#include <engine/physics/physics_system.hpp>
+
+// Helper to access physics world from terrain module
+namespace engine::terrain {
+    extern engine::physics::PhysicsWorld& get_physics_world();
+}
+
+namespace engine::core {
+    // Global pointer for the terrain accessor
+    static engine::physics::PhysicsWorld* s_physics_world_instance = nullptr;
+}
+
+namespace engine::terrain {
+    engine::physics::PhysicsWorld& get_physics_world() {
+        if (!engine::core::s_physics_world_instance) {
+            // Should not happen if application invalid
+            static std::unique_ptr<engine::physics::PhysicsWorld> fallback = std::make_unique<engine::physics::PhysicsWorld>();
+            return *fallback;
+        }
+        return *engine::core::s_physics_world_instance;
+    }
+}
+
 namespace engine::core {
 
 Application::Application()
@@ -37,6 +64,11 @@ Application::Application()
 Application::~Application() {
     // Ensure plugin is unloaded before engine systems are destroyed
     unload_game_plugin();
+    
+    // Clear global pointer
+    if (s_physics_world_instance == m_physics_world.get()) {
+        s_physics_world_instance = nullptr;
+    }
 }
 
 int Application::run(int argc, char** argv) {
@@ -66,6 +98,14 @@ int Application::run(int argc, char** argv) {
 
     // Initialize engine systems
     m_world = std::make_unique<scene::World>();
+    
+    // Initialize Physics
+    m_physics_world = std::make_unique<physics::PhysicsWorld>();
+    m_physics_world->init(settings().physics);
+    s_physics_world_instance = m_physics_world.get();
+    
+    m_physics_system = std::make_unique<physics::PhysicsSystem>(*m_physics_world);
+
     m_engine_scheduler = std::make_unique<scene::Scheduler>();
     m_system_registry = std::make_unique<plugin::SystemRegistry>();
     m_system_registry->set_engine_scheduler(m_engine_scheduler.get());
@@ -88,6 +128,14 @@ int Application::run(int argc, char** argv) {
             // Initialize and register render systems
             render::init_render_systems(m_render_pipeline.get(), m_renderer.get());
             render::register_render_systems(*m_engine_scheduler);
+
+            // Initialize and register terrain systems
+            terrain::init_terrain_systems();
+            terrain::register_terrain_systems(*m_engine_scheduler);
+
+            // Initialize and register vegetation systems
+            vegetation::init_vegetation_systems();
+            vegetation::register_vegetation_systems(*m_engine_scheduler);
 
             // Initialize UI system
             m_ui_context = std::make_unique<ui::UIContext>();
@@ -210,6 +258,9 @@ int Application::run(int argc, char** argv) {
 
     // Shutdown navigation system
     navigation::navigation_shutdown();
+
+    // Shutdown terrain systems
+    terrain::shutdown_terrain_systems();
 
     // Shutdown render systems
     render::shutdown_render_systems();
@@ -589,8 +640,11 @@ void Application::register_engine_systems() {
     // Transform system in PostUpdate for audio/render (priority 10 = runs first)
     m_engine_scheduler->add(scene::Phase::PostUpdate, scene::transform_system, "transform", 10);
 
-    // Streaming systems in PostUpdate, after transform (priority 8-6)
+    // Streaming systems in PostUpdate, after transform (priority 9-6)
+    // Entity system runs first to handle migration before unloads
+    m_engine_scheduler->add(scene::Phase::PostUpdate, streaming::streaming_entity_system, "streaming_entities", 9);
     m_engine_scheduler->add(scene::Phase::PostUpdate, streaming::streaming_update_system, "streaming_update", 8);
+    m_engine_scheduler->add(scene::Phase::PostUpdate, streaming::streaming_zone_system, "streaming_zones", 7);
     m_engine_scheduler->add(scene::Phase::PostUpdate, streaming::streaming_volume_system, "streaming_volumes", 7);
     m_engine_scheduler->add(scene::Phase::PostUpdate, streaming::streaming_portal_system, "streaming_portals", 6);
 

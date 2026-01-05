@@ -1,11 +1,19 @@
 #include <engine/vegetation/foliage.hpp>
 #include <engine/vegetation/grass.hpp>
+#include <engine/render/instancing.hpp>
+#include <engine/render/billboard.hpp>
+#include <engine/render/renderer.hpp>
+#include <engine/core/log.hpp>
+#include <bgfx/bgfx.h>
 #include <algorithm>
 #include <random>
 #include <cmath>
 #include <fstream>
 
 namespace engine::vegetation {
+
+using namespace engine::core;
+using namespace engine::render;
 
 // Global instances
 static FoliageSystem* s_foliage_system = nullptr;
@@ -37,21 +45,29 @@ FoliageSystem::~FoliageSystem() {
     shutdown();
 }
 
-void FoliageSystem::init(const AABB& bounds, const FoliageSettings& settings) {
+void FoliageSystem::init(const AABB& bounds, const FoliageSettings& settings,
+                          render::IRenderer* renderer) {
     if (m_initialized) shutdown();
 
     m_bounds = bounds;
     m_settings = settings;
+    m_renderer = renderer;
+
+    create_gpu_resources();
+
     m_initialized = true;
 }
 
 void FoliageSystem::shutdown() {
     if (!m_initialized) return;
 
+    destroy_gpu_resources();
+
     m_types.clear();
     m_type_order.clear();
     m_instances.clear();
     m_chunks.clear();
+    m_renderer = nullptr;
 
     m_initialized = false;
 }
@@ -523,23 +539,261 @@ void FoliageSystem::update_wind(float dt) {
     m_wind_time += dt * m_settings.wind_speed;
 }
 
+// Shader path helper
+static std::string get_foliage_shader_path() {
+#if defined(_WIN32)
+    return "shaders/dx11/";
+#elif defined(__APPLE__)
+    return "shaders/metal/";
+#else
+    return "shaders/glsl/";
+#endif
+}
+
+// Load shader from file
+static bgfx::ShaderHandle load_foliage_shader(const std::string& name) {
+    std::string path = get_foliage_shader_path() + name + ".bin";
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+
+    if (!file.is_open()) {
+        log(LogLevel::Warn, ("Foliage shader not found: " + path).c_str());
+        return BGFX_INVALID_HANDLE;
+    }
+
+    auto size = file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    const bgfx::Memory* mem = bgfx::alloc(static_cast<uint32_t>(size) + 1);
+    file.read(reinterpret_cast<char*>(mem->data), size);
+    mem->data[size] = '\0';
+
+    return bgfx::createShader(mem);
+}
+
+void FoliageSystem::create_gpu_resources() {
+    // Load main foliage shaders
+    bgfx::ShaderHandle vs = load_foliage_shader("vs_foliage");
+    bgfx::ShaderHandle fs = load_foliage_shader("fs_foliage");
+
+    if (bgfx::isValid(vs) && bgfx::isValid(fs)) {
+        m_foliage_program = bgfx::createProgram(vs, fs, true);
+    } else {
+        log(LogLevel::Warn, "Failed to load foliage shaders, foliage will not render");
+        if (bgfx::isValid(vs)) bgfx::destroy(vs);
+        if (bgfx::isValid(fs)) bgfx::destroy(fs);
+    }
+
+    // Load shadow shaders
+    bgfx::ShaderHandle shadow_vs = load_foliage_shader("vs_foliage_shadow");
+    bgfx::ShaderHandle shadow_fs = load_foliage_shader("fs_foliage_shadow");
+
+    if (bgfx::isValid(shadow_vs) && bgfx::isValid(shadow_fs)) {
+        m_shadow_program = bgfx::createProgram(shadow_vs, shadow_fs, true);
+    } else {
+        log(LogLevel::Debug, "Foliage shadow shaders not found, shadows will be disabled");
+        if (bgfx::isValid(shadow_vs)) bgfx::destroy(shadow_vs);
+        if (bgfx::isValid(shadow_fs)) bgfx::destroy(shadow_fs);
+    }
+
+    // Create uniforms
+    m_u_foliage_wind = bgfx::createUniform("u_foliageWind", bgfx::UniformType::Vec4);
+    m_u_foliage_params = bgfx::createUniform("u_foliageParams", bgfx::UniformType::Vec4);
+    m_s_albedo = bgfx::createUniform("s_albedo", bgfx::UniformType::Sampler);
+    m_s_normal = bgfx::createUniform("s_normal", bgfx::UniformType::Sampler);
+}
+
+void FoliageSystem::destroy_gpu_resources() {
+    if (bgfx::isValid(m_foliage_program)) {
+        bgfx::destroy(m_foliage_program);
+        m_foliage_program = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(m_shadow_program)) {
+        bgfx::destroy(m_shadow_program);
+        m_shadow_program = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(m_u_foliage_wind)) {
+        bgfx::destroy(m_u_foliage_wind);
+        m_u_foliage_wind = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(m_u_foliage_params)) {
+        bgfx::destroy(m_u_foliage_params);
+        m_u_foliage_params = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(m_s_albedo)) {
+        bgfx::destroy(m_s_albedo);
+        m_s_albedo = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(m_s_normal)) {
+        bgfx::destroy(m_s_normal);
+        m_s_normal = BGFX_INVALID_HANDLE;
+    }
+}
+
 void FoliageSystem::render_instances(uint16_t view_id, bool shadow_pass) {
-    // Would render using bgfx here
-    // Group by type, then by LOD for efficient batching
+    if (m_instances.empty()) return;
+
+    // Check if we have the required resources
+    bgfx::ProgramHandle program = shadow_pass ? m_shadow_program : m_foliage_program;
+    if (!bgfx::isValid(program)) {
+        return;  // Shaders not loaded
+    }
+
+    // Group visible instances by type and LOD for batching
+    // Map: type_index -> lod -> list of instances
+    std::unordered_map<uint32_t, std::unordered_map<uint32_t, std::vector<const FoliageInstance*>>> batches;
+
+    for (const auto& inst : m_instances) {
+        if (!inst.visible || inst.use_billboard) continue;
+
+        batches[inst.type_index][inst.current_lod].push_back(&inst);
+    }
+
+    // Set wind uniform (shared across all batches)
+    if (!shadow_pass && bgfx::isValid(m_u_foliage_wind)) {
+        Vec4 wind_data(
+            m_settings.wind_direction.x,
+            m_settings.wind_direction.y,
+            m_wind_time,
+            m_settings.wind_strength
+        );
+        bgfx::setUniform(m_u_foliage_wind, &wind_data);
+    }
+
+    // Set foliage params
+    if (bgfx::isValid(m_u_foliage_params)) {
+        Vec4 params(0.0f, 0.0f, 0.5f, 100.0f);  // alpha_cutoff=0.5, fade_start=100
+        bgfx::setUniform(m_u_foliage_params, &params);
+    }
+
+    // Render each batch
+    for (const auto& [type_idx, lod_map] : batches) {
+        if (type_idx >= m_type_order.size()) continue;
+
+        const FoliageType* type = get_type(m_type_order[type_idx]);
+        if (!type) continue;
+
+        for (const auto& [lod_level, instances] : lod_map) {
+            if (instances.empty()) continue;
+
+            // Get LOD mesh and material
+            uint32_t lod_idx = shadow_pass ? std::min(lod_level, m_settings.shadow_lod) : lod_level;
+            if (lod_idx >= type->lods.size()) lod_idx = static_cast<uint32_t>(type->lods.size()) - 1;
+
+            const FoliageLOD& lod = type->lods[lod_idx];
+            if (lod.mesh_id == UINT32_MAX) continue;
+
+            // Get mesh buffer info from renderer
+            MeshBufferInfo mesh_info{0, 0, 0, false};
+            if (m_renderer) {
+                mesh_info = m_renderer->get_mesh_buffer_info(MeshHandle{lod.mesh_id});
+            }
+
+            if (!mesh_info.valid) {
+                continue;  // Skip if mesh not found
+            }
+
+            // Check instance buffer availability
+            uint32_t num_instances = static_cast<uint32_t>(instances.size());
+            uint16_t stride = sizeof(Mat4);  // Transform matrix per instance
+
+            if (bgfx::getAvailInstanceDataBuffer(num_instances, stride) < num_instances) {
+                continue;  // Not enough buffer space
+            }
+
+            // Allocate and fill instance buffer
+            bgfx::InstanceDataBuffer idb;
+            bgfx::allocInstanceDataBuffer(&idb, num_instances, stride);
+
+            Mat4* transforms = reinterpret_cast<Mat4*>(idb.data);
+            for (size_t i = 0; i < instances.size(); ++i) {
+                const FoliageInstance* inst = instances[i];
+
+                // Build transform matrix
+                Mat4 transform = glm::translate(Mat4(1.0f), inst->position);
+                transform = transform * glm::mat4_cast(inst->rotation);
+                transform = glm::scale(transform, Vec3(inst->scale));
+
+                transforms[i] = transform;
+            }
+
+            // Set vertex and index buffers
+            bgfx::VertexBufferHandle vbh = {mesh_info.vertex_buffer};
+            bgfx::IndexBufferHandle ibh = {mesh_info.index_buffer};
+
+            bgfx::setVertexBuffer(0, vbh);
+            bgfx::setIndexBuffer(ibh);
+            bgfx::setInstanceDataBuffer(&idb);
+
+            // Set state
+            uint64_t state = BGFX_STATE_DEFAULT | BGFX_STATE_MSAA;
+            if (shadow_pass) {
+                state = BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS | BGFX_STATE_CULL_CCW;
+            }
+            bgfx::setState(state);
+
+            // Submit draw call
+            bgfx::submit(view_id, program);
+        }
+    }
 }
 
 void FoliageSystem::render_billboards(uint16_t view_id) {
-    // Would render billboards using bgfx here
+    if (m_instances.empty()) return;
+
+    auto& billboard_renderer = get_billboard_renderer();
+    if (!billboard_renderer.is_initialized()) return;
+
+    // Group billboard instances by type
+    std::unordered_map<uint32_t, std::vector<const FoliageInstance*>> billboard_batches;
+
+    for (const auto& inst : m_instances) {
+        if (!inst.visible || !inst.use_billboard) continue;
+
+        billboard_batches[inst.type_index].push_back(&inst);
+    }
+
+    // Create billboard batches
+    for (const auto& [type_idx, instances] : billboard_batches) {
+        if (type_idx >= m_type_order.size()) continue;
+
+        const FoliageType* type = get_type(m_type_order[type_idx]);
+        if (!type || !type->use_billboard) continue;
+
+        const FoliageBillboard& bb = type->billboard;
+        if (bb.texture == UINT32_MAX) continue;
+
+        BillboardBatch batch;
+        batch.texture = TextureHandle{bb.texture};
+        batch.mode = bb.rotate_to_camera ? BillboardMode::ScreenAligned : BillboardMode::AxisAligned;
+        batch.depth_test = true;
+        batch.depth_write = true;
+
+        batch.instances.reserve(instances.size());
+
+        for (const FoliageInstance* inst : instances) {
+            BillboardInstance bi;
+            bi.position = inst->position + Vec3(0.0f, bb.size.y * 0.5f * inst->scale, 0.0f);  // Center billboard
+            bi.size = bb.size * inst->scale;
+            bi.color = Vec4(1.0f);  // No tint
+            bi.uv_offset = bb.uv_min;
+            bi.uv_scale = bb.uv_max - bb.uv_min;
+            bi.rotation = 0.0f;
+
+            batch.instances.push_back(bi);
+        }
+
+        billboard_renderer.submit_batch(batch);
+    }
 }
 
 // VegetationManager implementation
 
-void VegetationManager::init(const AABB& terrain_bounds) {
+void VegetationManager::init(const AABB& terrain_bounds, render::IRenderer* renderer) {
     if (m_initialized) shutdown();
 
     m_bounds = terrain_bounds;
     m_grass.init(terrain_bounds);
-    m_foliage.init(terrain_bounds);
+    m_foliage.init(terrain_bounds, FoliageSettings{}, renderer);
     m_initialized = true;
 }
 

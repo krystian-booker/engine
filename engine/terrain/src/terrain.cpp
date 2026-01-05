@@ -1,8 +1,15 @@
 #include <engine/terrain/terrain.hpp>
+#include <engine/terrain/terrain_streaming.hpp>
+#include <engine/physics/physics_world.hpp>
+#include <engine/physics/shapes.hpp>
+#include <nlohmann/json.hpp>
 #include <algorithm>
 #include <fstream>
 
 namespace engine::terrain {
+
+// Forward declaration for physics world access
+extern engine::physics::PhysicsWorld& get_physics_world();
 
 // Global instances
 static TerrainManager* s_terrain_manager = nullptr;
@@ -84,12 +91,26 @@ bool Terrain::create_from_heightmap(const std::string& path, const Vec3& positio
 void Terrain::destroy() {
     if (!m_initialized) return;
 
+    // Destroy physics body
+    if (m_physics_body != UINT32_MAX) {
+        try {
+            auto& physics = get_physics_world();
+            engine::physics::PhysicsBodyId body_id;
+            body_id.id = m_physics_body;
+            if (physics.is_valid(body_id)) {
+                physics.destroy_body(body_id);
+            }
+        } catch (...) {
+            // Physics world may already be shut down
+        }
+        m_physics_body = UINT32_MAX;
+    }
+
     m_renderer.shutdown();
     m_collision_vertices.clear();
     m_collision_indices.clear();
     m_dirty_regions.clear();
 
-    m_physics_body = UINT32_MAX;
     m_initialized = false;
 }
 
@@ -249,6 +270,7 @@ void Terrain::apply_brush(const Vec3& world_pos, const TerrainBrush& brush, floa
                         radius_uv,
                         brush.falloff
                     );
+                    m_splat_map_dirty = true;
                     break;
                 }
             }
@@ -276,12 +298,42 @@ void Terrain::mark_dirty(const AABB& region) {
 }
 
 void Terrain::rebuild_dirty_chunks() {
-    // Rebuild affected chunks
+    if (!m_initialized) return;
+
+    // Update splat map texture if painted
+    if (m_splat_map_dirty) {
+        m_renderer.update_splat_texture();
+        m_splat_map_dirty = false;
+    }
+
+    // Nothing more to do if no dirty regions
+    if (m_dirty_regions.empty()) return;
+
+    // Rebuild each dirty region
+    for (const auto& region : m_dirty_regions) {
+        // Transform to local space (relative to terrain origin)
+        AABB local_region;
+        local_region.min = region.min - m_config.position;
+        local_region.max = region.max - m_config.position;
+
+        m_renderer.rebuild_dirty_region(local_region);
+    }
+
+    // Clear dirty regions
     m_dirty_regions.clear();
+
+    // Rebuild collision if needed
+    if (m_collision_dirty && m_config.generate_collision) {
+        rebuild_collision();
+        m_collision_dirty = false;
+    }
 }
 
 void Terrain::update(float dt, const Vec3& camera_position, const Frustum& frustum) {
     if (!m_initialized) return;
+
+    // Process any dirty regions from terrain editing
+    rebuild_dirty_chunks();
 
     // Transform camera to local space
     Vec3 local_camera = camera_position - m_config.position;
@@ -300,11 +352,37 @@ void Terrain::render_shadow(uint16_t view_id) {
 }
 
 void Terrain::rebuild_collision() {
+    using namespace engine::physics;
+
     uint32_t resolution = m_config.collision_resolution;
     if (resolution == 0) {
         resolution = m_config.render_settings.chunk_resolution;
     }
 
+    // Destroy existing physics body if any
+    if (m_physics_body != UINT32_MAX) {
+        try {
+            auto& physics = get_physics_world();
+            PhysicsBodyId body_id;
+            body_id.id = m_physics_body;
+            if (physics.is_valid(body_id)) {
+                physics.destroy_body(body_id);
+            }
+        } catch (...) {
+            // Physics world may not be initialized
+        }
+        m_physics_body = UINT32_MAX;
+    }
+
+    // Generate height field data for physics
+    std::vector<float> heights;
+    uint32_t rows, cols;
+    TerrainPhysicsGenerator::generate_height_field(
+        m_heightmap, m_config.scale,
+        heights, rows, cols
+    );
+
+    // Also keep triangle mesh data for other uses
     TerrainPhysicsGenerator::generate_collision_mesh(
         m_heightmap, m_config.scale,
         m_collision_vertices, m_collision_indices,
@@ -318,10 +396,62 @@ void Terrain::rebuild_collision() {
 
     m_collision_dirty = false;
 
-    // Would create physics body here using m_collision_vertices and m_collision_indices
+    // Create physics body using HeightField shape
+    try {
+        auto& physics = get_physics_world();
+
+        HeightFieldShapeSettings height_field;
+        height_field.heights = std::move(heights);
+        height_field.num_rows = rows;
+        height_field.num_cols = cols;
+        height_field.scale = Vec3(
+            m_config.scale.x / (cols - 1),
+            1.0f,
+            m_config.scale.z / (rows - 1)
+        );
+        height_field.offset = m_config.position;
+
+        BodySettings body_settings;
+        body_settings.type = BodyType::Static;
+        body_settings.position = m_config.position;
+        body_settings.rotation = Quat(1.0f, 0.0f, 0.0f, 0.0f);
+        body_settings.shape = &height_field;
+        body_settings.friction = 0.8f;
+        body_settings.restitution = 0.0f;
+
+        PhysicsBodyId body_id = physics.create_body(body_settings);
+        if (body_id.valid()) {
+            m_physics_body = body_id.id;
+        }
+    } catch (...) {
+        // Physics world may not be initialized - terrain can still work without physics
+    }
+}
+
+void Terrain::enable_streaming() {
+    if (!m_initialized || !m_config.enable_streaming) return;
+
+    TerrainStreamingConfig stream_config;
+    stream_config.load_distance = m_config.streaming_distance;
+    stream_config.unload_distance = m_config.streaming_distance * 1.2f;
+    stream_config.chunk_world_size = m_config.scale.x / m_config.render_settings.chunks_per_side;
+    stream_config.chunk_resolution = m_config.render_settings.chunk_resolution;
+    stream_config.use_single_heightmap = true;
+
+    m_renderer.enable_streaming(stream_config);
+}
+
+void Terrain::disable_streaming() {
+    m_renderer.disable_streaming();
+}
+
+bool Terrain::is_streaming_enabled() const {
+    return m_renderer.is_streaming_enabled();
 }
 
 bool Terrain::save_to_file(const std::string& directory) const {
+    using json = nlohmann::json;
+
     // Save heightmap
     std::string heightmap_path = directory + "/heightmap.raw";
     if (!m_heightmap.save_raw(heightmap_path)) return false;
@@ -330,19 +460,112 @@ bool Terrain::save_to_file(const std::string& directory) const {
     std::string splat_path = directory + "/splatmap.png";
     m_splat_map.save_to_file(splat_path);
 
-    // Save config
+    // Serialize config to JSON
+    json config_json;
+    config_json["position"] = { m_config.position.x, m_config.position.y, m_config.position.z };
+    config_json["scale"] = { m_config.scale.x, m_config.scale.y, m_config.scale.z };
+    config_json["heightmap_path"] = "heightmap.raw";
+    config_json["splat_map_path"] = "splatmap.png";
+    config_json["hole_map_path"] = m_config.hole_map_path;
+    config_json["generate_collision"] = m_config.generate_collision;
+    config_json["collision_resolution"] = m_config.collision_resolution;
+    config_json["enable_streaming"] = m_config.enable_streaming;
+    config_json["streaming_distance"] = m_config.streaming_distance;
+
+    // Save render settings
+    json render_json;
+    render_json["chunk_resolution"] = m_config.render_settings.chunk_resolution;
+    render_json["chunks_per_side"] = m_config.render_settings.chunks_per_side;
+    render_json["cast_shadows"] = m_config.render_settings.cast_shadows;
+    render_json["receive_shadows"] = m_config.render_settings.receive_shadows;
+    config_json["render_settings"] = render_json;
+
+    // Write JSON to file
     std::string config_path = directory + "/terrain.json";
-    // Would serialize config here
+    std::ofstream config_file(config_path);
+    if (!config_file.is_open()) return false;
+    config_file << config_json.dump(2);
 
     return true;
 }
 
 bool Terrain::load_from_file(const std::string& directory) {
-    TerrainConfig config;
-    config.heightmap_path = directory + "/heightmap.raw";
-    config.splat_map_path = directory + "/splatmap.png";
+    using json = nlohmann::json;
 
-    // Would deserialize config from terrain.json
+    std::string config_path = directory + "/terrain.json";
+    std::ifstream config_file(config_path);
+    if (!config_file.is_open()) {
+        // Fallback to old format (no JSON config)
+        TerrainConfig config;
+        config.heightmap_path = directory + "/heightmap.raw";
+        config.splat_map_path = directory + "/splatmap.png";
+        return create(config);
+    }
+
+    json config_json;
+    try {
+        config_file >> config_json;
+    } catch (...) {
+        return false;
+    }
+
+    TerrainConfig config;
+
+    // Parse position
+    if (config_json.contains("position") && config_json["position"].is_array()) {
+        auto pos = config_json["position"];
+        config.position = Vec3(pos[0].get<float>(), pos[1].get<float>(), pos[2].get<float>());
+    }
+
+    // Parse scale
+    if (config_json.contains("scale") && config_json["scale"].is_array()) {
+        auto scale = config_json["scale"];
+        config.scale = Vec3(scale[0].get<float>(), scale[1].get<float>(), scale[2].get<float>());
+    }
+
+    // Parse paths (prepend directory)
+    if (config_json.contains("heightmap_path")) {
+        config.heightmap_path = directory + "/" + config_json["heightmap_path"].get<std::string>();
+    }
+    if (config_json.contains("splat_map_path")) {
+        config.splat_map_path = directory + "/" + config_json["splat_map_path"].get<std::string>();
+    }
+    if (config_json.contains("hole_map_path") && !config_json["hole_map_path"].get<std::string>().empty()) {
+        config.hole_map_path = directory + "/" + config_json["hole_map_path"].get<std::string>();
+    }
+
+    // Parse physics settings
+    if (config_json.contains("generate_collision")) {
+        config.generate_collision = config_json["generate_collision"].get<bool>();
+    }
+    if (config_json.contains("collision_resolution")) {
+        config.collision_resolution = config_json["collision_resolution"].get<uint32_t>();
+    }
+
+    // Parse streaming settings
+    if (config_json.contains("enable_streaming")) {
+        config.enable_streaming = config_json["enable_streaming"].get<bool>();
+    }
+    if (config_json.contains("streaming_distance")) {
+        config.streaming_distance = config_json["streaming_distance"].get<float>();
+    }
+
+    // Parse render settings
+    if (config_json.contains("render_settings")) {
+        auto render = config_json["render_settings"];
+        if (render.contains("chunk_resolution")) {
+            config.render_settings.chunk_resolution = render["chunk_resolution"].get<uint32_t>();
+        }
+        if (render.contains("chunks_per_side")) {
+            config.render_settings.chunks_per_side = render["chunks_per_side"].get<uint32_t>();
+        }
+        if (render.contains("cast_shadows")) {
+            config.render_settings.cast_shadows = render["cast_shadows"].get<bool>();
+        }
+        if (render.contains("receive_shadows")) {
+            config.render_settings.receive_shadows = render["receive_shadows"].get<bool>();
+        }
+    }
 
     return create(config);
 }

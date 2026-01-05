@@ -8,6 +8,14 @@
 
 namespace engine::render {
 
+// Info about mesh GPU buffers (for direct access by vegetation/particle systems)
+struct MeshBufferInfo {
+    uint16_t vertex_buffer;   // Native vertex buffer handle (bgfx::VertexBufferHandle::idx)
+    uint16_t index_buffer;    // Native index buffer handle (bgfx::IndexBufferHandle::idx)
+    uint32_t index_count;     // Number of indices
+    bool valid;               // Whether the mesh exists and handles are valid
+};
+
 // Abstract renderer interface - hides BGFX implementation details
 class IRenderer {
 public:
@@ -111,6 +119,9 @@ public:
     // Native handle access (for post-process effects that need direct GPU access)
     // Returns the native texture handle as uint16_t (bgfx::TextureHandle::idx)
     virtual uint16_t get_native_texture_handle(TextureHandle h) const = 0;
+
+    // Get native mesh buffer handles (for instanced rendering in vegetation/particle systems)
+    virtual MeshBufferInfo get_mesh_buffer_info(MeshHandle mesh) const = 0;
 };
 
 // Factory function to create BGFX renderer

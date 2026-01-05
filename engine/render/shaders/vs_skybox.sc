@@ -3,7 +3,7 @@ $output v_worldDir
 
 #include <bgfx_shader.sh>
 
-
+uniform mat4 u_customInvViewProj;
 
 void main()
 {
@@ -13,6 +13,6 @@ void main()
 
     // Reconstruct world direction from NDC position
     // Use far plane (z=1) for the ray direction
-    vec4 worldPos = mul(u_invViewProj, vec4(a_position.xy, 1.0, 1.0));
+    vec4 worldPos = mul(u_customInvViewProj, vec4(a_position.xy, 1.0, 1.0));
     v_worldDir = worldPos.xyz / worldPos.w;
 }

@@ -17,6 +17,7 @@ enum class ShapeType : uint8_t {
     Cylinder,
     ConvexHull,
     Mesh,
+    HeightField,
     Compound
 };
 
@@ -78,6 +79,17 @@ struct MeshShapeSettings : ShapeSettings {
     MeshShapeSettings() { type = ShapeType::Mesh; }
 };
 
+// Height field shape (for terrain)
+struct HeightFieldShapeSettings : ShapeSettings {
+    std::vector<float> heights;          // Height values (row-major order)
+    uint32_t num_rows = 0;               // Number of rows (Z axis)
+    uint32_t num_cols = 0;               // Number of columns (X axis)
+    Vec3 scale{1.0f};                    // Scale applied to the height field
+    Vec3 offset{0.0f};                   // World offset
+
+    HeightFieldShapeSettings() { type = ShapeType::HeightField; }
+};
+
 // Compound shape (multiple shapes combined)
 struct CompoundShapeSettings : ShapeSettings {
     struct Child {
@@ -98,6 +110,7 @@ using ShapeVariant = std::variant<
     CylinderShapeSettings,
     ConvexHullShapeSettings,
     MeshShapeSettings,
+    HeightFieldShapeSettings,
     CompoundShapeSettings
 >;
 

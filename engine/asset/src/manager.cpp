@@ -21,6 +21,8 @@
 // STB image implementation
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <stb_image_write.h>
 
 namespace engine::asset {
 
@@ -1443,6 +1445,7 @@ std::shared_ptr<TextureAsset> AssetManager::load_texture_internal(const std::str
         asset->format = dds_data.format;
         asset->is_hdr = (dds_data.format == render::TextureFormat::RGBA16F ||
                          dds_data.format == render::TextureFormat::RGBA32F);
+        asset->is_cubemap = dds_data.is_cubemap;
 
         render::TextureData tex_data;
         tex_data.width = dds_data.width;
@@ -1473,6 +1476,7 @@ std::shared_ptr<TextureAsset> AssetManager::load_texture_internal(const std::str
         asset->format = ktx_data.format;
         asset->is_hdr = (ktx_data.format == render::TextureFormat::RGBA16F ||
                          ktx_data.format == render::TextureFormat::RGBA32F);
+        asset->is_cubemap = ktx_data.is_cubemap;
 
         render::TextureData tex_data;
         tex_data.width = ktx_data.width;

@@ -9,6 +9,12 @@
 #include <string>
 #include <algorithm>
 
+// Forward declaration
+namespace engine::terrain {
+class TerrainStreamer;
+struct TerrainStreamingConfig;
+}
+
 namespace engine::terrain {
 
 using namespace engine::core;
@@ -47,6 +53,8 @@ struct TerrainRenderSettings {
 
     // LOD
     TerrainLODSettings lod_settings;
+    bool use_quadtree_lod = true;               // Use quadtree instead of uniform grid
+    uint32_t quadtree_max_depth = 5;            // Maximum quadtree subdivision depth
 
     // Rendering
     bool enable_tessellation = false;
@@ -120,13 +128,26 @@ public:
     uint32_t get_visible_chunk_count() const { return m_visible_chunk_count; }
     const std::vector<TerrainChunk>& get_chunks() const { return m_chunks; }
 
+    // Dirty chunk rebuild (for terrain editing)
+    void rebuild_dirty_region(const AABB& dirty_region);
+
+    // Update splat map texture (for paint brush)
+    void update_splat_texture();
+
     // Debug
     void set_wireframe(bool enable) { m_wireframe = enable; }
     void set_show_chunks(bool enable) { m_show_chunks = enable; }
 
+    // Streaming
+    void enable_streaming(const TerrainStreamingConfig& config);
+    void disable_streaming();
+    bool is_streaming_enabled() const { return m_streamer != nullptr; }
+    TerrainStreamer* get_streamer() { return m_streamer.get(); }
+
 private:
     void generate_mesh();
     void generate_chunk(uint32_t chunk_x, uint32_t chunk_z);
+    void regenerate_chunk_vertices(TerrainChunk& chunk);
     void update_chunk_lods(const Vec3& camera_pos);
     void update_visibility(const Frustum& frustum);
     void rebuild_index_buffer();
@@ -159,6 +180,14 @@ private:
     // LOD
     TerrainLODSelector m_lod_selector;
     std::vector<std::vector<uint32_t>> m_lod_index_buffers;
+
+    // Quadtree LOD (optional, alternative to uniform grid)
+    bool m_use_quadtree = false;
+    TerrainQuadtree m_quadtree;
+    std::vector<TerrainChunk> m_quadtree_chunks;
+
+    // Streaming (optional, for large terrains)
+    std::unique_ptr<TerrainStreamer> m_streamer;
 
     // GPU resources (bgfx handles would go here)
     uint32_t m_vertex_buffer = UINT32_MAX;

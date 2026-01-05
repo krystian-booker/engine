@@ -79,6 +79,45 @@ void SaveSystem::unregister_handler(const std::string& type_name) {
     );
 }
 
+void SaveSystem::register_migration(uint32_t from_version, SaveMigrationFunc migration) {
+    m_migrations[from_version] = std::move(migration);
+}
+
+void SaveSystem::clear_migrations() {
+    m_migrations.clear();
+}
+
+bool SaveSystem::apply_migrations(SaveGame& save) {
+    uint32_t current_version = save.get_version();
+
+    // Apply migrations sequentially until we reach current version
+    while (current_version < SAVE_VERSION) {
+        auto it = m_migrations.find(current_version);
+        if (it == m_migrations.end()) {
+            // No migration registered for this version
+            core::log(core::LogLevel::Error,
+                "SaveSystem: No migration registered for version {} -> {}",
+                current_version, current_version + 1);
+            return false;
+        }
+
+        core::log(core::LogLevel::Info,
+            "SaveSystem: Applying migration from version {} to {}",
+            current_version, current_version + 1);
+
+        if (!it->second(save, current_version)) {
+            core::log(core::LogLevel::Error,
+                "SaveSystem: Migration from version {} failed", current_version);
+            return false;
+        }
+
+        current_version++;
+        save.set_version(current_version);
+    }
+
+    return true;
+}
+
 SaveResult SaveSystem::save_game(World& world, const std::string& slot_name) {
     SaveResult result;
     result.slot_name = slot_name;
@@ -203,6 +242,17 @@ LoadResult SaveSystem::load_game(World& world, const std::string& slot_name) {
         }
 
         m_load_progress = 0.2f;
+
+        // Apply migrations if save is from older version
+        if (save.get_version() < SAVE_VERSION) {
+            if (!apply_migrations(save)) {
+                result.success = false;
+                result.error_message = "Failed to migrate save from version " +
+                    std::to_string(save.get_version());
+                m_is_loading = false;
+                return result;
+            }
+        }
 
         // Call pre-load handlers
         call_pre_load_handlers(save, world);

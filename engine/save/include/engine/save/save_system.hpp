@@ -8,6 +8,7 @@
 #include <memory>
 #include <functional>
 #include <future>
+#include <map>
 #include <unordered_map>
 #include <typeindex>
 
@@ -66,6 +67,9 @@ struct ComponentSerializer {
     ComponentGetFunc get;  // Get existing component (nullptr if not present)
     std::type_index type_id;
 };
+
+// Save migration function: takes SaveGame and source version, returns success
+using SaveMigrationFunc = std::function<bool(SaveGame&, uint32_t)>;
 
 // Save operation result
 struct SaveResult {
@@ -142,6 +146,12 @@ public:
     bool delete_save(const std::string& slot_name);
     bool save_exists(const std::string& slot_name) const;
 
+    // Save version migrations
+    // Register a migration from one version to the next
+    // Migrations are applied sequentially: v1 -> v2 -> v3 -> ... -> current
+    void register_migration(uint32_t from_version, SaveMigrationFunc migration);
+    void clear_migrations();
+
     // Get save file path
     std::string get_save_path(const std::string& slot_name) const;
 
@@ -178,10 +188,12 @@ private:
     void call_pre_load_handlers(const SaveGame& save, World& world);
     void call_post_load_handlers(const SaveGame& save, World& world);
     void call_save_handlers(SaveGame& save, World& world);
+    bool apply_migrations(SaveGame& save);
 
     SaveSystemConfig m_config;
     std::vector<std::unique_ptr<ISaveHandler>> m_handlers;
     std::unordered_map<std::string, ComponentSerializer> m_component_serializers;
+    std::map<uint32_t, SaveMigrationFunc> m_migrations;
 
     // Autosave state
     bool m_autosave_enabled = false;

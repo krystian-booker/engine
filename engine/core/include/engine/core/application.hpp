@@ -12,6 +12,11 @@ namespace engine::scene {
     class Scheduler;
 }
 
+namespace engine::physics {
+    class PhysicsWorld;
+    class PhysicsSystem;
+}
+
 namespace engine::render {
     class IRenderer;
     class RenderPipeline;
@@ -59,6 +64,8 @@ public:
 
     // Access engine systems (for plugins)
     scene::World* get_world() { return m_world.get(); }
+    physics::PhysicsWorld* get_physics_world() { return m_physics_world.get(); }
+    physics::PhysicsSystem* get_physics_system() { return m_physics_system.get(); }
     render::IRenderer* get_renderer() { return m_renderer.get(); }
     render::RenderPipeline* get_render_pipeline() { return m_render_pipeline.get(); }
     plugin::SystemRegistry* get_system_registry() { return m_system_registry.get(); }
@@ -102,6 +109,8 @@ private:
 
     // Engine systems
     std::unique_ptr<scene::World> m_world;
+    std::unique_ptr<physics::PhysicsWorld> m_physics_world;
+    std::unique_ptr<physics::PhysicsSystem> m_physics_system;
     std::unique_ptr<render::IRenderer> m_renderer;
     std::unique_ptr<render::RenderPipeline> m_render_pipeline;
     std::unique_ptr<scene::Scheduler> m_engine_scheduler;

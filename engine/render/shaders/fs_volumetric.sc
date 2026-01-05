@@ -16,7 +16,6 @@ uniform vec4 u_lightDir;           // xyz=light direction, w=intensity
 uniform vec4 u_lightColor;         // rgb=light color, w=unused
 uniform vec4 u_cameraPos;          // xyz=camera position, w=unused
 uniform vec4 u_projParams;         // x=near, y=far, z=unused, w=unused
-// Note: u_invViewProj is provided by bgfx_shader.sh
 uniform mat4 u_shadowMatrix;       // Light space matrix
 
 // Ray march settings

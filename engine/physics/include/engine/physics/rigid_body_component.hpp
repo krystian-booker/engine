@@ -2,22 +2,15 @@
 
 #include <engine/physics/body.hpp>
 #include <engine/physics/shapes.hpp>
+#include <engine/core/math.hpp>
 #include <memory>
 #include <variant>
 
 namespace engine::physics {
 
-// Shape variant for storing shape settings inline
-// This avoids separate heap allocation for the common shape types
-using ShapeVariant = std::variant<
-    BoxShapeSettings,
-    SphereShapeSettings,
-    CapsuleShapeSettings,
-    CylinderShapeSettings,
-    ConvexHullShapeSettings,
-    MeshShapeSettings,
-    CompoundShapeSettings
->;
+using namespace engine::core;
+
+// ShapeVariant is defined in shapes.hpp
 
 // ECS component for rigid body physics
 // Entities with this component will have physics simulation applied

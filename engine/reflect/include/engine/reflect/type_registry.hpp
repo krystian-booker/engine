@@ -48,6 +48,8 @@ struct TypeInfo {
     std::vector<PropertyInfo> properties;
     std::vector<MethodInfo> methods;
     bool is_component;
+    bool is_enum;
+    std::vector<std::pair<std::string, int64_t>> enum_values;
 };
 
 // Central type registry using EnTT meta
@@ -70,6 +72,14 @@ public:
     // Register a method on a type
     template<typename T, auto FuncPtr>
     void register_method(const char* name);
+
+    // Register an enum type
+    template<typename T>
+    void register_enum(const char* name, std::initializer_list<std::pair<T, const char*>> values);
+
+    // Register a property with custom getter/setter
+    template<typename T, auto MemberPtr, typename Getter, typename Setter>
+    void register_property(const char* name, const PropertyMeta& meta, Getter&& getter, Setter&& setter);
 
     // Query types
     bool has_type(const std::string& name) const;
@@ -308,6 +318,59 @@ void TypeRegistry::register_method(const char* name) {
         }
 
         it->second.methods.push_back(std::move(method));
+    }
+}
+
+template<typename T>
+void TypeRegistry::register_enum(const char* name, std::initializer_list<std::pair<T, const char*>> values) {
+    auto type_id = entt::type_hash<T>::value();
+
+    // Store our metadata
+    m_name_to_id[name] = type_id;
+
+    TypeInfo info;
+    info.name = name;
+    info.id = type_id;
+    info.is_component = false;
+    info.is_enum = true;
+
+    m_type_info[type_id] = std::move(info);
+}
+
+template<typename T, auto MemberPtr, typename Getter, typename Setter>
+void TypeRegistry::register_property(const char* name, const PropertyMeta& meta, Getter&& getter, Setter&& setter) {
+    using PropertyType = std::invoke_result_t<Getter, const T&>;
+    // MemberPtr is unused for type deduction here, we use the getter return type
+    
+    auto type_id = entt::type_hash<T>::value();
+
+    auto it = m_type_info.find(type_id);
+    if (it != m_type_info.end()) {
+        PropertyInfo prop;
+        prop.name = name;
+        prop.type = entt::resolve<PropertyType>();
+        prop.meta = meta;
+        prop.meta.name = name;
+
+        // Create getter
+        prop.getter = [g = std::forward<Getter>(getter)](const entt::meta_any& obj) -> entt::meta_any {
+            if (auto* ptr = obj.try_cast<T>()) {
+                return entt::meta_any{g(*ptr)};
+            }
+            return {};
+        };
+
+        // Create setter
+        prop.setter = [s = std::forward<Setter>(setter)](entt::meta_any& obj, const entt::meta_any& value) {
+            if (auto* ptr = obj.try_cast<T>()) {
+                // Try direct cast first
+                if (auto* val = value.try_cast<PropertyType>()) {
+                    s(*ptr, *val);
+                }
+            }
+        };
+
+        it->second.properties.push_back(std::move(prop));
     }
 }
 

@@ -3,6 +3,8 @@
 #include <engine/scene/systems.hpp>
 #include <engine/render/render_pipeline.hpp>
 #include <engine/render/billboard.hpp>
+#include <engine/render/particle_system.hpp>
+#include <engine/render/decal_system.hpp>
 #include <vector>
 
 namespace engine::scene {
@@ -100,6 +102,17 @@ void render_submit_system(scene::World& world, double dt);
 // Debug draw system - flushes debug visualization
 // Phase: PostRender, Priority: 5
 void debug_draw_system(scene::World& world, double dt);
+
+// Particle update system - updates particle emitters and simulates particles
+// Phase: Update, Priority: 3
+void particle_update_system(scene::World& world, double dt);
+
+// Decal update system - updates decal lifetimes and syncs entity transforms
+// Phase: Update, Priority: 2
+void decal_update_system(scene::World& world, double dt);
+
+// Get the global particle system
+ParticleSystem& get_particle_system();
 
 // ============================================================================
 // REGISTRATION

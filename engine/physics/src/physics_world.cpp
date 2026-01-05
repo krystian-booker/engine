@@ -54,8 +54,32 @@ extern Vec3 get_body_bounds_min_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id)
 extern Vec3 get_body_bounds_max_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id);
 extern float calculate_submerged_volume_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id, float water_surface_y);
 extern float apply_buoyancy_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id, float water_surface_y, float water_density, float buoyancy_multiplier);
+extern float apply_buoyancy_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id, float water_surface_y, float water_density, float buoyancy_multiplier);
 extern void apply_water_drag_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id, float submerged_fraction, float linear_drag, float angular_drag);
 
+extern void set_layer_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id, uint16_t layer);
+extern uint16_t get_layer_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id);
+extern void set_motion_type_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id, BodyType type);
+extern BodyType get_motion_type_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id);
+extern BodyShapeInfo get_body_shape_info_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id);
+
+extern ConstraintId create_fixed_constraint_impl(PhysicsWorld::Impl* impl, const FixedConstraintSettings& settings);
+extern ConstraintId create_hinge_constraint_impl(PhysicsWorld::Impl* impl, const HingeConstraintSettings& settings);
+extern ConstraintId create_swing_twist_constraint_impl(PhysicsWorld::Impl* impl, const SwingTwistConstraintSettings& settings);
+extern void destroy_constraint_impl(PhysicsWorld::Impl* impl, ConstraintId id);
+extern void set_constraint_motor_state_impl(PhysicsWorld::Impl* impl, ConstraintId id, bool enabled);
+extern void set_constraint_motor_target_impl(PhysicsWorld::Impl* impl, ConstraintId id, const Quat& target);
+extern void set_constraint_motor_velocity_impl(PhysicsWorld::Impl* impl, ConstraintId id, const Vec3& angular_velocity);
+extern void set_constraint_motor_strength_impl(PhysicsWorld::Impl* impl, ConstraintId id, float max_force);
+extern std::vector<ContactPointInfo> get_contact_points_impl(PhysicsWorld::Impl* impl);
+extern std::vector<ConstraintInfo> get_all_constraints_impl(PhysicsWorld::Impl* impl);
+
+extern void* get_jolt_system_impl(PhysicsWorld::Impl* impl);
+extern void* get_temp_allocator_impl(PhysicsWorld::Impl* impl);
+
+extern RaycastHit sphere_cast_impl(PhysicsWorld::Impl* impl, const Vec3& origin, const Vec3& dir, float radius, float max_dist, uint16_t layer_mask);
+extern RaycastHit capsule_cast_impl(PhysicsWorld::Impl* impl, const Vec3& origin, const Vec3& dir, float radius, float half_height, const Quat& rotation, float max_dist, uint16_t layer_mask);
+extern RaycastHit box_cast_impl(PhysicsWorld::Impl* impl, const Vec3& origin, const Vec3& dir, const Vec3& half_extents, const Quat& rotation, float max_dist, uint16_t layer_mask);
 // Constructor and destructor defined in jolt_impl.cpp where Impl is complete
 
 // Move operations need to be in jolt_impl.cpp too since they may destroy Impl
@@ -240,9 +264,99 @@ float PhysicsWorld::apply_buoyancy(PhysicsBodyId id, float water_surface_y,
     return apply_buoyancy_impl(m_impl.get(), id, water_surface_y, water_density, buoyancy_multiplier);
 }
 
+void PhysicsWorld::set_layer(PhysicsBodyId id, uint16_t layer) {
+    set_layer_impl(m_impl.get(), id, layer);
+}
+
+uint16_t PhysicsWorld::get_layer(PhysicsBodyId id) const {
+    return get_layer_impl(m_impl.get(), id);
+}
+
+void PhysicsWorld::set_motion_type(PhysicsBodyId id, BodyType type) {
+    set_motion_type_impl(m_impl.get(), id, type);
+}
+
+BodyType PhysicsWorld::get_motion_type(PhysicsBodyId id) const {
+    return get_motion_type_impl(m_impl.get(), id);
+}
+
+BodyType PhysicsWorld::get_body_type(PhysicsBodyId id) const {
+    return get_motion_type_impl(m_impl.get(), id);
+}
+
+BodyShapeInfo PhysicsWorld::get_body_shape_info(PhysicsBodyId id) const {
+    return get_body_shape_info_impl(m_impl.get(), id);
+}
+
+ConstraintId PhysicsWorld::create_fixed_constraint(const FixedConstraintSettings& settings) {
+    return create_fixed_constraint_impl(m_impl.get(), settings);
+}
+
+ConstraintId PhysicsWorld::create_hinge_constraint(const HingeConstraintSettings& settings) {
+    return create_hinge_constraint_impl(m_impl.get(), settings);
+}
+
+ConstraintId PhysicsWorld::create_swing_twist_constraint(const SwingTwistConstraintSettings& settings) {
+    return create_swing_twist_constraint_impl(m_impl.get(), settings);
+}
+
+void PhysicsWorld::destroy_constraint(ConstraintId id) {
+    destroy_constraint_impl(m_impl.get(), id);
+}
+
+void PhysicsWorld::set_constraint_motor_state(ConstraintId id, bool enabled) {
+    set_constraint_motor_state_impl(m_impl.get(), id, enabled);
+}
+
+void PhysicsWorld::set_constraint_motor_target(ConstraintId id, const Quat& target_rotation) {
+    set_constraint_motor_target_impl(m_impl.get(), id, target_rotation);
+}
+
+void PhysicsWorld::set_constraint_motor_velocity(ConstraintId id, const Vec3& angular_velocity) {
+    set_constraint_motor_velocity_impl(m_impl.get(), id, angular_velocity);
+}
+
+void PhysicsWorld::set_constraint_motor_strength(ConstraintId id, float max_force_limit) {
+    set_constraint_motor_strength_impl(m_impl.get(), id, max_force_limit);
+}
+
+std::vector<ContactPointInfo> PhysicsWorld::get_contact_points() const {
+    return get_contact_points_impl(m_impl.get());
+}
+
+std::vector<ConstraintInfo> PhysicsWorld::get_all_constraints() const {
+    return get_all_constraints_impl(m_impl.get());
+}
+
+void* PhysicsWorld::get_jolt_system() const {
+    return get_jolt_system_impl(m_impl.get());
+}
+
+void* PhysicsWorld::get_temp_allocator() const {
+    return get_temp_allocator_impl(m_impl.get());
+}
+
+RaycastHit PhysicsWorld::sphere_cast(const Vec3& origin, const Vec3& direction, float radius,
+                                      float max_distance, uint16_t layer_mask) const {
+    return sphere_cast_impl(m_impl.get(), origin, direction, radius, max_distance, layer_mask);
+}
+
+RaycastHit PhysicsWorld::capsule_cast(const Vec3& origin, const Vec3& direction, float radius,
+                                       float half_height, const Quat& rotation, float max_distance,
+                                       uint16_t layer_mask) const {
+    return capsule_cast_impl(m_impl.get(), origin, direction, radius, half_height, rotation, max_distance, layer_mask);
+}
+
+RaycastHit PhysicsWorld::box_cast(const Vec3& origin, const Vec3& direction, const Vec3& half_extents,
+                                   const Quat& rotation, float max_distance,
+                                   uint16_t layer_mask) const {
+    return box_cast_impl(m_impl.get(), origin, direction, half_extents, rotation, max_distance, layer_mask);
+}
+
 void PhysicsWorld::apply_water_drag(PhysicsBodyId id, float submerged_fraction,
                                      float linear_drag, float angular_drag) {
     apply_water_drag_impl(m_impl.get(), id, submerged_fraction, linear_drag, angular_drag);
+
 }
 
 } // namespace engine::physics

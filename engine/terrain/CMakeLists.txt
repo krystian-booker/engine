@@ -9,6 +9,9 @@ target_sources(engine_terrain
         src/terrain.cpp
         src/heightmap.cpp
         src/terrain_renderer.cpp
+        src/terrain_streaming.cpp
+        src/terrain_component_registration.cpp
+        src/terrain_systems.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -18,6 +21,7 @@ target_sources(engine_terrain
             include/engine/terrain/heightmap.hpp
             include/engine/terrain/terrain_renderer.hpp
             include/engine/terrain/terrain_lod.hpp
+            include/engine/terrain/terrain_streaming.hpp
 )
 
 target_include_directories(engine_terrain
@@ -31,8 +35,11 @@ target_link_libraries(engine_terrain
         engine::core
         engine::render
         engine::physics
+        engine::scene
+        engine::reflect
     PRIVATE
         engine_compiler_flags
+        stb::stb
 )
 
 set_target_properties(engine_terrain PROPERTIES

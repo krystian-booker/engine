@@ -320,6 +320,12 @@ void MainWindow::init_engine() {
 void MainWindow::shutdown_engine() {
     if (!m_engine_initialized) return;
 
+    // Clear renderer from state BEFORE destroying it to prevent use-after-free
+    // in viewport widget's render timer callback
+    if (m_state) {
+        m_state->set_renderer(nullptr);
+    }
+
     if (m_renderer) {
         m_renderer->shutdown();
         m_renderer.reset();

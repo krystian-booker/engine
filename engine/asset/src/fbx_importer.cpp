@@ -1,8 +1,8 @@
 #include <engine/asset/fbx_importer.hpp>
 #include <engine/core/log.hpp>
 
-// ufbx is a single-header library
-#define UFBX_REAL_IS_FLOAT
+// ufbx is mapped to float via Dependencies.cmake UFBX_REAL_IS_FLOAT
+// #define UFBX_REAL_IS_FLOAT // Already defined globally by cmake
 #include <ufbx.h>
 
 #include <unordered_map>

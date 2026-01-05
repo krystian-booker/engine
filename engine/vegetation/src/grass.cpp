@@ -1,9 +1,85 @@
 #include <engine/vegetation/grass.hpp>
+#include <engine/core/log.hpp>
+#include <bgfx/bgfx.h>
 #include <algorithm>
 #include <random>
 #include <cmath>
+#include <fstream>
 
 namespace engine::vegetation {
+
+using namespace engine::core;
+
+// Grass instance data layout for GPU (must match shader)
+struct GrassInstanceGPU {
+    float position[3];      // 12 bytes - xyz position
+    float rotation;         // 4 bytes - Y rotation
+    float scale;            // 4 bytes - scale
+    float bend;             // 4 bytes - bend amount
+    uint32_t color_packed;  // 4 bytes - RGBA8 color
+    float random;           // 4 bytes - random value
+    // Total: 32 bytes
+};
+static_assert(sizeof(GrassInstanceGPU) == 32, "GrassInstanceGPU must be 32 bytes");
+
+// Grass blade vertex
+struct GrassVertex {
+    float x, y, z;          // Position
+    float u, v;             // Texcoord
+    float height_factor;    // 0 at base, 1 at tip (for wind animation)
+};
+
+// Shader path helper
+static std::string get_shader_path() {
+    // Platform-specific shader binary path
+#if defined(_WIN32)
+    return "shaders/dx11/";
+#elif defined(__APPLE__)
+    return "shaders/metal/";
+#else
+    return "shaders/glsl/";
+#endif
+}
+
+// Load shader from file
+static bgfx::ShaderHandle load_shader(const std::string& name) {
+    std::string path = get_shader_path() + name + ".bin";
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+
+    if (!file.is_open()) {
+        log(LogLevel::Warn, ("Grass shader not found: " + path).c_str());
+        return BGFX_INVALID_HANDLE;
+    }
+
+    auto size = file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    const bgfx::Memory* mem = bgfx::alloc(static_cast<uint32_t>(size) + 1);
+    file.read(reinterpret_cast<char*>(mem->data), size);
+    mem->data[size] = '\0';
+
+    return bgfx::createShader(mem);
+}
+
+// GPU resources (shared across all grass instances)
+static bgfx::VertexLayout s_grass_vertex_layout;
+static bgfx::VertexLayout s_grass_instance_layout;
+static bgfx::VertexBufferHandle s_grass_blade_vb = BGFX_INVALID_HANDLE;
+static bgfx::IndexBufferHandle s_grass_blade_ib = BGFX_INVALID_HANDLE;
+static bgfx::ProgramHandle s_grass_program = BGFX_INVALID_HANDLE;
+static bgfx::ProgramHandle s_grass_shadow_program = BGFX_INVALID_HANDLE;
+static bgfx::UniformHandle s_u_grass_wind = BGFX_INVALID_HANDLE;
+static bgfx::UniformHandle s_u_grass_params = BGFX_INVALID_HANDLE;
+static bgfx::UniformHandle s_s_grass_texture = BGFX_INVALID_HANDLE;
+static bgfx::UniformHandle s_s_noise_texture = BGFX_INVALID_HANDLE;
+static uint32_t s_grass_ref_count = 0;
+
+// Per-chunk instance buffer storage
+struct GrassChunkGPU {
+    bgfx::InstanceDataBuffer instance_buffer;
+    bool buffer_valid = false;
+};
+static std::vector<GrassChunkGPU> s_chunk_gpu_data;
 
 // Global instance
 static GrassSystem* s_grass_system = nullptr;
@@ -155,24 +231,103 @@ void GrassSystem::set_player_position(const Vec3& position, const Vec3& velocity
 void GrassSystem::render(uint16_t view_id) {
     if (!m_initialized) return;
 
+    // Check if shader is available
+    if (!bgfx::isValid(s_grass_program)) {
+        return;
+    }
+
     m_stats.visible_instances = 0;
     m_stats.visible_chunks = 0;
 
-    for (const auto& chunk : m_chunks) {
+    // Set wind uniform (shared across all chunks)
+    bgfx::setUniform(s_u_grass_wind, &m_wind_params);
+
+    // Set grass params uniform
+    Vec4 grass_params(
+        m_settings.blade_width,
+        m_settings.blade_height,
+        m_settings.alpha_cutoff,
+        m_settings.fade_start_distance
+    );
+    bgfx::setUniform(s_u_grass_params, &grass_params);
+
+    // Set textures if available
+    if (m_blade_texture != UINT32_MAX) {
+        bgfx::setTexture(0, s_s_grass_texture, bgfx::TextureHandle{static_cast<uint16_t>(m_blade_texture)});
+    }
+    if (m_noise_texture != UINT32_MAX) {
+        bgfx::setTexture(1, s_s_noise_texture, bgfx::TextureHandle{static_cast<uint16_t>(m_noise_texture)});
+    }
+
+    // Render state
+    uint64_t state = BGFX_STATE_WRITE_RGB
+                   | BGFX_STATE_WRITE_A
+                   | BGFX_STATE_WRITE_Z
+                   | BGFX_STATE_DEPTH_TEST_LESS
+                   | BGFX_STATE_CULL_CW
+                   | BGFX_STATE_MSAA;
+
+    if (m_settings.use_alpha_cutoff) {
+        state |= BGFX_STATE_BLEND_ALPHA;
+    }
+
+    for (size_t i = 0; i < m_chunks.size(); ++i) {
+        const GrassChunk& chunk = m_chunks[i];
         if (!chunk.visible || chunk.instances.empty()) continue;
 
-        // Render chunk instances
+        // Get GPU data for this chunk
+        if (i >= s_chunk_gpu_data.size()) continue;
+        const GrassChunkGPU& gpu = s_chunk_gpu_data[i];
+        if (!gpu.buffer_valid) continue;
+
+        // Set vertex and index buffers
+        bgfx::setVertexBuffer(0, s_grass_blade_vb);
+        bgfx::setIndexBuffer(s_grass_blade_ib);
+
+        // Set instance data buffer
+        bgfx::setInstanceDataBuffer(&gpu.instance_buffer);
+
+        // Set state
+        bgfx::setState(state);
+
+        // Submit
+        bgfx::submit(view_id, s_grass_program);
+
         m_stats.visible_instances += static_cast<uint32_t>(chunk.instances.size());
         m_stats.visible_chunks++;
-
-        // Would submit draw call with bgfx here
     }
 }
 
 void GrassSystem::render_shadow(uint16_t view_id) {
     if (!m_initialized || !m_settings.cast_shadows) return;
 
-    // Render shadow pass for grass (usually skipped for performance)
+    // Check if shadow shader is available
+    if (!bgfx::isValid(s_grass_shadow_program)) {
+        return;
+    }
+
+    // Render state for shadow pass
+    uint64_t state = BGFX_STATE_WRITE_Z
+                   | BGFX_STATE_DEPTH_TEST_LESS
+                   | BGFX_STATE_CULL_CW;
+
+    // Set wind uniform (grass still needs to animate in shadows)
+    bgfx::setUniform(s_u_grass_wind, &m_wind_params);
+
+    for (size_t i = 0; i < m_chunks.size(); ++i) {
+        const GrassChunk& chunk = m_chunks[i];
+        if (!chunk.visible || chunk.instances.empty()) continue;
+
+        if (i >= s_chunk_gpu_data.size()) continue;
+        const GrassChunkGPU& gpu = s_chunk_gpu_data[i];
+        if (!gpu.buffer_valid) continue;
+
+        bgfx::setVertexBuffer(0, s_grass_blade_vb);
+        bgfx::setIndexBuffer(s_grass_blade_ib);
+        bgfx::setInstanceDataBuffer(&gpu.instance_buffer);
+        bgfx::setState(state);
+        bgfx::submit(view_id, s_grass_shadow_program);
+    }
 }
 
 void GrassSystem::generate_chunk(GrassChunk& chunk,
@@ -345,16 +500,177 @@ void GrassSystem::update_interactions(float dt) {
 }
 
 void GrassSystem::upload_chunk(GrassChunk& chunk) {
-    // Would upload instance data to GPU here using bgfx
+    if (chunk.instances.empty()) {
+        chunk.dirty = false;
+        return;
+    }
+
+    // Find chunk index
+    size_t chunk_idx = &chunk - m_chunks.data();
+    if (chunk_idx >= s_chunk_gpu_data.size()) {
+        s_chunk_gpu_data.resize(m_chunks.size());
+    }
+
+    GrassChunkGPU& gpu = s_chunk_gpu_data[chunk_idx];
+
+    // Check instance buffer availability
+    uint32_t num_instances = static_cast<uint32_t>(chunk.instances.size());
+    uint16_t stride = sizeof(GrassInstanceGPU);
+
+    if (bgfx::getAvailInstanceDataBuffer(num_instances, stride) < num_instances) {
+        // Not enough buffer space, skip this frame
+        return;
+    }
+
+    // Allocate instance buffer
+    bgfx::allocInstanceDataBuffer(&gpu.instance_buffer, num_instances, stride);
+
+    // Copy instance data
+    GrassInstanceGPU* dst = reinterpret_cast<GrassInstanceGPU*>(gpu.instance_buffer.data);
+    for (size_t i = 0; i < chunk.instances.size(); ++i) {
+        const GrassInstance& src = chunk.instances[i];
+        dst[i].position[0] = src.position.x;
+        dst[i].position[1] = src.position.y;
+        dst[i].position[2] = src.position.z;
+        dst[i].rotation = src.rotation;
+        dst[i].scale = src.scale;
+        dst[i].bend = src.bend;
+        dst[i].color_packed = src.color_packed;
+        dst[i].random = src.random;
+    }
+
+    gpu.buffer_valid = true;
     chunk.dirty = false;
 }
 
 void GrassSystem::create_gpu_resources() {
-    // Create shaders, uniforms, etc.
+    // Only create shared resources once
+    if (s_grass_ref_count > 0) {
+        s_grass_ref_count++;
+        s_chunk_gpu_data.resize(m_chunks.size());
+        return;
+    }
+
+    // Create vertex layout for grass blade mesh
+    s_grass_vertex_layout
+        .begin()
+        .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+        .add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
+        .add(bgfx::Attrib::TexCoord1, 1, bgfx::AttribType::Float)  // height_factor
+        .end();
+
+    // Create instance data layout (32 bytes)
+    s_grass_instance_layout
+        .begin()
+        .add(bgfx::Attrib::TexCoord7, 4, bgfx::AttribType::Float)   // position.xyz, rotation
+        .add(bgfx::Attrib::TexCoord6, 4, bgfx::AttribType::Float)   // scale, bend, color_packed (as 2 floats), random
+        .end();
+
+    // Create grass blade mesh (simple quad, 2 triangles)
+    // The blade is oriented along the Y axis with bottom at origin
+    GrassVertex blade_vertices[] = {
+        // Position            UV        Height
+        {-0.5f, 0.0f, 0.0f,   0.0f, 1.0f,  0.0f},  // Bottom left
+        { 0.5f, 0.0f, 0.0f,   1.0f, 1.0f,  0.0f},  // Bottom right
+        { 0.5f, 1.0f, 0.0f,   1.0f, 0.0f,  1.0f},  // Top right
+        {-0.5f, 1.0f, 0.0f,   0.0f, 0.0f,  1.0f},  // Top left
+    };
+
+    uint16_t blade_indices[] = {
+        0, 1, 2,  // First triangle
+        0, 2, 3   // Second triangle
+    };
+
+    // Create vertex buffer
+    const bgfx::Memory* vb_mem = bgfx::copy(blade_vertices, sizeof(blade_vertices));
+    s_grass_blade_vb = bgfx::createVertexBuffer(vb_mem, s_grass_vertex_layout);
+
+    // Create index buffer
+    const bgfx::Memory* ib_mem = bgfx::copy(blade_indices, sizeof(blade_indices));
+    s_grass_blade_ib = bgfx::createIndexBuffer(ib_mem);
+
+    // Create uniforms
+    s_u_grass_wind = bgfx::createUniform("u_grassWind", bgfx::UniformType::Vec4);
+    s_u_grass_params = bgfx::createUniform("u_grassParams", bgfx::UniformType::Vec4);
+    s_s_grass_texture = bgfx::createUniform("s_grassTexture", bgfx::UniformType::Sampler);
+    s_s_noise_texture = bgfx::createUniform("s_noiseTexture", bgfx::UniformType::Sampler);
+
+    // Load shaders
+    bgfx::ShaderHandle vs = load_shader("vs_grass.sc");
+    bgfx::ShaderHandle fs = load_shader("fs_grass.sc");
+
+    if (bgfx::isValid(vs) && bgfx::isValid(fs)) {
+        s_grass_program = bgfx::createProgram(vs, fs, true);
+        log(LogLevel::Info, "Grass shader program loaded");
+    } else {
+        log(LogLevel::Warn, "Grass shader not available, grass will not render");
+    }
+
+    // Load shadow shaders (optional)
+    bgfx::ShaderHandle shadow_vs = load_shader("vs_grass_shadow.sc");
+    bgfx::ShaderHandle shadow_fs = load_shader("fs_shadow.sc");
+
+    if (bgfx::isValid(shadow_vs) && bgfx::isValid(shadow_fs)) {
+        s_grass_shadow_program = bgfx::createProgram(shadow_vs, shadow_fs, true);
+    }
+
+    s_grass_ref_count++;
+    s_chunk_gpu_data.resize(m_chunks.size());
+
+    log(LogLevel::Info, "Grass GPU resources created");
 }
 
 void GrassSystem::destroy_gpu_resources() {
-    // Destroy GPU resources
+    s_chunk_gpu_data.clear();
+
+    // Only destroy shared resources when last user is gone
+    if (s_grass_ref_count > 1) {
+        s_grass_ref_count--;
+        return;
+    }
+
+    if (bgfx::isValid(s_grass_blade_vb)) {
+        bgfx::destroy(s_grass_blade_vb);
+        s_grass_blade_vb = BGFX_INVALID_HANDLE;
+    }
+
+    if (bgfx::isValid(s_grass_blade_ib)) {
+        bgfx::destroy(s_grass_blade_ib);
+        s_grass_blade_ib = BGFX_INVALID_HANDLE;
+    }
+
+    if (bgfx::isValid(s_grass_program)) {
+        bgfx::destroy(s_grass_program);
+        s_grass_program = BGFX_INVALID_HANDLE;
+    }
+
+    if (bgfx::isValid(s_grass_shadow_program)) {
+        bgfx::destroy(s_grass_shadow_program);
+        s_grass_shadow_program = BGFX_INVALID_HANDLE;
+    }
+
+    if (bgfx::isValid(s_u_grass_wind)) {
+        bgfx::destroy(s_u_grass_wind);
+        s_u_grass_wind = BGFX_INVALID_HANDLE;
+    }
+
+    if (bgfx::isValid(s_u_grass_params)) {
+        bgfx::destroy(s_u_grass_params);
+        s_u_grass_params = BGFX_INVALID_HANDLE;
+    }
+
+    if (bgfx::isValid(s_s_grass_texture)) {
+        bgfx::destroy(s_s_grass_texture);
+        s_s_grass_texture = BGFX_INVALID_HANDLE;
+    }
+
+    if (bgfx::isValid(s_s_noise_texture)) {
+        bgfx::destroy(s_s_noise_texture);
+        s_s_noise_texture = BGFX_INVALID_HANDLE;
+    }
+
+    s_grass_ref_count = 0;
+    log(LogLevel::Info, "Grass GPU resources destroyed");
 }
 
 } // namespace engine::vegetation

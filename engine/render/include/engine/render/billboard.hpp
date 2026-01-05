@@ -59,6 +59,8 @@ public:
     // Clear submitted batches
     void clear();
 
+    bool is_initialized() const { return m_initialized; }
+
     // Get number of billboards rendered last frame
     uint32_t get_billboard_count() const { return m_billboard_count; }
 

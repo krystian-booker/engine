@@ -1,6 +1,7 @@
 #include <engine/core/profiler.hpp>
 #include <engine/core/log.hpp>
 #include <engine/core/time.hpp>
+#include <bgfx/bgfx.h>
 #include <engine/render/debug_draw.hpp>
 #include <sstream>
 #include <iomanip>
@@ -50,15 +51,17 @@ void Profiler::end_frame() {
     // Update history
     s_frame_time_history[s_history_index] = frame_time;
 
-    // Calculate total GPU time from samples
-    double total_gpu_time = 0.0;
-    for (const auto& sample : s_gpu_samples) {
-        if (sample.valid) {
-            total_gpu_time += sample.gpu_time_ms;
-        }
+    // Get GPU timing from bgfx stats
+    const bgfx::Stats* bgfx_stats = bgfx::getStats();
+    if (bgfx_stats && bgfx_stats->gpuTimerFreq > 0) {
+        double gpu_time_ms = 1000.0 * double(bgfx_stats->gpuTimeEnd - bgfx_stats->gpuTimeBegin)
+                           / double(bgfx_stats->gpuTimerFreq);
+        s_current_stats.gpu_time_ms = gpu_time_ms;
+        s_current_stats.gpu_memory_used = bgfx_stats->gpuMemoryUsed;
+    } else {
+        s_current_stats.gpu_time_ms = 0.0;
     }
-    s_current_stats.gpu_time_ms = total_gpu_time;
-    s_gpu_time_history[s_history_index] = total_gpu_time;
+    s_gpu_time_history[s_history_index] = s_current_stats.gpu_time_ms;
 
     s_history_index = (s_history_index + 1) % s_frame_time_history.size();
 
@@ -76,9 +79,6 @@ void Profiler::end_frame() {
     } else {
         s_current_stats.fps = s_last_stats.fps;  // Keep previous FPS until update
     }
-
-    // Update GPU memory in stats
-    s_current_stats.gpu_memory_used = s_gpu_memory_usage;
 
     s_last_stats = s_current_stats;
 }

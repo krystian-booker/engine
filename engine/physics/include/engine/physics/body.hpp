@@ -2,9 +2,12 @@
 
 #include <engine/physics/shapes.hpp>
 #include <engine/physics/layers.hpp>
+#include <engine/core/math.hpp>
 #include <cstdint>
 
 namespace engine::physics {
+
+using namespace engine::core;
 
 // Physics body ID (opaque handle)
 struct PhysicsBodyId {

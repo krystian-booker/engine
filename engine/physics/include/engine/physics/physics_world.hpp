@@ -4,11 +4,14 @@
 #include <engine/physics/shapes.hpp>
 #include <engine/physics/layers.hpp>
 #include <engine/core/project_settings.hpp>
+#include <engine/core/math.hpp>
 #include <memory>
 #include <vector>
 #include <functional>
 
 namespace engine::physics {
+
+using namespace engine::core;
 
 // Raycast hit result
 struct RaycastHit {

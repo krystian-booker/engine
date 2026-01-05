@@ -137,11 +137,10 @@ void ui_render_ecs_world_canvases(scene::World& world, UIRenderContext& render_c
         float x = screen_pos.x - canvas_w * 0.5f;
         float y = screen_pos.y - canvas_h * 0.5f;
 
-        // Set up render context with transform
-        // TODO: Implement push_transform/pop_transform in UIRenderContext
-        // render_ctx.push_transform(x, y, scale, alpha);
+        // Apply transform for world canvas rendering
+        render_ctx.push_transform(x, y, scale, alpha);
         canvas->render(render_ctx);
-        // render_ctx.pop_transform();
+        render_ctx.pop_transform();
     }
 }
 

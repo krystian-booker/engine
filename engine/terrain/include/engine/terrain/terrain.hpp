@@ -34,7 +34,7 @@ struct TerrainConfig {
     uint32_t collision_resolution = 0;       // 0 = auto (based on render resolution)
 
     // Streaming
-    bool enable_streaming = false;
+    bool enable_streaming = true;
     float streaming_distance = 500.0f;
 };
 
@@ -134,6 +134,11 @@ public:
     uint32_t get_physics_body() const { return m_physics_body; }
     void rebuild_collision();
 
+    // Streaming
+    void enable_streaming();
+    void disable_streaming();
+    bool is_streaming_enabled() const;
+
     // Serialization
     bool save_to_file(const std::string& directory) const;
     bool load_from_file(const std::string& directory);
@@ -159,6 +164,7 @@ private:
     // Dirty tracking for modifications
     std::vector<AABB> m_dirty_regions;
     bool m_collision_dirty = false;
+    bool m_splat_map_dirty = false;
 };
 
 // Global terrain manager
@@ -217,5 +223,30 @@ inline Terrain* get_terrain_from_component(const TerrainComponent& comp) {
     if (comp.terrain_ptr) return comp.terrain_ptr;
     return get_terrain_manager().get_terrain(comp.terrain_id);
 }
+
+// Forward declaration for World and Scheduler
+} // namespace engine::terrain
+
+namespace engine::scene {
+class World;
+class Scheduler;
+}
+
+namespace engine::terrain {
+
+// Initialize terrain systems (call once during engine initialization)
+void init_terrain_systems();
+
+// Shutdown terrain systems
+void shutdown_terrain_systems();
+
+// ECS Systems
+void terrain_update_system(scene::World& world, double dt);
+void terrain_render_system(scene::World& world, double dt);
+void terrain_shadow_render_system(scene::World& world, double dt, uint16_t shadow_view_id);
+void terrain_physics_sync_system(scene::World& world, double dt);
+
+// Register all terrain systems with the scheduler
+void register_terrain_systems(scene::Scheduler& scheduler);
 
 } // namespace engine::terrain

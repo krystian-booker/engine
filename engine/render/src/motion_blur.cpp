@@ -33,9 +33,9 @@ void MotionBlurSystem::init(uint32_t width, uint32_t height, const MotionBlurCon
     // Create uniforms
     u_motion_params = bgfx::createUniform("u_motionParams", bgfx::UniformType::Vec4);
     u_motion_params2 = bgfx::createUniform("u_motionParams2", bgfx::UniformType::Vec4);
-    u_view_proj = bgfx::createUniform("u_viewProj", bgfx::UniformType::Mat4);
+    u_view_proj = bgfx::createUniform("u_customViewProj", bgfx::UniformType::Mat4);
     u_prev_view_proj = bgfx::createUniform("u_prevViewProj", bgfx::UniformType::Mat4);
-    u_inv_view_proj = bgfx::createUniform("u_invViewProj", bgfx::UniformType::Mat4);
+    u_inv_view_proj = bgfx::createUniform("u_customInvViewProj", bgfx::UniformType::Mat4);
     u_texel_size = bgfx::createUniform("u_texelSize", bgfx::UniformType::Vec4);
 
     s_color = bgfx::createUniform("s_color", bgfx::UniformType::Sampler);
