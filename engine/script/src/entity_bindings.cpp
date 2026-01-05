@@ -1,11 +1,17 @@
 #include <engine/script/bindings.hpp>
-#include <engine/script/script_component.hpp>
+#include <engine/script/script_context.hpp>
 #include <engine/scene/world.hpp>
 #include <engine/scene/transform.hpp>
 #include <engine/scene/entity.hpp>
 #include <engine/reflect/reflect.hpp>
 #include <engine/reflect/type_registry.hpp>
 #include <engine/core/log.hpp>
+
+// For hierarchy functions
+using engine::scene::Hierarchy;
+using engine::scene::set_parent;
+using engine::scene::remove_parent;
+using engine::scene::get_children;
 
 namespace engine::script {
 
@@ -197,6 +203,211 @@ void register_entity_bindings(sol::state& lua) {
 
     // NullEntity constant
     lua["NullEntity"] = NullEntity;
+
+    // --- Entity Creation and Destruction ---
+
+    // Create a new entity
+    engine.set_function("create_entity", [](sol::optional<std::string> name) -> uint32_t {
+        auto* world = get_current_script_world();
+        if (!world) {
+            core::log(core::LogLevel::Warn, "engine.create_entity called outside script context");
+            return static_cast<uint32_t>(NullEntity);
+        }
+
+        Entity entity;
+        if (name.has_value()) {
+            entity = world->create(name.value());
+        } else {
+            entity = world->create();
+        }
+
+        return static_cast<uint32_t>(entity);
+    });
+
+    // Destroy an entity
+    engine.set_function("destroy_entity", [](uint32_t entity_id) {
+        auto* world = get_current_script_world();
+        if (!world) {
+            core::log(core::LogLevel::Warn, "engine.destroy_entity called outside script context");
+            return;
+        }
+
+        auto entity = static_cast<entt::entity>(entity_id);
+        if (world->registry().valid(entity)) {
+            world->destroy(entity);
+        }
+    });
+
+    // Check if entity is valid
+    engine.set_function("is_valid", [](uint32_t entity_id) -> bool {
+        auto* world = get_current_script_world();
+        if (!world) {
+            return false;
+        }
+
+        auto entity = static_cast<entt::entity>(entity_id);
+        return world->valid(entity);
+    });
+
+    // Find entity by name
+    engine.set_function("find_entity", [](const std::string& name) -> uint32_t {
+        auto* world = get_current_script_world();
+        if (!world) {
+            return static_cast<uint32_t>(NullEntity);
+        }
+
+        Entity entity = world->find_by_name(name);
+        return static_cast<uint32_t>(entity);
+    });
+
+    // --- Hierarchy Functions ---
+
+    // Get parent of entity
+    engine.set_function("get_parent", [](uint32_t entity_id) -> uint32_t {
+        auto* world = get_current_script_world();
+        if (!world) {
+            return static_cast<uint32_t>(NullEntity);
+        }
+
+        auto entity = static_cast<entt::entity>(entity_id);
+        if (!world->registry().valid(entity)) {
+            return static_cast<uint32_t>(NullEntity);
+        }
+
+        auto* hierarchy = world->try_get<Hierarchy>(entity);
+        if (!hierarchy) {
+            return static_cast<uint32_t>(NullEntity);
+        }
+
+        return static_cast<uint32_t>(hierarchy->parent);
+    });
+
+    // Get children of entity
+    engine.set_function("get_children", [](uint32_t entity_id) -> std::vector<uint32_t> {
+        auto* world = get_current_script_world();
+        if (!world) {
+            return {};
+        }
+
+        auto entity = static_cast<entt::entity>(entity_id);
+        if (!world->registry().valid(entity)) {
+            return {};
+        }
+
+        const auto& children = get_children(*world, entity);
+        std::vector<uint32_t> result;
+        result.reserve(children.size());
+        for (auto child : children) {
+            result.push_back(static_cast<uint32_t>(child));
+        }
+        return result;
+    });
+
+    // Set parent of entity
+    engine.set_function("set_parent", [](uint32_t child_id, uint32_t parent_id) {
+        auto* world = get_current_script_world();
+        if (!world) {
+            return;
+        }
+
+        auto child = static_cast<entt::entity>(child_id);
+        auto parent = static_cast<entt::entity>(parent_id);
+
+        if (!world->registry().valid(child)) {
+            return;
+        }
+
+        if (parent == NullEntity) {
+            remove_parent(*world, child);
+        } else if (world->registry().valid(parent)) {
+            set_parent(*world, child, parent);
+        }
+    });
+
+    // Remove parent (make root entity)
+    engine.set_function("remove_parent", [](uint32_t entity_id) {
+        auto* world = get_current_script_world();
+        if (!world) {
+            return;
+        }
+
+        auto entity = static_cast<entt::entity>(entity_id);
+        if (world->registry().valid(entity)) {
+            remove_parent(*world, entity);
+        }
+    });
+
+    // Get entity name
+    engine.set_function("get_name", [](uint32_t entity_id) -> std::string {
+        auto* world = get_current_script_world();
+        if (!world) {
+            return "";
+        }
+
+        auto entity = static_cast<entt::entity>(entity_id);
+        if (!world->registry().valid(entity)) {
+            return "";
+        }
+
+        auto* info = world->try_get<EntityInfo>(entity);
+        if (!info) {
+            return "";
+        }
+
+        return info->name;
+    });
+
+    // Set entity name
+    engine.set_function("set_name", [](uint32_t entity_id, const std::string& name) {
+        auto* world = get_current_script_world();
+        if (!world) {
+            return;
+        }
+
+        auto entity = static_cast<entt::entity>(entity_id);
+        if (!world->registry().valid(entity)) {
+            return;
+        }
+
+        auto* info = world->try_get<EntityInfo>(entity);
+        if (info) {
+            info->name = name;
+        }
+    });
+
+    // Enable/disable entity
+    engine.set_function("set_enabled", [](uint32_t entity_id, bool enabled) {
+        auto* world = get_current_script_world();
+        if (!world) {
+            return;
+        }
+
+        auto entity = static_cast<entt::entity>(entity_id);
+        if (!world->registry().valid(entity)) {
+            return;
+        }
+
+        auto* info = world->try_get<EntityInfo>(entity);
+        if (info) {
+            info->enabled = enabled;
+        }
+    });
+
+    // Check if entity is enabled
+    engine.set_function("is_enabled", [](uint32_t entity_id) -> bool {
+        auto* world = get_current_script_world();
+        if (!world) {
+            return false;
+        }
+
+        auto entity = static_cast<entt::entity>(entity_id);
+        if (!world->registry().valid(entity)) {
+            return false;
+        }
+
+        auto* info = world->try_get<EntityInfo>(entity);
+        return info ? info->enabled : true;
+    });
 }
 
 } // namespace engine::script

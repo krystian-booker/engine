@@ -9,10 +9,6 @@
 
 namespace engine::script {
 
-// Get the current World context for script execution (thread-local)
-// Returns nullptr if not within a script update context
-scene::World* get_current_script_world();
-
 // Register/unregister a World for hot reload support
 void register_script_world(scene::World* world);
 void unregister_script_world(scene::World* world);

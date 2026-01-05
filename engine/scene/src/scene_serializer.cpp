@@ -141,6 +141,19 @@ bool SceneSerializer::deserialize(World& world, const std::string& json) {
             uuid_to_entity[entity_data.uuid] = entity;
         }
 
+        // Create entity resolution context for resolving entity references
+        EntityResolutionContext entity_ctx;
+        entity_ctx.entity_to_uuid = [&world](entt::entity e) -> uint64_t {
+            if (world.has<EntityInfo>(e)) {
+                return world.get<EntityInfo>(e).uuid;
+            }
+            return EntityResolutionContext::NullUUID;
+        };
+        entity_ctx.uuid_to_entity = [&uuid_to_entity](uint64_t uuid) -> entt::entity {
+            auto it = uuid_to_entity.find(uuid);
+            return (it != uuid_to_entity.end()) ? it->second : entt::null;
+        };
+
         // Second pass: set up hierarchy and components
         for (const auto& entity_data : scene.entities) {
             auto it = uuid_to_entity.find(entity_data.uuid);
@@ -180,8 +193,8 @@ bool SceneSerializer::deserialize(World& world, const std::string& json) {
                         // Use registered custom deserializer
                         deserializer_it->second(nullptr, comp.json_data);
                     } else {
-                        // Use reflection system to dynamically deserialize
-                        if (!deserialize_custom_component(world, entity, comp.type_name, comp.json_data)) {
+                        // Use reflection system to dynamically deserialize (with entity context)
+                        if (!deserialize_custom_component(world, entity, comp.type_name, comp.json_data, &entity_ctx)) {
                             log(LogLevel::Warn, "Unknown component type '{}' - skipping", comp.type_name);
                         }
                     }
@@ -1052,49 +1065,54 @@ bool SceneSerializer::serialize_custom_component(World& world, Entity entity, co
 }
 
 bool SceneSerializer::deserialize_custom_component(World& world, Entity entity, const std::string& type_name, const std::string& json) {
+    return deserialize_custom_component(world, entity, type_name, json, nullptr);
+}
+
+bool SceneSerializer::deserialize_custom_component(World& world, Entity entity, const std::string& type_name, const std::string& json,
+                                                    const EntityResolutionContext* entity_ctx) {
     using namespace engine::reflect;
-    
+
     auto& registry = TypeRegistry::instance();
     auto* type_info = registry.get_type_info(type_name);
-    
+
     if (!type_info || !type_info->is_component) {
         return false;
     }
-    
+
     // Create component on entity
     if (!registry.add_component_any(world.registry(), entity, type_name)) {
         return false;
     }
-    
+
     // Get component handle
     auto comp_any = registry.get_component_any(world.registry(), entity, type_name);
     if (!comp_any) {
         return false;
     }
-    
+
     // Parse and set each property
     for (const auto& prop : type_info->properties) {
         if (!prop.setter) continue;
-        
+
         // Build regex to extract property value from JSON
         std::string pattern = "\"" + prop.name + "\"\\s*:\\s*";
         std::regex prop_re(pattern + R"(([^,}\n]+))");
         std::smatch match;
-        
+
         if (!std::regex_search(json, match, prop_re)) {
             continue;
         }
-        
+
         std::string value_str = match[1].str();
-        
+
         // Trim whitespace
         value_str.erase(0, value_str.find_first_not_of(" \t\r\n"));
         value_str.erase(value_str.find_last_not_of(" \t\r\n") + 1);
-        
+
         // Parse based on property type
         auto type_id = prop.type.id();
         entt::meta_any value;
-        
+
         if (type_id == entt::type_hash<bool>::value()) {
             value = entt::meta_any{value_str == "true"};
         } else if (type_id == entt::type_hash<int32_t>::value()) {
@@ -1121,16 +1139,33 @@ bool SceneSerializer::deserialize_custom_component(World& world, Entity entity, 
             value = entt::meta_any{parse_vec4(value_str)};
         } else if (type_id == entt::type_hash<Quat>::value()) {
             value = entt::meta_any{parse_quat(value_str)};
+        } else if (type_id == entt::type_hash<entt::entity>::value() && prop.meta.is_entity_ref) {
+            // Handle entity references - parse UUID and resolve to entity
+            uint64_t uuid = 0;
+            try {
+                uuid = std::stoull(value_str);
+            } catch (...) {
+                uuid = 0;
+            }
+
+            entt::entity resolved_entity = entt::null;
+            if (uuid != 0 && entity_ctx && entity_ctx->can_deserialize()) {
+                resolved_entity = entity_ctx->uuid_to_entity(uuid);
+                if (resolved_entity == entt::null) {
+                    log(LogLevel::Warn, "Entity reference UUID {} not found for property '{}'", uuid, prop.name);
+                }
+            }
+            value = entt::meta_any{resolved_entity};
         } else {
             // Unknown type, skip
             continue;
         }
-        
+
         if (value) {
             prop.setter(comp_any, value);
         }
     }
-    
+
     return true;
 }
 

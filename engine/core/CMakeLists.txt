@@ -72,11 +72,11 @@ target_include_directories(engine_core
         ${CMAKE_CURRENT_SOURCE_DIR}/../streaming/include
         ${CMAKE_CURRENT_SOURCE_DIR}/../cinematic/include
         ${CMAKE_CURRENT_SOURCE_DIR}/../navigation/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/../navigation/include
         ${CMAKE_CURRENT_SOURCE_DIR}/../ui/include
         ${CMAKE_CURRENT_SOURCE_DIR}/../terrain/include
         ${CMAKE_CURRENT_SOURCE_DIR}/../vegetation/include
         ${CMAKE_CURRENT_SOURCE_DIR}/../physics/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../script/include
 )
 
 # Scene headers require EnTT

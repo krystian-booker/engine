@@ -19,6 +19,7 @@
 #include <engine/vegetation/vegetation_systems.hpp>
 #include <engine/ui/ui_context.hpp>
 #include <engine/ui/ui_system.hpp>
+#include <engine/script/script_context.hpp>
 
 #include <cstring>
 
@@ -105,6 +106,9 @@ int Application::run(int argc, char** argv) {
     s_physics_world_instance = m_physics_world.get();
     
     m_physics_system = std::make_unique<physics::PhysicsSystem>(*m_physics_world);
+
+    // Initialize script context with all subsystems
+    script::init_script_context(m_world.get(), m_physics_world.get());
 
     m_engine_scheduler = std::make_unique<scene::Scheduler>();
     m_system_registry = std::make_unique<plugin::SystemRegistry>();
@@ -255,6 +259,9 @@ int Application::run(int argc, char** argv) {
     // Destroy engine systems
     m_system_registry.reset();
     m_engine_scheduler.reset();
+
+    // Shutdown script context
+    script::shutdown_script_context();
 
     // Shutdown navigation system
     navigation::navigation_shutdown();

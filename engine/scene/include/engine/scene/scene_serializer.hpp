@@ -4,6 +4,7 @@
 #include <engine/scene/entity.hpp>
 #include <engine/scene/components.hpp>
 #include <engine/core/math.hpp>
+#include <engine/reflect/entity_resolution.hpp>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -14,6 +15,7 @@
 namespace engine::scene {
 
 using namespace engine::core;
+using engine::reflect::EntityResolutionContext;
 
 // Forward declarations
 class World;
@@ -151,6 +153,8 @@ private:
     // Custom component serialization (using reflection)
     bool serialize_custom_component(World& world, Entity entity, const std::string& type_name, std::string& out_json) const;
     bool deserialize_custom_component(World& world, Entity entity, const std::string& type_name, const std::string& json);
+    bool deserialize_custom_component(World& world, Entity entity, const std::string& type_name, const std::string& json,
+                                      const EntityResolutionContext* entity_ctx);
 
     // Asset handle serialization helpers
     std::string serialize_asset_handle(const MeshHandle& handle, const char* asset_type) const;

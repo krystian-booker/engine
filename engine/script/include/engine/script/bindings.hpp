@@ -16,5 +16,9 @@ void register_input_bindings(sol::state& lua);
 void register_time_bindings(sol::state& lua);
 void register_log_bindings(sol::state& lua);
 void register_localization_bindings(sol::state& lua);
+void register_physics_bindings(sol::state& lua);
+void register_audio_bindings(sol::state& lua);
+void register_navigation_bindings(sol::state& lua);
+void register_debug_bindings(sol::state& lua);
 
 } // namespace engine::script

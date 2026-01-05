@@ -1,4 +1,5 @@
 #include <engine/script/script_component.hpp>
+#include <engine/script/script_context.hpp>
 #include <engine/script/lua_state.hpp>
 #include <engine/scene/world.hpp>
 #include <engine/core/log.hpp>
@@ -6,15 +7,8 @@
 
 namespace engine::script {
 
-// Thread-local World context for script execution
-static thread_local scene::World* s_current_world = nullptr;
-
 // Set of registered worlds for hot reload
 static std::unordered_set<scene::World*> s_registered_worlds;
-
-scene::World* get_current_script_world() {
-    return s_current_world;
-}
 
 void register_script_world(scene::World* world) {
     if (world) {
@@ -114,7 +108,7 @@ void script_unload(scene::World& world, scene::Entity entity) {
 
 void script_system_update(scene::World& world, float dt) {
     // Set world context for component operations in Lua
-    s_current_world = &world;
+    set_current_script_world(&world);
 
     auto view = world.view<ScriptComponent>();
 
@@ -142,12 +136,12 @@ void script_system_update(scene::World& world, float dt) {
     }
 
     // Clear world context
-    s_current_world = nullptr;
+    set_current_script_world(nullptr);
 }
 
 void script_system_fixed_update(scene::World& world, float dt) {
     // Set world context for component operations in Lua
-    s_current_world = &world;
+    set_current_script_world(&world);
 
     auto view = world.view<ScriptComponent>();
 
@@ -168,12 +162,12 @@ void script_system_fixed_update(scene::World& world, float dt) {
     }
 
     // Clear world context
-    s_current_world = nullptr;
+    set_current_script_world(nullptr);
 }
 
 void script_system_late_update(scene::World& world, float dt) {
     // Set world context for component operations in Lua
-    s_current_world = &world;
+    set_current_script_world(&world);
 
     auto view = world.view<ScriptComponent>();
 
@@ -194,7 +188,7 @@ void script_system_late_update(scene::World& world, float dt) {
     }
 
     // Clear world context
-    s_current_world = nullptr;
+    set_current_script_world(nullptr);
 }
 
 void script_reload(const std::string& path) {

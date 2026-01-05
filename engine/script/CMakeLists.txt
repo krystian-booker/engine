@@ -8,11 +8,16 @@ target_sources(engine_script
     PRIVATE
         src/lua_state.cpp
         src/script_component.cpp
+        src/script_context.cpp
         src/bindings.cpp
         src/math_bindings.cpp
         src/entity_bindings.cpp
         src/input_bindings.cpp
         src/localization_bindings.cpp
+        src/physics_bindings.cpp
+        src/audio_bindings.cpp
+        src/navigation_bindings.cpp
+        src/debug_bindings.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -21,6 +26,7 @@ target_sources(engine_script
             include/engine/script/script.hpp
             include/engine/script/lua_state.hpp
             include/engine/script/script_component.hpp
+            include/engine/script/script_context.hpp
             include/engine/script/bindings.hpp
 )
 
@@ -39,6 +45,10 @@ target_link_libraries(engine_script
     PRIVATE
         engine_compiler_flags
         engine::localization
+        engine::physics
+        engine::audio
+        engine::navigation
+        engine::render
 )
 
 set_target_properties(engine_script PROPERTIES
