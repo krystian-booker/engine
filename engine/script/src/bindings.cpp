@@ -50,6 +50,11 @@ void register_all_bindings(LuaState& lua) {
     register_audio_bindings(state);
     register_navigation_bindings(state);
     register_debug_bindings(state);
+    register_camera_bindings(state);
+    register_animation_bindings(state);
+    register_save_bindings(state);
+    register_scene_bindings(state);
+    register_ui_bindings(state);
 
     core::log(core::LogLevel::Debug, "Registered all Lua bindings");
 }

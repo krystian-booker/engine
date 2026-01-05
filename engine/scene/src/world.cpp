@@ -64,6 +64,7 @@ bool World::valid(Entity e) const {
 void World::clear() {
     m_registry.clear();
     m_next_uuid = 1;
+    reset_roots(*this);
 }
 
 Entity World::find_by_name(const std::string& name) const {

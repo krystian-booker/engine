@@ -133,6 +133,9 @@ std::vector<Entity> get_root_entities(World& world);
 // Check if entity is ancestor of another
 bool is_ancestor_of(World& world, Entity ancestor, Entity descendant);
 
+// Reset the root entity list (call when clearing world)
+void reset_roots(World& world);
+
 // Systems for transform updates
 void transform_system(World& world, double dt);
 void interpolate_transforms(World& world, double alpha);

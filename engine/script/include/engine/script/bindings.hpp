@@ -20,5 +20,10 @@ void register_physics_bindings(sol::state& lua);
 void register_audio_bindings(sol::state& lua);
 void register_navigation_bindings(sol::state& lua);
 void register_debug_bindings(sol::state& lua);
+void register_camera_bindings(sol::state& lua);
+void register_animation_bindings(sol::state& lua);
+void register_save_bindings(sol::state& lua);
+void register_scene_bindings(sol::state& lua);
+void register_ui_bindings(sol::state& lua);
 
 } // namespace engine::script

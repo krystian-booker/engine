@@ -132,8 +132,8 @@ bool SceneSerializer::deserialize(World& world, const std::string& json) {
         for (const auto& entity_data : scene.entities) {
             Entity entity = world.create();
 
-            // Add EntityInfo
-            EntityInfo& info = world.emplace<EntityInfo>(entity);
+            // world.create() already adds EntityInfo, so get and modify it
+            EntityInfo& info = world.get<EntityInfo>(entity);
             info.name = entity_data.name;
             info.uuid = entity_data.uuid;
             info.enabled = entity_data.enabled;

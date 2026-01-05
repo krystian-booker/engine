@@ -18,6 +18,11 @@ target_sources(engine_script
         src/audio_bindings.cpp
         src/navigation_bindings.cpp
         src/debug_bindings.cpp
+        src/camera_bindings.cpp
+        src/animation_bindings.cpp
+        src/save_bindings.cpp
+        src/scene_bindings.cpp
+        src/ui_bindings.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -49,6 +54,8 @@ target_link_libraries(engine_script
         engine::audio
         engine::navigation
         engine::render
+        engine::save
+        engine::ui
 )
 
 set_target_properties(engine_script PROPERTIES
