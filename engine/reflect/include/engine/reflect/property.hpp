@@ -27,6 +27,9 @@ struct PropertyMeta {
     // For asset references
     std::string asset_type;   // e.g., "Mesh", "Texture", "Material"
 
+    // For entity references
+    bool is_entity_ref = false;  // Show entity picker, serialize as UUID
+
     PropertyMeta() = default;
 
     PropertyMeta& set_display_name(const std::string& new_name) { display_name = new_name; return *this; }
@@ -40,6 +43,7 @@ struct PropertyMeta {
     PropertyMeta& set_angle(bool a = true) { is_angle = a; return *this; }
     PropertyMeta& set_color(bool c = true) { is_color = c; return *this; }
     PropertyMeta& set_asset(const std::string& type) { is_asset = true; asset_type = type; return *this; }
+    PropertyMeta& set_entity_ref(bool e = true) { is_entity_ref = e; return *this; }
 };
 
 // Type categories for grouping in editor

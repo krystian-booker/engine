@@ -1,6 +1,7 @@
 #pragma once
 
 #include <engine/reflect/property.hpp>
+#include <engine/reflect/entity_resolution.hpp>
 #include <engine/core/serialize.hpp>
 #include <entt/entt.hpp>
 #include <string>
@@ -110,6 +111,12 @@ public:
     void serialize_any(const entt::meta_any& value, core::IArchive& ar, const char* name);
     entt::meta_any deserialize_any(entt::meta_type type, core::IArchive& ar, const char* name);
 
+    // Serialization with entity resolution context (for entity reference properties)
+    void serialize_any(const entt::meta_any& value, core::IArchive& ar, const char* name,
+                       const EntityResolutionContext* entity_ctx);
+    entt::meta_any deserialize_any(entt::meta_type type, core::IArchive& ar, const char* name,
+                                   const EntityResolutionContext* entity_ctx);
+
     // Create a meta_any from a component on an entity
     entt::meta_any get_component_any(entt::registry& registry, entt::entity entity, const std::string& type_name);
 
@@ -122,6 +129,14 @@ public:
     // Remove a component from an entity
     bool remove_component_any(entt::registry& registry, entt::entity entity, const std::string& type_name);
 
+    // Query if type is a registered vector type
+    struct VectorTypeInfo;
+    const VectorTypeInfo* get_vector_type_info(entt::id_type type_id) const;
+
+    // Register a vector type for serialization
+    template<typename T>
+    void register_vector_type();
+
 private:
     // Component factory function types
     using ComponentEmplacer = std::function<void(entt::registry&, entt::entity)>;
@@ -130,6 +145,17 @@ private:
     struct ComponentFactory {
         ComponentEmplacer emplace;
         ComponentRemover remove;
+    };
+
+    // Vector type info for serialization
+    struct VectorTypeInfo {
+        entt::id_type vector_type_id;
+        entt::id_type element_type_id;
+        entt::meta_type element_type;
+        std::function<size_t(const entt::meta_any&)> get_size;
+        std::function<entt::meta_any(const entt::meta_any&, size_t)> get_element;
+        std::function<entt::meta_any(size_t)> create_vector;
+        std::function<void(entt::meta_any&, size_t, const entt::meta_any&)> set_element;
     };
 
     TypeRegistry() = default;
@@ -142,6 +168,7 @@ private:
     std::unordered_map<entt::id_type, TypeInfo> m_type_info;
     std::unordered_map<std::string, ComponentFactory> m_component_factories;
     std::vector<std::string> m_component_names;
+    std::unordered_map<entt::id_type, VectorTypeInfo> m_vector_types;
 };
 
 // Implementation of template methods
@@ -390,6 +417,51 @@ void TypeRegistry::register_property(const char* name, const PropertyMeta& meta,
 
         it->second.properties.push_back(std::move(prop));
     }
+}
+
+template<typename T>
+void TypeRegistry::register_vector_type() {
+    using VectorType = std::vector<T>;
+
+    auto vector_type_id = entt::type_hash<VectorType>::value();
+
+    VectorTypeInfo info;
+    info.vector_type_id = vector_type_id;
+    info.element_type_id = entt::type_hash<T>::value();
+    info.element_type = entt::resolve<T>();
+
+    info.get_size = [](const entt::meta_any& vec) -> size_t {
+        if (auto* ptr = vec.try_cast<VectorType>()) {
+            return ptr->size();
+        }
+        return 0;
+    };
+
+    info.get_element = [](const entt::meta_any& vec, size_t index) -> entt::meta_any {
+        if (auto* ptr = vec.try_cast<VectorType>()) {
+            if (index < ptr->size()) {
+                return entt::meta_any{(*ptr)[index]};
+            }
+        }
+        return {};
+    };
+
+    info.create_vector = [](size_t size) -> entt::meta_any {
+        VectorType vec(size);
+        return entt::meta_any{std::move(vec)};
+    };
+
+    info.set_element = [](entt::meta_any& vec, size_t index, const entt::meta_any& value) {
+        if (auto* ptr = vec.try_cast<VectorType>()) {
+            if (index < ptr->size()) {
+                if (auto* val = value.try_cast<T>()) {
+                    (*ptr)[index] = *val;
+                }
+            }
+        }
+    };
+
+    m_vector_types[vector_type_id] = std::move(info);
 }
 
 // Registration macros for convenience

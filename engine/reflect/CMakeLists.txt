@@ -17,6 +17,7 @@ target_sources(engine_reflect
             include/engine/reflect/property.hpp
             include/engine/reflect/type_registry.hpp
             include/engine/reflect/component_factory.hpp
+            include/engine/reflect/entity_resolution.hpp
 )
 
 target_include_directories(engine_reflect

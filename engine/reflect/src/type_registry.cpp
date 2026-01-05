@@ -96,7 +96,20 @@ entt::meta_any TypeRegistry::invoke_method(entt::meta_any& obj, const std::strin
     return method_info->invoker(obj, args);
 }
 
+const TypeRegistry::VectorTypeInfo* TypeRegistry::get_vector_type_info(entt::id_type type_id) const {
+    auto it = m_vector_types.find(type_id);
+    if (it != m_vector_types.end()) {
+        return &it->second;
+    }
+    return nullptr;
+}
+
 void TypeRegistry::serialize_any(const entt::meta_any& value, core::IArchive& ar, const char* name) {
+    serialize_any(value, ar, name, nullptr);
+}
+
+void TypeRegistry::serialize_any(const entt::meta_any& value, core::IArchive& ar, const char* name,
+                                  const EntityResolutionContext* entity_ctx) {
     if (!value) {
         return;
     }
@@ -158,6 +171,28 @@ void TypeRegistry::serialize_any(const entt::meta_any& value, core::IArchive& ar
         core::Mat4 v = value.cast<core::Mat4>();
         ar.serialize(name, v);
     }
+    // Handle entity references - serialize as UUID
+    else if (type_id == entt::type_hash<entt::entity>::value()) {
+        auto entity = value.cast<entt::entity>();
+        uint64_t uuid = EntityResolutionContext::NullUUID;
+        if (entity != entt::null && entity_ctx && entity_ctx->can_serialize()) {
+            uuid = entity_ctx->entity_to_uuid(entity);
+        }
+        ar.serialize(name, uuid);
+    }
+    // Handle vector types
+    else if (auto* vec_info = get_vector_type_info(type_id)) {
+        size_t size = vec_info->get_size(value);
+        ar.begin_array(name, size);
+
+        for (size_t i = 0; i < size; ++i) {
+            auto element = vec_info->get_element(value, i);
+            std::string elem_name = std::to_string(i);
+            serialize_any(element, ar, elem_name.c_str(), entity_ctx);
+        }
+
+        ar.end_array();
+    }
     // Handle enum types - serialize as string name
     else {
         auto* type_info = get_type_info(type_id);
@@ -195,7 +230,12 @@ void TypeRegistry::serialize_any(const entt::meta_any& value, core::IArchive& ar
             for (const auto& prop : type_info->properties) {
                 if (prop.getter) {
                     auto prop_value = prop.getter(value);
-                    serialize_any(prop_value, ar, prop.name.c_str());
+                    // Use entity context for entity ref properties
+                    if (prop.meta.is_entity_ref) {
+                        serialize_any(prop_value, ar, prop.name.c_str(), entity_ctx);
+                    } else {
+                        serialize_any(prop_value, ar, prop.name.c_str(), nullptr);
+                    }
                 }
             }
             ar.end_object();
@@ -204,6 +244,11 @@ void TypeRegistry::serialize_any(const entt::meta_any& value, core::IArchive& ar
 }
 
 entt::meta_any TypeRegistry::deserialize_any(entt::meta_type type, core::IArchive& ar, const char* name) {
+    return deserialize_any(type, ar, name, nullptr);
+}
+
+entt::meta_any TypeRegistry::deserialize_any(entt::meta_type type, core::IArchive& ar, const char* name,
+                                              const EntityResolutionContext* entity_ctx) {
     if (!type) {
         return {};
     }
@@ -277,6 +322,42 @@ entt::meta_any TypeRegistry::deserialize_any(entt::meta_type type, core::IArchiv
         ar.serialize(name, v);
         return entt::meta_any{v};
     }
+    // Handle entity references - deserialize from UUID
+    else if (type_id == entt::type_hash<entt::entity>::value()) {
+        uint64_t uuid = 0;
+        ar.serialize(name, uuid);
+
+        entt::entity entity = entt::null;
+        if (uuid != EntityResolutionContext::NullUUID && entity_ctx && entity_ctx->can_deserialize()) {
+            entity = entity_ctx->uuid_to_entity(uuid);
+            if (entity == entt::null) {
+                core::log(core::LogLevel::Warn, "Entity reference UUID {} not found during deserialization", uuid);
+            }
+        }
+        return entt::meta_any{entity};
+    }
+    // Handle vector types
+    else if (auto* vec_info = get_vector_type_info(type_id)) {
+        size_t count = ar.begin_array(name, 0);
+
+        if (count == 0) {
+            ar.end_array();
+            return vec_info->create_vector(0);
+        }
+
+        auto result = vec_info->create_vector(count);
+
+        for (size_t i = 0; i < count; ++i) {
+            std::string elem_name = std::to_string(i);
+            auto element = deserialize_any(vec_info->element_type, ar, elem_name.c_str(), entity_ctx);
+            if (element) {
+                vec_info->set_element(result, i, element);
+            }
+        }
+
+        ar.end_array();
+        return result;
+    }
     // Handle enum types - deserialize from string name
     else {
         auto* type_info = get_type_info(type_id);
@@ -318,7 +399,9 @@ entt::meta_any TypeRegistry::deserialize_any(entt::meta_type type, core::IArchiv
             if (instance && ar.begin_object(name)) {
                 for (const auto& prop : type_info->properties) {
                     if (prop.setter) {
-                        auto prop_value = deserialize_any(prop.type, ar, prop.name.c_str());
+                        // Use entity context for entity ref properties
+                        const EntityResolutionContext* prop_ctx = prop.meta.is_entity_ref ? entity_ctx : nullptr;
+                        auto prop_value = deserialize_any(prop.type, ar, prop.name.c_str(), prop_ctx);
                         if (prop_value) {
                             prop.setter(instance, prop_value);
                         }
@@ -412,6 +495,35 @@ bool TypeRegistry::remove_component_any(entt::registry& registry, entt::entity e
 
     it->second.remove(registry, entity);
     return true;
+}
+
+// Static registration of common vector types
+namespace {
+struct VectorTypeRegistrar {
+    VectorTypeRegistrar() {
+        auto& reg = TypeRegistry::instance();
+
+        // Primitive types
+        reg.register_vector_type<bool>();
+        reg.register_vector_type<int32_t>();
+        reg.register_vector_type<uint32_t>();
+        reg.register_vector_type<int64_t>();
+        reg.register_vector_type<uint64_t>();
+        reg.register_vector_type<float>();
+        reg.register_vector_type<double>();
+        reg.register_vector_type<std::string>();
+
+        // Math types
+        reg.register_vector_type<core::Vec2>();
+        reg.register_vector_type<core::Vec3>();
+        reg.register_vector_type<core::Vec4>();
+        reg.register_vector_type<core::Quat>();
+
+        // Entity references (for vectors of entity refs)
+        reg.register_vector_type<entt::entity>();
+    }
+};
+static VectorTypeRegistrar _vector_registrar;
 }
 
 } // namespace engine::reflect
