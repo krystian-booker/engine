@@ -25,5 +25,17 @@ void register_animation_bindings(sol::state& lua);
 void register_save_bindings(sol::state& lua);
 void register_scene_bindings(sol::state& lua);
 void register_ui_bindings(sol::state& lua);
+void register_particle_bindings(sol::state& lua);
+void register_render_bindings(sol::state& lua);
+void register_cinematic_bindings(sol::state& lua);
+
+// Cinematic bindings cleanup
+void cinematic_bindings_shutdown();
 
 } // namespace engine::script
+
+// Render bindings helper - set post process system for script access
+namespace engine::render { class PostProcessSystem; }
+namespace engine::script {
+void set_post_process_system(engine::render::PostProcessSystem* system);
+}

@@ -55,6 +55,9 @@ void register_all_bindings(LuaState& lua) {
     register_save_bindings(state);
     register_scene_bindings(state);
     register_ui_bindings(state);
+    register_particle_bindings(state);
+    register_render_bindings(state);
+    register_cinematic_bindings(state);
 
     core::log(core::LogLevel::Debug, "Registered all Lua bindings");
 }

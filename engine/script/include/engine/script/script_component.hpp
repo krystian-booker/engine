@@ -82,4 +82,15 @@ void script_set_property(scene::World& world, scene::Entity entity,
 sol::object script_get_property(scene::World& world, scene::Entity entity,
                                 const std::string& name);
 
+// Initialize script collision system - registers callback with physics world
+// Call this after script_system_init() and after physics world is created
+void script_collision_init();
+
+// Shutdown script collision system
+void script_collision_shutdown();
+
+// Process pending collision events and dispatch to scripts
+// Call this each frame after physics step, before script_system_update
+void script_collision_dispatch(scene::World& world);
+
 } // namespace engine::script

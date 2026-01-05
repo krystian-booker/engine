@@ -408,6 +408,112 @@ void register_entity_bindings(sol::state& lua) {
         auto* info = world->try_get<EntityInfo>(entity);
         return info ? info->enabled : true;
     });
+
+    // --- Entity Query Functions ---
+
+    // Find all entities with a specific component type
+    engine.set_function("find_entities_with_component", [](const std::string& type_name) -> std::vector<uint32_t> {
+        auto* world = get_current_script_world();
+        if (!world) {
+            core::log(core::LogLevel::Warn, "find_entities_with_component called outside script context");
+            return {};
+        }
+
+        std::vector<uint32_t> result;
+        auto& registry = world->registry();
+        auto& type_reg = reflect::TypeRegistry::instance();
+
+        // Handle built-in types first for efficiency
+        if (type_name == "LocalTransform") {
+            auto view = registry.view<LocalTransform>();
+            result.reserve(view.size());
+            for (auto entity : view) {
+                result.push_back(static_cast<uint32_t>(entity));
+            }
+            return result;
+        }
+        if (type_name == "WorldTransform") {
+            auto view = registry.view<WorldTransform>();
+            result.reserve(view.size());
+            for (auto entity : view) {
+                result.push_back(static_cast<uint32_t>(entity));
+            }
+            return result;
+        }
+        if (type_name == "EntityInfo") {
+            auto view = registry.view<EntityInfo>();
+            result.reserve(view.size());
+            for (auto entity : view) {
+                result.push_back(static_cast<uint32_t>(entity));
+            }
+            return result;
+        }
+
+        // For reflected types, use the type registry
+        // This iterates all entities and checks if they have the component
+        for (auto entity : registry.view<entt::entity>()) {
+            if (registry.valid(entity)) {
+                auto component = type_reg.get_component_any(registry, entity, type_name);
+                if (component) {
+                    result.push_back(static_cast<uint32_t>(entity));
+                }
+            }
+        }
+
+        return result;
+    });
+
+    // Find all entities whose name contains the given substring
+    engine.set_function("find_entities_by_name", [](const std::string& name_pattern) -> std::vector<uint32_t> {
+        auto* world = get_current_script_world();
+        if (!world) {
+            return {};
+        }
+
+        std::vector<uint32_t> result;
+        auto& registry = world->registry();
+        auto view = registry.view<EntityInfo>();
+
+        for (auto entity : view) {
+            const auto& info = view.get<EntityInfo>(entity);
+            if (info.name.find(name_pattern) != std::string::npos) {
+                result.push_back(static_cast<uint32_t>(entity));
+            }
+        }
+
+        return result;
+    });
+
+    // Find all entities whose name starts with the given prefix
+    engine.set_function("find_entities_with_prefix", [](const std::string& prefix) -> std::vector<uint32_t> {
+        auto* world = get_current_script_world();
+        if (!world) {
+            return {};
+        }
+
+        std::vector<uint32_t> result;
+        auto& registry = world->registry();
+        auto view = registry.view<EntityInfo>();
+
+        for (auto entity : view) {
+            const auto& info = view.get<EntityInfo>(entity);
+            if (info.name.compare(0, prefix.size(), prefix) == 0) {
+                result.push_back(static_cast<uint32_t>(entity));
+            }
+        }
+
+        return result;
+    });
+
+    // Get total entity count
+    engine.set_function("get_entity_count", []() -> uint32_t {
+        auto* world = get_current_script_world();
+        if (!world) {
+            return 0;
+        }
+
+        return static_cast<uint32_t>(world->registry().storage<entt::entity>().size());
+    });
 }
 
 } // namespace engine::script

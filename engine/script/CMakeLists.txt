@@ -23,6 +23,8 @@ target_sources(engine_script
         src/save_bindings.cpp
         src/scene_bindings.cpp
         src/ui_bindings.cpp
+        src/render_bindings.cpp
+        src/cinematic_bindings.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -56,6 +58,7 @@ target_link_libraries(engine_script
         engine::render
         engine::save
         engine::ui
+        engine::cinematic
 )
 
 set_target_properties(engine_script PROPERTIES

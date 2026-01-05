@@ -316,6 +316,233 @@ void register_physics_bindings(sol::state& lua) {
         return world->get_gravity();
     });
 
+    // --- Rigid Body Property Control ---
+
+    // Get mass of a rigid body
+    physics.set_function("get_mass", [](uint32_t entity_id) -> float {
+        auto* physics_world = get_script_context().physics_world;
+        auto* scene_world = get_current_script_world();
+        if (!physics_world || !scene_world) {
+            return 0.0f;
+        }
+
+        auto entity = static_cast<entt::entity>(entity_id);
+        if (!scene_world->registry().valid(entity)) return 0.0f;
+
+        auto* rb = scene_world->try_get<RigidBodyComponent>(entity);
+        if (rb && rb->body_id.valid()) {
+            return physics_world->get_body_mass(rb->body_id);
+        }
+        return 0.0f;
+    });
+
+    // Set friction
+    physics.set_function("set_friction", [](uint32_t entity_id, float friction) {
+        auto* physics_world = get_script_context().physics_world;
+        auto* scene_world = get_current_script_world();
+        if (!physics_world || !scene_world) {
+            core::log(core::LogLevel::Warn, "Physics.set_friction called without context");
+            return;
+        }
+
+        auto entity = static_cast<entt::entity>(entity_id);
+        if (!scene_world->registry().valid(entity)) return;
+
+        auto* rb = scene_world->try_get<RigidBodyComponent>(entity);
+        if (rb && rb->body_id.valid()) {
+            physics_world->set_friction(rb->body_id, friction);
+            rb->friction = friction; // Keep component in sync
+        }
+    });
+
+    // Get friction
+    physics.set_function("get_friction", [](uint32_t entity_id) -> float {
+        auto* scene_world = get_current_script_world();
+        if (!scene_world) {
+            return 0.0f;
+        }
+
+        auto entity = static_cast<entt::entity>(entity_id);
+        if (!scene_world->registry().valid(entity)) return 0.0f;
+
+        auto* rb = scene_world->try_get<RigidBodyComponent>(entity);
+        return rb ? rb->friction : 0.0f;
+    });
+
+    // Set restitution (bounciness)
+    physics.set_function("set_restitution", [](uint32_t entity_id, float restitution) {
+        auto* physics_world = get_script_context().physics_world;
+        auto* scene_world = get_current_script_world();
+        if (!physics_world || !scene_world) {
+            core::log(core::LogLevel::Warn, "Physics.set_restitution called without context");
+            return;
+        }
+
+        auto entity = static_cast<entt::entity>(entity_id);
+        if (!scene_world->registry().valid(entity)) return;
+
+        auto* rb = scene_world->try_get<RigidBodyComponent>(entity);
+        if (rb && rb->body_id.valid()) {
+            physics_world->set_restitution(rb->body_id, restitution);
+            rb->restitution = restitution; // Keep component in sync
+        }
+    });
+
+    // Get restitution
+    physics.set_function("get_restitution", [](uint32_t entity_id) -> float {
+        auto* scene_world = get_current_script_world();
+        if (!scene_world) {
+            return 0.0f;
+        }
+
+        auto entity = static_cast<entt::entity>(entity_id);
+        if (!scene_world->registry().valid(entity)) return 0.0f;
+
+        auto* rb = scene_world->try_get<RigidBodyComponent>(entity);
+        return rb ? rb->restitution : 0.0f;
+    });
+
+    // Set gravity factor (0 = no gravity, 1 = normal, >1 = more gravity)
+    physics.set_function("set_gravity_factor", [](uint32_t entity_id, float factor) {
+        auto* physics_world = get_script_context().physics_world;
+        auto* scene_world = get_current_script_world();
+        if (!physics_world || !scene_world) {
+            core::log(core::LogLevel::Warn, "Physics.set_gravity_factor called without context");
+            return;
+        }
+
+        auto entity = static_cast<entt::entity>(entity_id);
+        if (!scene_world->registry().valid(entity)) return;
+
+        auto* rb = scene_world->try_get<RigidBodyComponent>(entity);
+        if (rb && rb->body_id.valid()) {
+            physics_world->set_gravity_factor(rb->body_id, factor);
+        }
+    });
+
+    // Set kinematic mode (true = kinematic, false = dynamic)
+    physics.set_function("set_kinematic", [](uint32_t entity_id, bool kinematic) {
+        auto* physics_world = get_script_context().physics_world;
+        auto* scene_world = get_current_script_world();
+        if (!physics_world || !scene_world) {
+            core::log(core::LogLevel::Warn, "Physics.set_kinematic called without context");
+            return;
+        }
+
+        auto entity = static_cast<entt::entity>(entity_id);
+        if (!scene_world->registry().valid(entity)) return;
+
+        auto* rb = scene_world->try_get<RigidBodyComponent>(entity);
+        if (rb && rb->body_id.valid()) {
+            BodyType new_type = kinematic ? BodyType::Kinematic : BodyType::Dynamic;
+            physics_world->set_motion_type(rb->body_id, new_type);
+            rb->type = new_type; // Keep component in sync
+        }
+    });
+
+    // Check if body is kinematic
+    physics.set_function("is_kinematic", [](uint32_t entity_id) -> bool {
+        auto* physics_world = get_script_context().physics_world;
+        auto* scene_world = get_current_script_world();
+        if (!physics_world || !scene_world) {
+            return false;
+        }
+
+        auto entity = static_cast<entt::entity>(entity_id);
+        if (!scene_world->registry().valid(entity)) return false;
+
+        auto* rb = scene_world->try_get<RigidBodyComponent>(entity);
+        if (rb && rb->body_id.valid()) {
+            return physics_world->get_motion_type(rb->body_id) == BodyType::Kinematic;
+        }
+        return false;
+    });
+
+    // Check if body is a sensor (trigger)
+    physics.set_function("is_sensor", [](uint32_t entity_id) -> bool {
+        auto* scene_world = get_current_script_world();
+        if (!scene_world) {
+            return false;
+        }
+
+        auto entity = static_cast<entt::entity>(entity_id);
+        if (!scene_world->registry().valid(entity)) return false;
+
+        auto* rb = scene_world->try_get<RigidBodyComponent>(entity);
+        return rb ? rb->is_sensor : false;
+    });
+
+    // Activate (wake up) a sleeping body
+    physics.set_function("activate", [](uint32_t entity_id) {
+        auto* physics_world = get_script_context().physics_world;
+        auto* scene_world = get_current_script_world();
+        if (!physics_world || !scene_world) {
+            return;
+        }
+
+        auto entity = static_cast<entt::entity>(entity_id);
+        if (!scene_world->registry().valid(entity)) return;
+
+        auto* rb = scene_world->try_get<RigidBodyComponent>(entity);
+        if (rb && rb->body_id.valid()) {
+            physics_world->activate_body(rb->body_id);
+        }
+    });
+
+    // Check if body is active (not sleeping)
+    physics.set_function("is_active", [](uint32_t entity_id) -> bool {
+        auto* physics_world = get_script_context().physics_world;
+        auto* scene_world = get_current_script_world();
+        if (!physics_world || !scene_world) {
+            return false;
+        }
+
+        auto entity = static_cast<entt::entity>(entity_id);
+        if (!scene_world->registry().valid(entity)) return false;
+
+        auto* rb = scene_world->try_get<RigidBodyComponent>(entity);
+        if (rb && rb->body_id.valid()) {
+            return physics_world->is_active(rb->body_id);
+        }
+        return false;
+    });
+
+    // Set collision layer
+    physics.set_function("set_layer", [](uint32_t entity_id, uint16_t layer) {
+        auto* physics_world = get_script_context().physics_world;
+        auto* scene_world = get_current_script_world();
+        if (!physics_world || !scene_world) {
+            return;
+        }
+
+        auto entity = static_cast<entt::entity>(entity_id);
+        if (!scene_world->registry().valid(entity)) return;
+
+        auto* rb = scene_world->try_get<RigidBodyComponent>(entity);
+        if (rb && rb->body_id.valid()) {
+            physics_world->set_layer(rb->body_id, layer);
+            rb->layer = layer; // Keep component in sync
+        }
+    });
+
+    // Get collision layer
+    physics.set_function("get_layer", [](uint32_t entity_id) -> uint16_t {
+        auto* physics_world = get_script_context().physics_world;
+        auto* scene_world = get_current_script_world();
+        if (!physics_world || !scene_world) {
+            return 0;
+        }
+
+        auto entity = static_cast<entt::entity>(entity_id);
+        if (!scene_world->registry().valid(entity)) return 0;
+
+        auto* rb = scene_world->try_get<RigidBodyComponent>(entity);
+        if (rb && rb->body_id.valid()) {
+            return physics_world->get_layer(rb->body_id);
+        }
+        return 0;
+    });
+
     // Common layer constants
     physics["LAYER_DEFAULT"] = static_cast<uint16_t>(1 << 0);
     physics["LAYER_STATIC"] = static_cast<uint16_t>(1 << 1);

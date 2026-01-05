@@ -136,18 +136,15 @@ void ViewportWidget::render_frame() {
         }
 
         auto render_view = world->view<engine::scene::WorldTransform, engine::scene::MeshRenderer>();
-        for (auto entity : render_view) {
-            auto& transform = render_view.get<engine::scene::WorldTransform>(entity);
-            auto& mesh_renderer = render_view.get<engine::scene::MeshRenderer>(entity);
-
-            if (!mesh_renderer.visible) continue;
+        render_view.each([&](auto entity, auto& transform, auto& mesh_renderer) {
+            if (!mesh_renderer.visible) return;
 
             engine::render::DrawCall call;
             call.mesh = engine::render::MeshHandle{mesh_renderer.mesh.id};
             call.material = engine::render::MaterialHandle{mesh_renderer.material.id};
             call.transform = transform.matrix;
             renderer->queue_draw(call);
-        }
+        });
     }
 
     // Draw gizmo for selection
