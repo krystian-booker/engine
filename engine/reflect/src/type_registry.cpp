@@ -158,10 +158,40 @@ void TypeRegistry::serialize_any(const entt::meta_any& value, core::IArchive& ar
         core::Mat4 v = value.cast<core::Mat4>();
         ar.serialize(name, v);
     }
-    // Handle complex types via their registered properties
+    // Handle enum types - serialize as string name
     else {
         auto* type_info = get_type_info(type_id);
-        if (type_info && ar.begin_object(name)) {
+        if (type_info && type_info->is_enum) {
+            // Get the underlying integer value from the enum
+            // Enums are typically stored as their underlying type (usually int)
+            int64_t int_val = 0;
+            if (value.allow_cast<int>()) {
+                int_val = static_cast<int64_t>(value.cast<int>());
+            } else if (value.allow_cast<int64_t>()) {
+                int_val = value.cast<int64_t>();
+            } else if (value.allow_cast<uint32_t>()) {
+                int_val = static_cast<int64_t>(value.cast<uint32_t>());
+            } else if (value.allow_cast<int32_t>()) {
+                int_val = static_cast<int64_t>(value.cast<int32_t>());
+            }
+
+            // Find the string name for this value
+            std::string enum_str;
+            for (const auto& [enum_name, enum_val] : type_info->enum_values) {
+                if (enum_val == int_val) {
+                    enum_str = enum_name;
+                    break;
+                }
+            }
+
+            // Serialize as string (fallback to integer string if not found)
+            if (enum_str.empty()) {
+                enum_str = std::to_string(int_val);
+            }
+            ar.serialize(name, enum_str);
+        }
+        // Handle complex types via their registered properties
+        else if (type_info && ar.begin_object(name)) {
             for (const auto& prop : type_info->properties) {
                 if (prop.getter) {
                     auto prop_value = prop.getter(value);
@@ -247,10 +277,42 @@ entt::meta_any TypeRegistry::deserialize_any(entt::meta_type type, core::IArchiv
         ar.serialize(name, v);
         return entt::meta_any{v};
     }
-    // Handle complex types
+    // Handle enum types - deserialize from string name
     else {
         auto* type_info = get_type_info(type_id);
-        if (type_info) {
+        if (type_info && type_info->is_enum) {
+            // Read the string name
+            std::string enum_str;
+            ar.serialize(name, enum_str);
+
+            // Look up the integer value
+            int64_t int_val = 0;
+            bool found = false;
+            for (const auto& [enum_name, enum_val] : type_info->enum_values) {
+                if (enum_name == enum_str) {
+                    int_val = enum_val;
+                    found = true;
+                    break;
+                }
+            }
+
+            // If not found by name, try parsing as integer (fallback)
+            if (!found) {
+                try {
+                    int_val = std::stoll(enum_str);
+                } catch (...) {
+                    int_val = 0;
+                }
+            }
+
+            // For enums, we need to return a meta_any with the correct integer value
+            // The property setter will handle the type conversion
+            // Store as int which is the most common underlying type for enums
+            int int_value = static_cast<int>(int_val);
+            return entt::meta_any{int_value};
+        }
+        // Handle complex types
+        else if (type_info) {
             // Create default instance
             auto instance = type.construct();
             if (instance && ar.begin_object(name)) {

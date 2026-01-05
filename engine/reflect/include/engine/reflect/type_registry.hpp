@@ -222,6 +222,12 @@ void TypeRegistry::register_property(const char* name, const PropertyMeta& meta)
                 if (auto* val = value.try_cast<MemberType>()) {
                     ptr->*MemberPtr = *val;
                 }
+                // Handle int -> enum conversion for deserialization
+                else if constexpr (std::is_enum_v<MemberType>) {
+                    if (auto* int_val = value.try_cast<int>()) {
+                        ptr->*MemberPtr = static_cast<MemberType>(*int_val);
+                    }
+                }
             }
         };
 
@@ -334,6 +340,12 @@ void TypeRegistry::register_enum(const char* name, std::initializer_list<std::pa
     info.is_component = false;
     info.is_enum = true;
 
+    // Store enum values for serialization and editor display
+    info.enum_values.reserve(values.size());
+    for (const auto& [value, value_name] : values) {
+        info.enum_values.emplace_back(value_name, static_cast<int64_t>(value));
+    }
+
     m_type_info[type_id] = std::move(info);
 }
 
@@ -366,6 +378,12 @@ void TypeRegistry::register_property(const char* name, const PropertyMeta& meta,
                 // Try direct cast first
                 if (auto* val = value.try_cast<PropertyType>()) {
                     s(*ptr, *val);
+                }
+                // Handle int -> enum conversion for deserialization
+                else if constexpr (std::is_enum_v<PropertyType>) {
+                    if (auto* int_val = value.try_cast<int>()) {
+                        s(*ptr, static_cast<PropertyType>(*int_val));
+                    }
                 }
             }
         };
