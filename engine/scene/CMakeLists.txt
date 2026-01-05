@@ -14,6 +14,8 @@ target_sources(engine_scene
         src/component_registration.cpp
         src/prefab_instance.cpp
         src/interaction.cpp
+        src/entity_pool.cpp
+        src/spawn_system.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -29,6 +31,8 @@ target_sources(engine_scene
             include/engine/scene/scene_serializer.hpp
             include/engine/scene/prefab_instance.hpp
             include/engine/scene/interaction.hpp
+            include/engine/scene/entity_pool.hpp
+            include/engine/scene/spawn_system.hpp
 )
 
 target_include_directories(engine_scene

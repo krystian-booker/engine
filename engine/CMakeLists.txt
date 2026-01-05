@@ -19,6 +19,7 @@ add_subdirectory(terrain)
 add_subdirectory(vegetation)
 add_subdirectory(cinematic)
 add_subdirectory(plugin)
+add_subdirectory(data)
 
 # Umbrella target for convenience
 add_library(engine INTERFACE)
@@ -43,4 +44,5 @@ target_link_libraries(engine INTERFACE
     engine::vegetation
     engine::cinematic
     engine::plugin
+    engine::data
 )

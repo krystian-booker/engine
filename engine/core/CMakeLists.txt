@@ -20,6 +20,8 @@ target_sources(engine_core
         src/uuid.cpp
         src/math.cpp
         src/scene_transition.cpp
+        src/timer.cpp
+        src/game_events.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -44,6 +46,9 @@ target_sources(engine_core
             include/engine/core/uuid.hpp
             include/engine/core/asset_handle.hpp
             include/engine/core/scene_transition.hpp
+            include/engine/core/timer.hpp
+            include/engine/core/game_events.hpp
+            include/engine/core/state_machine.hpp
 )
 
 target_include_directories(engine_core
