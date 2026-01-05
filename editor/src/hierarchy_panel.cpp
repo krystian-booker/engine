@@ -4,6 +4,7 @@
 #include <engine/scene/components.hpp>
 #include <engine/render/renderer.hpp>
 #include <algorithm>
+#include <functional>
 #include <QVBoxLayout>
 #include <QHeaderView>
 #include <QInputDialog>
@@ -103,9 +104,7 @@ void HierarchyTreeWidget::dragMoveEvent(QDragMoveEvent* event) {
     QTreeWidgetItem* target = itemAt(event->position().toPoint());
 
     // Clear previous highlighting
-    for (int i = 0; i < topLevelItemCount(); ++i) {
-        topLevelItem(i)->setBackground(0, QBrush());
-    }
+    clear_all_highlights();
 
     // Accept asset drops
     if (is_asset_drop(event->mimeData())) {
@@ -126,11 +125,15 @@ void HierarchyTreeWidget::dragMoveEvent(QDragMoveEvent* event) {
     }
 
     if (all_valid) {
-        // Highlight valid drop target
-        if (target) {
+        // Let Qt handle the drop indicator rendering (shows line between items)
+        QTreeWidget::dragMoveEvent(event);
+
+        // Add highlight for OnItem drops (reparenting) - the drop indicator line
+        // is only shown for AboveItem/BelowItem, so we highlight the target for OnItem
+        DropIndicatorPosition dropPos = dropIndicatorPosition();
+        if (target && dropPos == QAbstractItemView::OnItem) {
             target->setBackground(0, QBrush(QColor(100, 150, 200, 80)));
         }
-        event->acceptProposedAction();
     } else {
         event->ignore();
     }
@@ -140,9 +143,7 @@ void HierarchyTreeWidget::dropEvent(QDropEvent* event) {
     QTreeWidgetItem* target = itemAt(event->position().toPoint());
 
     // Clear highlighting
-    for (int i = 0; i < topLevelItemCount(); ++i) {
-        topLevelItem(i)->setBackground(0, QBrush());
-    }
+    clear_all_highlights();
 
     // Handle asset drops
     if (is_asset_drop(event->mimeData())) {
@@ -272,6 +273,18 @@ bool HierarchyTreeWidget::is_valid_drop(QTreeWidgetItem* source, QTreeWidgetItem
     }
 
     return true;
+}
+
+void HierarchyTreeWidget::clear_all_highlights() {
+    std::function<void(QTreeWidgetItem*)> clear_recursive = [&](QTreeWidgetItem* item) {
+        item->setBackground(0, QBrush());
+        for (int i = 0; i < item->childCount(); ++i) {
+            clear_recursive(item->child(i));
+        }
+    };
+    for (int i = 0; i < topLevelItemCount(); ++i) {
+        clear_recursive(topLevelItem(i));
+    }
 }
 
 HierarchyPanel::HierarchyPanel(EditorState* state, QWidget* parent)

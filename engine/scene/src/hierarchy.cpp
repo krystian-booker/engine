@@ -17,9 +17,14 @@ struct RootList {
     mutable bool dirty = true;
 };
 
-RootList& roots(World& world) {
+// Shared root map for all hierarchy operations
+std::unordered_map<entt::registry*, RootList>& get_root_map() {
     static std::unordered_map<entt::registry*, RootList> root_map;
+    return root_map;
+}
 
+RootList& roots(World& world) {
+    auto& root_map = get_root_map();
     auto& registry = world.registry();
     auto& root_list = root_map[&registry];
 
@@ -27,6 +32,14 @@ RootList& roots(World& world) {
     if ((root_list.first != NullEntity && !registry.valid(root_list.first)) ||
         (root_list.last != NullEntity && !registry.valid(root_list.last))) {
         root_list = RootList{};
+    }
+
+    // Verify linked list integrity - first entity should have prev=NullEntity and parent=NullEntity
+    if (root_list.first != NullEntity) {
+        auto* first_h = registry.try_get<Hierarchy>(root_list.first);
+        if (!first_h || first_h->prev_sibling != NullEntity || first_h->parent != NullEntity) {
+            root_list = RootList{};  // Reset corrupted list
+        }
     }
 
     if (!root_list.cached.empty() && (root_list.cached.front() != NullEntity) &&
@@ -63,6 +76,18 @@ void detach_from_parent(entt::registry& registry, RootList& root_list, Entity ch
     Entity old_parent = child_h.parent;
 
     if (old_parent == NullEntity) {
+        // Check if entity is actually in the root list before detaching
+        // An entity is in the list if it has siblings OR is first/last in list
+        bool is_in_root_list = (child_h.prev_sibling != NullEntity) ||
+                               (child_h.next_sibling != NullEntity) ||
+                               (root_list.first == child) ||
+                               (root_list.last == child);
+
+        if (!is_in_root_list) {
+            // Entity is not in any list yet, nothing to detach
+            return;
+        }
+
         // Detach from root list
         Entity prev = child_h.prev_sibling;
         Entity next = child_h.next_sibling;
@@ -401,6 +426,14 @@ bool is_ancestor_of(World& world, Entity ancestor, Entity descendant) {
     }
 
     return false;
+}
+
+void reset_roots(World& world) {
+    auto& root_list = roots(world);
+    root_list.first = NullEntity;
+    root_list.last = NullEntity;
+    root_list.cached.clear();
+    root_list.dirty = true;
 }
 
 } // namespace engine::scene

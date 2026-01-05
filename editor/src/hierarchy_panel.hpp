@@ -42,6 +42,7 @@ private:
     bool is_valid_drop(QTreeWidgetItem* source, QTreeWidgetItem* target);
     bool is_asset_drop(const QMimeData* mime_data) const;
     void handle_asset_drop(const QMimeData* mime_data, QTreeWidgetItem* target);
+    void clear_all_highlights();
     HierarchyPanel* m_panel;
 };
 
