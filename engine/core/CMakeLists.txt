@@ -22,6 +22,7 @@ target_sources(engine_core
         src/scene_transition.cpp
         src/timer.cpp
         src/game_events.cpp
+        src/time_manager.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -49,6 +50,7 @@ target_sources(engine_core
             include/engine/core/timer.hpp
             include/engine/core/game_events.hpp
             include/engine/core/state_machine.hpp
+            include/engine/core/time_manager.hpp
 )
 
 target_include_directories(engine_core

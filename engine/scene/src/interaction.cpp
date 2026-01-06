@@ -98,7 +98,7 @@ InteractionCandidate InteractionSystem::evaluate_interactable(
     }
 
     // Calculate interaction point (entity position + offset)
-    Vec3 target_pos = transform->position + interactable.interaction_offset;
+    Vec3 target_pos = transform->position() + interactable.interaction_offset;
 
     // Distance check
     Vec3 to_target = target_pos - position;

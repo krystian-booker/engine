@@ -66,7 +66,8 @@ DataValue DataValue::parse(const std::string& str, Type hint) {
         }
         case Type::AssetId: {
             // Parse UUID from string
-            return DataValue(core::UUID::from_string(str));
+            auto uuid = core::UUID::from_string(str);
+            return DataValue(uuid.value_or(core::UUID()));
         }
         case Type::String:
         default:

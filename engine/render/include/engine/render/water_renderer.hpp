@@ -1,6 +1,7 @@
 #pragma once
 
 #include <engine/render/types.hpp>
+#include <engine/render/render_target.hpp>
 #include <engine/core/math.hpp>
 #include <functional>
 #include <memory>
@@ -149,10 +150,10 @@ public:
     void end_frame();
 
     // Water surface rendering
-    void render_water_surfaces(const RenderView& view);
+    void render_water_surfaces(const Mat4& view_matrix);
 
     // Reflection pass (call before main scene render)
-    void begin_reflection_pass(const WaterSurfaceComponent& water, const RenderView& view);
+    void begin_reflection_pass(const WaterSurfaceComponent& water, const Mat4& view_matrix);
     void end_reflection_pass();
     bool is_rendering_reflection() const { return m_rendering_reflection; }
     Mat4 get_reflection_view_matrix() const { return m_reflection_view; }

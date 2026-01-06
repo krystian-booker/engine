@@ -4,12 +4,19 @@
 add_subdirectory(core)
 add_subdirectory(reflect)
 add_subdirectory(scene)
+add_subdirectory(stats)
+add_subdirectory(effects)
+add_subdirectory(inventory)
+add_subdirectory(combat)
 add_subdirectory(script)
 add_subdirectory(render)
 add_subdirectory(asset)
 add_subdirectory(physics)
 add_subdirectory(audio)
 add_subdirectory(navigation)
+add_subdirectory(ai)
+add_subdirectory(quest)
+add_subdirectory(dialogue)
 add_subdirectory(ui)
 add_subdirectory(debug-gui)
 add_subdirectory(save)
@@ -20,6 +27,8 @@ add_subdirectory(vegetation)
 add_subdirectory(cinematic)
 add_subdirectory(plugin)
 add_subdirectory(data)
+add_subdirectory(settings)
+add_subdirectory(achievements)
 
 # Umbrella target for convenience
 add_library(engine INTERFACE)
@@ -29,12 +38,19 @@ target_link_libraries(engine INTERFACE
     engine::core
     engine::reflect
     engine::scene
+    engine::stats
+    engine::effects
+    engine::inventory
+    engine::combat
     engine::script
     engine::render
     engine::asset
     engine::physics
     engine::audio
     engine::navigation
+    engine::ai
+    engine::quest
+    engine::dialogue
     engine::ui
     engine::debug-gui
     engine::save
@@ -45,4 +61,6 @@ target_link_libraries(engine INTERFACE
     engine::cinematic
     engine::plugin
     engine::data
+    engine::settings
+    engine::achievements
 )

@@ -303,11 +303,11 @@ void register_scene_bindings(sol::state& lua) {
 
     auto interaction = lua.create_named_table("Interaction");
 
-    interaction.set_function("find_best", [](float px, float py, float pz,
+    interaction.set_function("find_best", [](sol::this_state s, float px, float py, float pz,
                                               float fx, float fy, float fz,
                                               sol::optional<float> max_dist) -> sol::table {
         auto* world = get_current_script_world();
-        sol::state_view lua_view = sol::state_view(nullptr);  // Will be set below
+        sol::state_view lua_view = s;
 
         if (!world) {
             return sol::nil;
@@ -323,12 +323,18 @@ void register_scene_bindings(sol::state& lua) {
         }
 
         // Return result as table
-        sol::state* L = nullptr;
-        // We need to get the lua state - use a workaround
-        return sol::nil;  // Simplified - would need proper lua state access
+        sol::table t = lua_view.create_table();
+        t["entity"] = static_cast<uint32_t>(result->entity);
+        t["distance"] = result->distance;
+        t["id"] = result->interaction_id;
+        t["name"] = result->display_name;
+        t["type"] = static_cast<int>(result->type);
+        t["hold_to_interact"] = result->hold_to_interact;
+        t["hold_duration"] = result->hold_duration;
+        return t;
     });
 
-    interaction.set_function("find_best_from_entity", [](uint32_t entity_id,
+    interaction.set_function("find_best_from_entity", [](sol::this_state s, uint32_t entity_id,
                                                           sol::optional<float> max_dist) -> sol::object {
         auto* world = get_current_script_world();
         if (!world) {
@@ -347,7 +353,7 @@ void register_scene_bindings(sol::state& lua) {
         }
 
         Vec3 position = transform->position;
-        Vec3 forward = transform->get_forward();
+        Vec3 forward = transform->forward();
         float distance = max_dist.value_or(3.0f);
 
         auto result = interactions().find_best_interactable(*world, position, forward, distance);
@@ -355,7 +361,7 @@ void register_scene_bindings(sol::state& lua) {
             return sol::nil;
         }
 
-        return sol::make_object(sol::nil.lua_state(), static_cast<uint32_t>(result->entity));
+        return sol::make_object(s, static_cast<uint32_t>(result->entity));
     });
 
     interaction.set_function("interact", [](uint32_t interactor_id, uint32_t target_id) {
@@ -416,13 +422,13 @@ void register_scene_bindings(sol::state& lua) {
 
         PoolConfig cfg;
         cfg.pool_name = name;
-        cfg.prefab_path = config.get_or<std::string>("prefab", "");
-        cfg.initial_size = config.get_or<uint32_t>("initial", 10);
-        cfg.max_size = config.get_or<uint32_t>("max", 100);
-        cfg.growth_size = config.get_or<uint32_t>("growth", 5);
-        cfg.recycle_delay = config.get_or<float>("recycle_delay", 0.0f);
-        cfg.auto_expand = config.get_or<bool>("auto_expand", true);
-        cfg.warm_on_init = config.get_or<bool>("warm", true);
+        cfg.prefab_path = config.get_or("prefab", std::string(""));
+        cfg.initial_size = config.get_or("initial", 10u);
+        cfg.max_size = config.get_or("max", 100u);
+        cfg.growth_size = config.get_or("growth", 5u);
+        cfg.recycle_delay = config.get_or("recycle_delay", 0.0f);
+        cfg.auto_expand = config.get_or("auto_expand", true);
+        cfg.warm_on_init = config.get_or("warm", true);
 
         pools().create_pool(*world, cfg);
     });

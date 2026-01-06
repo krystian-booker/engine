@@ -147,4 +147,18 @@ private:
     std::optional<Entity> m_new_before_sibling;
 };
 
+// Remove component command
+class RemoveComponentCommand : public EditorCommand {
+public:
+    RemoveComponentCommand(EditorState* state, Entity entity, const std::string& type_name);
+
+    void undo() override;
+    void redo() override;
+
+private:
+    Entity m_entity;
+    std::string m_type_name;
+    std::string m_serialized_data;  // JSON for undo restoration
+};
+
 } // namespace editor

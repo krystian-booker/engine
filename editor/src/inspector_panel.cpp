@@ -2,12 +2,16 @@
 #include <engine/scene/transform.hpp>
 #include <engine/scene/render_components.hpp>
 #include <engine/scene/components.hpp>
+#include <engine/reflect/type_registry.hpp>
+#include <engine/core/serialize.hpp>
+#include <set>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFormLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QDoubleSpinBox>
+#include <QSpinBox>
 #include <QCheckBox>
 #include <QPushButton>
 #include <QColorDialog>
@@ -182,17 +186,48 @@ void AddComponentDialog::setup_ui() {
     m_list = new QListWidget(this);
     m_list->setAlternatingRowColors(true);
 
-    // Add available components (hardcoded for now, could be made dynamic)
-    m_list->addItem("Mesh Renderer");
-    m_list->addItem("Camera");
-    m_list->addItem("Light");
-    m_list->addItem("Audio Source");
-    m_list->addItem("Audio Listener");
-    m_list->addItem("Rigidbody");
-    m_list->addItem("Box Collider");
-    m_list->addItem("Sphere Collider");
-    m_list->addItem("Capsule Collider");
-    m_list->addItem("Script");
+    // Get all registered components from TypeRegistry
+    auto& registry = engine::reflect::TypeRegistry::instance();
+    auto component_names = registry.get_all_component_names();
+
+    // Fallback if TypeRegistry is empty (static initialization order issue)
+    if (component_names.empty()) {
+        component_names = {
+            "MeshRenderer", "Camera", "Light", "Skybox", "Billboard",
+            "ParticleEmitter", "AudioSource", "AudioListener", "AudioTrigger",
+            "RigidBodyComponent", "BuoyancyComponent", "VehicleComponent", "ClothComponent",
+            "ScriptComponent", "NavAgentComponent", "NavObstacleComponent",
+            "BlendShapeComponent", "IKComponent", "DecalComponent",
+            "WaterSurfaceComponent", "GrassComponent", "FoliageComponent",
+            "UICanvasComponent", "UIWorldCanvasComponent",
+            "InteractableComponent", "InteractionHighlightComponent"
+        };
+    }
+
+    for (const auto& name : component_names) {
+        // Skip internal/system components that shouldn't be added manually
+        if (name == "EntityInfo" || name == "Hierarchy" ||
+            name == "LocalTransform" || name == "WorldTransform" ||
+            name == "PreviousTransform") {
+            continue;
+        }
+
+        auto* type_info = registry.get_type_info(name);
+        QString display_name;
+        if (type_info && !type_info->meta.display_name.empty()) {
+            display_name = QString::fromStdString(type_info->meta.display_name);
+        } else {
+            // Use the type name directly as display name
+            display_name = QString::fromStdString(name);
+        }
+
+        auto* item = new QListWidgetItem(display_name);
+        item->setData(Qt::UserRole, QString::fromStdString(name));  // Store actual type name
+        m_list->addItem(item);
+    }
+
+    // Sort alphabetically
+    m_list->sortItems();
 
     layout->addWidget(m_list, 1);
 
@@ -215,7 +250,11 @@ void AddComponentDialog::setup_ui() {
 
 QString AddComponentDialog::selected_component() const {
     auto* item = m_list->currentItem();
-    return item ? item->text() : QString();
+    if (!item) return QString();
+
+    // Return the actual type name stored in UserRole, not the display text
+    QVariant data = item->data(Qt::UserRole);
+    return data.isValid() ? data.toString() : item->text();
 }
 
 void AddComponentDialog::filter_components(const QString& text) {
@@ -272,7 +311,7 @@ void InspectorPanel::refresh() {
 void InspectorPanel::clear_content() {
     while (QLayoutItem* item = m_layout->takeAt(0)) {
         if (item->widget()) {
-            delete item->widget();
+            item->widget()->deleteLater();  // Use deleteLater() for safe Qt widget deletion
         }
         delete item;
     }
@@ -321,28 +360,62 @@ void InspectorPanel::show_entity_info(engine::scene::Entity entity) {
         m_layout->addWidget(header);
     }
 
-    // Transform component
+    // Transform component - specialized editor
     if (world->has<engine::scene::LocalTransform>(entity)) {
         auto* transform_widget = create_transform_editor(entity);
-        add_component_section("Transform", transform_widget);
+        add_component_section("Transform", transform_widget, "LocalTransform");
     }
 
-    // MeshRenderer component
+    // Components with specialized editors
+    std::set<std::string> specialized_components = {
+        "EntityInfo", "LocalTransform", "WorldTransform", "PreviousTransform", "Hierarchy"
+    };
+
+    // MeshRenderer - specialized editor
     if (world->has<engine::scene::MeshRenderer>(entity)) {
         auto* mesh_widget = create_mesh_renderer_editor(entity);
-        add_component_section("Mesh Renderer", mesh_widget);
+        add_component_section("Mesh Renderer", mesh_widget, "MeshRenderer");
+        specialized_components.insert("MeshRenderer");
     }
 
-    // Camera component
+    // Camera - specialized editor
     if (world->has<engine::scene::Camera>(entity)) {
         auto* camera_widget = create_camera_editor(entity);
-        add_component_section("Camera", camera_widget);
+        add_component_section("Camera", camera_widget, "Camera");
+        specialized_components.insert("Camera");
     }
 
-    // Light component
+    // Light - specialized editor
     if (world->has<engine::scene::Light>(entity)) {
         auto* light_widget = create_light_editor(entity);
-        add_component_section("Light", light_widget);
+        add_component_section("Light", light_widget, "Light");
+        specialized_components.insert("Light");
+    }
+
+    // Display all other components using generic editor
+    auto& registry = engine::reflect::TypeRegistry::instance();
+    auto component_names = registry.get_all_component_names();
+
+    for (const auto& type_name : component_names) {
+        // Skip components with specialized editors or internal components
+        if (specialized_components.count(type_name) > 0) {
+            continue;
+        }
+
+        // Check if entity has this component
+        auto comp_any = registry.get_component_any(world->registry(), entity, type_name);
+        if (comp_any) {
+            auto* type_info = registry.get_type_info(type_name);
+            QString display_name;
+            if (type_info && !type_info->meta.display_name.empty()) {
+                display_name = QString::fromStdString(type_info->meta.display_name);
+            } else {
+                display_name = QString::fromStdString(type_name);
+            }
+
+            auto* widget = create_generic_component_editor(entity, type_name);
+            add_component_section(display_name, widget, type_name);
+        }
     }
 
     // Add Component button
@@ -350,13 +423,38 @@ void InspectorPanel::show_entity_info(engine::scene::Entity entity) {
     connect(add_btn, &QPushButton::clicked, this, &InspectorPanel::on_add_component);
     m_layout->addWidget(add_btn);
 
+    // Paste as New Component button (only shown when clipboard has content)
+    if (m_component_clipboard.has_value()) {
+        auto* paste_btn = new QPushButton(
+            QString("Paste %1").arg(QString::fromStdString(m_component_clipboard->type_name)),
+            m_content);
+        paste_btn->setStyleSheet("QPushButton { color: #7799FF; }");
+        connect(paste_btn, &QPushButton::clicked, this, &InspectorPanel::on_paste_as_new_component);
+        m_layout->addWidget(paste_btn);
+    }
+
     // Spacer
     m_layout->addStretch();
 }
 
-void InspectorPanel::add_component_section(const QString& title, QWidget* content) {
+void InspectorPanel::add_component_section(const QString& title, QWidget* content, const std::string& type_name) {
     auto* section = new CollapsibleSection(title, content, m_content);
+    section->set_component_type(type_name);
     m_layout->addWidget(section);
+
+    // Connect context menu signals
+    connect(section, &CollapsibleSection::remove_requested, this, [this, section]() {
+        on_remove_component(section);
+    });
+    connect(section, &CollapsibleSection::copy_requested, this, [this, section]() {
+        on_copy_component(section);
+    });
+    connect(section, &CollapsibleSection::paste_requested, this, [this, section]() {
+        on_paste_component(section);
+    });
+    connect(section, &CollapsibleSection::reset_requested, this, [this, section]() {
+        on_reset_component(section);
+    });
 }
 
 QWidget* InspectorPanel::create_transform_editor(engine::scene::Entity entity) {
@@ -523,6 +621,153 @@ QWidget* InspectorPanel::create_light_editor(engine::scene::Entity entity) {
     return widget;
 }
 
+QWidget* InspectorPanel::create_generic_component_editor(engine::scene::Entity entity, const std::string& type_name) {
+    auto* widget = new QWidget(m_content);
+    auto* layout = new QFormLayout(widget);
+    layout->setContentsMargins(4, 2, 4, 2);
+    layout->setVerticalSpacing(4);
+
+    auto& registry = engine::reflect::TypeRegistry::instance();
+    auto* type_info = registry.get_type_info(type_name);
+
+    if (!type_info || type_info->properties.empty()) {
+        auto* label = new QLabel("No editable properties", widget);
+        label->setStyleSheet("color: #888;");
+        layout->addRow(label);
+        return widget;
+    }
+
+    // Get the component as meta_any for property access
+    auto comp_any = registry.get_component_any(m_state->world()->registry(), entity, type_name);
+    if (!comp_any) {
+        return widget;
+    }
+
+    for (const auto& prop : type_info->properties) {
+        // Skip hidden properties
+        if (prop.meta.hidden) {
+            continue;
+        }
+
+        QString prop_display_name;
+        if (!prop.meta.display_name.empty()) {
+            prop_display_name = QString::fromStdString(prop.meta.display_name);
+        } else {
+            prop_display_name = QString::fromStdString(prop.name);
+        }
+
+        // Get current value
+        auto value_any = prop.getter(comp_any);
+        if (!value_any) {
+            continue;
+        }
+
+        // Create appropriate editor based on type
+        QWidget* editor = nullptr;
+
+        // Bool
+        if (auto* bool_val = value_any.try_cast<bool>()) {
+            auto* cb = new QCheckBox(widget);
+            cb->setChecked(*bool_val);
+            connect(cb, &QCheckBox::toggled, [this, entity, type_name, prop_name = prop.name](bool checked) {
+                auto& reg = engine::reflect::TypeRegistry::instance();
+                auto comp = reg.get_component_any(m_state->world()->registry(), entity, type_name);
+                if (comp) {
+                    auto* prop_info = reg.get_property_info(type_name, prop_name);
+                    if (prop_info) {
+                        prop_info->setter(comp, entt::meta_any{checked});
+                        reg.set_component_any(m_state->world()->registry(), entity, type_name, comp);
+                    }
+                }
+            });
+            editor = cb;
+        }
+        // Float
+        else if (auto* float_val = value_any.try_cast<float>()) {
+            auto* spin = new QDoubleSpinBox(widget);
+            spin->setRange(prop.meta.min_value, prop.meta.max_value);
+            spin->setDecimals(2);
+            spin->setValue(*float_val);
+            spin->setButtonSymbols(QAbstractSpinBox::NoButtons);
+            spin->setMaximumWidth(80);
+            connect(spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+                    [this, entity, type_name, prop_name = prop.name](double val) {
+                auto& reg = engine::reflect::TypeRegistry::instance();
+                auto comp = reg.get_component_any(m_state->world()->registry(), entity, type_name);
+                if (comp) {
+                    auto* prop_info = reg.get_property_info(type_name, prop_name);
+                    if (prop_info) {
+                        prop_info->setter(comp, entt::meta_any{static_cast<float>(val)});
+                        reg.set_component_any(m_state->world()->registry(), entity, type_name, comp);
+                    }
+                }
+            });
+            editor = spin;
+        }
+        // Int32
+        else if (auto* int_val = value_any.try_cast<int32_t>()) {
+            auto* spin = new QSpinBox(widget);
+            spin->setRange(static_cast<int>(prop.meta.min_value), static_cast<int>(prop.meta.max_value));
+            spin->setValue(*int_val);
+            spin->setButtonSymbols(QAbstractSpinBox::NoButtons);
+            spin->setMaximumWidth(80);
+            connect(spin, QOverload<int>::of(&QSpinBox::valueChanged),
+                    [this, entity, type_name, prop_name = prop.name](int val) {
+                auto& reg = engine::reflect::TypeRegistry::instance();
+                auto comp = reg.get_component_any(m_state->world()->registry(), entity, type_name);
+                if (comp) {
+                    auto* prop_info = reg.get_property_info(type_name, prop_name);
+                    if (prop_info) {
+                        prop_info->setter(comp, entt::meta_any{static_cast<int32_t>(val)});
+                        reg.set_component_any(m_state->world()->registry(), entity, type_name, comp);
+                    }
+                }
+            });
+            editor = spin;
+        }
+        // String
+        else if (auto* str_val = value_any.try_cast<std::string>()) {
+            auto* edit = new QLineEdit(QString::fromStdString(*str_val), widget);
+            connect(edit, &QLineEdit::textChanged,
+                    [this, entity, type_name, prop_name = prop.name](const QString& text) {
+                auto& reg = engine::reflect::TypeRegistry::instance();
+                auto comp = reg.get_component_any(m_state->world()->registry(), entity, type_name);
+                if (comp) {
+                    auto* prop_info = reg.get_property_info(type_name, prop_name);
+                    if (prop_info) {
+                        prop_info->setter(comp, entt::meta_any{text.toStdString()});
+                        reg.set_component_any(m_state->world()->registry(), entity, type_name, comp);
+                    }
+                }
+            });
+            editor = edit;
+        }
+        // Vec3
+        else if (auto* vec3_val = value_any.try_cast<engine::core::Vec3>()) {
+            // For Vec3 we just show a read-only label for now
+            // Full editing would require storing the property path
+            auto* label = new QLabel(QString("(%1, %2, %3)")
+                .arg(vec3_val->x, 0, 'f', 2)
+                .arg(vec3_val->y, 0, 'f', 2)
+                .arg(vec3_val->z, 0, 'f', 2), widget);
+            label->setStyleSheet("color: #AAA;");
+            editor = label;
+        }
+        // Default - show type and value info
+        else {
+            auto* label = new QLabel("(unsupported type)", widget);
+            label->setStyleSheet("color: #666;");
+            editor = label;
+        }
+
+        if (editor) {
+            layout->addRow(prop_display_name, editor);
+        }
+    }
+
+    return widget;
+}
+
 QWidget* InspectorPanel::create_vec3_editor(const QString& /*label*/, engine::core::Vec3& value,
                                              std::function<void()> on_changed) {
     auto* widget = new QWidget(m_content);
@@ -646,19 +891,135 @@ void InspectorPanel::on_add_component() {
         auto* world = m_state->world();
         if (!world || !world->valid(entity)) return;
 
-        // Add the selected component
-        if (component == "Mesh Renderer" && !world->has<engine::scene::MeshRenderer>(entity)) {
-            world->emplace<engine::scene::MeshRenderer>(entity);
-        } else if (component == "Camera" && !world->has<engine::scene::Camera>(entity)) {
-            world->emplace<engine::scene::Camera>(entity);
-        } else if (component == "Light" && !world->has<engine::scene::Light>(entity)) {
-            world->emplace<engine::scene::Light>(entity);
+        // Add the selected component using TypeRegistry
+        auto& registry = engine::reflect::TypeRegistry::instance();
+        std::string type_name = component.toStdString();
+
+        // Check if entity already has this component
+        auto comp_any = registry.get_component_any(world->registry(), entity, type_name);
+        if (!comp_any) {
+            registry.add_component_any(world->registry(), entity, type_name);
         }
-        // Other components can be added here as they become available
 
         // Refresh the inspector to show the new component
         refresh();
     }
+}
+
+void InspectorPanel::on_remove_component(CollapsibleSection* section) {
+    if (!m_state || m_state->selection().empty()) return;
+
+    auto entity = m_state->primary_selection();
+    const std::string& type_name = section->component_type();
+
+    if (type_name.empty()) return;
+
+    // Prevent removing Transform (core component required for all entities)
+    if (type_name == "LocalTransform" || type_name == "WorldTransform") {
+        return;
+    }
+
+    auto* cmd = new RemoveComponentCommand(m_state, entity, type_name);
+    m_state->undo_stack()->push(cmd);
+
+    refresh();
+}
+
+void InspectorPanel::on_copy_component(CollapsibleSection* section) {
+    if (!m_state || m_state->selection().empty()) return;
+
+    auto entity = m_state->primary_selection();
+    const std::string& type_name = section->component_type();
+    if (type_name.empty()) return;
+
+    auto& registry = engine::reflect::TypeRegistry::instance();
+    auto comp_any = registry.get_component_any(m_state->world()->registry(), entity, type_name);
+
+    if (comp_any) {
+        ComponentClipboard clip;
+        clip.type_name = type_name;
+
+        // Serialize to JSON
+        engine::core::JsonArchive ar;
+        registry.serialize_any(comp_any, ar, "component");
+        clip.serialized_json = ar.to_string();
+
+        m_component_clipboard = std::move(clip);
+    }
+}
+
+void InspectorPanel::on_paste_component(CollapsibleSection* section) {
+    if (!m_state || m_state->selection().empty()) return;
+    if (!m_component_clipboard.has_value()) return;
+
+    auto entity = m_state->primary_selection();
+    const std::string& target_type = section->component_type();
+    const std::string& source_type = m_component_clipboard->type_name;
+
+    // Only paste if component types match
+    if (target_type != source_type) return;
+
+    auto& registry = engine::reflect::TypeRegistry::instance();
+
+    // Deserialize and apply
+    engine::core::JsonArchive ar(m_component_clipboard->serialized_json);
+    auto type = registry.find_type(source_type);
+    if (type) {
+        auto restored = registry.deserialize_any(type, ar, "component");
+        if (restored) {
+            registry.set_component_any(m_state->world()->registry(), entity, source_type, restored);
+        }
+    }
+
+    refresh();
+}
+
+void InspectorPanel::on_reset_component(CollapsibleSection* section) {
+    if (!m_state || m_state->selection().empty()) return;
+
+    auto entity = m_state->primary_selection();
+    const std::string& type_name = section->component_type();
+    if (type_name.empty()) return;
+
+    auto& registry = engine::reflect::TypeRegistry::instance();
+
+    // Create a default instance
+    auto type = registry.find_type(type_name);
+    if (type) {
+        auto default_instance = type.construct();
+        if (default_instance) {
+            registry.set_component_any(m_state->world()->registry(), entity, type_name, default_instance);
+        }
+    }
+
+    refresh();
+}
+
+void InspectorPanel::on_paste_as_new_component() {
+    if (!m_state || m_state->selection().empty()) return;
+    if (!m_component_clipboard.has_value()) return;
+
+    auto entity = m_state->primary_selection();
+    auto& registry = engine::reflect::TypeRegistry::instance();
+    const std::string& source_type = m_component_clipboard->type_name;
+
+    // Add the component if it doesn't exist
+    auto existing = registry.get_component_any(m_state->world()->registry(), entity, source_type);
+    if (!existing) {
+        registry.add_component_any(m_state->world()->registry(), entity, source_type);
+    }
+
+    // Paste the values
+    engine::core::JsonArchive ar(m_component_clipboard->serialized_json);
+    auto type = registry.find_type(source_type);
+    if (type) {
+        auto restored = registry.deserialize_any(type, ar, "component");
+        if (restored) {
+            registry.set_component_any(m_state->world()->registry(), entity, source_type, restored);
+        }
+    }
+
+    refresh();
 }
 
 } // namespace editor

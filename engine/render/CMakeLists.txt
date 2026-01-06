@@ -44,6 +44,7 @@ target_sources(engine_render
         src/oit.cpp
         src/render_component_registration.cpp
         src/water_renderer.cpp
+        src/third_person_camera.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -87,6 +88,7 @@ target_sources(engine_render
             include/engine/render/material_instance.hpp
             include/engine/render/oit.hpp
             include/engine/render/water_renderer.hpp
+            include/engine/render/third_person_camera.hpp
 )
 
 target_include_directories(engine_render

@@ -6,8 +6,11 @@
 #include <vector>
 #include <optional>
 #include <functional>
+#include <cstdint>
 
 namespace engine::scene {
+
+using engine::core::Vec3;
 
 class World;
 

@@ -2,6 +2,8 @@
 #include <engine/scene/transform.hpp>
 #include <engine/scene/components.hpp>
 #include <engine/scene/render_components.hpp>
+#include <engine/reflect/type_registry.hpp>
+#include <engine/core/serialize.hpp>
 #include <algorithm>
 
 namespace editor {
@@ -209,6 +211,53 @@ void SetParentCommand::redo() {
             engine::scene::set_parent(*m_state->world(), m_child, m_new_parent);
         }
     }
+}
+
+// RemoveComponentCommand implementation
+RemoveComponentCommand::RemoveComponentCommand(EditorState* state, Entity entity, const std::string& type_name)
+    : EditorCommand(state, QString("Remove %1").arg(QString::fromStdString(type_name)))
+    , m_entity(entity)
+    , m_type_name(type_name)
+{
+    // Serialize component data for potential undo
+    if (m_state->world() && m_state->world()->valid(m_entity)) {
+        auto& registry = engine::reflect::TypeRegistry::instance();
+        auto comp_any = registry.get_component_any(m_state->world()->registry(), m_entity, m_type_name);
+        if (comp_any) {
+            // Serialize using JSON archive
+            engine::core::JsonArchive ar;
+            registry.serialize_any(comp_any, ar, "component");
+            m_serialized_data = ar.to_string();
+        }
+    }
+}
+
+void RemoveComponentCommand::undo() {
+    if (!m_state->world() || !m_state->world()->valid(m_entity)) return;
+
+    auto& registry = engine::reflect::TypeRegistry::instance();
+
+    // Re-add the component
+    registry.add_component_any(m_state->world()->registry(), m_entity, m_type_name);
+
+    // Restore serialized data
+    if (!m_serialized_data.empty()) {
+        engine::core::JsonArchive ar(m_serialized_data);
+        auto type = registry.find_type(m_type_name);
+        if (type) {
+            auto restored = registry.deserialize_any(type, ar, "component");
+            if (restored) {
+                registry.set_component_any(m_state->world()->registry(), m_entity, m_type_name, restored);
+            }
+        }
+    }
+}
+
+void RemoveComponentCommand::redo() {
+    if (!m_state->world() || !m_state->world()->valid(m_entity)) return;
+
+    engine::reflect::TypeRegistry::instance().remove_component_any(
+        m_state->world()->registry(), m_entity, m_type_name);
 }
 
 } // namespace editor

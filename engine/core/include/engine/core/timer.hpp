@@ -201,6 +201,7 @@ private:
     Timer* find_timer(TimerHandle handle);
     const Timer* find_timer(TimerHandle handle) const;
     Sequence* find_sequence(TimerHandle handle);
+    const Sequence* find_sequence(TimerHandle handle) const;
 
     void update_timers(float dt, float time_scale);
     void update_sequences(float dt, float time_scale);

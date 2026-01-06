@@ -16,6 +16,7 @@ target_sources(engine_scene
         src/interaction.cpp
         src/entity_pool.cpp
         src/spawn_system.cpp
+        src/targeting.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -33,6 +34,7 @@ target_sources(engine_scene
             include/engine/scene/interaction.hpp
             include/engine/scene/entity_pool.hpp
             include/engine/scene/spawn_system.hpp
+            include/engine/scene/targeting.hpp
 )
 
 target_include_directories(engine_scene

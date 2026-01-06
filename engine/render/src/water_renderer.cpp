@@ -77,12 +77,12 @@ void WaterRenderer::end_frame() {
     // Cleanup per-frame state if needed
 }
 
-void WaterRenderer::render_water_surfaces(const RenderView& view) {
+void WaterRenderer::render_water_surfaces(const Mat4& view_matrix) {
     if (!m_initialized) {
         return;
     }
 
-    (void)view;
+    (void)view_matrix;
 
     // In a full implementation:
     // 1. Iterate all entities with WaterSurfaceComponent
@@ -93,7 +93,7 @@ void WaterRenderer::render_water_surfaces(const RenderView& view) {
     //    d. Submit draw call with water mesh
 }
 
-void WaterRenderer::begin_reflection_pass(const WaterSurfaceComponent& water, const RenderView& view) {
+void WaterRenderer::begin_reflection_pass(const WaterSurfaceComponent& water, const Mat4& view_matrix) {
     if (m_rendering_reflection) {
         core::log(core::LogLevel::Warn, "WaterRenderer: Already rendering reflection");
         return;
@@ -110,7 +110,7 @@ void WaterRenderer::begin_reflection_pass(const WaterSurfaceComponent& water, co
     reflection_mat[1][1] = -1.0f;
     reflection_mat[3][1] = 2.0f * surface_y;
 
-    m_reflection_view = reflection_mat * view.view_matrix;
+    m_reflection_view = reflection_mat * view_matrix;
 
     // Clip plane for reflection rendering (cull below water)
     m_clip_plane = Vec4(0.0f, 1.0f, 0.0f, -surface_y + water.settings.reflection_clip_offset);

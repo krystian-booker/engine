@@ -46,6 +46,15 @@ TimerManager::Sequence* TimerManager::find_sequence(TimerHandle handle) {
     return nullptr;
 }
 
+const TimerManager::Sequence* TimerManager::find_sequence(TimerHandle handle) const {
+    for (const auto& seq : m_sequences) {
+        if (seq.handle == handle && !seq.marked_for_removal) {
+            return &seq;
+        }
+    }
+    return nullptr;
+}
+
 // ============================================================================
 // Timer Creation
 // ============================================================================

@@ -17,14 +17,16 @@
 #include <QListWidget>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 
 class QContextMenuEvent;
 
 namespace editor {
 
-// Forward declarations for property editors
+// Forward declarations
 class PropertyEditor;
+class CollapsibleSection;
 
 // Inspector panel showing component properties for selected entity
 class InspectorPanel : public QDockWidget {
@@ -40,18 +42,24 @@ public:
 private slots:
     void on_selection_changed();
     void on_add_component();
+    void on_remove_component(CollapsibleSection* section);
+    void on_copy_component(CollapsibleSection* section);
+    void on_paste_component(CollapsibleSection* section);
+    void on_reset_component(CollapsibleSection* section);
+    void on_paste_as_new_component();
 
 private:
     void setup_ui();
     void clear_content();
     void show_entity_info(engine::scene::Entity entity);
-    void add_component_section(const QString& title, QWidget* content);
+    void add_component_section(const QString& title, QWidget* content, const std::string& type_name);
 
     // Component editors
     QWidget* create_transform_editor(engine::scene::Entity entity);
     QWidget* create_mesh_renderer_editor(engine::scene::Entity entity);
     QWidget* create_camera_editor(engine::scene::Entity entity);
     QWidget* create_light_editor(engine::scene::Entity entity);
+    QWidget* create_generic_component_editor(engine::scene::Entity entity, const std::string& type_name);
 
     // Property widgets
     QWidget* create_vec3_editor(const QString& label, engine::core::Vec3& value,
@@ -71,6 +79,13 @@ private:
 
     // Cache for euler angles (avoids static variable issues)
     std::unordered_map<uint32_t, engine::core::Vec3> m_euler_cache;
+
+    // Component clipboard for copy/paste
+    struct ComponentClipboard {
+        std::string type_name;
+        std::string serialized_json;
+    };
+    std::optional<ComponentClipboard> m_component_clipboard;
 };
 
 // Collapsible section for component groups
@@ -83,6 +98,10 @@ public:
     void set_collapsed(bool collapsed);
     bool is_collapsed() const { return m_collapsed; }
     void set_removable(bool removable) { m_removable = removable; }
+
+    // Component type for reflection-based operations
+    void set_component_type(const std::string& type_name) { m_component_type = type_name; }
+    const std::string& component_type() const { return m_component_type; }
 
 signals:
     void remove_requested();
@@ -103,6 +122,7 @@ private:
     QPushButton* m_toggle_btn;
     QLabel* m_arrow_label;
     QFrame* m_header;
+    std::string m_component_type;
 };
 
 // Dialog for adding components to an entity

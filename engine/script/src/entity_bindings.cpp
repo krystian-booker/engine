@@ -521,11 +521,11 @@ void register_entity_bindings(sol::state& lua) {
     auto interaction = lua.create_named_table("Interaction");
 
     // Find best interactable near a position
-    interaction.set_function("find_best", [](float px, float py, float pz,
+    interaction.set_function("find_best", [](sol::this_state s, float px, float py, float pz,
                                               float fx, float fy, float fz,
                                               sol::optional<float> max_dist) -> sol::table {
         auto* world = get_current_script_world();
-        sol::state_view lua_view = sol::state_view(get_current_lua_state());
+        sol::state_view lua_view = s;
         sol::table result = lua_view.create_table();
 
         if (!world) {
@@ -554,7 +554,7 @@ void register_entity_bindings(sol::state& lua) {
     });
 
     // Find all interactables
-    interaction.set_function("find_all", [](float px, float py, float pz,
+    interaction.set_function("find_all", [](sol::this_state s, float px, float py, float pz,
                                              float fx, float fy, float fz,
                                              sol::optional<float> max_dist) -> std::vector<sol::table> {
         auto* world = get_current_script_world();
@@ -564,7 +564,7 @@ void register_entity_bindings(sol::state& lua) {
             return results;
         }
 
-        sol::state_view lua_view = sol::state_view(get_current_lua_state());
+        sol::state_view lua_view = s;
         Vec3 pos{px, py, pz};
         Vec3 fwd = glm::normalize(Vec3{fx, fy, fz});
         float dist = max_dist.value_or(5.0f);
