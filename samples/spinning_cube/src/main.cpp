@@ -28,16 +28,16 @@ protected:
     void on_init() override {
         log(LogLevel::Info, "Spinning Cube Demo starting...");
 
-        // Create renderer
-        m_renderer = render::create_bgfx_renderer();
-        if (!m_renderer->init(get_native_window_handle(), window_width(), window_height())) {
-            log(LogLevel::Error, "Failed to initialize renderer");
+        // Get renderer from base Application class (already initialized)
+        auto* renderer = get_renderer();
+        if (!renderer) {
+            log(LogLevel::Error, "Renderer not available");
             quit();
             return;
         }
 
         // Create a cube mesh
-        m_cube_mesh = m_renderer->create_primitive(render::PrimitiveMesh::Cube, 1.0f);
+        m_cube_mesh = renderer->create_primitive(render::PrimitiveMesh::Cube, 1.0f);
 
         // Create the ECS world and scheduler
         m_world = std::make_unique<World>();
@@ -75,10 +75,9 @@ protected:
         m_world.reset();
         m_scheduler.reset();
 
-        if (m_renderer) {
-            m_renderer->destroy_mesh(m_cube_mesh);
-            m_renderer->shutdown();
-            m_renderer.reset();
+        // Destroy our mesh (renderer shutdown handled by base Application class)
+        if (auto* renderer = get_renderer()) {
+            renderer->destroy_mesh(m_cube_mesh);
         }
     }
 
@@ -107,12 +106,26 @@ protected:
     }
 
     void on_render(double alpha) override {
-        if (!m_renderer || !m_world) return;
+        auto* renderer = get_renderer();
+        if (!renderer || !m_world) return;
 
-        m_renderer->begin_frame();
+        // Reset view 0 to render to backbuffer (not shadow map)
+        // The shadow system configures view 0 for shadow cascades during init,
+        // so we need to reconfigure it for backbuffer rendering each frame.
+        render::ViewConfig view_config;
+        view_config.render_target = render::RenderTargetHandle{};  // Invalid = backbuffer
+        view_config.clear_color_enabled = true;
+        view_config.clear_color = 0x303030ff;
+        view_config.clear_depth_enabled = true;
+        view_config.clear_depth = 1.0f;
+        view_config.viewport_width = static_cast<uint16_t>(window_width());
+        view_config.viewport_height = static_cast<uint16_t>(window_height());
+        renderer->configure_view(static_cast<render::RenderView>(0), view_config);
 
-        // Clear screen
-        m_renderer->clear(0x303030ff, 1.0f);
+        renderer->begin_frame();
+
+        // Clear screen (already set via ViewConfig above, but keep for consistency)
+        renderer->clear(0x303030ff, 1.0f);
 
         // Set up camera
         float aspect = static_cast<float>(window_width()) / static_cast<float>(window_height());
@@ -122,7 +135,7 @@ protected:
             Vec3{0.0f, 1.0f, 0.0f}    // Up vector
         );
         Mat4 proj = glm::perspective(glm::radians(60.0f), aspect, 0.1f, 100.0f);
-        m_renderer->set_camera(view, proj);
+        renderer->set_camera(view, proj);
 
         // Render all mesh renderers
         auto mesh_view = m_world->view<WorldTransform, MeshRenderer>();
@@ -136,17 +149,16 @@ protected:
             call.render_layer = mesh_renderer.render_layer;
             call.cast_shadows = mesh_renderer.cast_shadows;
 
-            m_renderer->queue_draw(call);
+            renderer->queue_draw(call);
         }
 
-        m_renderer->flush();
-        m_renderer->end_frame();
+        renderer->flush();
+        renderer->end_frame();
 
         (void)alpha;  // Could use for interpolation
     }
 
 private:
-    std::unique_ptr<render::IRenderer> m_renderer;
     std::unique_ptr<World> m_world;
     std::unique_ptr<Scheduler> m_scheduler;
 

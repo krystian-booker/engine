@@ -1,8 +1,40 @@
 #include <engine/render/dof.hpp>
 #include <algorithm>
 #include <cmath>
+#include <fstream>
+#include <string>
 
 namespace engine::render {
+
+// Shader loading helpers
+static bgfx::ShaderHandle load_dof_shader(const std::string& path) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) return BGFX_INVALID_HANDLE;
+
+    std::streampos pos = file.tellg();
+    if (pos <= 0) return BGFX_INVALID_HANDLE;
+
+    auto size = static_cast<std::streamsize>(pos);
+    file.seekg(0, std::ios::beg);
+
+    const bgfx::Memory* mem = bgfx::alloc(static_cast<uint32_t>(size) + 1);
+    file.read(reinterpret_cast<char*>(mem->data), size);
+    if (file.gcount() != size) return BGFX_INVALID_HANDLE;
+
+    mem->data[size] = '\0';
+    return bgfx::createShader(mem);
+}
+
+static std::string get_dof_shader_path() {
+    auto type = bgfx::getRendererType();
+    switch (type) {
+        case bgfx::RendererType::Direct3D11:
+        case bgfx::RendererType::Direct3D12: return "shaders/dx11/";
+        case bgfx::RendererType::Vulkan: return "shaders/spirv/";
+        case bgfx::RendererType::OpenGL: return "shaders/glsl/";
+        default: return "shaders/spirv/";
+    }
+}
 
 // Global instance
 static DOFSystem* s_dof_system = nullptr;
@@ -172,12 +204,41 @@ void DOFSystem::destroy_textures() {
 }
 
 void DOFSystem::create_programs() {
-    // Programs would be loaded from compiled shaders
-    m_coc_program = BGFX_INVALID_HANDLE;
-    m_downsample_program = BGFX_INVALID_HANDLE;
-    m_blur_program = BGFX_INVALID_HANDLE;
-    m_bokeh_program = BGFX_INVALID_HANDLE;
-    m_composite_program = BGFX_INVALID_HANDLE;
+    std::string path = get_dof_shader_path();
+
+    // Load vertex shader (shared fullscreen quad shader)
+    bgfx::ShaderHandle vs = load_dof_shader(path + "vs_fullscreen.sc.bin");
+
+    // Load fragment shaders
+    bgfx::ShaderHandle fs_coc = load_dof_shader(path + "fs_dof_coc.sc.bin");
+    bgfx::ShaderHandle fs_downsample = load_dof_shader(path + "fs_dof_downsample.sc.bin");
+    bgfx::ShaderHandle fs_blur = load_dof_shader(path + "fs_dof_blur.sc.bin");
+    bgfx::ShaderHandle fs_composite = load_dof_shader(path + "fs_dof_composite.sc.bin");
+
+    // Create programs
+    if (bgfx::isValid(vs)) {
+        if (bgfx::isValid(fs_coc)) {
+            m_coc_program = bgfx::createProgram(vs, fs_coc, false);
+        }
+        if (bgfx::isValid(fs_downsample)) {
+            m_downsample_program = bgfx::createProgram(vs, fs_downsample, false);
+        }
+        if (bgfx::isValid(fs_blur)) {
+            m_blur_program = bgfx::createProgram(vs, fs_blur, false);
+        }
+        if (bgfx::isValid(fs_composite)) {
+            m_composite_program = bgfx::createProgram(vs, fs_composite, false);
+        }
+        // Bokeh program uses same blur shader for now
+        m_bokeh_program = BGFX_INVALID_HANDLE;
+    }
+
+    // Destroy individual shader handles (programs keep references)
+    if (bgfx::isValid(vs)) bgfx::destroy(vs);
+    if (bgfx::isValid(fs_coc)) bgfx::destroy(fs_coc);
+    if (bgfx::isValid(fs_downsample)) bgfx::destroy(fs_downsample);
+    if (bgfx::isValid(fs_blur)) bgfx::destroy(fs_blur);
+    if (bgfx::isValid(fs_composite)) bgfx::destroy(fs_composite);
 }
 
 void DOFSystem::destroy_programs() {

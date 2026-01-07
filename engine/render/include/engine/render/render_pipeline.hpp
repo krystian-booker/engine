@@ -9,12 +9,14 @@
 #include <engine/core/math.hpp>
 #include <vector>
 #include <functional>
+#include <memory>
 
 namespace engine::render {
 
 using namespace engine::core;
 
 class IRenderer;
+class ParticleSystem;
 
 // Render pass flags for selective rendering
 enum class RenderPassFlags : uint32_t {
@@ -224,6 +226,7 @@ public:
     PostProcessSystem* get_post_process_system() { return &m_post_process_system; }
     TAASystem* get_taa_system() { return &m_taa_system; }
     VolumetricSystem* get_volumetric_system() { return &m_volumetric_system; }
+    ParticleSystem* get_particle_system() { return m_particle_system.get(); }
 
     // Skybox settings
     void set_skybox(TextureHandle cubemap, float intensity = 1.0f, float rotation = 0.0f);
@@ -289,6 +292,7 @@ private:
     PostProcessSystem m_post_process_system;
     TAASystem m_taa_system;
     VolumetricSystem m_volumetric_system;
+    std::unique_ptr<ParticleSystem> m_particle_system;
 
     // Frame data
     std::vector<const RenderObject*> m_visible_opaque;

@@ -1,5 +1,6 @@
 #include <engine/render/render_pipeline.hpp>
 #include <engine/render/renderer.hpp>
+#include <engine/render/particle_system.hpp>
 #include <engine/core/log.hpp>
 #include <algorithm>
 #include <array>
@@ -52,6 +53,12 @@ void RenderPipeline::init(IRenderer* renderer, const RenderPipelineConfig& confi
         m_volumetric_system.init(renderer, config.volumetric_config);
     }
 
+    // Initialize particle system
+    if (has_flag(config.enabled_passes, RenderPassFlags::Particles)) {
+        m_particle_system = std::make_unique<ParticleSystem>();
+        m_particle_system->init(renderer);
+    }
+
     m_initialized = true;
     log(LogLevel::Info, "Render pipeline initialized ({}x{} @ {}x internal)",
         m_width, m_height, config.render_scale);
@@ -61,6 +68,10 @@ void RenderPipeline::shutdown() {
     if (!m_initialized) return;
 
     // Shutdown subsystems
+    if (m_particle_system) {
+        m_particle_system->shutdown();
+        m_particle_system.reset();
+    }
     m_volumetric_system.shutdown();
     m_taa_system.shutdown();
     m_post_process_system.shutdown();

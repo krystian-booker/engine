@@ -563,6 +563,16 @@ public:
                 BGFX_TEXTURE_NONE | BGFX_SAMPLER_NONE,
                 mem
             );
+        } else if (data.depth > 1) {
+            th = bgfx::createTexture3D(
+                uint16_t(data.width),
+                uint16_t(data.height),
+                uint16_t(data.depth),
+                data.mip_levels > 1,
+                format,
+                BGFX_TEXTURE_NONE | BGFX_SAMPLER_NONE,
+                mem
+            );
         } else {
             th = bgfx::createTexture2D(
                 uint16_t(data.width),

@@ -440,6 +440,12 @@ void InspectorPanel::show_entity_info(engine::scene::Entity entity) {
 void InspectorPanel::add_component_section(const QString& title, QWidget* content, const std::string& type_name) {
     auto* section = new CollapsibleSection(title, content, m_content);
     section->set_component_type(type_name);
+
+    // Disable removal for core transform components
+    if (type_name == "LocalTransform" || type_name == "WorldTransform") {
+        section->set_removable(false);
+    }
+
     m_layout->addWidget(section);
 
     // Connect context menu signals

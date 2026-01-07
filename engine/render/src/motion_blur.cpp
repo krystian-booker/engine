@@ -1,7 +1,39 @@
 #include <engine/render/motion_blur.hpp>
 #include <algorithm>
+#include <fstream>
+#include <string>
 
 namespace engine::render {
+
+// Shader loading helpers
+static bgfx::ShaderHandle load_mb_shader(const std::string& path) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) return BGFX_INVALID_HANDLE;
+
+    std::streampos pos = file.tellg();
+    if (pos <= 0) return BGFX_INVALID_HANDLE;
+
+    auto size = static_cast<std::streamsize>(pos);
+    file.seekg(0, std::ios::beg);
+
+    const bgfx::Memory* mem = bgfx::alloc(static_cast<uint32_t>(size) + 1);
+    file.read(reinterpret_cast<char*>(mem->data), size);
+    if (file.gcount() != size) return BGFX_INVALID_HANDLE;
+
+    mem->data[size] = '\0';
+    return bgfx::createShader(mem);
+}
+
+static std::string get_mb_shader_path() {
+    auto type = bgfx::getRendererType();
+    switch (type) {
+        case bgfx::RendererType::Direct3D11:
+        case bgfx::RendererType::Direct3D12: return "shaders/dx11/";
+        case bgfx::RendererType::Vulkan: return "shaders/spirv/";
+        case bgfx::RendererType::OpenGL: return "shaders/glsl/";
+        default: return "shaders/spirv/";
+    }
+}
 
 // Global instance
 static MotionBlurSystem* s_motion_blur_system = nullptr;
@@ -163,11 +195,39 @@ void MotionBlurSystem::destroy_textures() {
 }
 
 void MotionBlurSystem::create_programs() {
-    // Programs would be loaded from compiled shaders
-    m_camera_velocity_program = BGFX_INVALID_HANDLE;
-    m_tile_max_program = BGFX_INVALID_HANDLE;
-    m_neighbor_max_program = BGFX_INVALID_HANDLE;
-    m_blur_program = BGFX_INVALID_HANDLE;
+    std::string path = get_mb_shader_path();
+
+    // Load vertex shader (shared fullscreen quad shader)
+    bgfx::ShaderHandle vs = load_mb_shader(path + "vs_fullscreen.sc.bin");
+
+    // Load fragment shaders
+    bgfx::ShaderHandle fs_velocity = load_mb_shader(path + "fs_motion_blur_velocity.sc.bin");
+    bgfx::ShaderHandle fs_tile_max = load_mb_shader(path + "fs_motion_blur_tile_max.sc.bin");
+    bgfx::ShaderHandle fs_neighbor_max = load_mb_shader(path + "fs_motion_blur_neighbor_max.sc.bin");
+    bgfx::ShaderHandle fs_blur = load_mb_shader(path + "fs_motion_blur.sc.bin");
+
+    // Create programs
+    if (bgfx::isValid(vs)) {
+        if (bgfx::isValid(fs_velocity)) {
+            m_camera_velocity_program = bgfx::createProgram(vs, fs_velocity, false);
+        }
+        if (bgfx::isValid(fs_tile_max)) {
+            m_tile_max_program = bgfx::createProgram(vs, fs_tile_max, false);
+        }
+        if (bgfx::isValid(fs_neighbor_max)) {
+            m_neighbor_max_program = bgfx::createProgram(vs, fs_neighbor_max, false);
+        }
+        if (bgfx::isValid(fs_blur)) {
+            m_blur_program = bgfx::createProgram(vs, fs_blur, false);
+        }
+    }
+
+    // Destroy individual shader handles (programs keep references)
+    if (bgfx::isValid(vs)) bgfx::destroy(vs);
+    if (bgfx::isValid(fs_velocity)) bgfx::destroy(fs_velocity);
+    if (bgfx::isValid(fs_tile_max)) bgfx::destroy(fs_tile_max);
+    if (bgfx::isValid(fs_neighbor_max)) bgfx::destroy(fs_neighbor_max);
+    if (bgfx::isValid(fs_blur)) bgfx::destroy(fs_blur);
 }
 
 void MotionBlurSystem::destroy_programs() {

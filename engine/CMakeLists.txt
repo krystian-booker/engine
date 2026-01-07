@@ -25,10 +25,12 @@ add_subdirectory(streaming)
 add_subdirectory(terrain)
 add_subdirectory(vegetation)
 add_subdirectory(cinematic)
+add_subdirectory(spline)
 add_subdirectory(plugin)
 add_subdirectory(data)
 add_subdirectory(settings)
 add_subdirectory(achievements)
+add_subdirectory(environment)
 
 # Umbrella target for convenience
 add_library(engine INTERFACE)
@@ -59,8 +61,10 @@ target_link_libraries(engine INTERFACE
     engine::terrain
     engine::vegetation
     engine::cinematic
+    engine::spline
     engine::plugin
     engine::data
     engine::settings
     engine::achievements
+    engine::environment
 )

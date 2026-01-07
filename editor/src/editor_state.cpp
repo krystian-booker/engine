@@ -5,6 +5,7 @@
 #include <engine/reflect/type_registry.hpp>
 #include <engine/core/serialize.hpp>
 #include <algorithm>
+#include <QDebug>
 
 namespace editor {
 
@@ -256,8 +257,12 @@ void RemoveComponentCommand::undo() {
 void RemoveComponentCommand::redo() {
     if (!m_state->world() || !m_state->world()->valid(m_entity)) return;
 
-    engine::reflect::TypeRegistry::instance().remove_component_any(
+    bool success = engine::reflect::TypeRegistry::instance().remove_component_any(
         m_state->world()->registry(), m_entity, m_type_name);
+
+    if (!success) {
+        qWarning() << "Failed to remove component:" << QString::fromStdString(m_type_name);
+    }
 }
 
 } // namespace editor

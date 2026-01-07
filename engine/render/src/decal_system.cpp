@@ -2,8 +2,40 @@
 #include <algorithm>
 #include <random>
 #include <cmath>
+#include <fstream>
+#include <string>
 
 namespace engine::render {
+
+// Shader loading helpers
+static bgfx::ShaderHandle load_decal_shader(const std::string& path) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) return BGFX_INVALID_HANDLE;
+
+    std::streampos pos = file.tellg();
+    if (pos <= 0) return BGFX_INVALID_HANDLE;
+
+    auto size = static_cast<std::streamsize>(pos);
+    file.seekg(0, std::ios::beg);
+
+    const bgfx::Memory* mem = bgfx::alloc(static_cast<uint32_t>(size) + 1);
+    file.read(reinterpret_cast<char*>(mem->data), size);
+    if (file.gcount() != size) return BGFX_INVALID_HANDLE;
+
+    mem->data[size] = '\0';
+    return bgfx::createShader(mem);
+}
+
+static std::string get_decal_shader_path() {
+    auto type = bgfx::getRendererType();
+    switch (type) {
+        case bgfx::RendererType::Direct3D11:
+        case bgfx::RendererType::Direct3D12: return "shaders/dx11/";
+        case bgfx::RendererType::Vulkan: return "shaders/spirv/";
+        case bgfx::RendererType::OpenGL: return "shaders/glsl/";
+        default: return "shaders/spirv/";
+    }
+}
 
 // Global instance
 static DecalSystem* s_decal_system = nullptr;
@@ -46,6 +78,21 @@ void DecalSystem::init(const DecalSystemConfig& config) {
     s_gbuffer_normal = bgfx::createUniform("s_gbufferNormal", bgfx::UniformType::Sampler);
     s_decal_albedo = bgfx::createUniform("s_decalAlbedo", bgfx::UniformType::Sampler);
     s_decal_normal = bgfx::createUniform("s_decalNormal", bgfx::UniformType::Sampler);
+
+    // Load decal shaders
+    std::string path = get_decal_shader_path();
+    bgfx::ShaderHandle vs = load_decal_shader(path + "vs_decal.sc.bin");
+    bgfx::ShaderHandle fs = load_decal_shader(path + "fs_decal.sc.bin");
+
+    if (bgfx::isValid(vs) && bgfx::isValid(fs)) {
+        m_decal_program = bgfx::createProgram(vs, fs, true);
+    }
+
+    // Destroy individual shader handles if program creation failed
+    if (!bgfx::isValid(m_decal_program)) {
+        if (bgfx::isValid(vs)) bgfx::destroy(vs);
+        if (bgfx::isValid(fs)) bgfx::destroy(fs);
+    }
 
     m_initialized = true;
 }

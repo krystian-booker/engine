@@ -46,6 +46,7 @@ using namespace JPH;
 
 // Custom allocators for Jolt
 static void* JoltAlloc(size_t size) { return malloc(size); }
+static void* JoltRealloc(void* ptr, size_t /*old_size*/, size_t new_size) { return realloc(ptr, new_size); }
 static void JoltFree(void* ptr) { free(ptr); }
 static void* JoltAlignedAlloc(size_t size, size_t alignment) {
 #ifdef _WIN32
@@ -317,8 +318,9 @@ PhysicsWorld& PhysicsWorld::operator=(PhysicsWorld&&) noexcept = default;
 
 // Implementation functions
 PhysicsWorld::Impl* create_physics_impl() {
-    // Initialize Jolt allocators
+    // Initialize Jolt allocators - all 5 must be set before using Jolt
     Allocate = JoltAlloc;
+    Reallocate = JoltRealloc;
     Free = JoltFree;
     AlignedAllocate = JoltAlignedAlloc;
     AlignedFree = JoltAlignedFree;
