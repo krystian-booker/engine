@@ -11,6 +11,9 @@
 
 namespace engine::combat {
 
+using core::Vec3;
+using core::Vec4;
+
 namespace {
 
 // Transform a local offset to world space
@@ -153,7 +156,7 @@ bool factions_hostile(const HitboxComponent& hitbox, const HurtboxComponent& hur
 } // anonymous namespace
 
 // Hitbox detection system implementation
-void hitbox_detection_system(scene::World& world, double dt) {
+void hitbox_detection_system(scene::World& world, double /*dt*/) {
     auto& damage_system = DamageSystem::instance();
 
     // Get all active hitboxes
@@ -218,7 +221,7 @@ void hitbox_detection_system(scene::World& world, double dt) {
                 hit_event.hit_point = hit_point;
                 hit_event.hitbox_id = hitbox.hitbox_id;
                 hit_event.hurtbox_type = hurtbox.hurtbox_type;
-                core::EventDispatcher::instance().dispatch(hit_event);
+                core::events().dispatch(hit_event);
 
                 // Calculate and apply damage
                 DamageInfo damage_info = damage_system.deal_damage(
@@ -229,7 +232,7 @@ void hitbox_detection_system(scene::World& world, double dt) {
                 // Emit damage event
                 DamageDealtEvent damage_event;
                 damage_event.info = damage_info;
-                core::EventDispatcher::instance().dispatch(damage_event);
+                core::events().dispatch(damage_event);
 
                 // Grant hit i-frames to target
                 if (damage_info.final_damage > 0.0f && !damage_info.is_blocked) {
@@ -246,7 +249,7 @@ void hitbox_detection_system(scene::World& world, double dt) {
                     EntityStaggeredEvent stagger_event;
                     stagger_event.entity = hurtbox_entity;
                     stagger_event.attacker = hitbox_entity;
-                    core::EventDispatcher::instance().dispatch(stagger_event);
+                    core::events().dispatch(stagger_event);
                 }
 
                 // Check for parry
@@ -255,7 +258,7 @@ void hitbox_detection_system(scene::World& world, double dt) {
                     parry_event.defender = hurtbox_entity;
                     parry_event.attacker = hitbox_entity;
                     parry_event.hit_point = hit_point;
-                    core::EventDispatcher::instance().dispatch(parry_event);
+                    core::events().dispatch(parry_event);
                 }
 
                 // Check for block
@@ -265,7 +268,7 @@ void hitbox_detection_system(scene::World& world, double dt) {
                     block_event.attacker = hitbox_entity;
                     block_event.blocked_damage = damage_info.raw_damage - damage_info.final_damage;
                     block_event.damage_taken = damage_info.final_damage;
-                    core::EventDispatcher::instance().dispatch(block_event);
+                    core::events().dispatch(block_event);
                 }
             }
         }

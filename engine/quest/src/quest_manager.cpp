@@ -1,4 +1,5 @@
 #include <engine/quest/quest_manager.hpp>
+#include <engine/core/events.hpp>
 #include <engine/core/event_dispatcher.hpp>
 #include <engine/core/log.hpp>
 #include <engine/scene/transform.hpp>
@@ -11,7 +12,7 @@ namespace {
 Vec3 get_entity_position(scene::World& world, scene::Entity entity) {
     auto* world_transform = world.try_get<scene::WorldTransform>(entity);
     if (world_transform) {
-        return world_transform->get_position();
+        return world_transform->position();
     }
     auto* local_transform = world.try_get<scene::LocalTransform>(entity);
     if (local_transform) {
@@ -66,7 +67,7 @@ bool QuestManager::has_quest(const std::string& quest_id) const {
 bool QuestManager::start_quest(const std::string& quest_id) {
     Quest* quest = get_quest(quest_id);
     if (!quest) {
-        core::log(core::LogLevel::Warning, "Cannot start unknown quest: {}", quest_id);
+        core::log(core::LogLevel::Warn, "Cannot start unknown quest: {}", quest_id);
         return false;
     }
 
@@ -75,7 +76,7 @@ bool QuestManager::start_quest(const std::string& quest_id) {
     }
 
     if (!can_start_quest(quest_id)) {
-        core::log(core::LogLevel::Warning, "Quest prerequisites not met: {}", quest_id);
+        core::log(core::LogLevel::Warn, "Quest prerequisites not met: {}", quest_id);
         return false;
     }
 
@@ -757,39 +758,39 @@ void QuestManager::set_player_level_getter(std::function<int32_t()> getter) {
 // ============================================================================
 
 void QuestManager::dispatch_event(const QuestStartedEvent& event) {
-    core::EventDispatcher::instance().dispatch(event);
+    core::events().dispatch(event);
 }
 
 void QuestManager::dispatch_event(const QuestCompletedEvent& event) {
-    core::EventDispatcher::instance().dispatch(event);
+    core::events().dispatch(event);
 }
 
 void QuestManager::dispatch_event(const QuestFailedEvent& event) {
-    core::EventDispatcher::instance().dispatch(event);
+    core::events().dispatch(event);
 }
 
 void QuestManager::dispatch_event(const QuestAbandonedEvent& event) {
-    core::EventDispatcher::instance().dispatch(event);
+    core::events().dispatch(event);
 }
 
 void QuestManager::dispatch_event(const ObjectiveStartedEvent& event) {
-    core::EventDispatcher::instance().dispatch(event);
+    core::events().dispatch(event);
 }
 
 void QuestManager::dispatch_event(const ObjectiveCompletedEvent& event) {
-    core::EventDispatcher::instance().dispatch(event);
+    core::events().dispatch(event);
 }
 
 void QuestManager::dispatch_event(const ObjectiveFailedEvent& event) {
-    core::EventDispatcher::instance().dispatch(event);
+    core::events().dispatch(event);
 }
 
 void QuestManager::dispatch_event(const ObjectiveProgressEvent& event) {
-    core::EventDispatcher::instance().dispatch(event);
+    core::events().dispatch(event);
 }
 
 void QuestManager::dispatch_event(const QuestAvailableEvent& event) {
-    core::EventDispatcher::instance().dispatch(event);
+    core::events().dispatch(event);
 }
 
 void QuestManager::update_quest_availability() {
@@ -912,20 +913,18 @@ void QuestManager::auto_complete_check(Quest& quest) {
 // Quest Save Handler
 // ============================================================================
 
-void QuestSaveHandler::save(nlohmann::json& data) {
+void QuestSaveHandler::on_save(save::SaveGame& save, scene::World& world) {
+    nlohmann::json data;
     QuestManager::instance().save_state(data);
+    save.set_json("quest_data", data);
 }
 
-void QuestSaveHandler::load(const nlohmann::json& data) {
-    QuestManager::instance().load_state(data);
-}
-
-void QuestSaveHandler::reset() {
+void QuestSaveHandler::on_post_load(const save::SaveGame& save, scene::World& world) {
     QuestManager::instance().reset();
-}
-
-void QuestSaveHandler::migrate(nlohmann::json& data, int32_t from_version) {
-    // Future migration logic
+    nlohmann::json data = save.get_json("quest_data");
+    if (!data.is_null()) {
+        QuestManager::instance().load_state(data);
+    }
 }
 
 } // namespace engine::quest

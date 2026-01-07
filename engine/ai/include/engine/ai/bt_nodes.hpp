@@ -243,7 +243,7 @@ public:
         , m_message(std::move(message))
         , m_return_status(return_status) {}
 
-    BTStatus tick(BTContext& ctx) override {
+    BTStatus tick(BTContext& /*ctx*/) override {
         // In production, this would use the engine's logging system
         // For now, just set the status
         m_last_status = m_return_status;
@@ -383,7 +383,7 @@ public:
         : BTLeafNode(std::move(name))
         , m_probability(probability) {}
 
-    BTStatus tick(BTContext& ctx) override {
+    BTStatus tick(BTContext& /*ctx*/) override {
         static std::random_device rd;
         static std::mt19937 gen(rd());
         std::uniform_real_distribution<float> dist(0.0f, 1.0f);

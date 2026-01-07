@@ -26,7 +26,7 @@ AchievementManager& AchievementManager::instance() {
 void AchievementManager::increment(const std::string& achievement_id, int amount) {
     const auto* def = achievement_registry().get(achievement_id);
     if (!def) {
-        core::log_warning("achievements", "Unknown achievement: {}", achievement_id);
+        core::log(core::LogLevel::Warn, "[Achievements] Unknown achievement: {}", achievement_id);
         return;
     }
 
@@ -55,7 +55,7 @@ void AchievementManager::increment(const std::string& achievement_id, int amount
     event.target_count = def->target_count;
     event.progress_percent = get_progress_percent(achievement_id);
     event.newly_started = first_progress;
-    core::game_events().publish(event);
+    core::game_events().broadcast(event);
 
     // Check for unlock/tier unlock
     if (def->is_tiered()) {
@@ -103,12 +103,12 @@ void AchievementManager::unlock(const std::string& achievement_id) {
 
     const auto* def = achievement_registry().get(achievement_id);
     if (!def) {
-        core::log_warning("achievements", "Unknown achievement: {}", achievement_id);
+        core::log(core::LogLevel::Warn, "[Achievements] Unknown achievement: {}", achievement_id);
         return;
     }
 
     if (!check_prerequisites(achievement_id)) {
-        core::log_warning("achievements", "Prerequisites not met for: {}", achievement_id);
+        core::log(core::LogLevel::Warn, "[Achievements] Prerequisites not met for: {}", achievement_id);
         return;
     }
 
@@ -293,7 +293,7 @@ bool AchievementManager::load_progress(const std::string& path) {
     try {
         std::ifstream file(path);
         if (!file.is_open()) {
-            core::log_warning("achievements", "Could not open progress file: {}", path);
+            core::log(core::LogLevel::Warn, "[Achievements] Could not open progress file: {}", path);
             return false;
         }
 
@@ -317,11 +317,11 @@ bool AchievementManager::load_progress(const std::string& path) {
             m_progress[id] = progress;
         }
 
-        core::log_info("achievements", "Loaded {} achievement progress entries", m_progress.size());
+        core::log(core::LogLevel::Info, "[Achievements] Loaded {} achievement progress entries", m_progress.size());
         return true;
 
     } catch (const std::exception& e) {
-        core::log_error("achievements", "Failed to load progress: {}", e.what());
+        core::log(core::LogLevel::Error, "[Achievements] Failed to load progress: {}", e.what());
         return false;
     }
 }
@@ -343,16 +343,16 @@ bool AchievementManager::save_progress(const std::string& path) const {
 
         std::ofstream file(path);
         if (!file.is_open()) {
-            core::log_error("achievements", "Could not open progress file for writing: {}", path);
+            core::log(core::LogLevel::Error, "[Achievements] Could not open progress file for writing: {}", path);
             return false;
         }
 
         file << j.dump(4);
-        core::log_info("achievements", "Saved achievement progress to: {}", path);
+        core::log(core::LogLevel::Info, "[Achievements] Saved achievement progress to: {}", path);
         return true;
 
     } catch (const std::exception& e) {
-        core::log_error("achievements", "Failed to save progress: {}", e.what());
+        core::log(core::LogLevel::Error, "[Achievements] Failed to save progress: {}", e.what());
         return false;
     }
 }
@@ -363,9 +363,9 @@ void AchievementManager::reset_progress() {
 
     AchievementResetEvent event;
     event.all_reset = true;
-    core::game_events().publish(event);
+    core::game_events().broadcast(event);
 
-    core::log_info("achievements", "Reset all achievement progress");
+    core::log(core::LogLevel::Info, "[Achievements] Reset all achievement progress");
 }
 
 void AchievementManager::reset_achievement(const std::string& achievement_id) {
@@ -374,7 +374,7 @@ void AchievementManager::reset_achievement(const std::string& achievement_id) {
     AchievementResetEvent event;
     event.achievement_id = achievement_id;
     event.all_reset = false;
-    core::game_events().publish(event);
+    core::game_events().broadcast(event);
 }
 
 // ============================================================================
@@ -387,13 +387,13 @@ void AchievementManager::set_platform_callback(PlatformUnlockCallback callback) 
 
 void AchievementManager::sync_with_platform() {
     // TODO: Implement platform-specific sync
-    core::log_info("achievements", "Syncing achievements with platform...");
+    core::log(core::LogLevel::Info, "[Achievements] Syncing achievements with platform...");
 
     AchievementSyncEvent event;
     event.synced_count = static_cast<int>(m_progress.size());
     event.new_unlocks = 0;
     event.success = true;
-    core::game_events().publish(event);
+    core::game_events().broadcast(event);
 }
 
 // ============================================================================
@@ -439,12 +439,12 @@ void AchievementManager::unlock_all() {
     for (const auto& id : all) {
         internal_unlock(id);
     }
-    core::log_info("achievements", "Debug: Unlocked all achievements");
+    core::log(core::LogLevel::Info, "[Achievements] Debug: Unlocked all achievements");
 }
 
 void AchievementManager::lock_all() {
     reset_progress();
-    core::log_info("achievements", "Debug: Locked all achievements");
+    core::log(core::LogLevel::Info, "[Achievements] Debug: Locked all achievements");
 }
 
 // ============================================================================
@@ -461,7 +461,7 @@ void AchievementManager::internal_unlock(const std::string& achievement_id) {
     progress.unlock_timestamp = static_cast<uint64_t>(std::time(nullptr));
     progress.current_count = def->target_count;
 
-    core::log_info("achievements", "Achievement unlocked: {} ({})", achievement_id, def->display_name);
+    core::log(core::LogLevel::Info, "[Achievements] Achievement unlocked: {} ({})", achievement_id, def->display_name);
 
     // Create notification
     create_notification(achievement_id);
@@ -479,7 +479,7 @@ void AchievementManager::internal_unlock(const std::string& achievement_id) {
     event.icon_path = def->icon_path;
     event.points = def->points;
     event.timestamp = progress.unlock_timestamp;
-    core::game_events().publish(event);
+    core::game_events().broadcast(event);
 
     // Platform callback
     if (m_platform_callback && !def->platform_id.empty()) {
@@ -507,7 +507,7 @@ void AchievementManager::internal_unlock_tier(const std::string& achievement_id,
     const auto* tier_def = def->get_tier(tier);
     if (!tier_def) return;
 
-    core::log_info("achievements", "Achievement tier unlocked: {} - {} (tier {})",
+    core::log(core::LogLevel::Info, "[Achievements] Achievement tier unlocked: {} - {} (tier {})",
                    achievement_id, tier_def->display_name, tier + 1);
 
     // Create notification
@@ -526,7 +526,7 @@ void AchievementManager::internal_unlock_tier(const std::string& achievement_id,
     event.tier_points = tier_def->points;
     event.total_tiers = def->get_tier_count();
     event.is_final_tier = (tier == def->get_tier_count() - 1);
-    core::game_events().publish(event);
+    core::game_events().broadcast(event);
 }
 
 bool AchievementManager::check_prerequisites(const std::string& achievement_id) const {
@@ -573,7 +573,7 @@ void AchievementManager::create_notification(const std::string& achievement_id, 
 // ============================================================================
 
 void register_achievement_events() {
-    core::log_info("achievements", "Registered achievement events");
+    core::log(core::LogLevel::Info, "[Achievements] Registered achievement events");
 }
 
 } // namespace engine::achievements

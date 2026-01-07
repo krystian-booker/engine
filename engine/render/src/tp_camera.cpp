@@ -1,4 +1,4 @@
-#include <engine/render/third_person_camera.hpp>
+#include <engine/render/tp_camera.hpp>
 #include <engine/scene/world.hpp>
 #include <engine/scene/transform.hpp>
 #include <engine/core/event_dispatcher.hpp>
@@ -14,7 +14,7 @@ namespace {
 Vec3 get_entity_position(scene::World& world, scene::Entity entity) {
     auto* world_transform = world.try_get<scene::WorldTransform>(entity);
     if (world_transform) {
-        return world_transform->get_position();
+        return world_transform->position();
     }
     auto* local_transform = world.try_get<scene::LocalTransform>(entity);
     if (local_transform) {
@@ -216,7 +216,7 @@ void ThirdPersonCameraSystem::set_mode(scene::World& world, scene::Entity camera
     event.camera_entity = camera;
     event.old_mode = old_mode;
     event.new_mode = mode;
-    core::EventDispatcher::instance().dispatch(event);
+        core::events().dispatch(event);
 }
 
 ThirdPersonCameraMode ThirdPersonCameraSystem::get_mode(scene::World& world, scene::Entity camera) const {
@@ -256,7 +256,7 @@ void ThirdPersonCameraSystem::set_lock_on_target(scene::World& world, scene::Ent
         CameraLockOnStartedEvent event;
         event.camera_entity = camera;
         event.target_entity = target;
-        core::EventDispatcher::instance().dispatch(event);
+            core::events().dispatch(event);
     }
 }
 
@@ -273,7 +273,7 @@ void ThirdPersonCameraSystem::clear_lock_on_target(scene::World& world, scene::E
 
         CameraLockOnEndedEvent event;
         event.camera_entity = camera;
-        core::EventDispatcher::instance().dispatch(event);
+            core::events().dispatch(event);
     }
 }
 
@@ -497,8 +497,8 @@ Quat ThirdPersonCameraSystem::calculate_lock_on_rotation(const Vec3& camera_pos,
     return yaw_rot * pitch_rot;
 }
 
-float ThirdPersonCameraSystem::default_collision_check(const Vec3& from, const Vec3& to,
-                                                        float radius, uint32_t layer_mask) {
+float ThirdPersonCameraSystem::default_collision_check(const Vec3& /*from*/, const Vec3& /*to*/,
+                                                        float /*radius*/, uint32_t /*layer_mask*/) {
     // Default: no collision, return full distance
     return 1.0f;
 }
@@ -526,29 +526,20 @@ void register_third_person_camera_components() {
     using namespace reflect;
 
     // ThirdPersonCameraComponent
-    TypeRegistry::instance().register_component<ThirdPersonCameraComponent>("ThirdPersonCameraComponent")
-        .display_name("Third Person Camera")
-        .category("Camera");
+    TypeRegistry::instance().register_component<ThirdPersonCameraComponent>("ThirdPersonCameraComponent",
+        TypeMeta().set_display_name("Third Person Camera").set_category(TypeCategory::Component));
 
-    TypeRegistry::instance().register_property<ThirdPersonCameraComponent>("sensitivity_x",
-        [](const ThirdPersonCameraComponent& c) { return c.sensitivity_x; },
-        [](ThirdPersonCameraComponent& c, float v) { c.sensitivity_x = v; })
-        .display_name("Sensitivity X").min(0.1f).max(10.0f);
+    TypeRegistry::instance().register_property<ThirdPersonCameraComponent, &ThirdPersonCameraComponent::sensitivity_x>("sensitivity_x",
+        PropertyMeta().set_display_name("Sensitivity X").set_range(0.1f, 10.0f));
 
-    TypeRegistry::instance().register_property<ThirdPersonCameraComponent>("sensitivity_y",
-        [](const ThirdPersonCameraComponent& c) { return c.sensitivity_y; },
-        [](ThirdPersonCameraComponent& c, float v) { c.sensitivity_y = v; })
-        .display_name("Sensitivity Y").min(0.1f).max(10.0f);
+    TypeRegistry::instance().register_property<ThirdPersonCameraComponent, &ThirdPersonCameraComponent::sensitivity_y>("sensitivity_y",
+        PropertyMeta().set_display_name("Sensitivity Y").set_range(0.1f, 10.0f));
 
-    TypeRegistry::instance().register_property<ThirdPersonCameraComponent>("invert_y",
-        [](const ThirdPersonCameraComponent& c) { return c.invert_y; },
-        [](ThirdPersonCameraComponent& c, bool v) { c.invert_y = v; })
-        .display_name("Invert Y");
+    TypeRegistry::instance().register_property<ThirdPersonCameraComponent, &ThirdPersonCameraComponent::invert_y>("invert_y",
+        PropertyMeta().set_display_name("Invert Y"));
 
-    TypeRegistry::instance().register_property<ThirdPersonCameraComponent>("transition_duration",
-        [](const ThirdPersonCameraComponent& c) { return c.transition_duration; },
-        [](ThirdPersonCameraComponent& c, float v) { c.transition_duration = v; })
-        .display_name("Transition Duration").min(0.1f).max(2.0f);
+    TypeRegistry::instance().register_property<ThirdPersonCameraComponent, &ThirdPersonCameraComponent::transition_duration>("transition_duration",
+        PropertyMeta().set_display_name("Transition Duration").set_range(0.1f, 2.0f));
 
     core::log(core::LogLevel::Info, "Third person camera components registered");
 }

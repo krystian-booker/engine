@@ -185,13 +185,16 @@ public:
     // Get registered attack names
     std::vector<std::string> get_registered_attacks() const;
 
+    void advance_phase(scene::World& world, scene::Entity entity, AttackPhaseComponent& attack);
+    void activate_hitboxes(scene::World& world, scene::Entity entity, const AttackDefinition& attack);
+    void deactivate_hitboxes(scene::World& world, scene::Entity entity, const AttackDefinition& attack);
+
+
 private:
     AttackPhaseManager();
     ~AttackPhaseManager() = default;
 
-    void advance_phase(scene::World& world, scene::Entity entity, AttackPhaseComponent& attack);
-    void activate_hitboxes(scene::World& world, scene::Entity entity, const AttackDefinition& attack);
-    void deactivate_hitboxes(scene::World& world, scene::Entity entity, const AttackDefinition& attack);
+
 
     std::unordered_map<std::string, AttackDefinition> m_attacks;
     PhaseCallback m_on_phase_changed;

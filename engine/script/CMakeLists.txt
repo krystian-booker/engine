@@ -64,3 +64,7 @@ target_link_libraries(engine_script
 set_target_properties(engine_script PROPERTIES
     FOLDER "engine"
 )
+
+if(MSVC)
+    target_compile_options(engine_script PRIVATE /wd5321)
+endif()

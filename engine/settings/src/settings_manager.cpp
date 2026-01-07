@@ -33,7 +33,7 @@ bool SettingsManager::load(const std::string& path) {
     try {
         std::ifstream file(path);
         if (!file.is_open()) {
-            core::log_warning("settings", "Could not open settings file: {}", path);
+            core::log(core::LogLevel::Warn, "[Settings] Could not open settings file: {}", path);
             return false;
         }
 
@@ -117,11 +117,11 @@ bool SettingsManager::load(const std::string& path) {
 
         validate_all();
         mark_saved();
-        core::log_info("settings", "Loaded settings from: {}", path);
+        core::log(core::LogLevel::Info, "[Settings] Loaded settings from: {}", path);
         return true;
 
     } catch (const std::exception& e) {
-        core::log_error("settings", "Failed to load settings: {}", e.what());
+        core::log(core::LogLevel::Error, "[Settings] Failed to load settings: {}", e.what());
         return false;
     }
 }
@@ -202,16 +202,16 @@ bool SettingsManager::save(const std::string& path) const {
 
         std::ofstream file(path);
         if (!file.is_open()) {
-            core::log_error("settings", "Could not open settings file for writing: {}", path);
+            core::log(core::LogLevel::Error, "[Settings] Could not open settings file for writing: {}", path);
             return false;
         }
 
         file << j.dump(4);
-        core::log_info("settings", "Saved settings to: {}", path);
+        core::log(core::LogLevel::Info, "[Settings] Saved settings to: {}", path);
         return true;
 
     } catch (const std::exception& e) {
-        core::log_error("settings", "Failed to save settings: {}", e.what());
+        core::log(core::LogLevel::Error, "[Settings] Failed to save settings: {}", e.what());
         return false;
     }
 }
@@ -257,7 +257,7 @@ void SettingsManager::apply_graphics() {
     notify_changed(SettingsCategory::Graphics);
 
     // TODO: Notify renderer to apply changes
-    core::log_debug("settings", "Applied graphics settings");
+    core::log(core::LogLevel::Debug, "[Settings] Applied graphics settings");
 }
 
 void SettingsManager::apply_audio() {
@@ -265,7 +265,7 @@ void SettingsManager::apply_audio() {
     notify_changed(SettingsCategory::Audio);
 
     // TODO: Notify audio engine to apply changes
-    core::log_debug("settings", "Applied audio settings");
+    core::log(core::LogLevel::Debug, "[Settings] Applied audio settings");
 }
 
 void SettingsManager::apply_input() {
@@ -273,14 +273,14 @@ void SettingsManager::apply_input() {
     notify_changed(SettingsCategory::Input);
 
     // TODO: Notify input system to apply changes
-    core::log_debug("settings", "Applied input settings");
+    core::log(core::LogLevel::Debug, "[Settings] Applied input settings");
 }
 
 void SettingsManager::apply_gameplay() {
     m_gameplay.validate();
     notify_changed(SettingsCategory::Gameplay);
 
-    core::log_debug("settings", "Applied gameplay settings");
+    core::log(core::LogLevel::Debug, "[Settings] Applied gameplay settings");
 }
 
 void SettingsManager::apply_all() {
@@ -475,7 +475,7 @@ void SettingsManager::notify_changed(SettingsCategory category) {
     // Publish event
     SettingsChangedEvent event;
     event.category = category;
-    core::game_events().publish(event);
+    core::game_events().broadcast(event);
 }
 
 void SettingsManager::setup_default_bindings() {

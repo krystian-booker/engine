@@ -122,7 +122,7 @@ std::vector<stats::StatModifier> ItemInstance::get_all_modifiers() const {
         mod.stat = stat;
         mod.type = stats::ModifierType::Flat;
         mod.value = value;
-        mod.source_type = stats::ModifierSource::Equipment;
+        mod.source = stats::ModifierSource::Equipment;
         mod.source_id = definition_id;
         result.push_back(mod);
     }
@@ -137,7 +137,7 @@ std::vector<stats::StatModifier> ItemInstance::get_all_modifiers() const {
         mod.stat = stat;
         mod.type = stats::ModifierType::Flat;
         mod.value = scaled_value;
-        mod.source_type = stats::ModifierSource::Equipment;
+        mod.source = stats::ModifierSource::Equipment;
         mod.source_id = definition_id + "_scaling";
         result.push_back(mod);
     }
@@ -148,7 +148,7 @@ std::vector<stats::StatModifier> ItemInstance::get_all_modifiers() const {
         mod.stat = rand_mod.stat;
         mod.type = rand_mod.modifier_type;
         mod.value = rand_mod.value;
-        mod.source_type = stats::ModifierSource::Equipment;
+        mod.source = stats::ModifierSource::Equipment;
         mod.source_id = definition_id + "_random";
         result.push_back(mod);
     }

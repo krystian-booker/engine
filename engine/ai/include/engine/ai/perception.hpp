@@ -1,14 +1,20 @@
 #pragma once
 
 #include <engine/scene/entity.hpp>
-#include <engine/scene/world.hpp>
+#include <engine/scene/entity.hpp>
+//#include <engine/scene/world.hpp>
 #include <engine/core/math.hpp>
 #include <string>
 #include <vector>
 #include <functional>
 #include <cstdint>
+#include <optional>
+
+namespace engine::scene { class World; }
 
 namespace engine::ai {
+
+using engine::core::Vec3;
 
 // ============================================================================
 // Perception Sense Types
@@ -246,6 +252,12 @@ struct NoiseHeardEvent {
     float loudness;
     std::string noise_type;
     scene::Entity noise_source;                 // May be NullEntity for environmental noise
+};
+
+struct AIAlertedEvent {
+    scene::Entity entity;
+    scene::Entity cause;
+    Vec3 alert_position;
 };
 
 // ============================================================================

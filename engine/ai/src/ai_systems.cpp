@@ -16,7 +16,7 @@ namespace {
 Vec3 get_entity_position(scene::World& world, scene::Entity entity) {
     auto* world_transform = world.try_get<scene::WorldTransform>(entity);
     if (world_transform) {
-        return world_transform->get_position();
+        return world_transform->position();
     }
     auto* local_transform = world.try_get<scene::LocalTransform>(entity);
     if (local_transform) {
@@ -121,7 +121,7 @@ void ai_combat_system(scene::World& world, double dt) {
                 event.entity = entity;
                 event.old_target = old_threat;
                 event.new_target = target;
-                core::EventDispatcher::instance().dispatch(event);
+                core::events().dispatch(event);
             }
 
             // Update combat state based on distance
@@ -195,49 +195,34 @@ void register_ai_components() {
     using namespace reflect;
 
     // AIControllerComponent
-    TypeRegistry::instance().register_component<AIControllerComponent>("AIControllerComponent")
-        .display_name("AI Controller")
-        .category("AI");
+    TypeRegistry::instance().register_component<AIControllerComponent>("AIControllerComponent",
+        TypeMeta().set_display_name("AI Controller").set_category(TypeCategory::Component));
 
-    TypeRegistry::instance().register_property<AIControllerComponent>("enabled",
-        [](const AIControllerComponent& c) { return c.enabled; },
-        [](AIControllerComponent& c, bool v) { c.enabled = v; })
-        .display_name("Enabled");
+    TypeRegistry::instance().register_property<AIControllerComponent, &AIControllerComponent::enabled>("enabled",
+        PropertyMeta().set_display_name("Enabled"));
 
-    TypeRegistry::instance().register_property<AIControllerComponent>("update_interval",
-        [](const AIControllerComponent& c) { return c.update_interval; },
-        [](AIControllerComponent& c, float v) { c.update_interval = v; })
-        .display_name("Update Interval").min(0.01f).max(1.0f);
+    TypeRegistry::instance().register_property<AIControllerComponent, &AIControllerComponent::update_interval>("update_interval",
+        PropertyMeta().set_display_name("Update Interval").set_range(0.01f, 1.0f));
 
     // AICombatComponent
-    TypeRegistry::instance().register_component<AICombatComponent>("AICombatComponent")
-        .display_name("AI Combat")
-        .category("AI");
+    TypeRegistry::instance().register_component<AICombatComponent>("AICombatComponent",
+        TypeMeta().set_display_name("AI Combat").set_category(TypeCategory::Component));
 
-    TypeRegistry::instance().register_property<AICombatComponent>("attack_range",
-        [](const AICombatComponent& c) { return c.attack_range; },
-        [](AICombatComponent& c, float v) { c.attack_range = v; })
-        .display_name("Attack Range").min(0.5f);
+    TypeRegistry::instance().register_property<AICombatComponent, &AICombatComponent::attack_range>("attack_range",
+        PropertyMeta().set_display_name("Attack Range").set_range(0.5f, 100.0f));
 
-    TypeRegistry::instance().register_property<AICombatComponent>("attack_cooldown",
-        [](const AICombatComponent& c) { return c.attack_cooldown; },
-        [](AICombatComponent& c, float v) { c.attack_cooldown = v; })
-        .display_name("Attack Cooldown").min(0.1f);
+    TypeRegistry::instance().register_property<AICombatComponent, &AICombatComponent::attack_cooldown>("attack_cooldown",
+        PropertyMeta().set_display_name("Attack Cooldown").set_range(0.1f, 10.0f));
 
-    TypeRegistry::instance().register_property<AICombatComponent>("aggression",
-        [](const AICombatComponent& c) { return c.aggression; },
-        [](AICombatComponent& c, float v) { c.aggression = v; })
-        .display_name("Aggression").min(0.0f).max(1.0f);
+    TypeRegistry::instance().register_property<AICombatComponent, &AICombatComponent::aggression>("aggression",
+        PropertyMeta().set_display_name("Aggression").set_range(0.0f, 1.0f));
 
     // AIPatrolComponent
-    TypeRegistry::instance().register_component<AIPatrolComponent>("AIPatrolComponent")
-        .display_name("AI Patrol")
-        .category("AI");
+    TypeRegistry::instance().register_component<AIPatrolComponent>("AIPatrolComponent",
+        TypeMeta().set_display_name("AI Patrol").set_category(TypeCategory::Component));
 
-    TypeRegistry::instance().register_property<AIPatrolComponent>("patrol_speed",
-        [](const AIPatrolComponent& c) { return c.patrol_speed; },
-        [](AIPatrolComponent& c, float v) { c.patrol_speed = v; })
-        .display_name("Patrol Speed").min(0.1f);
+    TypeRegistry::instance().register_property<AIPatrolComponent, &AIPatrolComponent::patrol_speed>("patrol_speed",
+        PropertyMeta().set_display_name("Patrol Speed").set_range(0.1f, 10.0f));
 
     // Register perception components
     register_perception_components();

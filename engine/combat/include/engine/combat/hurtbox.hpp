@@ -7,6 +7,8 @@
 
 namespace engine::combat {
 
+using engine::core::Vec3;
+
 // Hurtbox component - receives damage
 struct HurtboxComponent {
     bool enabled = true;                        // Can receive damage when enabled

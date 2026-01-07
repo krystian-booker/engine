@@ -1,6 +1,7 @@
 #include <engine/quest/waypoint.hpp>
 #include <engine/quest/quest_manager.hpp>
 #include <engine/scene/transform.hpp>
+#include <engine/scene/world.hpp>
 #include <engine/core/log.hpp>
 #include <algorithm>
 #include <cmath>
@@ -12,7 +13,7 @@ namespace {
 Vec3 get_entity_position(scene::World& world, scene::Entity entity) {
     auto* world_transform = world.try_get<scene::WorldTransform>(entity);
     if (world_transform) {
-        return world_transform->get_position();
+        return world_transform->position();
     }
     auto* local_transform = world.try_get<scene::LocalTransform>(entity);
     if (local_transform) {

@@ -2,6 +2,7 @@
 #include <engine/inventory/inventory_events.hpp>
 #include <engine/core/log.hpp>
 #include <engine/core/game_events.hpp>
+#include <engine/stats/stat_component.hpp>
 
 namespace engine::inventory {
 
@@ -21,7 +22,7 @@ InventoryManager& InventoryManager::instance() {
 TransferResult InventoryManager::give_item(scene::World& world, scene::Entity entity,
                                            const std::string& item_id, int count) {
     if (!item_registry().exists(item_id)) {
-        core::log_warning("inventory", "Cannot give unknown item: {}", item_id);
+        core::log(core::LogLevel::Warn, "[Inventory] Cannot give unknown item: {}", item_id);
         return TransferResult::Failed;
     }
 
@@ -33,7 +34,7 @@ TransferResult InventoryManager::give_item(scene::World& world, scene::Entity en
                                            const ItemInstance& item) {
     auto* inv = world.try_get<InventoryComponent>(entity);
     if (!inv) {
-        core::log_warning("inventory", "Entity has no InventoryComponent");
+        core::log(core::LogLevel::Warn, "[Inventory] Entity has no InventoryComponent");
         return TransferResult::InvalidTarget;
     }
 
@@ -43,7 +44,7 @@ TransferResult InventoryManager::give_item(scene::World& world, scene::Entity en
         event.entity = entity;
         event.failed_item = item;
         event.available_slots = inv->count_empty_slots();
-        core::game_events().publish(event);
+        core::game_events().broadcast(event);
 
         return TransferResult::TargetFull;
     }
@@ -63,7 +64,7 @@ TransferResult InventoryManager::give_item(scene::World& world, scene::Entity en
     event.slot_index = slot_index;
     event.item = item;
     event.source = "give";
-    core::game_events().publish(event);
+    core::game_events().broadcast(event);
 
     return TransferResult::Success;
 }
@@ -101,7 +102,7 @@ TransferResult InventoryManager::take_item(scene::World& world, scene::Entity en
         event.item = taken;
         event.count_removed = to_take;
         event.reason = "take";
-        core::game_events().publish(event);
+        core::game_events().broadcast(event);
 
         if (remaining <= 0) break;
     }
@@ -133,7 +134,7 @@ TransferResult InventoryManager::take_item(scene::World& world, scene::Entity en
     event.item = taken;
     event.count_removed = taken.stack_count;
     event.reason = "take";
-    core::game_events().publish(event);
+    core::game_events().broadcast(event);
 
     return TransferResult::Success;
 }
@@ -173,7 +174,7 @@ TransferResult InventoryManager::transfer(scene::World& world,
     event.to_slot = to_slot;
     event.item = taken;
     event.count = taken.stack_count;
-    core::game_events().publish(event);
+    core::game_events().broadcast(event);
 
     return TransferResult::Success;
 }
@@ -243,7 +244,7 @@ UseResult InventoryManager::use_item(scene::World& world, scene::Entity entity,
         // Apply instant heals
         if (auto* stats = world.try_get<stats::StatsComponent>(target)) {
             for (const auto& [stat, amount] : def->instant_heals) {
-                stats->modify_resource(stat, amount);
+                stats->modify_current(stat, amount);
             }
         }
 
@@ -272,7 +273,7 @@ UseResult InventoryManager::use_item(scene::World& world, scene::Entity entity,
             event.destroyed = false;
         }
 
-        core::game_events().publish(event);
+        core::game_events().broadcast(event);
         return UseResult::Used;
     }
 
@@ -330,7 +331,7 @@ bool InventoryManager::equip_from_inventory(scene::World& world, scene::Entity e
     event.slot = target_slot;
     event.item = to_equip;
     event.previous_item = previous;
-    core::game_events().publish(event);
+    core::game_events().broadcast(event);
 
     // Put previous in inventory
     if (previous.has_value()) {
@@ -374,7 +375,7 @@ bool InventoryManager::unequip_to_inventory(scene::World& world, scene::Entity e
     event.item = removed.value();
     event.moved_to_inventory = true;
     event.inventory_slot = inv_slot;
-    core::game_events().publish(event);
+    core::game_events().broadcast(event);
 
     return true;
 }
@@ -417,7 +418,7 @@ bool InventoryManager::swap_equipment(scene::World& world, scene::Entity entity,
     event.slot = equip_slot;
     event.item = to_equip;
     event.previous_item = previous;
-    core::game_events().publish(event);
+    core::game_events().broadcast(event);
 
     return true;
 }
@@ -454,7 +455,7 @@ bool InventoryManager::give_currency(scene::World& world, scene::Entity entity,
     event.new_amount = new_amount;
     event.delta = new_amount - old_amount;
     event.reason = "give";
-    core::game_events().publish(event);
+    core::game_events().broadcast(event);
 
     return true;
 }
@@ -481,7 +482,7 @@ bool InventoryManager::take_currency(scene::World& world, scene::Entity entity,
     event.new_amount = new_amount;
     event.delta = new_amount - old_amount;
     event.reason = "take";
-    core::game_events().publish(event);
+    core::game_events().broadcast(event);
 
     return true;
 }
@@ -528,7 +529,7 @@ std::vector<ItemInstance> InventoryManager::generate_loot(const std::string& loo
                                                           int player_level, float luck_bonus) {
     // TODO: Load loot table from registry
     // For now, return empty
-    core::log_debug("inventory", "Generating loot from table: {} (level {}, luck {})",
+    core::log(core::LogLevel::Debug, "[Inventory] Generating loot from table: {} (level {}, luck {})",
                    loot_table_id, player_level, luck_bonus);
     return {};
 }
@@ -560,7 +561,7 @@ TransferResult InventoryManager::give_loot(scene::World& world, scene::Entity en
     event.items = items;
     event.player_level = player_level;
     event.luck_bonus = luck_bonus;
-    core::game_events().publish(event);
+    core::game_events().broadcast(event);
 
     if (any_success && any_failure) return TransferResult::PartialSuccess;
     if (any_success) return TransferResult::Success;
@@ -606,7 +607,7 @@ void InventoryManager::apply_equipment_stats(scene::World& world, scene::Entity 
 
     auto modifiers = item.get_all_modifiers();
     for (auto& mod : modifiers) {
-        stats_comp->add_modifier(mod.stat, mod);
+        stats_comp->add_modifier(mod);
     }
 }
 
@@ -633,7 +634,7 @@ bool InventoryManager::check_requirements(scene::World& world, scene::Entity ent
     if (!stats_comp) return false;
 
     for (const auto& req : def->requirements) {
-        float value = stats_comp->get_final_value(req.stat);
+        float value = stats_comp->get(req.stat);
         if (value < req.min_value) {
             return false;
         }

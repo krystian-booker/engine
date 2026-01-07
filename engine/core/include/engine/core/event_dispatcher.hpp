@@ -165,11 +165,12 @@ public:
         }
     }
 
-    // Dispatch with move semantics
-    template<typename T>
-    void dispatch(T&& event) {
-        dispatch(static_cast<const T&>(event));
-    }
+    // Dispatch with move semantics - Removed to prevent recursion with forwarding reference
+    // const T& overload handles both lvalues and rvalues (binding to const ref)
+    // template<typename T>
+    // void dispatch(T&& event) {
+    //     dispatch(static_cast<const T&>(event));
+    // }
 
     // ========================================================================
     // Deferred Dispatch (Queue)

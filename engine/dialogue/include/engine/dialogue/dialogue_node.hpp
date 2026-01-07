@@ -1,6 +1,7 @@
 #pragma once
 
-#include <engine/core/types.hpp>
+#include <engine/core/math.hpp>
+#include <cstdint>
 #include <engine/scene/entity.hpp>
 #include <string>
 #include <vector>
@@ -24,7 +25,7 @@ struct DialogueSpeaker {
     scene::Entity entity = scene::NullEntity;
 
     // Display customization
-    Vec4 name_color{1.0f, 1.0f, 1.0f, 1.0f};
+    core::Vec4 name_color{1.0f, 1.0f, 1.0f, 1.0f};
     std::string text_style;         // Font/style override
 };
 

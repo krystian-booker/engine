@@ -10,6 +10,8 @@
 
 namespace engine::combat {
 
+using engine::core::Vec3;
+
 struct HitboxComponent;
 struct HurtboxComponent;
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <engine/core/math.hpp>
 #include <engine/ai/blackboard.hpp>
 #include <engine/ai/behavior_tree.hpp>
 #include <engine/scene/entity.hpp>
@@ -8,6 +9,8 @@
 #include <cstdint>
 
 namespace engine::ai {
+
+using core::Vec3;
 
 // ============================================================================
 // AI Controller Component
@@ -239,10 +242,6 @@ struct AITargetChangedEvent {
     scene::Entity new_target;
 };
 
-struct AIAlertedEvent {
-    scene::Entity entity;
-    scene::Entity cause;                        // What alerted the AI
-    Vec3 alert_position;
-};
+
 
 } // namespace engine::ai

@@ -28,7 +28,7 @@ bool DialoguePlayer::start(const std::string& graph_id, scene::Entity initiator,
                             scene::Entity target) {
     DialogueGraph* graph = DialogueLibrary::instance().get_graph(graph_id);
     if (!graph) {
-        core::log(core::LogLevel::Warning, "Cannot start unknown dialogue: {}", graph_id);
+        core::log(core::LogLevel::Warn, "Cannot start unknown dialogue: {}", graph_id);
         return false;
     }
     return start(graph, initiator, target);
@@ -49,7 +49,7 @@ bool DialoguePlayer::start(DialogueGraph* graph, scene::Entity initiator,
 
     DialogueNode* entry = graph->get_entry_node();
     if (!entry) {
-        core::log(core::LogLevel::Warning, "Dialogue '{}' has no valid entry point", graph->get_id());
+        core::log(core::LogLevel::Warn, "Dialogue '{}' has no valid entry point", graph->get_id());
         return false;
     }
 
@@ -153,7 +153,7 @@ void DialoguePlayer::select_choice(const std::string& id) {
     }
 
     if (!selected) {
-        core::log(core::LogLevel::Warning, "Invalid choice: {}", id);
+        core::log(core::LogLevel::Warn, "Invalid choice: {}", id);
         return;
     }
 
@@ -378,7 +378,7 @@ void DialoguePlayer::enter_node(const std::string& node_id) {
 
     DialogueNode* node = m_current_graph->get_node(node_id);
     if (!node) {
-        core::log(core::LogLevel::Warning, "Cannot enter unknown node: {}", node_id);
+        core::log(core::LogLevel::Warn, "Cannot enter unknown node: {}", node_id);
         stop("error");
         return;
     }
@@ -495,23 +495,23 @@ void DialoguePlayer::execute_action(const DialogueAction& action) {
 }
 
 void DialoguePlayer::dispatch_event(const DialogueStartedEvent& event) {
-    core::EventDispatcher::instance().dispatch(event);
+    core::events().dispatch(event);
 }
 
 void DialoguePlayer::dispatch_event(const DialogueEndedEvent& event) {
-    core::EventDispatcher::instance().dispatch(event);
+    core::events().dispatch(event);
 }
 
 void DialoguePlayer::dispatch_event(const DialogueNodeEnteredEvent& event) {
-    core::EventDispatcher::instance().dispatch(event);
+    core::events().dispatch(event);
 }
 
 void DialoguePlayer::dispatch_event(const DialogueChoiceMadeEvent& event) {
-    core::EventDispatcher::instance().dispatch(event);
+    core::events().dispatch(event);
 }
 
 void DialoguePlayer::dispatch_event(const DialogueTextRevealedEvent& event) {
-    core::EventDispatcher::instance().dispatch(event);
+    core::events().dispatch(event);
 }
 
 } // namespace engine::dialogue

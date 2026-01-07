@@ -12,6 +12,13 @@
 namespace engine::scene {
 
 // ============================================================================
+// Type Aliases
+// ============================================================================
+using engine::core::Vec3;
+using engine::core::Vec2;
+using engine::core::Vec4;
+
+// ============================================================================
 // Components
 // ============================================================================
 
@@ -20,7 +27,7 @@ struct TargetableComponent {
     bool enabled = true;                        // Can be targeted when enabled
 
     // Target point configuration
-    Vec3 target_point_offset{0.0f, 1.0f, 0.0f}; // Local offset for aim point (e.g., chest height)
+    Vec3 aim_off{0.0f, 1.0f, 0.0f}; // Local offset for aim point (e.g., chest height)
     float target_size = 1.0f;                   // Affects selection radius/priority
 
     // Priority and filtering
@@ -35,12 +42,12 @@ struct TargetableComponent {
     bool requires_line_of_sight = true;         // Must be visible to target
     bool target_through_walls = false;          // Override LOS for special targets
 
-    // State (managed by system)
+    // Runtime state
     bool is_targeted = false;                   // Currently being targeted
     Entity targeted_by = NullEntity;            // Who is targeting this entity
 
     // UI indicator settings
-    bool show_indicator_when_available = true;  // Show indicator when in range
+    bool show_indicator_when_available = false; // Show indicator even when not locked
     bool show_indicator_when_targeted = true;   // Show indicator when locked on
 };
 
@@ -109,7 +116,7 @@ struct TargetCandidate {
     float distance = 0.0f;                      // Distance from targeter
     float angle = 0.0f;                         // Angle from forward direction
     float score = 0.0f;                         // Combined priority score
-    Vec3 target_point;                          // World position to aim at
+    Vec3 aim_pos;                          // World position to aim at
     bool in_line_of_sight = true;
     bool is_current_target = false;             // Is the current locked target
 };

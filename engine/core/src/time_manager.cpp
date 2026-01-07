@@ -32,7 +32,7 @@ void TimeManager::set_time_scale(float scale) {
         m_on_time_scale_changed(m_global_time_scale);
     }
 
-    log_debug("time", "Time scale set to {}", m_global_time_scale);
+    log(LogLevel::Debug, "[Time] Time scale set to {}", m_global_time_scale);
 }
 
 void TimeManager::transition_time_scale(float target, float duration,
@@ -44,7 +44,7 @@ void TimeManager::transition_time_scale(float target, float duration,
     m_transition.easing = easing ? easing : ease_out_quad;
     m_transition.active = true;
 
-    log_debug("time", "Starting time scale transition: {} -> {} over {}s",
+    log(LogLevel::Debug, "[Time] Starting time scale transition: {} -> {} over {}s",
               m_transition.from_scale, m_transition.to_scale, duration);
 }
 
@@ -89,7 +89,7 @@ float TimeManager::get_effective_scale(TimeGroup group) const {
 void TimeManager::pause() {
     if (!m_paused) {
         m_paused = true;
-        log_info("time", "Game paused");
+        log(LogLevel::Info, "[Time] Game paused");
 
         if (m_on_pause) {
             m_on_pause(true);
@@ -100,7 +100,7 @@ void TimeManager::pause() {
 void TimeManager::unpause() {
     if (m_paused) {
         m_paused = false;
-        log_info("time", "Game unpaused");
+        log(LogLevel::Info, "[Time] Game unpaused");
 
         if (m_on_pause) {
             m_on_pause(false);
@@ -140,7 +140,7 @@ void TimeManager::apply_hitstop(float duration, float freeze_scale) {
     m_hitstop.freeze_scale = freeze_scale;
     m_hitstop.active = true;
 
-    log_debug("time", "Hitstop applied: {}s at scale {}", duration, freeze_scale);
+    log(LogLevel::Debug, "[Time] Hitstop applied: {}s at scale {}", duration, freeze_scale);
 
     if (m_on_hitstop) {
         m_on_hitstop(true);
@@ -189,7 +189,7 @@ void TimeManager::bullet_time(float scale, float duration) {
         set_time_scale(scale);
     }
 
-    log_info("time", "Bullet time activated: scale {}", scale);
+    log(LogLevel::Info, "[Time] Bullet time activated: scale {}", scale);
 }
 
 void TimeManager::end_bullet_time(float transition_duration) {
@@ -197,7 +197,7 @@ void TimeManager::end_bullet_time(float transition_duration) {
         m_bullet_time_active = false;
         transition_time_scale(1.0f, transition_duration, ease_in_quad);
 
-        log_info("time", "Bullet time ended");
+        log(LogLevel::Info, "[Time] Bullet time ended");
     }
 }
 
@@ -305,7 +305,7 @@ void TimeManager::reset() {
     m_gameplay_time = 0.0;
     m_frame_count = 0;
 
-    log_info("time", "Time manager reset");
+    log(LogLevel::Info, "[Time] Time manager reset");
 }
 
 // ============================================================================

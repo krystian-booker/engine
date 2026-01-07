@@ -2,7 +2,7 @@
 
 #include <engine/quest/quest.hpp>
 #include <engine/scene/world.hpp>
-#include <engine/save/save_handler.hpp>
+#include <engine/save/save_system.hpp>
 #include <unordered_map>
 #include <unordered_set>
 #include <functional>
@@ -229,12 +229,9 @@ inline QuestManager& quests() { return QuestManager::instance(); }
 
 class QuestSaveHandler : public save::ISaveHandler {
 public:
-    std::string get_id() const override { return "quest_manager"; }
-    void save(nlohmann::json& data) override;
-    void load(const nlohmann::json& data) override;
-    void reset() override;
-    int32_t get_version() const override { return 1; }
-    void migrate(nlohmann::json& data, int32_t from_version) override;
+    std::string get_type_name() const override { return "QuestManager"; }
+    void on_save(save::SaveGame& save, scene::World& world) override;
+    void on_post_load(const save::SaveGame& save, scene::World& world) override;
 };
 
 } // namespace engine::quest

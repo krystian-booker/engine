@@ -34,7 +34,7 @@ target_sources(engine_scene
             include/engine/scene/interaction.hpp
             include/engine/scene/entity_pool.hpp
             include/engine/scene/spawn_system.hpp
-            include/engine/scene/targeting.hpp
+            include/engine/scene/targeting_v3.hpp
 )
 
 target_include_directories(engine_scene

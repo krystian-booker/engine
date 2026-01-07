@@ -5,8 +5,14 @@
 #include <vector>
 #include <unordered_map>
 #include <optional>
+#include <engine/core/math.hpp>
+#include <cstdint>
 
 namespace engine::dialogue {
+
+using core::Vec2;
+using core::Vec3;
+using core::Vec4;
 
 // ============================================================================
 // Dialogue Trigger Component

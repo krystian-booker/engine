@@ -32,7 +32,7 @@ void shutdown_vegetation_systems() {
     log(LogLevel::Info, "Shutting down vegetation systems");
 }
 
-void vegetation_update_system(World& world, double dt) {
+void vegetation_update_system(World& /*world*/, double dt) {
     auto& render_ctx = get_render_context();
 
     // Only update if we have an active camera
@@ -91,15 +91,17 @@ void grass_interaction_system(World& world, double dt) {
 
     // Also check for player entity (common pattern)
     // Look for entity tagged as player with LocalTransform
+    /*
     auto player_view = world.view<LocalTransform>();
     for (auto entity : player_view) {
         // Check if this entity has a "Player" tag or similar
         // For now, we'll skip this as it's game-specific
         // Games should call grass.set_player_position() directly
     }
+    */
 }
 
-void vegetation_render_system(World& world, double dt) {
+void vegetation_render_system(World& /*world*/, double /*dt*/) {
     auto& render_ctx = get_render_context();
 
     if (!render_ctx.has_active_camera) {
@@ -119,7 +121,7 @@ void vegetation_render_system(World& world, double dt) {
     }
 }
 
-void vegetation_shadow_system(World& world, double dt) {
+void vegetation_shadow_system(World& /*world*/, double /*dt*/) {
     auto& render_ctx = get_render_context();
 
     if (!render_ctx.has_active_camera) {

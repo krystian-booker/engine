@@ -1,4 +1,4 @@
-#include <engine/scene/targeting.hpp>
+#include "../include/engine/scene/targeting_v3.hpp"
 #include <engine/scene/world.hpp>
 #include <engine/scene/transform.hpp>
 #include <engine/core/event_dispatcher.hpp>
@@ -8,13 +8,14 @@
 #include <cmath>
 
 namespace engine::scene {
+    using namespace engine::core;
 
 namespace {
 
 Vec3 get_entity_position(World& world, Entity entity) {
     auto* world_transform = world.try_get<WorldTransform>(entity);
     if (world_transform) {
-        return world_transform->get_position();
+        return world_transform->position();
     }
     auto* local_transform = world.try_get<LocalTransform>(entity);
     if (local_transform) {
@@ -133,7 +134,7 @@ std::vector<TargetCandidate> TargetingSystem::find_all_targets(
 
         // Check line of sight if required
         if (targetable.requires_line_of_sight && !targetable.target_through_walls) {
-            candidate.in_line_of_sight = m_line_of_sight_check(world, position, candidate.target_point, targeter);
+            candidate.in_line_of_sight = m_line_of_sight_check(world, position, candidate.aim_pos, targeter);
             if (!candidate.in_line_of_sight) continue;
         }
 
@@ -179,7 +180,7 @@ std::optional<TargetCandidate> TargetingSystem::can_target(
 
     // Check LOS
     if (targetable->requires_line_of_sight && !targetable->target_through_walls) {
-        candidate.in_line_of_sight = m_line_of_sight_check(world, position, candidate.target_point, targeter);
+        candidate.in_line_of_sight = m_line_of_sight_check(world, position, candidate.aim_pos, targeter);
         if (!candidate.in_line_of_sight) return std::nullopt;
     }
 
@@ -224,7 +225,7 @@ void TargetingSystem::lock_on(World& world, Entity targeter, Entity target) {
     event.targeter = targeter;
     event.target = target;
     event.is_hard_lock = true;
-    core::EventDispatcher::instance().dispatch(event);
+    core::events().dispatch(event);
 
     core::log(core::LogLevel::Debug, "Locked on to target");
 }
@@ -256,7 +257,7 @@ void TargetingSystem::unlock(World& world, Entity targeter) {
         event.targeter = targeter;
         event.previous_target = old_target;
         event.reason = TargetLostReason::Manual;
-        core::EventDispatcher::instance().dispatch(event);
+        core::events().dispatch(event);
     }
 
     core::log(core::LogLevel::Debug, "Lock-on released");
@@ -339,7 +340,7 @@ Entity TargetingSystem::switch_target(
 
             for (const auto& c : candidates) {
                 if (c.entity == old_target) continue;
-                Vec3 to_target = c.target_point - position;
+                Vec3 to_target = c.aim_pos - position;
                 float h_angle = get_horizontal_angle(forward, right, to_target);
                 angle_sorted.push_back({h_angle, c.entity});
             }
@@ -382,7 +383,7 @@ Entity TargetingSystem::switch_target(
             float best_diff = 999.0f;
             for (const auto& c : candidates) {
                 if (c.entity == old_target) continue;
-                float target_y = c.target_point.y;
+                float target_y = c.aim_pos.y;
                 float diff = target_y - current_y;
 
                 bool is_correct_direction =
@@ -407,7 +408,7 @@ Entity TargetingSystem::switch_target(
         event.old_target = old_target;
         event.new_target = new_target;
         event.direction = direction;
-        core::EventDispatcher::instance().dispatch(event);
+        core::events().dispatch(event);
 
         return new_target;
     }
@@ -454,7 +455,7 @@ Entity TargetingSystem::cycle_target(World& world, Entity targeter, const Vec3& 
         event.old_target = current;
         event.new_target = new_target;
         event.direction = next ? SwitchDirection::Next : SwitchDirection::Previous;
-        core::EventDispatcher::instance().dispatch(event);
+        core::events().dispatch(event);
     }
 
     return new_target;
@@ -569,9 +570,9 @@ TargetCandidate TargetingSystem::evaluate_target(
 ) {
     TargetCandidate candidate;
     candidate.entity = target;
-    candidate.target_point = get_target_world_point(world, target, targetable);
+    candidate.aim_pos = get_target_world_point(world, target, targetable);
 
-    Vec3 to_target = candidate.target_point - position;
+    Vec3 to_target = candidate.aim_pos - position;
     candidate.distance = glm::length(to_target);
 
     if (candidate.distance > 0.001f) {
@@ -632,7 +633,7 @@ bool TargetingSystem::is_faction_targetable(const TargeterComponent& targeter, c
 }
 
 Vec3 TargetingSystem::get_target_world_point(World& world, Entity target, const TargetableComponent& targetable) const {
-    return transform_offset(targetable.target_point_offset, world, target);
+    return transform_offset(targetable.aim_off, world, target);
 }
 
 void TargetingSystem::notify_target_changed(Entity targeter, Entity old_target, Entity new_target) {
@@ -689,7 +690,7 @@ void targeting_system(World& world, double dt) {
             event.targeter = entity;
             event.previous_target = old_target;
             event.reason = reason;
-            core::EventDispatcher::instance().dispatch(event);
+            core::events().dispatch(event);
         }
     }
 }
@@ -721,7 +722,7 @@ void soft_lock_system(World& world, double dt) {
             auto& targetable = targetable_view.get<TargetableComponent>(target_entity);
             if (!targetable.enabled) continue;
 
-            Vec3 target_point = transform_offset(targetable.target_point_offset, world, target_entity);
+            Vec3 target_point = transform_offset(targetable.aim_off, world, target_entity);
             Vec3 to_target = target_point - position;
             float distance = glm::length(to_target);
 
@@ -776,69 +777,49 @@ void register_targeting_components() {
     using namespace reflect;
 
     // TargetableComponent
-    TypeRegistry::instance().register_component<TargetableComponent>("TargetableComponent")
-        .display_name("Targetable")
-        .category("Combat");
+    TypeRegistry::instance().register_component<TargetableComponent>("TargetableComponent",
+        TypeMeta().set_display_name("Targetable").set_category(TypeCategory::Component));
 
-    TypeRegistry::instance().register_property<TargetableComponent>("enabled",
-        [](const TargetableComponent& c) { return c.enabled; },
-        [](TargetableComponent& c, bool v) { c.enabled = v; })
-        .display_name("Enabled");
+    TypeRegistry::instance().register_property<TargetableComponent, &TargetableComponent::enabled>("enabled",
+        PropertyMeta().set_display_name("Enabled"));
 
-    TypeRegistry::instance().register_property<TargetableComponent>("target_priority",
-        [](const TargetableComponent& c) { return c.target_priority; },
-        [](TargetableComponent& c, float v) { c.target_priority = v; })
-        .display_name("Priority").min(0.0f);
+    TypeRegistry::instance().register_property<TargetableComponent, &TargetableComponent::target_priority>("target_priority",
+        PropertyMeta().set_display_name("Priority").set_range(0.0f, 100.0f));
 
-    TypeRegistry::instance().register_property<TargetableComponent>("faction",
-        [](const TargetableComponent& c) { return c.faction; },
-        [](TargetableComponent& c, const std::string& v) { c.faction = v; })
-        .display_name("Faction");
+    TypeRegistry::instance().register_property<TargetableComponent, &TargetableComponent::faction>("faction",
+        PropertyMeta().set_display_name("Faction"));
 
-    TypeRegistry::instance().register_property<TargetableComponent>("max_target_distance",
-        [](const TargetableComponent& c) { return c.max_target_distance; },
-        [](TargetableComponent& c, float v) { c.max_target_distance = v; })
-        .display_name("Max Distance").min(1.0f);
+    TypeRegistry::instance().register_property<TargetableComponent, &TargetableComponent::aim_off>("aim_off",
+        PropertyMeta().set_display_name("Aim Offset"));
+
+    TypeRegistry::instance().register_property<TargetableComponent, &TargetableComponent::max_target_distance>("max_target_distance",
+        PropertyMeta().set_display_name("Max Distance").set_range(1.0f, 1000.0f));
 
     // TargeterComponent
-    TypeRegistry::instance().register_component<TargeterComponent>("TargeterComponent")
-        .display_name("Targeter")
-        .category("Combat");
+    TypeRegistry::instance().register_component<TargeterComponent>("TargeterComponent",
+        TypeMeta().set_display_name("Targeter").set_category(TypeCategory::Component));
 
-    TypeRegistry::instance().register_property<TargeterComponent>("max_lock_distance",
-        [](const TargeterComponent& c) { return c.max_lock_distance; },
-        [](TargeterComponent& c, float v) { c.max_lock_distance = v; })
-        .display_name("Max Lock Distance").min(1.0f);
+    TypeRegistry::instance().register_property<TargeterComponent, &TargeterComponent::max_lock_distance>("max_lock_distance",
+        PropertyMeta().set_display_name("Max Lock Distance").set_range(1.0f, 1000.0f));
 
-    TypeRegistry::instance().register_property<TargeterComponent>("lock_angle",
-        [](const TargeterComponent& c) { return c.lock_angle; },
-        [](TargeterComponent& c, float v) { c.lock_angle = v; })
-        .display_name("Lock Angle").min(10.0f).max(180.0f);
+    TypeRegistry::instance().register_property<TargeterComponent, &TargeterComponent::lock_angle>("lock_angle",
+        PropertyMeta().set_display_name("Lock Angle").set_range(10.0f, 180.0f));
 
-    TypeRegistry::instance().register_property<TargeterComponent>("soft_lock_enabled",
-        [](const TargeterComponent& c) { return c.soft_lock_enabled; },
-        [](TargeterComponent& c, bool v) { c.soft_lock_enabled = v; })
-        .display_name("Soft Lock Enabled");
+    TypeRegistry::instance().register_property<TargeterComponent, &TargeterComponent::soft_lock_enabled>("soft_lock_enabled",
+        PropertyMeta().set_display_name("Soft Lock Enabled"));
 
-    TypeRegistry::instance().register_property<TargeterComponent>("soft_lock_strength",
-        [](const TargeterComponent& c) { return c.soft_lock_strength; },
-        [](TargeterComponent& c, float v) { c.soft_lock_strength = v; })
-        .display_name("Aim Assist Strength").min(0.0f).max(1.0f);
+    TypeRegistry::instance().register_property<TargeterComponent, &TargeterComponent::soft_lock_strength>("soft_lock_strength",
+        PropertyMeta().set_display_name("Aim Assist Strength").set_range(0.0f, 1.0f));
 
     // TargetIndicatorComponent
-    TypeRegistry::instance().register_component<TargetIndicatorComponent>("TargetIndicatorComponent")
-        .display_name("Target Indicator")
-        .category("Combat/UI");
+    TypeRegistry::instance().register_component<TargetIndicatorComponent>("TargetIndicatorComponent",
+        TypeMeta().set_display_name("Target Indicator").set_category(TypeCategory::Component));
 
-    TypeRegistry::instance().register_property<TargetIndicatorComponent>("show_indicator",
-        [](const TargetIndicatorComponent& c) { return c.show_indicator; },
-        [](TargetIndicatorComponent& c, bool v) { c.show_indicator = v; })
-        .display_name("Show Indicator");
+    TypeRegistry::instance().register_property<TargetIndicatorComponent, &TargetIndicatorComponent::show_indicator>("show_indicator",
+        PropertyMeta().set_display_name("Show Indicator"));
 
-    TypeRegistry::instance().register_property<TargetIndicatorComponent>("indicator_size",
-        [](const TargetIndicatorComponent& c) { return c.indicator_size; },
-        [](TargetIndicatorComponent& c, float v) { c.indicator_size = v; })
-        .display_name("Indicator Size").min(8.0f);
+    TypeRegistry::instance().register_property<TargetIndicatorComponent, &TargetIndicatorComponent::indicator_size>("indicator_size",
+        PropertyMeta().set_display_name("Indicator Size").set_range(8.0f, 256.0f));
 
     core::log(core::LogLevel::Info, "Targeting components registered");
 }

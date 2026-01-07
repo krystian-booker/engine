@@ -37,21 +37,21 @@ AchievementRegistry& AchievementRegistry::instance() {
 
 void AchievementRegistry::register_achievement(const AchievementDefinition& def) {
     if (def.achievement_id.empty()) {
-        core::log_error("achievements", "Cannot register achievement with empty ID");
+        core::log(core::LogLevel::Error, "[Achievements] Cannot register achievement with empty ID");
         return;
     }
 
     if (m_achievements.contains(def.achievement_id)) {
-        core::log_warning("achievements", "Overwriting existing achievement: {}", def.achievement_id);
+        core::log(core::LogLevel::Warn, "[Achievements] Overwriting existing achievement: {}", def.achievement_id);
     }
 
     m_achievements[def.achievement_id] = def;
-    core::log_debug("achievements", "Registered achievement: {} ({})", def.achievement_id, def.display_name);
+    core::log(core::LogLevel::Debug, "[Achievements] Registered achievement: {} ({})", def.achievement_id, def.display_name);
 }
 
 void AchievementRegistry::load_achievements(const std::string& path) {
     // TODO: Load achievements from JSON file
-    core::log_info("achievements", "Loading achievements from: {}", path);
+    core::log(core::LogLevel::Info, "[Achievements] Loading achievements from: {}", path);
 }
 
 const AchievementDefinition* AchievementRegistry::get(const std::string& achievement_id) const {
@@ -119,7 +119,7 @@ int AchievementRegistry::get_total_points() const {
 
 void AchievementRegistry::clear() {
     m_achievements.clear();
-    core::log_info("achievements", "Cleared achievement registry");
+    core::log(core::LogLevel::Info, "[Achievements] Cleared achievement registry");
 }
 
 // ============================================================================

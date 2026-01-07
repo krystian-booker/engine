@@ -1,6 +1,7 @@
 #pragma once
 
-#include <engine/core/types.hpp>
+#include <engine/core/math.hpp>
+#include <cstdint>
 #include <engine/scene/entity.hpp>
 #include <string>
 #include <variant>
@@ -8,6 +9,8 @@
 #include <functional>
 
 namespace engine::quest {
+
+using core::Vec3;
 
 // ============================================================================
 // Objective State

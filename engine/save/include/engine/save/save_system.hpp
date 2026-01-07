@@ -46,7 +46,7 @@ public:
     virtual void on_save(SaveGame& save, World& world) = 0;
 
     // Called during load (before entities are loaded)
-    virtual void on_pre_load(const SaveGame& save, World& world) {}
+    virtual void on_pre_load(const SaveGame& /*save*/, World& /*world*/) {}
 
     // Called during load (after entities are loaded)
     virtual void on_post_load(const SaveGame& save, World& world) = 0;

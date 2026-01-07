@@ -146,12 +146,12 @@ void UIRenderContext::draw_rect(const Rect& rect, const Vec4& color) {
 
     add_rect_vertices(transformed_rect, Vec2(0, 0), Vec2(1, 1), packed_color);
 
-    m_indices.push_back(base + 0);
-    m_indices.push_back(base + 1);
-    m_indices.push_back(base + 2);
-    m_indices.push_back(base + 2);
-    m_indices.push_back(base + 3);
-    m_indices.push_back(base + 0);
+    m_indices.push_back(static_cast<uint16_t>(base + 0));
+    m_indices.push_back(static_cast<uint16_t>(base + 1));
+    m_indices.push_back(static_cast<uint16_t>(base + 2));
+    m_indices.push_back(static_cast<uint16_t>(base + 2));
+    m_indices.push_back(static_cast<uint16_t>(base + 3));
+    m_indices.push_back(static_cast<uint16_t>(base + 0));
 
     m_commands.back().vertex_count += 4;
     m_commands.back().index_count += 6;
@@ -192,7 +192,7 @@ void UIRenderContext::draw_rect_outline(const Rect& rect, const Vec4& color, flo
     draw_rect(Rect(rect.right() - thickness, rect.y + thickness, thickness, rect.height - thickness * 2), color);
 }
 
-void UIRenderContext::draw_rect_outline_rounded(const Rect& rect, const Vec4& color, float thickness, float radius) {
+void UIRenderContext::draw_rect_outline_rounded(const Rect& rect, const Vec4& color, float thickness, float /*radius*/) {
     // Simplified: just draw outline without rounded corners for now
     // A proper implementation would generate arc vertices
     draw_rect_outline(rect, color, thickness);
@@ -225,19 +225,19 @@ void UIRenderContext::draw_image_uv(const Rect& rect, render::TextureHandle text
     m_vertices.push_back({Vec2(transformed_rect.right(), transformed_rect.bottom()), uv_max, packed_color});
     m_vertices.push_back({Vec2(transformed_rect.x, transformed_rect.bottom()), Vec2(uv_min.x, uv_max.y), packed_color});
 
-    m_indices.push_back(base + 0);
-    m_indices.push_back(base + 1);
-    m_indices.push_back(base + 2);
-    m_indices.push_back(base + 2);
-    m_indices.push_back(base + 3);
-    m_indices.push_back(base + 0);
+    m_indices.push_back(static_cast<uint16_t>(base + 0));
+    m_indices.push_back(static_cast<uint16_t>(base + 1));
+    m_indices.push_back(static_cast<uint16_t>(base + 2));
+    m_indices.push_back(static_cast<uint16_t>(base + 2));
+    m_indices.push_back(static_cast<uint16_t>(base + 3));
+    m_indices.push_back(static_cast<uint16_t>(base + 0));
 
     m_commands.back().vertex_count += 4;
     m_commands.back().index_count += 6;
 }
 
 void UIRenderContext::draw_text(const std::string& text, Vec2 position, FontHandle font,
-                                 float size, const Vec4& color, HAlign halign) {
+                                 float /*size*/, const Vec4& color, HAlign halign) {
     if (!m_font_manager || text.empty()) return;
 
     FontAtlas* atlas = m_font_manager->get_font(font);
@@ -306,12 +306,12 @@ void UIRenderContext::draw_text_layout(const TextLayout& layout, Vec2 position,
         m_vertices.push_back({Vec2(x + w, y + h), Vec2(glyph.glyph->x1, glyph.glyph->y1), packed_color});
         m_vertices.push_back({Vec2(x, y + h), Vec2(glyph.glyph->x0, glyph.glyph->y1), packed_color});
 
-        m_indices.push_back(base + 0);
-        m_indices.push_back(base + 1);
-        m_indices.push_back(base + 2);
-        m_indices.push_back(base + 2);
-        m_indices.push_back(base + 3);
-        m_indices.push_back(base + 0);
+        m_indices.push_back(static_cast<uint16_t>(base + 0));
+        m_indices.push_back(static_cast<uint16_t>(base + 1));
+        m_indices.push_back(static_cast<uint16_t>(base + 2));
+        m_indices.push_back(static_cast<uint16_t>(base + 2));
+        m_indices.push_back(static_cast<uint16_t>(base + 3));
+        m_indices.push_back(static_cast<uint16_t>(base + 0));
 
         m_commands.back().vertex_count += 4;
         m_commands.back().index_count += 6;
@@ -371,14 +371,14 @@ void UIRenderContext::add_rounded_rect_vertices(const Rect& rect, float radius, 
     // Generate triangles (fan from center)
     uint32_t vertex_count = static_cast<uint32_t>(m_vertices.size()) - first_vertex;
     for (uint32_t i = 0; i < vertex_count - 1; ++i) {
-        m_indices.push_back(center_idx);
-        m_indices.push_back(first_vertex + i);
-        m_indices.push_back(first_vertex + i + 1);
+        m_indices.push_back(static_cast<uint16_t>(center_idx));
+        m_indices.push_back(static_cast<uint16_t>(first_vertex + i));
+        m_indices.push_back(static_cast<uint16_t>(first_vertex + i + 1));
     }
     // Close the fan
-    m_indices.push_back(center_idx);
-    m_indices.push_back(first_vertex + vertex_count - 1);
-    m_indices.push_back(first_vertex);
+    m_indices.push_back(static_cast<uint16_t>(center_idx));
+    m_indices.push_back(static_cast<uint16_t>(first_vertex + vertex_count - 1));
+    m_indices.push_back(static_cast<uint16_t>(first_vertex));
 
     m_commands.back().vertex_count += vertex_count + 1;
     m_commands.back().index_count += vertex_count * 3;

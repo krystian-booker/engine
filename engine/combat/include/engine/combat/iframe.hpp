@@ -7,6 +7,8 @@
 
 namespace engine::combat {
 
+using engine::core::Vec3;
+
 // Invincibility frame sources
 enum class IFrameSource : uint8_t {
     Dodge,          // Rolling/dodging

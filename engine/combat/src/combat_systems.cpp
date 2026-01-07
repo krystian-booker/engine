@@ -31,7 +31,7 @@ void iframe_system(scene::World& world, double dt) {
                 IFramesEndedEvent event;
                 event.entity = entity;
                 event.source = iframe.source;
-                core::EventDispatcher::instance().dispatch(event);
+                core::events().dispatch(event);
             }
         }
     }
@@ -54,7 +54,7 @@ void grant(scene::World& world, scene::Entity entity, float duration, IFrameSour
     event.entity = entity;
     event.duration = duration;
     event.source = source;
-    core::EventDispatcher::instance().dispatch(event);
+    core::events().dispatch(event);
 }
 
 void grant_default(scene::World& world, scene::Entity entity, IFrameSource source) {
@@ -82,7 +82,7 @@ void cancel(scene::World& world, scene::Entity entity) {
         IFramesEndedEvent event;
         event.entity = entity;
         event.source = source;
-        core::EventDispatcher::instance().dispatch(event);
+        core::events().dispatch(event);
     }
 }
 
@@ -155,7 +155,7 @@ bool AttackPhaseManager::start_attack(scene::World& world, scene::Entity entity,
     AttackStartedEvent start_event;
     start_event.entity = entity;
     start_event.attack_name = attack.name;
-    core::EventDispatcher::instance().dispatch(start_event);
+    core::events().dispatch(start_event);
 
     if (m_on_phase_changed) {
         m_on_phase_changed(entity, old_phase, AttackPhase::Startup);
@@ -166,7 +166,7 @@ bool AttackPhaseManager::start_attack(scene::World& world, scene::Entity entity,
     phase_event.old_phase = old_phase;
     phase_event.new_phase = AttackPhase::Startup;
     phase_event.attack_name = attack.name;
-    core::EventDispatcher::instance().dispatch(phase_event);
+    core::events().dispatch(phase_event);
 
     return true;
 }
@@ -189,14 +189,14 @@ void AttackPhaseManager::cancel_attack(scene::World& world, scene::Entity entity
     end_event.entity = entity;
     end_event.attack_name = attack_name;
     end_event.was_canceled = true;
-    core::EventDispatcher::instance().dispatch(end_event);
+    core::events().dispatch(end_event);
 
     AttackPhaseChangedEvent phase_event;
     phase_event.entity = entity;
     phase_event.old_phase = old_phase;
     phase_event.new_phase = AttackPhase::Canceled;
     phase_event.attack_name = attack_name;
-    core::EventDispatcher::instance().dispatch(phase_event);
+    core::events().dispatch(phase_event);
 }
 
 void AttackPhaseManager::process_attack_input(scene::World& world, scene::Entity entity,
@@ -287,7 +287,7 @@ void AttackPhaseManager::advance_phase(scene::World& world, scene::Entity entity
                 end_event.entity = entity;
                 end_event.attack_name = attack_name;
                 end_event.was_canceled = false;
-                core::EventDispatcher::instance().dispatch(end_event);
+                core::events().dispatch(end_event);
             }
             break;
 
@@ -309,7 +309,7 @@ void AttackPhaseManager::advance_phase(scene::World& world, scene::Entity entity
         event.old_phase = old_phase;
         event.new_phase = new_phase;
         event.attack_name = attack.current_attack;
-        core::EventDispatcher::instance().dispatch(event);
+        core::events().dispatch(event);
     }
 }
 
@@ -401,114 +401,75 @@ void register_combat_components() {
     using namespace reflect;
 
     // HitboxComponent
-    TypeRegistry::instance().register_component<HitboxComponent>("HitboxComponent")
-        .display_name("Hitbox")
-        .category("Combat");
+    TypeRegistry::instance().register_component<HitboxComponent>("HitboxComponent",
+        TypeMeta().set_display_name("Hitbox").set_category(TypeCategory::Component));
 
-    TypeRegistry::instance().register_property<HitboxComponent>("active",
-        [](const HitboxComponent& c) { return c.active; },
-        [](HitboxComponent& c, bool v) { c.active = v; })
-        .display_name("Active");
+    TypeRegistry::instance().register_property<HitboxComponent, &HitboxComponent::active>("active",
+        PropertyMeta().set_display_name("Active"));
 
-    TypeRegistry::instance().register_property<HitboxComponent>("hitbox_id",
-        [](const HitboxComponent& c) { return c.hitbox_id; },
-        [](HitboxComponent& c, const std::string& v) { c.hitbox_id = v; })
-        .display_name("Hitbox ID");
+    TypeRegistry::instance().register_property<HitboxComponent, &HitboxComponent::hitbox_id>("hitbox_id",
+        PropertyMeta().set_display_name("Hitbox ID"));
 
-    TypeRegistry::instance().register_property<HitboxComponent>("base_damage",
-        [](const HitboxComponent& c) { return c.base_damage; },
-        [](HitboxComponent& c, float v) { c.base_damage = v; })
-        .display_name("Base Damage").min(0.0f);
+    TypeRegistry::instance().register_property<HitboxComponent, &HitboxComponent::base_damage>("base_damage",
+        PropertyMeta().set_display_name("Base Damage").set_range(0.0f, 1000.0f)); // Assuming max, no explicit max in old code but set_range requires it? No, set_range(min, max). Old used .min(). Use reasonably high max.
 
-    TypeRegistry::instance().register_property<HitboxComponent>("damage_type",
-        [](const HitboxComponent& c) { return c.damage_type; },
-        [](HitboxComponent& c, const std::string& v) { c.damage_type = v; })
-        .display_name("Damage Type");
+    TypeRegistry::instance().register_property<HitboxComponent, &HitboxComponent::damage_type>("damage_type",
+        PropertyMeta().set_display_name("Damage Type"));
 
-    TypeRegistry::instance().register_property<HitboxComponent>("knockback_force",
-        [](const HitboxComponent& c) { return c.knockback_force; },
-        [](HitboxComponent& c, float v) { c.knockback_force = v; })
-        .display_name("Knockback Force").min(0.0f);
+    TypeRegistry::instance().register_property<HitboxComponent, &HitboxComponent::knockback_force>("knockback_force",
+        PropertyMeta().set_display_name("Knockback Force").set_range(0.0f, 1000.0f));
 
-    TypeRegistry::instance().register_property<HitboxComponent>("radius",
-        [](const HitboxComponent& c) { return c.radius; },
-        [](HitboxComponent& c, float v) { c.radius = v; })
-        .display_name("Radius").min(0.01f);
+    TypeRegistry::instance().register_property<HitboxComponent, &HitboxComponent::radius>("radius",
+        PropertyMeta().set_display_name("Radius").set_range(0.01f, 100.0f));
 
     // HurtboxComponent
-    TypeRegistry::instance().register_component<HurtboxComponent>("HurtboxComponent")
-        .display_name("Hurtbox")
-        .category("Combat");
+    TypeRegistry::instance().register_component<HurtboxComponent>("HurtboxComponent",
+        TypeMeta().set_display_name("Hurtbox").set_category(TypeCategory::Component));
 
-    TypeRegistry::instance().register_property<HurtboxComponent>("enabled",
-        [](const HurtboxComponent& c) { return c.enabled; },
-        [](HurtboxComponent& c, bool v) { c.enabled = v; })
-        .display_name("Enabled");
+    TypeRegistry::instance().register_property<HurtboxComponent, &HurtboxComponent::enabled>("enabled",
+        PropertyMeta().set_display_name("Enabled"));
 
-    TypeRegistry::instance().register_property<HurtboxComponent>("hurtbox_type",
-        [](const HurtboxComponent& c) { return c.hurtbox_type; },
-        [](HurtboxComponent& c, const std::string& v) { c.hurtbox_type = v; })
-        .display_name("Hurtbox Type");
+    TypeRegistry::instance().register_property<HurtboxComponent, &HurtboxComponent::hurtbox_type>("hurtbox_type",
+        PropertyMeta().set_display_name("Hurtbox Type"));
 
-    TypeRegistry::instance().register_property<HurtboxComponent>("damage_multiplier",
-        [](const HurtboxComponent& c) { return c.damage_multiplier; },
-        [](HurtboxComponent& c, float v) { c.damage_multiplier = v; })
-        .display_name("Damage Multiplier").min(0.0f);
+    TypeRegistry::instance().register_property<HurtboxComponent, &HurtboxComponent::damage_multiplier>("damage_multiplier",
+        PropertyMeta().set_display_name("Damage Multiplier").set_range(0.0f, 100.0f));
 
-    TypeRegistry::instance().register_property<HurtboxComponent>("radius",
-        [](const HurtboxComponent& c) { return c.radius; },
-        [](HurtboxComponent& c, float v) { c.radius = v; })
-        .display_name("Radius").min(0.01f);
+    TypeRegistry::instance().register_property<HurtboxComponent, &HurtboxComponent::radius>("radius",
+        PropertyMeta().set_display_name("Radius").set_range(0.01f, 100.0f));
 
     // DamageReceiverComponent
-    TypeRegistry::instance().register_component<DamageReceiverComponent>("DamageReceiverComponent")
-        .display_name("Damage Receiver")
-        .category("Combat");
+    TypeRegistry::instance().register_component<DamageReceiverComponent>("DamageReceiverComponent",
+        TypeMeta().set_display_name("Damage Receiver").set_category(TypeCategory::Component));
 
-    TypeRegistry::instance().register_property<DamageReceiverComponent>("max_poise",
-        [](const DamageReceiverComponent& c) { return c.max_poise; },
-        [](DamageReceiverComponent& c, float v) { c.max_poise = v; })
-        .display_name("Max Poise").min(0.0f);
+    TypeRegistry::instance().register_property<DamageReceiverComponent, &DamageReceiverComponent::max_poise>("max_poise",
+        PropertyMeta().set_display_name("Max Poise").set_range(0.0f, 1000.0f));
 
-    TypeRegistry::instance().register_property<DamageReceiverComponent>("block_damage_reduction",
-        [](const DamageReceiverComponent& c) { return c.block_damage_reduction; },
-        [](DamageReceiverComponent& c, float v) { c.block_damage_reduction = v; })
-        .display_name("Block Reduction").min(0.0f).max(1.0f);
+    TypeRegistry::instance().register_property<DamageReceiverComponent, &DamageReceiverComponent::block_damage_reduction>("block_damage_reduction",
+        PropertyMeta().set_display_name("Block Reduction").set_range(0.0f, 1.0f));
 
     // IFrameComponent
-    TypeRegistry::instance().register_component<IFrameComponent>("IFrameComponent")
-        .display_name("I-Frames")
-        .category("Combat");
+    TypeRegistry::instance().register_component<IFrameComponent>("IFrameComponent",
+        TypeMeta().set_display_name("I-Frames").set_category(TypeCategory::Component));
 
-    TypeRegistry::instance().register_property<IFrameComponent>("is_invincible",
-        [](const IFrameComponent& c) { return c.is_invincible; },
-        [](IFrameComponent& c, bool v) { c.is_invincible = v; })
-        .display_name("Is Invincible").read_only();
+    TypeRegistry::instance().register_property<IFrameComponent, &IFrameComponent::is_invincible>("is_invincible",
+        PropertyMeta().set_display_name("Is Invincible").set_read_only(true));
 
-    TypeRegistry::instance().register_property<IFrameComponent>("flash_enabled",
-        [](const IFrameComponent& c) { return c.flash_enabled; },
-        [](IFrameComponent& c, bool v) { c.flash_enabled = v; })
-        .display_name("Flash Enabled");
+    TypeRegistry::instance().register_property<IFrameComponent, &IFrameComponent::flash_enabled>("flash_enabled",
+        PropertyMeta().set_display_name("Flash Enabled"));
 
-    TypeRegistry::instance().register_property<IFrameComponent>("flash_interval",
-        [](const IFrameComponent& c) { return c.flash_interval; },
-        [](IFrameComponent& c, float v) { c.flash_interval = v; })
-        .display_name("Flash Interval").min(0.01f);
+    TypeRegistry::instance().register_property<IFrameComponent, &IFrameComponent::flash_interval>("flash_interval",
+        PropertyMeta().set_display_name("Flash Interval").set_range(0.01f, 5.0f));
 
     // AttackPhaseComponent
-    TypeRegistry::instance().register_component<AttackPhaseComponent>("AttackPhaseComponent")
-        .display_name("Attack Phase")
-        .category("Combat");
+    TypeRegistry::instance().register_component<AttackPhaseComponent>("AttackPhaseComponent",
+        TypeMeta().set_display_name("Attack Phase").set_category(TypeCategory::Component));
 
-    TypeRegistry::instance().register_property<AttackPhaseComponent>("current_attack",
-        [](const AttackPhaseComponent& c) { return c.current_attack; },
-        [](AttackPhaseComponent& c, const std::string& v) { c.current_attack = v; })
-        .display_name("Current Attack").read_only();
+    TypeRegistry::instance().register_property<AttackPhaseComponent, &AttackPhaseComponent::current_attack>("current_attack",
+        PropertyMeta().set_display_name("Current Attack").set_read_only(true));
 
-    TypeRegistry::instance().register_property<AttackPhaseComponent>("combo_count",
-        [](const AttackPhaseComponent& c) { return c.combo_count; },
-        [](AttackPhaseComponent& c, int v) { c.combo_count = v; })
-        .display_name("Combo Count").read_only();
+    TypeRegistry::instance().register_property<AttackPhaseComponent, &AttackPhaseComponent::combo_count>("combo_count",
+        PropertyMeta().set_display_name("Combo Count").set_read_only(true));
 
     core::log(core::LogLevel::Info, "Combat components registered");
 }

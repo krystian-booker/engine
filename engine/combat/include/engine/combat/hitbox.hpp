@@ -8,6 +8,8 @@
 
 namespace engine::combat {
 
+using engine::core::Vec3;
+
 // Collision shape for hitboxes and hurtboxes
 enum class CollisionShape : uint8_t {
     Sphere,

@@ -23,21 +23,21 @@ ItemRegistry& ItemRegistry::instance() {
 
 void ItemRegistry::register_item(const ItemDefinition& def) {
     if (def.item_id.empty()) {
-        core::log_error("inventory", "Cannot register item with empty ID");
+        core::log(core::LogLevel::Error, "[Inventory] Cannot register item with empty ID");
         return;
     }
 
     if (m_items.contains(def.item_id)) {
-        core::log_warning("inventory", "Overwriting existing item definition: {}", def.item_id);
+        core::log(core::LogLevel::Warn, "[Inventory] Overwriting existing item definition: {}", def.item_id);
     }
 
     m_items[def.item_id] = def;
-    core::log_debug("inventory", "Registered item: {} ({})", def.item_id, def.display_name);
+    core::log(core::LogLevel::Debug, "[Inventory] Registered item: {} ({})", def.item_id, def.display_name);
 }
 
 void ItemRegistry::load_items(const std::string& path) {
     // TODO: Load items from JSON file
-    core::log_info("inventory", "Loading items from: {}", path);
+    core::log(core::LogLevel::Info, "[Inventory] Loading items from: {}", path);
 }
 
 const ItemDefinition* ItemRegistry::get(const std::string& item_id) const {
@@ -103,7 +103,7 @@ std::vector<std::string> ItemRegistry::get_items_by_tag(const std::string& tag) 
 
 void ItemRegistry::clear() {
     m_items.clear();
-    core::log_info("inventory", "Cleared item registry");
+    core::log(core::LogLevel::Info, "[Inventory] Cleared item registry");
 }
 
 // ============================================================================

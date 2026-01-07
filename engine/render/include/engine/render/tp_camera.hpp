@@ -1,12 +1,18 @@
 #pragma once
 
+#include <cstdint>
 #include <engine/scene/entity.hpp>
 #include <engine/scene/world.hpp>
 #include <engine/core/math.hpp>
 #include <functional>
-#include <cstdint>
 
 namespace engine::render {
+
+using core::Vec3;
+using core::Vec2;
+using core::Vec4;
+using core::Quat;
+using core::Mat4;
 
 // ============================================================================
 // Camera Modes
@@ -247,13 +253,13 @@ public:
     static CameraPreset get_default_aiming_preset();
     static CameraPreset get_default_lock_on_preset();
 
-private:
-    ThirdPersonCameraSystem();
-    ~ThirdPersonCameraSystem() = default;
-
     // Internal update
     void update_camera(scene::World& world, scene::Entity camera,
                        ThirdPersonCameraComponent& cam, float dt);
+
+private:
+    ThirdPersonCameraSystem();
+    ~ThirdPersonCameraSystem() = default;
 
     // Calculate pivot position (point camera orbits around)
     Vec3 calculate_pivot(scene::World& world, scene::Entity target,

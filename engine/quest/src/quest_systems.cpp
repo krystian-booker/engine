@@ -15,7 +15,7 @@ namespace {
 Vec3 get_entity_position(scene::World& world, scene::Entity entity) {
     auto* world_transform = world.try_get<scene::WorldTransform>(entity);
     if (world_transform) {
-        return world_transform->get_position();
+        return world_transform->position();
     }
     auto* local_transform = world.try_get<scene::LocalTransform>(entity);
     if (local_transform) {
@@ -198,134 +198,90 @@ void register_quest_components() {
     using namespace reflect;
 
     // WaypointComponent
-    TypeRegistry::instance().register_component<WaypointComponent>("WaypointComponent")
-        .display_name("Waypoint")
-        .category("Quest");
+    TypeRegistry::instance().register_component<WaypointComponent>("WaypointComponent",
+        TypeMeta().set_display_name("Waypoint").set_category(TypeCategory::Component));
 
-    TypeRegistry::instance().register_property<WaypointComponent>("enabled",
-        [](const WaypointComponent& c) { return c.enabled; },
-        [](WaypointComponent& c, bool v) { c.enabled = v; })
-        .display_name("Enabled");
+    TypeRegistry::instance().register_property<WaypointComponent, &WaypointComponent::enabled>("enabled",
+        PropertyMeta().set_display_name("Enabled"));
 
-    TypeRegistry::instance().register_property<WaypointComponent>("label",
-        [](const WaypointComponent& c) { return c.label; },
-        [](WaypointComponent& c, const std::string& v) { c.label = v; })
-        .display_name("Label");
+    TypeRegistry::instance().register_property<WaypointComponent, &WaypointComponent::label>("label",
+        PropertyMeta().set_display_name("Label"));
 
-    TypeRegistry::instance().register_property<WaypointComponent>("show_distance",
-        [](const WaypointComponent& c) { return c.show_distance; },
-        [](WaypointComponent& c, bool v) { c.show_distance = v; })
-        .display_name("Show Distance");
+    TypeRegistry::instance().register_property<WaypointComponent, &WaypointComponent::show_distance>("show_distance",
+        PropertyMeta().set_display_name("Show Distance"));
 
     // QuestTriggerComponent
-    TypeRegistry::instance().register_component<QuestTriggerComponent>("QuestTriggerComponent")
-        .display_name("Quest Trigger")
-        .category("Quest");
+    TypeRegistry::instance().register_component<QuestTriggerComponent>("QuestTriggerComponent",
+        TypeMeta().set_display_name("Quest Trigger").set_category(TypeCategory::Component));
 
-    TypeRegistry::instance().register_property<QuestTriggerComponent>("quest_id",
-        [](const QuestTriggerComponent& c) { return c.quest_id; },
-        [](QuestTriggerComponent& c, const std::string& v) { c.quest_id = v; })
-        .display_name("Quest ID");
+    TypeRegistry::instance().register_property<QuestTriggerComponent, &QuestTriggerComponent::quest_id>("quest_id",
+        PropertyMeta().set_display_name("Quest ID"));
 
-    TypeRegistry::instance().register_property<QuestTriggerComponent>("objective_id",
-        [](const QuestTriggerComponent& c) { return c.objective_id; },
-        [](QuestTriggerComponent& c, const std::string& v) { c.objective_id = v; })
-        .display_name("Objective ID");
+    TypeRegistry::instance().register_property<QuestTriggerComponent, &QuestTriggerComponent::objective_id>("objective_id",
+        PropertyMeta().set_display_name("Objective ID"));
 
-    TypeRegistry::instance().register_property<QuestTriggerComponent>("radius",
-        [](const QuestTriggerComponent& c) { return c.radius; },
-        [](QuestTriggerComponent& c, float v) { c.radius = v; })
-        .display_name("Radius").min(0.1f);
+    TypeRegistry::instance().register_property<QuestTriggerComponent, &QuestTriggerComponent::radius>("radius",
+        PropertyMeta().set_display_name("Radius").set_range(0.1f, 1000.0f));
 
-    TypeRegistry::instance().register_property<QuestTriggerComponent>("one_shot",
-        [](const QuestTriggerComponent& c) { return c.one_shot; },
-        [](QuestTriggerComponent& c, bool v) { c.one_shot = v; })
-        .display_name("One Shot");
+    TypeRegistry::instance().register_property<QuestTriggerComponent, &QuestTriggerComponent::one_shot>("one_shot",
+        PropertyMeta().set_display_name("One Shot"));
 
     // QuestGiverComponent
-    TypeRegistry::instance().register_component<QuestGiverComponent>("QuestGiverComponent")
-        .display_name("Quest Giver")
-        .category("Quest");
+    TypeRegistry::instance().register_component<QuestGiverComponent>("QuestGiverComponent",
+        TypeMeta().set_display_name("Quest Giver").set_category(TypeCategory::Component));
 
-    TypeRegistry::instance().register_property<QuestGiverComponent>("npc_name",
-        [](const QuestGiverComponent& c) { return c.npc_name; },
-        [](QuestGiverComponent& c, const std::string& v) { c.npc_name = v; })
-        .display_name("NPC Name");
+    TypeRegistry::instance().register_property<QuestGiverComponent, &QuestGiverComponent::npc_name>("npc_name",
+        PropertyMeta().set_display_name("NPC Name"));
 
-    TypeRegistry::instance().register_property<QuestGiverComponent>("interaction_range",
-        [](const QuestGiverComponent& c) { return c.interaction_range; },
-        [](QuestGiverComponent& c, float v) { c.interaction_range = v; })
-        .display_name("Interaction Range").min(0.5f);
+    TypeRegistry::instance().register_property<QuestGiverComponent, &QuestGiverComponent::interaction_range>("interaction_range",
+        PropertyMeta().set_display_name("Interaction Range").set_range(0.5f, 100.0f));
 
-    TypeRegistry::instance().register_property<QuestGiverComponent>("show_indicator",
-        [](const QuestGiverComponent& c) { return c.show_indicator; },
-        [](QuestGiverComponent& c, bool v) { c.show_indicator = v; })
-        .display_name("Show Indicator");
+    TypeRegistry::instance().register_property<QuestGiverComponent, &QuestGiverComponent::show_indicator>("show_indicator",
+        PropertyMeta().set_display_name("Show Indicator"));
 
     // QuestLogComponent
-    TypeRegistry::instance().register_component<QuestLogComponent>("QuestLogComponent")
-        .display_name("Quest Log")
-        .category("Quest");
+    TypeRegistry::instance().register_component<QuestLogComponent>("QuestLogComponent",
+        TypeMeta().set_display_name("Quest Log").set_category(TypeCategory::Component));
 
     // QuestParticipantComponent
-    TypeRegistry::instance().register_component<QuestParticipantComponent>("QuestParticipantComponent")
-        .display_name("Quest Participant")
-        .category("Quest");
+    TypeRegistry::instance().register_component<QuestParticipantComponent>("QuestParticipantComponent",
+        TypeMeta().set_display_name("Quest Participant").set_category(TypeCategory::Component));
 
-    TypeRegistry::instance().register_property<QuestParticipantComponent>("quest_id",
-        [](const QuestParticipantComponent& c) { return c.quest_id; },
-        [](QuestParticipantComponent& c, const std::string& v) { c.quest_id = v; })
-        .display_name("Quest ID");
+    TypeRegistry::instance().register_property<QuestParticipantComponent, &QuestParticipantComponent::quest_id>("quest_id",
+        PropertyMeta().set_display_name("Quest ID"));
 
-    TypeRegistry::instance().register_property<QuestParticipantComponent>("role",
-        [](const QuestParticipantComponent& c) { return c.role; },
-        [](QuestParticipantComponent& c, const std::string& v) { c.role = v; })
-        .display_name("Role");
+    TypeRegistry::instance().register_property<QuestParticipantComponent, &QuestParticipantComponent::role>("role",
+        PropertyMeta().set_display_name("Role"));
 
     // KillTrackerComponent
-    TypeRegistry::instance().register_component<KillTrackerComponent>("KillTrackerComponent")
-        .display_name("Kill Tracker")
-        .category("Quest");
+    TypeRegistry::instance().register_component<KillTrackerComponent>("KillTrackerComponent",
+        TypeMeta().set_display_name("Kill Tracker").set_category(TypeCategory::Component));
 
-    TypeRegistry::instance().register_property<KillTrackerComponent>("enemy_type",
-        [](const KillTrackerComponent& c) { return c.enemy_type; },
-        [](KillTrackerComponent& c, const std::string& v) { c.enemy_type = v; })
-        .display_name("Enemy Type");
+    TypeRegistry::instance().register_property<KillTrackerComponent, &KillTrackerComponent::enemy_type>("enemy_type",
+        PropertyMeta().set_display_name("Enemy Type"));
 
-    TypeRegistry::instance().register_property<KillTrackerComponent>("faction",
-        [](const KillTrackerComponent& c) { return c.faction; },
-        [](KillTrackerComponent& c, const std::string& v) { c.faction = v; })
-        .display_name("Faction");
+    TypeRegistry::instance().register_property<KillTrackerComponent, &KillTrackerComponent::faction>("faction",
+        PropertyMeta().set_display_name("Faction"));
 
     // CollectionItemComponent
-    TypeRegistry::instance().register_component<CollectionItemComponent>("CollectionItemComponent")
-        .display_name("Collection Item")
-        .category("Quest");
+    TypeRegistry::instance().register_component<CollectionItemComponent>("CollectionItemComponent",
+        TypeMeta().set_display_name("Collection Item").set_category(TypeCategory::Component));
 
-    TypeRegistry::instance().register_property<CollectionItemComponent>("counter_key",
-        [](const CollectionItemComponent& c) { return c.counter_key; },
-        [](CollectionItemComponent& c, const std::string& v) { c.counter_key = v; })
-        .display_name("Counter Key");
+    TypeRegistry::instance().register_property<CollectionItemComponent, &CollectionItemComponent::counter_key>("counter_key",
+        PropertyMeta().set_display_name("Counter Key"));
 
-    TypeRegistry::instance().register_property<CollectionItemComponent>("amount",
-        [](const CollectionItemComponent& c) { return c.amount; },
-        [](CollectionItemComponent& c, int32_t v) { c.amount = v; })
-        .display_name("Amount").min(1);
+    TypeRegistry::instance().register_property<CollectionItemComponent, &CollectionItemComponent::amount>("amount",
+        PropertyMeta().set_display_name("Amount").set_range(1.0f, 10000.0f));
 
     // QuestZoneComponent
-    TypeRegistry::instance().register_component<QuestZoneComponent>("QuestZoneComponent")
-        .display_name("Quest Zone")
-        .category("Quest");
+    TypeRegistry::instance().register_component<QuestZoneComponent>("QuestZoneComponent",
+        TypeMeta().set_display_name("Quest Zone").set_category(TypeCategory::Component));
 
-    TypeRegistry::instance().register_property<QuestZoneComponent>("zone_id",
-        [](const QuestZoneComponent& c) { return c.zone_id; },
-        [](QuestZoneComponent& c, const std::string& v) { c.zone_id = v; })
-        .display_name("Zone ID");
+    TypeRegistry::instance().register_property<QuestZoneComponent, &QuestZoneComponent::zone_id>("zone_id",
+        PropertyMeta().set_display_name("Zone ID"));
 
-    TypeRegistry::instance().register_property<QuestZoneComponent>("zone_name",
-        [](const QuestZoneComponent& c) { return c.zone_name; },
-        [](QuestZoneComponent& c, const std::string& v) { c.zone_name = v; })
-        .display_name("Zone Name");
+    TypeRegistry::instance().register_property<QuestZoneComponent, &QuestZoneComponent::zone_name>("zone_name",
+        PropertyMeta().set_display_name("Zone Name"));
 
     core::log(core::LogLevel::Info, "Quest components registered");
 }

@@ -14,7 +14,7 @@ namespace {
 Vec3 get_entity_position(scene::World& world, scene::Entity entity) {
     auto* world_transform = world.try_get<scene::WorldTransform>(entity);
     if (world_transform) {
-        return world_transform->get_position();
+        return world_transform->position();
     }
     auto* local_transform = world.try_get<scene::LocalTransform>(entity);
     if (local_transform) {
@@ -152,7 +152,7 @@ void PerceptionSystem::emit_noise(scene::World& world, const Vec3& position, flo
         event.loudness = effective_loudness;
         event.noise_type = type;
         event.noise_source = source;
-        core::EventDispatcher::instance().dispatch(event);
+        core::events().dispatch(event);
     }
 }
 
@@ -192,7 +192,7 @@ void PerceptionSystem::alert_to_target(scene::World& world, scene::Entity ai, sc
     event.entity = ai;
     event.cause = target;
     event.alert_position = target_pos;
-    core::EventDispatcher::instance().dispatch(event);
+    core::events().dispatch(event);
 }
 
 bool PerceptionSystem::can_see(scene::World& world, scene::Entity observer, scene::Entity target) {
@@ -234,7 +234,7 @@ void PerceptionSystem::set_los_check(PerceptionLOSCheck check) {
 
 void PerceptionSystem::update_sight(scene::World& world, scene::Entity entity,
                                      AIPerceptionComponent& perception, const Vec3& position,
-                                     const Vec3& forward, float dt) {
+                                     const Vec3& forward, float /*dt*/) {
     // Check all potential targets (entities with transform)
     auto view = world.view<scene::LocalTransform>();
 
@@ -293,7 +293,7 @@ void PerceptionSystem::update_sight(scene::World& world, scene::Entity entity,
             event.perceiver = entity;
             event.perceived = target;
             event.sense = PerceptionSense::Sight;
-            core::EventDispatcher::instance().dispatch(event);
+            core::events().dispatch(event);
         }
 
         // Update perception
@@ -314,7 +314,7 @@ void PerceptionSystem::update_sight(scene::World& world, scene::Entity entity,
 }
 
 void PerceptionSystem::update_hearing(scene::World& world, scene::Entity entity,
-                                       AIPerceptionComponent& perception, const Vec3& position, float dt) {
+                                       AIPerceptionComponent& /*perception*/, const Vec3& position, float /*dt*/) {
     // Process noise emitters
     auto view = world.view<AINoiseEmitterComponent>();
 
@@ -371,7 +371,7 @@ void PerceptionSystem::update_awareness(AIPerceptionComponent& perception, float
             event.old_awareness = old_awareness;
             event.new_awareness = pe.awareness;
             event.became_alert = true;
-            core::EventDispatcher::instance().dispatch(event);
+            core::events().dispatch(event);
         }
 
         // Clear current perception flag for next frame
@@ -394,8 +394,8 @@ void PerceptionSystem::cleanup_perceptions(AIPerceptionComponent& perception, fl
     );
 }
 
-bool PerceptionSystem::default_los_check(scene::World& world, const Vec3& from, const Vec3& to,
-                                          uint32_t layer_mask, scene::Entity exclude) {
+bool PerceptionSystem::default_los_check(scene::World& /*world*/, const Vec3& /*from*/, const Vec3& /*to*/,
+                                          uint32_t /*layer_mask*/, scene::Entity /*exclude*/) {
     // Default: no occlusion (would use physics raycast in real implementation)
     return true;
 }
@@ -422,7 +422,7 @@ void perception_system(scene::World& world, double dt) {
     PerceptionSystem::instance().update(world, static_cast<float>(dt));
 }
 
-void noise_emitter_system(scene::World& world, double dt) {
+void noise_emitter_system(scene::World& /*world*/, double /*dt*/) {
     // Handled within perception_system for efficiency
 }
 
@@ -430,48 +430,42 @@ void noise_emitter_system(scene::World& world, double dt) {
 // Component Registration
 // ============================================================================
 
+// Fix for line 17: get_position() -> position()
+// I will just use multi_replace for line 17 separately to be safe or include it?
+// Wait, replace_file_content is for the whole block.
+// I will fix line 17 with multi_replace first or AFTER.
+// Actually, I can do it in this tool call if I use multi_replace.
+// But I am using replace_file_content for the function.
+// I'll stick to replace_file_content for the FUNCTION and multi_replace for line 17.
+
 void register_perception_components() {
     using namespace reflect;
 
     // AIPerceptionComponent
-    TypeRegistry::instance().register_component<AIPerceptionComponent>("AIPerceptionComponent")
-        .display_name("AI Perception")
-        .category("AI");
+    TypeRegistry::instance().register_component<AIPerceptionComponent>("AIPerceptionComponent",
+        TypeMeta().set_display_name("AI Perception").set_category(TypeCategory::Component));
 
-    TypeRegistry::instance().register_property<AIPerceptionComponent>("enabled",
-        [](const AIPerceptionComponent& c) { return c.enabled; },
-        [](AIPerceptionComponent& c, bool v) { c.enabled = v; })
-        .display_name("Enabled");
+    TypeRegistry::instance().register_property<AIPerceptionComponent, &AIPerceptionComponent::enabled>("enabled",
+        PropertyMeta().set_display_name("Enabled"));
 
-    TypeRegistry::instance().register_property<AIPerceptionComponent>("sight_range",
-        [](const AIPerceptionComponent& c) { return c.sight_range; },
-        [](AIPerceptionComponent& c, float v) { c.sight_range = v; })
-        .display_name("Sight Range").min(1.0f);
+    TypeRegistry::instance().register_property<AIPerceptionComponent, &AIPerceptionComponent::sight_range>("sight_range",
+        PropertyMeta().set_display_name("Sight Range").set_range(1.0f, 1000.0f));
 
-    TypeRegistry::instance().register_property<AIPerceptionComponent>("sight_angle",
-        [](const AIPerceptionComponent& c) { return c.sight_angle; },
-        [](AIPerceptionComponent& c, float v) { c.sight_angle = v; })
-        .display_name("Sight Angle").min(10.0f).max(360.0f);
+    TypeRegistry::instance().register_property<AIPerceptionComponent, &AIPerceptionComponent::sight_angle>("sight_angle",
+        PropertyMeta().set_display_name("Sight Angle").set_range(10.0f, 360.0f));
 
-    TypeRegistry::instance().register_property<AIPerceptionComponent>("hearing_range",
-        [](const AIPerceptionComponent& c) { return c.hearing_range; },
-        [](AIPerceptionComponent& c, float v) { c.hearing_range = v; })
-        .display_name("Hearing Range").min(0.0f);
+    TypeRegistry::instance().register_property<AIPerceptionComponent, &AIPerceptionComponent::hearing_range>("hearing_range",
+        PropertyMeta().set_display_name("Hearing Range").set_range(0.0f, 200.0f));
 
     // AINoiseEmitterComponent
-    TypeRegistry::instance().register_component<AINoiseEmitterComponent>("AINoiseEmitterComponent")
-        .display_name("AI Noise Emitter")
-        .category("AI");
+    TypeRegistry::instance().register_component<AINoiseEmitterComponent>("AINoiseEmitterComponent",
+        TypeMeta().set_display_name("AI Noise Emitter").set_category(TypeCategory::Component));
 
-    TypeRegistry::instance().register_property<AINoiseEmitterComponent>("noise_radius",
-        [](const AINoiseEmitterComponent& c) { return c.noise_radius; },
-        [](AINoiseEmitterComponent& c, float v) { c.noise_radius = v; })
-        .display_name("Noise Radius").min(0.0f);
+    TypeRegistry::instance().register_property<AINoiseEmitterComponent, &AINoiseEmitterComponent::noise_radius>("noise_radius",
+        PropertyMeta().set_display_name("Noise Radius").set_range(0.0f, 200.0f));
 
-    TypeRegistry::instance().register_property<AINoiseEmitterComponent>("loudness",
-        [](const AINoiseEmitterComponent& c) { return c.loudness; },
-        [](AINoiseEmitterComponent& c, float v) { c.loudness = v; })
-        .display_name("Loudness").min(0.0f).max(2.0f);
+    TypeRegistry::instance().register_property<AINoiseEmitterComponent, &AINoiseEmitterComponent::loudness>("loudness",
+        PropertyMeta().set_display_name("Loudness").set_range(0.0f, 2.0f));
 
     core::log(core::LogLevel::Info, "Perception components registered");
 }

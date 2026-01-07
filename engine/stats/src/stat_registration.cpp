@@ -8,94 +8,98 @@ void register_stats_components() {
     auto& registry = reflect::TypeRegistry::instance();
 
     // Register StatType enum
-    registry.register_enum<StatType>("StatType")
-        .value("Health", StatType::Health)
-        .value("MaxHealth", StatType::MaxHealth)
-        .value("HealthRegen", StatType::HealthRegen)
-        .value("Stamina", StatType::Stamina)
-        .value("MaxStamina", StatType::MaxStamina)
-        .value("StaminaRegen", StatType::StaminaRegen)
-        .value("Mana", StatType::Mana)
-        .value("MaxMana", StatType::MaxMana)
-        .value("ManaRegen", StatType::ManaRegen)
-        .value("Strength", StatType::Strength)
-        .value("Dexterity", StatType::Dexterity)
-        .value("Intelligence", StatType::Intelligence)
-        .value("Vitality", StatType::Vitality)
-        .value("Luck", StatType::Luck)
-        .value("Endurance", StatType::Endurance)
-        .value("Agility", StatType::Agility)
-        .value("Wisdom", StatType::Wisdom)
-        .value("Charisma", StatType::Charisma)
-        .value("PhysicalDamage", StatType::PhysicalDamage)
-        .value("MagicDamage", StatType::MagicDamage)
-        .value("PhysicalDefense", StatType::PhysicalDefense)
-        .value("MagicDefense", StatType::MagicDefense)
-        .value("CritChance", StatType::CritChance)
-        .value("CritDamage", StatType::CritDamage)
-        .value("ArmorPenetration", StatType::ArmorPenetration)
-        .value("MagicPenetration", StatType::MagicPenetration)
-        .value("MoveSpeed", StatType::MoveSpeed)
-        .value("AttackSpeed", StatType::AttackSpeed)
-        .value("CastSpeed", StatType::CastSpeed)
-        .value("CooldownReduction", StatType::CooldownReduction)
-        .value("DodgeChance", StatType::DodgeChance)
-        .value("BlockChance", StatType::BlockChance)
-        .value("BlockAmount", StatType::BlockAmount)
-        .value("Poise", StatType::Poise)
-        .value("PoiseRegen", StatType::PoiseRegen)
-        .value("FireResistance", StatType::FireResistance)
-        .value("IceResistance", StatType::IceResistance)
-        .value("LightningResistance", StatType::LightningResistance)
-        .value("PoisonResistance", StatType::PoisonResistance)
-        .value("BleedResistance", StatType::BleedResistance)
-        .value("ExperienceGain", StatType::ExperienceGain)
-        .value("GoldFind", StatType::GoldFind)
-        .value("ItemFind", StatType::ItemFind)
-        .value("CarryCapacity", StatType::CarryCapacity);
+    registry.register_enum<StatType>("StatType", {
+        {StatType::Health, "Health"},
+        {StatType::MaxHealth, "MaxHealth"},
+        {StatType::HealthRegen, "HealthRegen"},
+        {StatType::Stamina, "Stamina"},
+        {StatType::MaxStamina, "MaxStamina"},
+        {StatType::StaminaRegen, "StaminaRegen"},
+        {StatType::Mana, "Mana"},
+        {StatType::MaxMana, "MaxMana"},
+        {StatType::ManaRegen, "ManaRegen"},
+        {StatType::Strength, "Strength"},
+        {StatType::Dexterity, "Dexterity"},
+        {StatType::Intelligence, "Intelligence"},
+        {StatType::Vitality, "Vitality"},
+        {StatType::Luck, "Luck"},
+        {StatType::Endurance, "Endurance"},
+        {StatType::Agility, "Agility"},
+        {StatType::Wisdom, "Wisdom"},
+        {StatType::Charisma, "Charisma"},
+        {StatType::PhysicalDamage, "PhysicalDamage"},
+        {StatType::MagicDamage, "MagicDamage"},
+        {StatType::PhysicalDefense, "PhysicalDefense"},
+        {StatType::MagicDefense, "MagicDefense"},
+        {StatType::CritChance, "CritChance"},
+        {StatType::CritDamage, "CritDamage"},
+        {StatType::ArmorPenetration, "ArmorPenetration"},
+        {StatType::MagicPenetration, "MagicPenetration"},
+        {StatType::MoveSpeed, "MoveSpeed"},
+        {StatType::AttackSpeed, "AttackSpeed"},
+        {StatType::CastSpeed, "CastSpeed"},
+        {StatType::CooldownReduction, "CooldownReduction"},
+        {StatType::DodgeChance, "DodgeChance"},
+        {StatType::BlockChance, "BlockChance"},
+        {StatType::BlockAmount, "BlockAmount"},
+        {StatType::Poise, "Poise"},
+        {StatType::PoiseRegen, "PoiseRegen"},
+        {StatType::FireResistance, "FireResistance"},
+        {StatType::IceResistance, "IceResistance"},
+        {StatType::LightningResistance, "LightningResistance"},
+        {StatType::PoisonResistance, "PoisonResistance"},
+        {StatType::BleedResistance, "BleedResistance"},
+        {StatType::ExperienceGain, "ExperienceGain"},
+        {StatType::GoldFind, "GoldFind"},
+        {StatType::ItemFind, "ItemFind"},
+        {StatType::CarryCapacity, "CarryCapacity"}
+    });
 
     // Register ModifierType enum
-    registry.register_enum<ModifierType>("ModifierType")
-        .value("Flat", ModifierType::Flat)
-        .value("PercentAdd", ModifierType::PercentAdd)
-        .value("PercentMult", ModifierType::PercentMult)
-        .value("Override", ModifierType::Override);
+    registry.register_enum<ModifierType>("ModifierType", {
+        {ModifierType::Flat, "Flat"},
+        {ModifierType::PercentAdd, "PercentAdd"},
+        {ModifierType::PercentMult, "PercentMult"},
+        {ModifierType::Override, "Override"}
+    });
 
     // Register ModifierSource enum
-    registry.register_enum<ModifierSource>("ModifierSource")
-        .value("Equipment", ModifierSource::Equipment)
-        .value("Effect", ModifierSource::Effect)
-        .value("Skill", ModifierSource::Skill)
-        .value("Aura", ModifierSource::Aura)
-        .value("Environment", ModifierSource::Environment)
-        .value("Temporary", ModifierSource::Temporary)
-        .value("Permanent", ModifierSource::Permanent)
-        .value("Debug", ModifierSource::Debug)
-        .value("Custom", ModifierSource::Custom);
+    registry.register_enum<ModifierSource>("ModifierSource", {
+        {ModifierSource::Equipment, "Equipment"},
+        {ModifierSource::Effect, "Effect"},
+        {ModifierSource::Skill, "Skill"},
+        {ModifierSource::Aura, "Aura"},
+        {ModifierSource::Environment, "Environment"},
+        {ModifierSource::Temporary, "Temporary"},
+        {ModifierSource::Permanent, "Permanent"},
+        {ModifierSource::Debug, "Debug"},
+        {ModifierSource::Custom, "Custom"}
+    });
 
     // Register StatModifier struct
-    registry.register_component<StatModifier>("StatModifier")
-        .property("stat", &StatModifier::stat)
-        .property("type", &StatModifier::type)
-        .property("source", &StatModifier::source)
-        .property("value", &StatModifier::value)
-        .property("priority", &StatModifier::priority)
-        .property("source_id", &StatModifier::source_id)
-        .property("source_name", &StatModifier::source_name)
-        .property("duration", &StatModifier::duration)
-        .property("elapsed", &StatModifier::elapsed)
-        .property("is_hidden", &StatModifier::is_hidden)
-        .property("is_stackable", &StatModifier::is_stackable);
+    // Register StatModifier struct
+    registry.register_component<StatModifier>("StatModifier");
+    registry.register_property<StatModifier, &StatModifier::stat>("stat");
+    registry.register_property<StatModifier, &StatModifier::type>("type");
+    registry.register_property<StatModifier, &StatModifier::source>("source");
+    registry.register_property<StatModifier, &StatModifier::value>("value");
+    registry.register_property<StatModifier, &StatModifier::priority>("priority");
+    registry.register_property<StatModifier, &StatModifier::source_id>("source_id");
+    registry.register_property<StatModifier, &StatModifier::source_name>("source_name");
+    registry.register_property<StatModifier, &StatModifier::duration>("duration");
+    registry.register_property<StatModifier, &StatModifier::elapsed>("elapsed");
+    registry.register_property<StatModifier, &StatModifier::is_hidden>("is_hidden");
+    registry.register_property<StatModifier, &StatModifier::is_stackable>("is_stackable");
 
     // Register StatsComponent
     // Note: Maps are serialized separately due to complexity
-    registry.register_component<StatsComponent>("StatsComponent")
-        .property("needs_recalculation", &StatsComponent::needs_recalculation);
+    registry.register_component<StatsComponent>("StatsComponent");
+    registry.register_property<StatsComponent, &StatsComponent::needs_recalculation>("needs_recalculation");
 
     // Register StatPreset
-    registry.register_type<StatPreset>("StatPreset")
-        .property("preset_id", &StatPreset::preset_id)
-        .property("display_name", &StatPreset::display_name);
+    registry.register_type<StatPreset>("StatPreset");
+    registry.register_property<StatPreset, &StatPreset::preset_id>("preset_id");
+    registry.register_property<StatPreset, &StatPreset::display_name>("display_name");
 }
 
 } // namespace engine::stats

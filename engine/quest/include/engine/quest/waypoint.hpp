@@ -1,11 +1,19 @@
 #pragma once
 
-#include <engine/core/types.hpp>
+#include <engine/core/math.hpp>
+#include <cstdint>
 #include <engine/scene/entity.hpp>
 #include <string>
 #include <optional>
+#include <vector>
+
+// Forward declaration
+namespace engine::scene { class World; }
 
 namespace engine::quest {
+
+using core::Vec3;
+using core::Vec4;
 
 // ============================================================================
 // Waypoint Type

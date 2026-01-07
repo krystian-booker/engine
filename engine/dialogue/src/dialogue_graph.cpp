@@ -189,9 +189,9 @@ void DialogueLibrary::register_graph(std::unique_ptr<DialogueGraph> graph) {
     // Validate
     auto errors = graph->get_validation_errors();
     if (!errors.empty()) {
-        core::log(core::LogLevel::Warning, "Dialogue graph '{}' has validation errors:", id);
+        core::log(core::LogLevel::Warn, "Dialogue graph '{}' has validation errors:", id);
         for (const auto& error : errors) {
-            core::log(core::LogLevel::Warning, "  - {}", error);
+            core::log(core::LogLevel::Warn, "{}", error);
         }
     }
 
@@ -228,13 +228,13 @@ std::vector<std::string> DialogueLibrary::get_all_graph_ids() const {
 
 bool DialogueLibrary::load_from_file(const std::string& path) {
     // Would integrate with asset system for loading JSON/custom format
-    core::log(core::LogLevel::Warning, "Dialogue loading from file not yet implemented: {}", path);
+    core::log(core::LogLevel::Warn, "Dialogue loading from file not yet implemented: {}", path);
     return false;
 }
 
 bool DialogueLibrary::save_to_file(const std::string& id, const std::string& path) const {
     // Would integrate with asset system for saving
-    core::log(core::LogLevel::Warning, "Dialogue saving to file not yet implemented: {}", path);
+    core::log(core::LogLevel::Warn, "Dialogue saving to file not yet implemented: {}", path);
     return false;
 }
 
