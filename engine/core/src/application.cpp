@@ -330,7 +330,7 @@ bool Application::load_game_plugin(const std::filesystem::path& dll_path) {
     plugin::HotReloadConfig config;
     config.enabled = m_hot_reload_enabled;
     config.preserve_state = settings().hot_reload.preserve_state;
-    config.poll_interval_ms = settings().hot_reload.poll_interval_ms;
+    config.poll_interval_ms = static_cast<float>(settings().hot_reload.poll_interval_ms);
 
     m_hot_reload_manager->init(dll_path, m_game_context.get(), m_system_registry.get(), config);
 

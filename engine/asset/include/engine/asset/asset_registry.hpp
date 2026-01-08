@@ -16,8 +16,8 @@ using namespace engine::core;
  * @brief Metadata about a registered asset
  */
 struct AssetMetadata {
-    UUID id;                    // Unique identifier
-    AssetType type;             // Asset type (Mesh, Texture, etc.)
+    UUID id{};                  // Unique identifier
+    AssetType type = AssetType::Unknown; // Asset type (Mesh, Texture, etc.)
     std::string path;           // Current file path
     uint64_t last_modified = 0; // File modification time
     bool is_loaded = false;     // Currently loaded in memory

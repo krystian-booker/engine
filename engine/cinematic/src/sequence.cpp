@@ -6,9 +6,7 @@
 
 namespace engine::cinematic {
 
-Sequence::Sequence()
-    : Sequence("Untitled Sequence") {
-}
+Sequence::Sequence() = default;
 
 Sequence::Sequence(const std::string& name) {
     m_info.name = name;

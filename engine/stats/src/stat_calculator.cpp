@@ -40,6 +40,8 @@ StatCalculator::ModifierBreakdown StatCalculator::get_breakdown(const StatsCompo
     breakdown.has_override = false;
     breakdown.override_value = 0.0f;
 
+    float percent_add_normalized = 0.0f;
+
     const auto& mods = stats.get_modifiers(stat);
     for (const auto& mod : mods) {
         if (!mod.is_active() || mod.is_expired()) continue;
@@ -53,11 +55,15 @@ StatCalculator::ModifierBreakdown StatCalculator::get_breakdown(const StatsCompo
                 break;
             case ModifierType::PercentAdd:
                 breakdown.percent_add_total += mod.value;
+                percent_add_normalized += (mod.value > 1.0f ? mod.value * 0.01f : mod.value);
                 breakdown.sources.emplace_back(source_name + " (%)", mod.value);
                 break;
             case ModifierType::PercentMult:
-                breakdown.percent_mult_total *= (1.0f + mod.value / 100.0f);
-                breakdown.sources.emplace_back(source_name + " (x)", mod.value);
+                {
+                    float value = (mod.value > 1.0f ? mod.value * 0.01f : mod.value);
+                    breakdown.percent_mult_total *= (1.0f + value);
+                    breakdown.sources.emplace_back(source_name + " (x)", mod.value);
+                }
                 break;
             case ModifierType::Override:
                 breakdown.has_override = true;
@@ -71,7 +77,7 @@ StatCalculator::ModifierBreakdown StatCalculator::get_breakdown(const StatsCompo
         breakdown.final_value = breakdown.override_value;
     } else {
         float result = breakdown.base_value + breakdown.flat_total;
-        result *= (1.0f + breakdown.percent_add_total / 100.0f);
+        result *= (1.0f + percent_add_normalized);
         result *= breakdown.percent_mult_total;
         breakdown.final_value = result;
     }

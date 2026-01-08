@@ -31,7 +31,7 @@ struct StateProperty {
     StateProperty() = default;
     StateProperty(const T& value) : normal(value) {}
 
-    const T& get(StyleState state) const {
+    T get(StyleState state) const {
         switch (state) {
             case StyleState::Hovered:  return hovered.value_or(normal);
             case StyleState::Pressed:  return pressed.value_or(hovered.value_or(normal));

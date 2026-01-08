@@ -20,7 +20,7 @@ DataValue DataTable::s_null_value;
 std::string DataValue::to_string() const {
     switch (m_type) {
         case Type::Null:
-            return "";
+            return "null";
         case Type::Bool:
             return std::get<bool>(m_value) ? "true" : "false";
         case Type::Int:

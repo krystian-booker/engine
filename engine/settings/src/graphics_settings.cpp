@@ -148,7 +148,7 @@ std::string get_preset_name(QualityPreset preset) {
 
 std::string get_aa_mode_name(AntialiasingMode mode) {
     switch (mode) {
-        case AntialiasingMode::None:    return "Off";
+        case AntialiasingMode::None:    return "None";
         case AntialiasingMode::FXAA:    return "FXAA";
         case AntialiasingMode::TAA:     return "TAA";
         case AntialiasingMode::MSAA_2x: return "MSAA 2x";

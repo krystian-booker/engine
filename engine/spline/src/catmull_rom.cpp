@@ -232,7 +232,18 @@ Vec3 CatmullRomSpline::evaluate_tangent(float t) const {
 
     Vec3 deriv = catmull_rom_derivative(p0, p1, p2, p3, local_t);
     float len = glm::length(deriv);
-    return (len > 0.0001f) ? deriv / len : Vec3(0.0f, 0.0f, 1.0f);
+    if (len > 0.0001f) {
+        return deriv / len;
+    }
+
+    // Fallback to segment direction to avoid zero-length tangents that break smoothness
+    Vec3 fallback = p2 - p1;
+    float fallback_len = glm::length(fallback);
+    if (fallback_len > 0.0001f) {
+        return fallback / fallback_len;
+    }
+
+    return Vec3(0.0f, 0.0f, 1.0f);
 }
 
 void CatmullRomSpline::update_cache() const {

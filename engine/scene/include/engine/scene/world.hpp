@@ -3,6 +3,8 @@
 #include <engine/scene/entity.hpp>
 #include <entt/entt.hpp>
 #include <string>
+#include <unordered_map>
+#include <utility>
 
 namespace engine::scene {
 
@@ -32,7 +34,7 @@ public:
     // Component management
     template<typename T, typename... Args>
     decltype(auto) emplace(Entity e, Args&&... args) {
-        return m_registry.emplace<T>(e, std::forward<Args>(args)...);
+        return m_registry.emplace_or_replace<T>(e, std::forward<Args>(args)...);
     }
 
     template<typename T, typename... Args>
@@ -102,7 +104,10 @@ public:
     const entt::registry& registry() const { return m_registry; }
 
     // Entity count
-    size_t size() const { return m_registry.storage<entt::entity>()->size(); }
+    size_t size() const {
+        const auto* storage = m_registry.storage<entt::entity>();
+        return storage ? storage->free_list() : 0;
+    }
     bool empty() const { return size() == 0; }
 
     // Clear all entities

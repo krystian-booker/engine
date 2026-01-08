@@ -15,10 +15,10 @@ using namespace engine::core;
 
 // Raycast hit result
 struct RaycastHit {
-    PhysicsBodyId body;
-    Vec3 point;
-    Vec3 normal;
-    float distance;
+    PhysicsBodyId body{};
+    Vec3 point{0.0f};
+    Vec3 normal{0.0f};
+    float distance = 0.0f;
     bool hit = false;
 };
 

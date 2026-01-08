@@ -44,13 +44,16 @@ float EffectInstance::get_elapsed_percent() const {
 
 void EffectInstance::add_stack(int count) {
     const EffectDefinition* def = get_definition();
-    if (!def) return;
 
-    int old_stacks = stacks;
-    stacks = std::min(stacks + count, def->max_stacks);
+    if (def) {
+        int old_stacks = stacks;
+        stacks = std::min(stacks + count, def->max_stacks);
 
-    // Update intensity based on stacks
-    intensity = 1.0f + (stacks - 1) * def->intensity_per_stack;
+        // Update intensity based on stacks
+        intensity = 1.0f + (stacks - 1) * def->intensity_per_stack;
+    } else {
+        stacks += count;
+    }
 }
 
 void EffectInstance::remove_stack(int count) {
@@ -89,10 +92,13 @@ void EffectInstance::set_stacks(int count) {
 
 void EffectInstance::refresh_duration() {
     const EffectDefinition* def = get_definition();
-    if (!def) return;
 
-    duration = def->base_duration * duration_multiplier;
-    remaining = duration;
+    if (def) {
+        duration = def->base_duration * duration_multiplier;
+        remaining = duration;
+    } else {
+        remaining = duration;
+    }
 }
 
 void EffectInstance::extend_duration(float amount) {

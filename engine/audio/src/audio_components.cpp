@@ -55,7 +55,7 @@ float calculate_cone_attenuation(const Vec3& source_forward,
                                   float outer_angle,
                                   float outer_volume) {
     // Calculate angle between source direction and listener direction
-    float cos_angle = glm::dot(glm::normalize(source_forward), glm::normalize(-to_listener));
+    float cos_angle = glm::dot(glm::normalize(source_forward), glm::normalize(to_listener));
     float angle = std::acos(glm::clamp(cos_angle, -1.0f, 1.0f));
     float angle_degrees = glm::degrees(angle);
 

@@ -10,7 +10,6 @@ Entity World::create() {
     auto& info = m_registry.emplace_or_replace<EntityInfo>(e);
     info.uuid = m_next_uuid++;
     info.name = "Entity_" + std::to_string(info.uuid);
-    set_parent(*this, e, NullEntity, NullEntity);
 
     // Dispatch entity created event
     core::events().dispatch(core::EntityCreatedEvent{static_cast<uint32_t>(e)});
@@ -23,7 +22,6 @@ Entity World::create(const std::string& name) {
     auto& info = m_registry.emplace_or_replace<EntityInfo>(e);
     info.uuid = m_next_uuid++;
     info.name = name;
-    set_parent(*this, e, NullEntity, NullEntity);
 
     // Dispatch entity created event
     core::events().dispatch(core::EntityCreatedEvent{static_cast<uint32_t>(e)});

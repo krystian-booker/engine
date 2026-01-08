@@ -402,6 +402,10 @@ NavRaycastResult Pathfinder::raycast(const Vec3& start, const Vec3& end) {
 }
 
 bool Pathfinder::is_path_clear(const Vec3& start, const Vec3& end) {
+    if (!m_query || !m_filter) {
+        return false;
+    }
+
     NavRaycastResult hit = raycast(start, end);
     return !hit.hit;
 }

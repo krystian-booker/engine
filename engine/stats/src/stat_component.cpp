@@ -85,9 +85,7 @@ float StatsComponent::get_base(StatType stat) const {
         return it->second;
     }
 
-    // Return default from registry
-    const StatDefinition* def = stat_registry().get_definition(stat);
-    return def ? def->default_value : 0.0f;
+    return 0.0f;
 }
 
 void StatsComponent::set_base(StatType stat, float value) {
@@ -320,6 +318,9 @@ void StatsComponent::recalculate() {
     // Store old values for event comparison
     std::unordered_map<StatType, float> old_final = final_values;
 
+    // Mark as up-to-date early to avoid recursive recalculation when getters are used below
+    needs_recalculation = false;
+
     // Clear and recalculate all
     final_values.clear();
 
@@ -345,8 +346,6 @@ void StatsComponent::recalculate() {
             current = std::min(current, max_value);
         }
     }
-
-    needs_recalculation = false;
 }
 
 void StatsComponent::recalculate_stat(StatType stat) {

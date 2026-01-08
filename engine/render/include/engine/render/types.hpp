@@ -33,18 +33,18 @@ struct MaterialHandle {
 
 // Vertex format (static meshes)
 struct Vertex {
-    Vec3 position;
-    Vec3 normal;
-    Vec2 texcoord;
+    Vec3 position{0.0f};
+    Vec3 normal{0.0f};
+    Vec2 texcoord{0.0f};
     Vec4 color{1.0f};
     Vec3 tangent{0.0f};
 };
 
 // Skinned vertex format (animated meshes)
 struct SkinnedVertex {
-    Vec3 position;
-    Vec3 normal;
-    Vec2 texcoord;
+    Vec3 position{0.0f};
+    Vec3 normal{0.0f};
+    Vec2 texcoord{0.0f};
     Vec4 color{1.0f};
     Vec3 tangent{0.0f};
     IVec4 bone_indices{0};   // Up to 4 bone influences (indices into bone array)

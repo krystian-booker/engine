@@ -314,7 +314,7 @@ LODQualityPreset LODQualityPreset::medium() {
     LODQualityPreset preset;
     preset.global_bias = 0.5f;  // Prefer lower detail
     preset.max_lod_level = 2;   // Max LOD 2 (skip highest detail)
-    preset.use_crossfade = false;
+    preset.use_crossfade = true;
     preset.fade_duration = 0.3f;
     return preset;
 }

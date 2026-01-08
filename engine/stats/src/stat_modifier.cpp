@@ -111,13 +111,21 @@ float calculate_stat_value(float base_value, const ModifierStack& modifiers) {
     // Sum all additive percent modifiers, then apply once
     float percent_add_total = 0.0f;
     for (const auto& mod : modifiers.percent_add) {
-        percent_add_total += mod.value;
+        float value = mod.value;
+        if (value > 1.0f) {
+            value *= 0.01f; // Accept both 0.5 (=50%) and 50 (=50%)
+        }
+        percent_add_total += value;
     }
-    result *= (1.0f + percent_add_total / 100.0f);
+    result *= (1.0f + percent_add_total);
 
     // Apply multiplicative percent modifiers
     for (const auto& mod : modifiers.percent_mult) {
-        result *= (1.0f + mod.value / 100.0f);
+        float value = mod.value;
+        if (value > 1.0f) {
+            value *= 0.01f;
+        }
+        result *= (1.0f + value);
     }
 
     return result;

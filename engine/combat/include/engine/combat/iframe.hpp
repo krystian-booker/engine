@@ -74,7 +74,7 @@ struct IFrameComponent {
         if (flash_enabled) {
             flash_timer += dt;
             if (flash_timer >= flash_interval) {
-                flash_timer = 0.0f;
+                flash_timer -= flash_interval;
                 flash_visible = !flash_visible;
             }
         }

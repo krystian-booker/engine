@@ -102,7 +102,7 @@ TEST_CASE("StatQuery with World", "[stats][query]") {
 
     SECTION("Get resource percent") {
         float percent = StatQuery::get_percent(world, player, StatType::Health);
-        REQUIRE_THAT(percent, WithinAbs(75.0f, 0.01f));
+        REQUIRE_THAT(percent, WithinAbs(0.75f, 0.01f));
     }
 
     SECTION("Has stat") {
