@@ -51,6 +51,7 @@ target_sources(engine_core
             include/engine/core/game_events.hpp
             include/engine/core/state_machine.hpp
             include/engine/core/time_manager.hpp
+            include/engine/core/object_pool.hpp
 )
 
 target_include_directories(engine_core

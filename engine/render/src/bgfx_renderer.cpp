@@ -348,6 +348,12 @@ public:
             BGFX_TEXTURE_NONE | BGFX_SAMPLER_POINT,
             bgfx::copy(&normal_pixel, sizeof(normal_pixel)));
 
+        // Create 1x1 dummy shadow texture (D32F format for comparison sampling support)
+        // Note: D32F render targets initialize to 0.0 (near depth), so all shadow tests pass (no shadow)
+        // BGFX_TEXTURE_RT creates a samplable render target (don't use RT_WRITE_ONLY - that can't be sampled)
+        m_dummy_shadow_texture = bgfx::createTexture2D(1, 1, false, 1, bgfx::TextureFormat::D32F,
+            BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+
         m_initialized = true;
         return true;
     }
@@ -443,6 +449,9 @@ public:
         }
         if (bgfx::isValid(m_default_normal)) {
             bgfx::destroy(m_default_normal);
+        }
+        if (bgfx::isValid(m_dummy_shadow_texture)) {
+            bgfx::destroy(m_dummy_shadow_texture);
         }
 
         // Destroy all resources
@@ -607,10 +616,9 @@ public:
         return handle;
     }
 
-    MaterialHandle create_material(const MaterialData& /*data*/) override {
-        // Simplified for now - just return a valid handle
+    MaterialHandle create_material(const MaterialData& data) override {
         MaterialHandle handle{m_next_material_id++};
-        m_materials[handle.id] = MaterialData{};
+        m_materials[handle.id] = data;
         return handle;
     }
 
@@ -705,13 +713,17 @@ public:
 
         // Create depth attachment if requested
         if (desc.has_depth) {
+            // Use RT_WRITE_ONLY only if not samplable (write-only is faster but can't be read in shaders)
+            uint64_t depth_flags = desc.samplable
+                ? (BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP)
+                : (BGFX_TEXTURE_RT | BGFX_TEXTURE_RT_WRITE_ONLY);
             bgfx::TextureHandle th = bgfx::createTexture2D(
                 uint16_t(desc.width),
                 uint16_t(desc.height),
                 false,
                 1,
                 to_bgfx_format(desc.depth_format),
-                BGFX_TEXTURE_RT | BGFX_TEXTURE_RT_WRITE_ONLY
+                depth_flags
             );
             rt.depth_attachment = th;
 
@@ -1277,23 +1289,30 @@ public:
 
         // Upload PBR uniforms if using PBR shader
         if (use_pbr) {
-            upload_pbr_uniforms();
+            const MaterialData* mat_ptr = (mat_it != m_materials.end()) ? &mat_it->second : nullptr;
+            upload_pbr_uniforms(mat_ptr);
         }
 
         // Submit draw call
         bgfx::submit(view_id, program);
     }
 
-    // Upload PBR uniforms (lights, camera, material defaults, etc.)
-    void upload_pbr_uniforms() {
+    // Upload PBR uniforms (lights, camera, material, etc.)
+    void upload_pbr_uniforms(const MaterialData* mat_data = nullptr) {
         // Camera position
         Vec4 cam_pos(m_camera_position, 1.0f);
         bgfx::setUniform(s_pbr_uniforms.u_cameraPos, glm::value_ptr(cam_pos));
 
-        // Default material values (white, 0.5 roughness, no metallic)
-        Vec4 albedo(1.0f, 1.0f, 1.0f, 1.0f);
-        Vec4 pbr_params(0.0f, 0.5f, 1.0f, 0.5f);  // metallic, roughness, ao, alpha_cutoff
-        Vec4 emissive(0.0f, 0.0f, 0.0f, 0.0f);
+        // Material values - use provided material data or fall back to defaults
+        Vec4 albedo = mat_data
+            ? mat_data->albedo
+            : Vec4(1.0f, 1.0f, 1.0f, 1.0f);
+        Vec4 pbr_params = mat_data
+            ? Vec4(mat_data->metallic, mat_data->roughness, mat_data->ao, mat_data->alpha_cutoff)
+            : Vec4(0.0f, 0.5f, 1.0f, 0.5f);  // metallic, roughness, ao, alpha_cutoff
+        Vec4 emissive = mat_data
+            ? Vec4(mat_data->emissive.x, mat_data->emissive.y, mat_data->emissive.z, 0.0f)
+            : Vec4(0.0f, 0.0f, 0.0f, 0.0f);
         bgfx::setUniform(s_pbr_uniforms.u_albedoColor, glm::value_ptr(albedo));
         bgfx::setUniform(s_pbr_uniforms.u_pbrParams, glm::value_ptr(pbr_params));
         bgfx::setUniform(s_pbr_uniforms.u_emissiveColor, glm::value_ptr(emissive));
@@ -1347,21 +1366,22 @@ public:
         bgfx::setTexture(3, s_pbr_uniforms.s_ao, m_white_texture);
         bgfx::setTexture(4, s_pbr_uniforms.s_emissive, m_white_texture);
 
-        // Bind shadow map textures (slots 8-11)
-        if (m_shadows_enabled) {
-            for (int i = 0; i < 4; ++i) {
-                if (bgfx::isValid(m_shadow_textures[i])) {
-                    bgfx::UniformHandle sampler;
-                    switch (i) {
-                        case 0: sampler = s_pbr_uniforms.s_shadowMap0; break;
-                        case 1: sampler = s_pbr_uniforms.s_shadowMap1; break;
-                        case 2: sampler = s_pbr_uniforms.s_shadowMap2; break;
-                        default: sampler = s_pbr_uniforms.s_shadowMap3; break;
-                    }
-                    bgfx::setTexture(8 + i, sampler, m_shadow_textures[i],
-                        BGFX_SAMPLER_COMPARE_LEQUAL | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
-                }
+        // Bind shadow map textures (slots 8-11) - always bind with comparison filtering
+        // Must use D32F format textures for comparison sampling (SampleCmp); use dummy shadow texture as fallback
+        for (int i = 0; i < 4; ++i) {
+            bgfx::UniformHandle sampler;
+            switch (i) {
+                case 0: sampler = s_pbr_uniforms.s_shadowMap0; break;
+                case 1: sampler = s_pbr_uniforms.s_shadowMap1; break;
+                case 2: sampler = s_pbr_uniforms.s_shadowMap2; break;
+                default: sampler = s_pbr_uniforms.s_shadowMap3; break;
             }
+            bool is_valid = bgfx::isValid(m_shadow_textures[i]);
+            bgfx::TextureHandle shadow_tex = is_valid
+                ? m_shadow_textures[i]
+                : m_dummy_shadow_texture;
+            bgfx::setTexture(8 + i, sampler, shadow_tex,
+                BGFX_SAMPLER_COMPARE_LEQUAL | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
         }
     }
 
@@ -1379,6 +1399,39 @@ public:
     }
 
     bool get_vsync() const override { return m_vsync; }
+
+    // Quality settings
+    void set_render_scale(float scale) override {
+        m_render_scale = std::clamp(scale, 0.5f, 2.0f);
+        // Note: Actual resolution changes would be applied on next resize or frame
+    }
+
+    float get_render_scale() const override { return m_render_scale; }
+
+    void set_shadow_quality(int quality) override {
+        m_shadow_quality = std::clamp(quality, 0, 4);
+        // 0=off, 1=low (512), 2=medium (1024), 3=high (2048), 4=ultra (4096)
+    }
+
+    int get_shadow_quality() const override { return m_shadow_quality; }
+
+    void set_lod_bias(float bias) override {
+        m_lod_bias = std::clamp(bias, -2.0f, 2.0f);
+    }
+
+    float get_lod_bias() const override { return m_lod_bias; }
+
+    // Post-processing toggles
+    void set_bloom_enabled(bool enabled) override { m_bloom_enabled = enabled; }
+    void set_bloom_intensity(float intensity) override { m_bloom_intensity = std::max(0.0f, intensity); }
+    bool get_bloom_enabled() const override { return m_bloom_enabled; }
+    float get_bloom_intensity() const override { return m_bloom_intensity; }
+
+    void set_ao_enabled(bool enabled) override { m_ao_enabled = enabled; }
+    bool get_ao_enabled() const override { return m_ao_enabled; }
+
+    void set_motion_blur_enabled(bool enabled) override { m_motion_blur_enabled = enabled; }
+    bool get_motion_blur_enabled() const override { return m_motion_blur_enabled; }
 
     uint16_t get_native_texture_handle(TextureHandle h) const override {
         auto it = m_textures.find(h.id);
@@ -1557,6 +1610,17 @@ private:
     uint32_t m_width = 0;
     uint32_t m_height = 0;
 
+    // Quality settings
+    float m_render_scale = 1.0f;
+    int m_shadow_quality = 3;  // Default: high
+    float m_lod_bias = 0.0f;
+
+    // Post-processing settings
+    bool m_bloom_enabled = true;
+    float m_bloom_intensity = 1.0f;
+    bool m_ao_enabled = true;
+    bool m_motion_blur_enabled = false;
+
     // Shader programs
     bgfx::ProgramHandle m_default_program = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_pbr_program = BGFX_INVALID_HANDLE;
@@ -1588,6 +1652,7 @@ private:
     // Default textures for PBR
     bgfx::TextureHandle m_white_texture = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle m_default_normal = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle m_dummy_shadow_texture = BGFX_INVALID_HANDLE;  // D32F format for shadow sampler fallback
 
     // Camera position (for PBR specular)
     Vec3 m_camera_position{0.0f};
@@ -1600,7 +1665,9 @@ private:
     std::array<Mat4, 4> m_shadow_matrices{Mat4(1.0f), Mat4(1.0f), Mat4(1.0f), Mat4(1.0f)};
     Vec4 m_cascade_splits{10.0f, 30.0f, 100.0f, 500.0f};
     Vec4 m_shadow_params{0.001f, 0.01f, 0.1f, 1.0f};  // bias, normalBias, cascadeBlend, pcfRadius
-    std::array<bgfx::TextureHandle, 4> m_shadow_textures{};
+    std::array<bgfx::TextureHandle, 4> m_shadow_textures{{
+        BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE
+    }};
 
     // Total time for shader animations
     float m_total_time = 0.0f;

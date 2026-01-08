@@ -18,4 +18,5 @@
 #include <engine/core/asset_handle.hpp>
 #include <engine/core/allocators.hpp>
 #include <engine/core/profiler.hpp>
+#include <engine/core/object_pool.hpp>
 

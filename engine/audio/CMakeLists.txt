@@ -46,11 +46,16 @@ set_target_properties(engine_audio PROPERTIES
 )
 
 # Test executable
-add_executable(audio_test tests/audio_manual_test.cpp)
+add_executable(audio_test tests/manual/audio_manual_test.cpp)
 target_link_libraries(audio_test PRIVATE engine_audio)
 set_target_properties(audio_test PROPERTIES FOLDER "tests")
 
 # 3D Audio Test
-add_executable(audio_3d_test tests/audio_3d_test.cpp)
+add_executable(audio_3d_test tests/manual/audio_3d_test.cpp)
 target_link_libraries(audio_3d_test PRIVATE engine_audio)
 set_target_properties(audio_3d_test PROPERTIES FOLDER "tests")
+
+# Unit tests
+if(ENGINE_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests")
+    add_subdirectory(tests)
+endif()

@@ -145,6 +145,20 @@ public:
     // Update timed vibrations (called internally by update())
     static void update_haptics(float dt);
 
+    // Input sensitivity/deadzone settings
+    static void set_mouse_sensitivity(float sensitivity);
+    static float get_mouse_sensitivity();
+    static void set_invert_mouse_y(bool invert);
+    static bool get_invert_mouse_y();
+    static void set_gamepad_sensitivity(float sensitivity);
+    static float get_gamepad_sensitivity();
+    static void set_gamepad_deadzone(float deadzone);
+    static float get_gamepad_deadzone();
+    static void set_aim_assist_enabled(bool enabled);
+    static bool get_aim_assist_enabled();
+    static void set_aim_assist_strength(float strength);
+    static float get_aim_assist_strength();
+
     // Called by platform layer to update input state
     static void on_key_event(Key k, bool pressed);
     static void on_mouse_button_event(MouseButton b, bool pressed);

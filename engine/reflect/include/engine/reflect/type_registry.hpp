@@ -130,7 +130,15 @@ public:
     bool remove_component_any(entt::registry& registry, entt::entity entity, const std::string& type_name);
 
     // Query if type is a registered vector type
-    struct VectorTypeInfo;
+    struct VectorTypeInfo {
+        entt::id_type vector_type_id;
+        entt::id_type element_type_id;
+        entt::meta_type element_type;
+        std::function<size_t(const entt::meta_any&)> get_size;
+        std::function<entt::meta_any(const entt::meta_any&, size_t)> get_element;
+        std::function<entt::meta_any(size_t)> create_vector;
+        std::function<void(entt::meta_any&, size_t, const entt::meta_any&)> set_element;
+    };
     const VectorTypeInfo* get_vector_type_info(entt::id_type type_id) const;
 
     // Register a vector type for serialization
@@ -145,17 +153,6 @@ private:
     struct ComponentFactory {
         ComponentEmplacer emplace;
         ComponentRemover remove;
-    };
-
-    // Vector type info for serialization
-    struct VectorTypeInfo {
-        entt::id_type vector_type_id;
-        entt::id_type element_type_id;
-        entt::meta_type element_type;
-        std::function<size_t(const entt::meta_any&)> get_size;
-        std::function<entt::meta_any(const entt::meta_any&, size_t)> get_element;
-        std::function<entt::meta_any(size_t)> create_vector;
-        std::function<void(entt::meta_any&, size_t, const entt::meta_any&)> set_element;
     };
 
     TypeRegistry() = default;
@@ -174,7 +171,7 @@ private:
 // Implementation of template methods
 
 template<typename T>
-void TypeRegistry::register_type(const char* name, const TypeMeta& meta) {
+void TypeRegistry::register_type(const char* name, const TypeMeta& type_meta) {
     auto type_id = entt::type_hash<T>::value();
 
     // Store our metadata
@@ -183,15 +180,18 @@ void TypeRegistry::register_type(const char* name, const TypeMeta& meta) {
     TypeInfo info;
     info.name = name;
     info.id = type_id;
-    info.meta = meta;
+    info.meta = type_meta;
     info.meta.name = name;
     info.is_component = false;
 
     m_type_info[type_id] = std::move(info);
+
+    // Register with EnTT meta system
+    entt::meta_factory<T>{}.type(type_id);
 }
 
 template<typename T>
-void TypeRegistry::register_component(const char* name, const TypeMeta& meta) {
+void TypeRegistry::register_component(const char* name, const TypeMeta& type_meta) {
     auto type_id = entt::type_hash<T>::value();
 
     // Store our metadata
@@ -200,13 +200,16 @@ void TypeRegistry::register_component(const char* name, const TypeMeta& meta) {
     TypeInfo info;
     info.name = name;
     info.id = type_id;
-    info.meta = meta;
+    info.meta = type_meta;
     info.meta.name = name;
     info.meta.is_component = true;
     info.is_component = true;
 
     m_type_info[type_id] = std::move(info);
     m_component_names.push_back(name);
+
+    // Register with EnTT meta system
+    entt::meta_factory<T>{}.type(type_id);
 
     // Store factory functions for runtime add/remove
     ComponentFactory factory;
@@ -220,7 +223,7 @@ void TypeRegistry::register_component(const char* name, const TypeMeta& meta) {
 }
 
 template<typename T, auto MemberPtr>
-void TypeRegistry::register_property(const char* name, const PropertyMeta& meta) {
+void TypeRegistry::register_property(const char* name, const PropertyMeta& property_meta) {
     using MemberType = std::remove_reference_t<decltype(std::declval<T>().*MemberPtr)>;
 
     auto type_id = entt::type_hash<T>::value();
@@ -232,7 +235,7 @@ void TypeRegistry::register_property(const char* name, const PropertyMeta& meta)
         PropertyInfo prop;
         prop.name = name;
         prop.type = entt::resolve<MemberType>();
-        prop.meta = meta;
+        prop.meta = property_meta;
         prop.meta.name = name;
 
         // Create getter
@@ -377,7 +380,7 @@ void TypeRegistry::register_enum(const char* name, std::initializer_list<std::pa
 }
 
 template<typename T, auto MemberPtr, typename Getter, typename Setter>
-void TypeRegistry::register_property(const char* name, const PropertyMeta& meta, Getter&& getter, Setter&& setter) {
+void TypeRegistry::register_property(const char* name, const PropertyMeta& property_meta, Getter&& getter, Setter&& setter) {
     using PropertyType = std::invoke_result_t<Getter, const T&>;
     // MemberPtr is unused for type deduction here, we use the getter return type
     
@@ -388,7 +391,7 @@ void TypeRegistry::register_property(const char* name, const PropertyMeta& meta,
         PropertyInfo prop;
         prop.name = name;
         prop.type = entt::resolve<PropertyType>();
-        prop.meta = meta;
+        prop.meta = property_meta;
         prop.meta.name = name;
 
         // Create getter

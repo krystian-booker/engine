@@ -14,6 +14,7 @@ target_sources(engine_data
         FILES
             include/engine/data/data_table.hpp
             include/engine/data/data.hpp
+            include/engine/data/json_loader.hpp
 )
 
 target_include_directories(engine_data
@@ -33,3 +34,8 @@ target_link_libraries(engine_data
 set_target_properties(engine_data PROPERTIES
     FOLDER "engine"
 )
+
+# Unit tests
+if(ENGINE_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests")
+    add_subdirectory(tests)
+endif()

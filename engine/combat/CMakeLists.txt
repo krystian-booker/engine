@@ -9,6 +9,7 @@ target_sources(engine_combat
         src/hitbox.cpp
         src/damage.cpp
         src/combat_systems.cpp
+        src/hit_reaction.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -20,6 +21,7 @@ target_sources(engine_combat
             include/engine/combat/damage.hpp
             include/engine/combat/iframe.hpp
             include/engine/combat/attack_phases.hpp
+            include/engine/combat/hit_reaction.hpp
 )
 
 target_include_directories(engine_combat
@@ -33,6 +35,8 @@ target_link_libraries(engine_combat
         engine::core
         engine::scene
         engine::physics
+        engine::render
+        engine::stats
     PRIVATE
         engine_compiler_flags
 )
@@ -40,3 +44,8 @@ target_link_libraries(engine_combat
 set_target_properties(engine_combat PROPERTIES
     FOLDER "engine"
 )
+
+# Unit tests
+if(ENGINE_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests")
+    add_subdirectory(tests)
+endif()

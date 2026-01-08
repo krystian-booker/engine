@@ -100,9 +100,9 @@ public:
 
 class BTRepeater : public BTDecorator {
 public:
-    static constexpr int INFINITE = -1;
+    static constexpr int Infinite = -1;
 
-    explicit BTRepeater(std::string name = "Repeater", int repeat_count = INFINITE)
+    explicit BTRepeater(std::string name = "Repeater", int repeat_count = Infinite)
         : BTDecorator(std::move(name))
         , m_repeat_count(repeat_count) {}
 
@@ -113,7 +113,7 @@ public:
         }
 
         // Check if we've completed all repetitions
-        if (m_repeat_count != INFINITE && m_current_count >= m_repeat_count) {
+        if (m_repeat_count != Infinite && m_current_count >= m_repeat_count) {
             m_last_status = BTStatus::Success;
             return BTStatus::Success;
         }
@@ -130,7 +130,7 @@ public:
         m_child->reset();
 
         // Check if we should continue
-        if (m_repeat_count == INFINITE || m_current_count < m_repeat_count) {
+        if (m_repeat_count == Infinite || m_current_count < m_repeat_count) {
             m_last_status = BTStatus::Running;
             return BTStatus::Running;
         }

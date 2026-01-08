@@ -55,6 +55,8 @@ endif()
 if(ENGINE_BUILD_SAMPLES)
     add_subdirectory(samples/spinning_cube)
     add_subdirectory(samples/environment_demo)
+    add_subdirectory(samples/bouncing_balls)
+    add_subdirectory(samples/ai_demo)
 endif()
 
 # CLI Tool for game development

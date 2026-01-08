@@ -119,8 +119,18 @@ public:
     // Global controls
     void set_master_volume(float volume);
     float get_master_volume() const;
-    void set_sound_volume(float volume);   // Volume for all sounds
+    void set_sound_volume(float volume);   // Volume for all sounds (deprecated, use set_sfx_volume)
     void set_music_volume(float volume);   // Volume for all music
+
+    // Per-channel volume controls (convenience wrappers for bus volumes)
+    void set_sfx_volume(float volume);
+    float get_sfx_volume() const;
+    void set_voice_volume(float volume);
+    float get_voice_volume() const;
+    void set_ambient_volume(float volume);
+    float get_ambient_volume() const;
+    void set_ui_volume(float volume);
+    float get_ui_volume() const;
 
     // 3D audio listener (typically the camera/player)
     void set_listener_position(const Vec3& pos);

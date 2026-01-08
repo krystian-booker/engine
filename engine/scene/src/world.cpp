@@ -7,7 +7,7 @@ namespace engine::scene {
 
 Entity World::create() {
     Entity e = m_registry.create();
-    auto& info = m_registry.emplace<EntityInfo>(e);
+    auto& info = m_registry.emplace_or_replace<EntityInfo>(e);
     info.uuid = m_next_uuid++;
     info.name = "Entity_" + std::to_string(info.uuid);
     set_parent(*this, e, NullEntity, NullEntity);
@@ -20,7 +20,7 @@ Entity World::create() {
 
 Entity World::create(const std::string& name) {
     Entity e = m_registry.create();
-    auto& info = m_registry.emplace<EntityInfo>(e);
+    auto& info = m_registry.emplace_or_replace<EntityInfo>(e);
     info.uuid = m_next_uuid++;
     info.name = name;
     set_parent(*this, e, NullEntity, NullEntity);

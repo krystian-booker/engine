@@ -100,6 +100,10 @@ Vec3 CatmullRomSpline::catmull_rom_interpolate(const Vec3& p0, const Vec3& p1, c
         return (std::abs(b) > 0.0001f) ? a / b : a;
     };
 
+    if (std::abs(t1 - t0) < 0.0001f) return p0;
+    if (std::abs(t2 - t1) < 0.0001f) return p1;
+    if (std::abs(t3 - t2) < 0.0001f) return p2;
+
     Vec3 a1 = safe_div((t1 - tt) * p0 + (tt - t0) * p1, t1 - t0);
     Vec3 a2 = safe_div((t2 - tt) * p1 + (tt - t1) * p2, t2 - t1);
     Vec3 a3 = safe_div((t3 - tt) * p2 + (tt - t2) * p3, t3 - t2);

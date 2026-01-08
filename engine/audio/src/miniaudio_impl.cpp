@@ -297,6 +297,7 @@ void init_audio_impl(AudioEngine::Impl* impl, const AudioSettings& settings) {
     create_builtin_bus(BuiltinBus::SFX, "SFX", AudioBusHandle{static_cast<uint32_t>(BuiltinBus::Master)});
     create_builtin_bus(BuiltinBus::Voice, "Voice", AudioBusHandle{static_cast<uint32_t>(BuiltinBus::Master)});
     create_builtin_bus(BuiltinBus::Ambient, "Ambient", AudioBusHandle{static_cast<uint32_t>(BuiltinBus::Master)});
+    create_builtin_bus(BuiltinBus::UI, "UI", AudioBusHandle{static_cast<uint32_t>(BuiltinBus::Master)});
 
     impl->initialized = true;
 }

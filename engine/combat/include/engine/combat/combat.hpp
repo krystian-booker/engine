@@ -7,6 +7,7 @@
 #include <engine/combat/damage.hpp>
 #include <engine/combat/iframe.hpp>
 #include <engine/combat/attack_phases.hpp>
+#include <engine/combat/hit_reaction.hpp>
 
 #include <engine/scene/world.hpp>
 #include <engine/scene/entity.hpp>

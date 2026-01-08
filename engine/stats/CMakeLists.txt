@@ -20,9 +20,16 @@ target_link_libraries(engine_stats
         engine::core
         engine::scene
         engine::reflect
+    PRIVATE
+        engine::data
 )
 
 target_compile_features(engine_stats PUBLIC cxx_std_20)
 
 # Set IDE folder
 set_target_properties(engine_stats PROPERTIES FOLDER "Engine")
+
+# Unit tests
+if(ENGINE_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests")
+    add_subdirectory(tests)
+endif()

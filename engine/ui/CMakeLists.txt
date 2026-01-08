@@ -124,3 +124,8 @@ if(TARGET bgfx::shaderc AND ENGINE_COMPILE_SHADERS)
         add_dependencies(engine_shaders engine_ui_shaders)
     endif()
 endif()
+
+# Unit tests
+if(ENGINE_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests")
+    add_subdirectory(tests)
+endif()

@@ -73,7 +73,7 @@ target_include_directories(engine_debug_gui
         $<INSTALL_INTERFACE:include>
         ${IMGUI_DIR}
     PRIVATE
-        ${PROJECT_BINARY_DIR}/_deps/stb-src
+        ${bgfx_cmake_SOURCE_DIR}/bgfx/3rdparty/stb
 )
 
 target_compile_definitions(engine_debug_gui
@@ -97,3 +97,8 @@ target_link_libraries(engine_debug_gui
 set_target_properties(engine_debug_gui PROPERTIES
     FOLDER "engine"
 )
+
+# Unit tests
+# if(ENGINE_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests")
+#     add_subdirectory(tests)
+# endif()

@@ -7,6 +7,10 @@
 #include <functional>
 #include <string>
 
+namespace engine::render {
+class IRenderer;
+}
+
 namespace engine::settings {
 
 // ============================================================================
@@ -37,6 +41,10 @@ public:
     // Delete copy/move
     SettingsManager(const SettingsManager&) = delete;
     SettingsManager& operator=(const SettingsManager&) = delete;
+
+    // Set renderer reference for graphics settings application
+    // Called by Application during initialization
+    void set_renderer(render::IRenderer* renderer);
 
     // ========================================================================
     // Access Settings
@@ -171,6 +179,8 @@ private:
     std::function<void()> m_on_audio_changed;
     std::function<void()> m_on_input_changed;
     std::function<void()> m_on_gameplay_changed;
+
+    render::IRenderer* m_renderer = nullptr;
 
     bool m_dirty = false;
 };

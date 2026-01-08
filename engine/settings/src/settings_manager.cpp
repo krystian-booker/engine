@@ -1,6 +1,9 @@
 #include <engine/settings/settings_manager.hpp>
 #include <engine/core/log.hpp>
 #include <engine/core/game_events.hpp>
+#include <engine/core/input.hpp>
+#include <engine/render/renderer.hpp>
+#include <engine/audio/audio_engine.hpp>
 #include <fstream>
 #include <nlohmann/json.hpp>
 
@@ -252,19 +255,47 @@ void SettingsManager::reset_gameplay() {
 // Apply Changes
 // ============================================================================
 
+void SettingsManager::set_renderer(render::IRenderer* renderer) {
+    m_renderer = renderer;
+}
+
 void SettingsManager::apply_graphics() {
     m_graphics.validate();
     notify_changed(SettingsCategory::Graphics);
 
-    // TODO: Notify renderer to apply changes
-    core::log(core::LogLevel::Debug, "[Settings] Applied graphics settings");
+    // Apply graphics settings to renderer
+    if (m_renderer) {
+        m_renderer->set_vsync(m_graphics.vsync);
+        m_renderer->set_render_scale(m_graphics.render_scale);
+        m_renderer->set_shadow_quality(static_cast<int>(m_graphics.shadow_quality));
+        m_renderer->set_lod_bias(m_graphics.lod_bias);
+
+        // Post-processing
+        m_renderer->set_bloom_enabled(m_graphics.bloom_enabled);
+        m_renderer->set_bloom_intensity(m_graphics.bloom_intensity);
+        m_renderer->set_ao_enabled(m_graphics.ambient_occlusion_enabled);
+        m_renderer->set_motion_blur_enabled(m_graphics.motion_blur_enabled);
+
+        core::log(core::LogLevel::Debug, "[Settings] Applied graphics settings to renderer");
+    } else {
+        core::log(core::LogLevel::Debug, "[Settings] Graphics settings validated (no renderer set)");
+    }
 }
 
 void SettingsManager::apply_audio() {
     m_audio.validate();
     notify_changed(SettingsCategory::Audio);
 
-    // TODO: Notify audio engine to apply changes
+    // Apply audio settings to audio engine
+    auto& audio = audio::get_audio_engine();
+    audio.set_master_volume(m_audio.master_volume);
+    audio.set_sfx_volume(m_audio.sfx_volume);
+    audio.set_voice_volume(m_audio.voice_volume);
+    audio.set_ambient_volume(m_audio.ambient_volume);
+    audio.set_ui_volume(m_audio.ui_volume);
+    // Music volume is handled separately via bus
+    audio.set_bus_volume(audio.get_bus(audio::BuiltinBus::Music), m_audio.music_volume);
+
     core::log(core::LogLevel::Debug, "[Settings] Applied audio settings");
 }
 
@@ -272,7 +303,14 @@ void SettingsManager::apply_input() {
     m_input.validate();
     notify_changed(SettingsCategory::Input);
 
-    // TODO: Notify input system to apply changes
+    // Apply input settings to input system
+    core::Input::set_mouse_sensitivity(m_input.mouse_sensitivity);
+    core::Input::set_invert_mouse_y(m_input.invert_mouse_y);
+    core::Input::set_gamepad_sensitivity(m_input.gamepad_sensitivity);
+    core::Input::set_gamepad_deadzone(m_input.left_stick_deadzone);
+    core::Input::set_aim_assist_enabled(m_input.aim_assist_enabled);
+    core::Input::set_aim_assist_strength(m_input.aim_assist_strength);
+
     core::log(core::LogLevel::Debug, "[Settings] Applied input settings");
 }
 

@@ -50,5 +50,29 @@
       "name": "Qt-Release",
       "configurePreset": "Qt-Release"
     }
+  ],
+  "testPresets": [
+    {
+      "name": "Qt-Debug",
+      "configurePreset": "Qt-Debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      }
+    },
+    {
+      "name": "Qt-Release",
+      "configurePreset": "Qt-Release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      }
+    }
   ]
 }

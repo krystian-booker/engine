@@ -1,7 +1,140 @@
 #include <engine/effects/effect_definition.hpp>
+#include <engine/data/json_loader.hpp>
+#include <engine/stats/stat_definition.hpp>
+#include <engine/core/log.hpp>
 #include <algorithm>
 
 namespace engine::effects {
+
+// ============================================================================
+// JSON Deserialization
+// ============================================================================
+
+namespace {
+
+// Parse EffectFlags from JSON array of strings
+EffectFlags parse_flags(const nlohmann::json& j) {
+    EffectFlags flags = EffectFlags::None;
+    if (!j.is_array()) return flags;
+
+    for (const auto& flag : j) {
+        if (!flag.is_string()) continue;
+        std::string f = flag.get<std::string>();
+        if (f == "dispellable") flags = flags | EffectFlags::Dispellable;
+        else if (f == "purgeable") flags = flags | EffectFlags::Purgeable;
+        else if (f == "hidden") flags = flags | EffectFlags::Hidden;
+        else if (f == "persistent") flags = flags | EffectFlags::Persistent;
+        else if (f == "unique") flags = flags | EffectFlags::Unique;
+        else if (f == "stackable") flags = flags | EffectFlags::Stackable;
+        else if (f == "refreshable") flags = flags | EffectFlags::Refreshable;
+        else if (f == "no_save") flags = flags | EffectFlags::NoSave;
+        else if (f == "inheritable") flags = flags | EffectFlags::Inheritable;
+    }
+    return flags;
+}
+
+// Deserialize a single EffectDefinition from JSON
+std::optional<EffectDefinition> deserialize_effect(const nlohmann::json& j, std::string& error) {
+    using namespace data::json_helpers;
+
+    // Required: effect_id
+    if (!require_string(j, "effect_id", error)) {
+        return std::nullopt;
+    }
+
+    EffectDefinition def;
+    def.effect_id = j["effect_id"].get<std::string>();
+
+    // Basic strings
+    def.display_name = get_string(j, "display_name", def.effect_id);
+    def.description = get_string(j, "description");
+    def.icon_path = get_string(j, "icon_path");
+
+    // Category and flags
+    def.category = get_enum<EffectCategory>(j, "category", EffectCategory::Buff);
+    if (j.contains("flags") && j["flags"].is_array()) {
+        def.flags = parse_flags(j["flags"]);
+    } else {
+        // Default flags
+        def.flags = get_enum<EffectFlags>(j, "flags_raw", EffectFlags::Dispellable | EffectFlags::Stackable);
+    }
+
+    // Duration and stacking
+    def.base_duration = get_float(j, "base_duration", 10.0f);
+    def.max_duration = get_float(j, "max_duration", def.base_duration * 2.0f);
+    def.stacking = get_enum<StackBehavior>(j, "stacking", StackBehavior::RefreshExtend);
+    def.max_stacks = get_int(j, "max_stacks", 1);
+
+    // Tick behavior
+    def.tick_interval = get_float(j, "tick_interval", 0.0f);
+    def.tick_on_apply = get_bool(j, "tick_on_apply", false);
+
+    // Damage/healing over time
+    def.damage_per_tick = get_float(j, "damage_per_tick", 0.0f);
+    def.damage_type = get_string(j, "damage_type", "physical");
+    def.heal_per_tick = get_float(j, "heal_per_tick", 0.0f);
+
+    // Priority and scaling
+    def.dispel_priority = get_int(j, "dispel_priority", 0);
+    def.intensity_per_stack = get_float(j, "intensity_per_stack", 1.0f);
+    def.scale_duration_with_stacks = get_bool(j, "scale_duration_with_stacks", false);
+
+    // VFX/SFX
+    def.apply_vfx = get_string(j, "apply_vfx");
+    def.tick_vfx = get_string(j, "tick_vfx");
+    def.expire_vfx = get_string(j, "expire_vfx");
+    def.loop_vfx = get_string(j, "loop_vfx");
+    def.apply_sfx = get_string(j, "apply_sfx");
+    def.tick_sfx = get_string(j, "tick_sfx");
+    def.loop_sfx = get_string(j, "loop_sfx");
+
+    // String arrays
+    def.tags = get_string_array(j, "tags");
+    def.grants_immunity = get_string_array(j, "grants_immunity");
+    def.removes_effects = get_string_array(j, "removes_effects");
+    def.blocked_by = get_string_array(j, "blocked_by");
+
+    // Stat modifiers: array of {stat: "StatName", type: int, value: float}
+    if (j.contains("stat_modifiers") && j["stat_modifiers"].is_array()) {
+        auto& stat_reg = stats::stat_registry();
+        for (const auto& mod_json : j["stat_modifiers"]) {
+            if (!mod_json.is_object()) continue;
+            if (!mod_json.contains("stat") || !mod_json.contains("value")) continue;
+
+            stats::StatModifier mod;
+            mod.id = core::UUID::generate();
+            std::string stat_name = mod_json["stat"].get<std::string>();
+            mod.stat = stat_reg.get_type_by_name(stat_name);
+            if (mod.stat == stats::StatType::Count) {
+                core::log(core::LogLevel::Warn, "[Effects] Unknown stat '{}' in effect '{}'",
+                          stat_name, def.effect_id);
+                continue;
+            }
+            mod.type = get_enum<stats::ModifierType>(mod_json, "type", stats::ModifierType::Flat);
+            mod.value = mod_json["value"].get<float>();
+            mod.source = stats::ModifierSource::Effect;
+            mod.source_id = "effect:" + def.effect_id;
+            def.stat_modifiers.push_back(mod);
+        }
+    }
+
+    // Resource per tick: array of {stat: "StatName", value: float}
+    if (j.contains("resource_per_tick") && j["resource_per_tick"].is_array()) {
+        auto& stat_reg = stats::stat_registry();
+        for (const auto& res : j["resource_per_tick"]) {
+            if (!res.is_object() || !res.contains("stat") || !res.contains("value")) continue;
+            std::string stat_name = res["stat"].get<std::string>();
+            stats::StatType stat_type = stat_reg.get_type_by_name(stat_name);
+            if (stat_type != stats::StatType::Count) {
+                def.resource_per_tick.emplace_back(stat_type, res["value"].get<float>());
+            }
+        }
+    }
+
+    return def;
+}
+
+} // anonymous namespace
 
 // ============================================================================
 // EffectDefinition Implementation
@@ -25,8 +158,27 @@ void EffectRegistry::register_effect(const EffectDefinition& def) {
 }
 
 void EffectRegistry::load_effects(const std::string& path) {
-    // TODO: Load from JSON file
-    (void)path;
+    core::log(core::LogLevel::Info, "[Effects] Loading effects from: {}", path);
+
+    auto result = data::load_json_array<EffectDefinition>(path, deserialize_effect, "effects");
+
+    // Log warnings
+    for (const auto& warn : result.warnings) {
+        core::log(core::LogLevel::Warn, "[Effects] {}", warn);
+    }
+
+    // Log errors
+    for (const auto& err : result.errors) {
+        core::log(core::LogLevel::Error, "[Effects] {}", err);
+    }
+
+    // Register successfully loaded effects
+    for (const auto& effect : result.items) {
+        register_effect(effect);
+    }
+
+    core::log(core::LogLevel::Info, "[Effects] Loaded {} effects ({} errors)",
+              result.loaded_count(), result.error_count());
 }
 
 const EffectDefinition* EffectRegistry::get(const std::string& effect_id) const {

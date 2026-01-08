@@ -1,9 +1,76 @@
 #include <engine/stats/stat_component.hpp>
 #include <engine/stats/stat_calculator.hpp>
+#include <engine/data/json_loader.hpp>
+#include <engine/core/log.hpp>
 #include <algorithm>
 #include <cmath>
 
 namespace engine::stats {
+
+// ============================================================================
+// JSON Deserialization
+// ============================================================================
+
+namespace {
+
+// Deserialize a single StatPreset from JSON
+std::optional<StatPreset> deserialize_preset(const nlohmann::json& j, std::string& error) {
+    using namespace data::json_helpers;
+
+    // Required: preset_id
+    if (!require_string(j, "preset_id", error)) {
+        return std::nullopt;
+    }
+
+    StatPreset preset;
+    preset.preset_id = j["preset_id"].get<std::string>();
+    preset.display_name = get_string(j, "display_name", preset.preset_id);
+
+    auto& stat_reg = stat_registry();
+
+    // Base values: array of {stat: "StatName", value: float}
+    if (j.contains("base_values") && j["base_values"].is_array()) {
+        for (const auto& val : j["base_values"]) {
+            if (!val.is_object() || !val.contains("stat") || !val.contains("value")) continue;
+
+            std::string stat_name = val["stat"].get<std::string>();
+            StatType stat_type = stat_reg.get_type_by_name(stat_name);
+            if (stat_type != StatType::Count) {
+                preset.base_values[stat_type] = val["value"].get<float>();
+            } else {
+                core::log(core::LogLevel::Warn, "[Stats] Unknown stat '{}' in preset '{}'",
+                          stat_name, preset.preset_id);
+            }
+        }
+    }
+
+    // Default modifiers: array of {stat: "StatName", type: "flat"|"percent"|"multiplicative", value: float}
+    if (j.contains("default_modifiers") && j["default_modifiers"].is_array()) {
+        for (const auto& mod_json : j["default_modifiers"]) {
+            if (!mod_json.is_object()) continue;
+            if (!mod_json.contains("stat") || !mod_json.contains("value")) continue;
+
+            StatModifier mod;
+            mod.id = core::UUID::generate();
+            std::string stat_name = mod_json["stat"].get<std::string>();
+            mod.stat = stat_reg.get_type_by_name(stat_name);
+            if (mod.stat == StatType::Count) {
+                core::log(core::LogLevel::Warn, "[Stats] Unknown stat '{}' in preset '{}' modifier",
+                          stat_name, preset.preset_id);
+                continue;
+            }
+            mod.type = get_enum<ModifierType>(mod_json, "type", ModifierType::Flat);
+            mod.value = mod_json["value"].get<float>();
+            mod.source = ModifierSource::Base;
+            mod.source_id = "preset:" + preset.preset_id;
+            preset.default_modifiers.push_back(mod);
+        }
+    }
+
+    return preset;
+}
+
+} // anonymous namespace
 
 // Static empty vector for returning when no modifiers exist
 std::vector<StatModifier> StatsComponent::s_empty_modifiers;
@@ -369,8 +436,27 @@ void StatPresetRegistry::register_preset(const StatPreset& preset) {
 }
 
 void StatPresetRegistry::load_presets(const std::string& path) {
-    // TODO: Load from JSON file
-    (void)path;
+    core::log(core::LogLevel::Info, "[Stats] Loading presets from: {}", path);
+
+    auto result = data::load_json_array<StatPreset>(path, deserialize_preset, "presets");
+
+    // Log warnings
+    for (const auto& warn : result.warnings) {
+        core::log(core::LogLevel::Warn, "[Stats] {}", warn);
+    }
+
+    // Log errors
+    for (const auto& err : result.errors) {
+        core::log(core::LogLevel::Error, "[Stats] {}", err);
+    }
+
+    // Register successfully loaded presets
+    for (const auto& preset : result.items) {
+        register_preset(preset);
+    }
+
+    core::log(core::LogLevel::Info, "[Stats] Loaded {} presets ({} errors)",
+              result.loaded_count(), result.error_count());
 }
 
 const StatPreset* StatPresetRegistry::get_preset(const std::string& id) const {

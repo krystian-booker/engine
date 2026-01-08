@@ -55,6 +55,14 @@ struct InputState {
     };
     std::unordered_map<std::string, std::vector<Binding>> bindings;
 
+    // Input settings
+    float mouse_sensitivity = 1.0f;
+    bool invert_mouse_y = false;
+    float gamepad_sensitivity = 1.0f;
+    float gamepad_deadzone = 0.15f;
+    bool aim_assist_enabled = false;
+    float aim_assist_strength = 0.5f;
+
     bool initialized = false;
 };
 
@@ -458,6 +466,55 @@ void Input::update_haptics(float dt) {
             }
         }
     }
+}
+
+// Input settings
+void Input::set_mouse_sensitivity(float sensitivity) {
+    g_input.mouse_sensitivity = std::clamp(sensitivity, 0.1f, 10.0f);
+}
+
+float Input::get_mouse_sensitivity() {
+    return g_input.mouse_sensitivity;
+}
+
+void Input::set_invert_mouse_y(bool invert) {
+    g_input.invert_mouse_y = invert;
+}
+
+bool Input::get_invert_mouse_y() {
+    return g_input.invert_mouse_y;
+}
+
+void Input::set_gamepad_sensitivity(float sensitivity) {
+    g_input.gamepad_sensitivity = std::clamp(sensitivity, 0.1f, 10.0f);
+}
+
+float Input::get_gamepad_sensitivity() {
+    return g_input.gamepad_sensitivity;
+}
+
+void Input::set_gamepad_deadzone(float deadzone) {
+    g_input.gamepad_deadzone = std::clamp(deadzone, 0.0f, 0.5f);
+}
+
+float Input::get_gamepad_deadzone() {
+    return g_input.gamepad_deadzone;
+}
+
+void Input::set_aim_assist_enabled(bool enabled) {
+    g_input.aim_assist_enabled = enabled;
+}
+
+bool Input::get_aim_assist_enabled() {
+    return g_input.aim_assist_enabled;
+}
+
+void Input::set_aim_assist_strength(float strength) {
+    g_input.aim_assist_strength = std::clamp(strength, 0.0f, 1.0f);
+}
+
+float Input::get_aim_assist_strength() {
+    return g_input.aim_assist_strength;
 }
 
 } // namespace engine::core

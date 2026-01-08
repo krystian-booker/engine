@@ -116,6 +116,26 @@ public:
     virtual void set_vsync(bool enabled) = 0;
     virtual bool get_vsync() const = 0;
 
+    // Quality settings
+    virtual void set_render_scale(float scale) = 0;       // 0.5 to 2.0, affects internal resolution
+    virtual float get_render_scale() const = 0;
+    virtual void set_shadow_quality(int quality) = 0;     // 0=off, 1=low, 2=medium, 3=high, 4=ultra
+    virtual int get_shadow_quality() const = 0;
+    virtual void set_lod_bias(float bias) = 0;            // -2.0 to 2.0, positive = prefer lower LODs
+    virtual float get_lod_bias() const = 0;
+
+    // Post-processing toggles
+    virtual void set_bloom_enabled(bool enabled) = 0;
+    virtual void set_bloom_intensity(float intensity) = 0;
+    virtual bool get_bloom_enabled() const = 0;
+    virtual float get_bloom_intensity() const = 0;
+
+    virtual void set_ao_enabled(bool enabled) = 0;
+    virtual bool get_ao_enabled() const = 0;
+
+    virtual void set_motion_blur_enabled(bool enabled) = 0;
+    virtual bool get_motion_blur_enabled() const = 0;
+
     // Native handle access (for post-process effects that need direct GPU access)
     // Returns the native texture handle as uint16_t (bgfx::TextureHandle::idx)
     virtual uint16_t get_native_texture_handle(TextureHandle h) const = 0;

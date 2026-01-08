@@ -51,7 +51,8 @@ enum class BuiltinBus : uint32_t {
     Music = 1,
     SFX = 2,
     Voice = 3,
-    Ambient = 4
+    Ambient = 4,
+    UI = 5
 };
 
 // Sound playback state

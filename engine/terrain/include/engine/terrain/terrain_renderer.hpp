@@ -89,7 +89,7 @@ struct TerrainVertex {
 // Terrain renderer - handles mesh generation and rendering
 class TerrainRenderer {
 public:
-    TerrainRenderer() = default;
+    TerrainRenderer();
     ~TerrainRenderer();
 
     // Initialize with heightmap data

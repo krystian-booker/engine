@@ -1,6 +1,7 @@
 #pragma once
 
 #include <engine/scene/entity.hpp>
+#include <engine/scene/world.hpp>
 #include <engine/core/math.hpp>
 #include <string>
 #include <vector>

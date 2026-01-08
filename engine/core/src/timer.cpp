@@ -88,6 +88,7 @@ TimerHandle TimerManager::create_timer(const TimerConfig& config, Callback callb
     Timer timer;
     timer.handle = allocate_handle();
     timer.callback = std::move(callback);
+    timer.initial_delay = config.delay;
     timer.remaining_time = config.delay;
     timer.interval = config.interval;
     timer.remaining_repeats = config.repeat_count;
@@ -179,7 +180,7 @@ void TimerManager::reset(TimerHandle handle) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
     if (auto* timer = find_timer(handle)) {
-        timer->remaining_time = timer->interval > 0.0f ? timer->interval : 0.0f;
+        timer->remaining_time = timer->initial_delay;
     }
 }
 
@@ -332,7 +333,16 @@ void TimerManager::update_timers(float dt, float time_scale) {
                     timer.remaining_time += timer.interval;
 
                     // Handle overshoot (multiple fires in one frame)
-                    while (timer.remaining_time <= 0.0f && timer.interval > 0.0f) {
+                    // Decrement for the main firing
+                    if (timer.remaining_repeats > 0) {
+                        timer.remaining_repeats--;
+                        if (timer.remaining_repeats == 0) {
+                            timer.marked_for_removal = true;
+                        }
+                    }
+
+                    // Handle overshoot (multiple fires in one frame)
+                    while (!timer.marked_for_removal && timer.remaining_time <= 0.0f && timer.interval > 0.0f) {
                         to_fire.push_back({timer.handle, timer.callback});
                         timer.remaining_time += timer.interval;
 
@@ -340,16 +350,7 @@ void TimerManager::update_timers(float dt, float time_scale) {
                             timer.remaining_repeats--;
                             if (timer.remaining_repeats == 0) {
                                 timer.marked_for_removal = true;
-                                break;
                             }
-                        }
-                    }
-
-                    // Decrement repeat count if not infinite
-                    if (timer.remaining_repeats > 0) {
-                        timer.remaining_repeats--;
-                        if (timer.remaining_repeats == 0) {
-                            timer.marked_for_removal = true;
                         }
                     }
                 }

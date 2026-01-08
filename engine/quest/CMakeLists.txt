@@ -23,3 +23,8 @@ target_link_libraries(engine_quest
 )
 
 target_compile_features(engine_quest PUBLIC cxx_std_20)
+
+# Unit tests
+if(ENGINE_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests")
+    add_subdirectory(tests)
+endif()

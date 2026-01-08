@@ -110,6 +110,8 @@ struct TerrainGPUResources {
 // Use unique_ptr to manage GPU resources
 static std::unordered_map<TerrainRenderer*, std::unique_ptr<TerrainGPUResources>> s_gpu_resources;
 
+TerrainRenderer::TerrainRenderer() = default;
+
 TerrainRenderer::~TerrainRenderer() {
     shutdown();
 }

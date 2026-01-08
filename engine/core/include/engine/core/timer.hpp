@@ -178,6 +178,7 @@ private:
     struct Timer {
         TimerHandle handle;
         Callback callback;
+        float initial_delay;
         float remaining_time;
         float interval;
         int remaining_repeats;  // -1 = infinite

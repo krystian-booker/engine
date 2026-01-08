@@ -25,6 +25,7 @@ enum class ModifierType : uint8_t {
 // ============================================================================
 
 enum class ModifierSource : uint8_t {
+    Base,           // Innate/Base value
     Equipment,      // From equipped item
     Effect,         // From status effect/buff/debuff
     Skill,          // From passive skill/ability

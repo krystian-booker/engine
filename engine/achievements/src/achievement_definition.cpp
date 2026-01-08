@@ -1,8 +1,74 @@
 #include <engine/achievements/achievement_definition.hpp>
+#include <engine/data/json_loader.hpp>
 #include <engine/core/log.hpp>
 #include <algorithm>
 
 namespace engine::achievements {
+
+// ============================================================================
+// JSON Deserialization
+// ============================================================================
+
+namespace {
+
+// Deserialize a single AchievementDefinition from JSON
+std::optional<AchievementDefinition> deserialize_achievement(const nlohmann::json& j, std::string& error) {
+    using namespace data::json_helpers;
+
+    // Required: achievement_id
+    if (!require_string(j, "achievement_id", error)) {
+        return std::nullopt;
+    }
+
+    AchievementDefinition def;
+    def.achievement_id = j["achievement_id"].get<std::string>();
+
+    // Basic strings
+    def.display_name = get_string(j, "display_name", def.achievement_id);
+    def.description = get_string(j, "description");
+    def.hidden_description = get_string(j, "hidden_description");
+    def.icon_path = get_string(j, "icon_path");
+    def.icon_locked_path = get_string(j, "icon_locked_path");
+    def.platform_id = get_string(j, "platform_id");
+
+    // Enums
+    def.type = get_enum<AchievementType>(j, "type", AchievementType::Binary);
+    def.category = get_enum<AchievementCategory>(j, "category", AchievementCategory::Misc);
+
+    // Numeric values
+    def.target_count = get_int(j, "target_count", 1);
+    def.points = get_int(j, "points", 0);
+    def.display_order = get_int(j, "display_order", 0);
+
+    // Hidden settings
+    def.is_hidden = get_bool(j, "is_hidden", false);
+    def.is_hidden_until_progress = get_bool(j, "is_hidden_until_progress", false);
+    def.hidden_progress_threshold = get_float(j, "hidden_progress_threshold", 0.5f);
+
+    // String arrays
+    def.prerequisites = get_string_array(j, "prerequisites");
+    def.unlock_rewards = get_string_array(j, "unlock_rewards");
+
+    // Tiers: array of {tier_id, display_name, target_count, points, rewards[]}
+    if (j.contains("tiers") && j["tiers"].is_array()) {
+        def.type = AchievementType::Tiered;
+        for (const auto& tier_json : j["tiers"]) {
+            if (!tier_json.is_object()) continue;
+
+            AchievementTier tier;
+            tier.tier_id = get_string(tier_json, "tier_id");
+            tier.display_name = get_string(tier_json, "display_name");
+            tier.target_count = get_int(tier_json, "target_count", 1);
+            tier.points = get_int(tier_json, "points", 0);
+            tier.rewards = get_string_array(tier_json, "rewards");
+            def.tiers.push_back(tier);
+        }
+    }
+
+    return def;
+}
+
+} // anonymous namespace
 
 // ============================================================================
 // AchievementDefinition
@@ -50,8 +116,27 @@ void AchievementRegistry::register_achievement(const AchievementDefinition& def)
 }
 
 void AchievementRegistry::load_achievements(const std::string& path) {
-    // TODO: Load achievements from JSON file
     core::log(core::LogLevel::Info, "[Achievements] Loading achievements from: {}", path);
+
+    auto result = data::load_json_array<AchievementDefinition>(path, deserialize_achievement, "achievements");
+
+    // Log warnings
+    for (const auto& warn : result.warnings) {
+        core::log(core::LogLevel::Warn, "[Achievements] {}", warn);
+    }
+
+    // Log errors
+    for (const auto& err : result.errors) {
+        core::log(core::LogLevel::Error, "[Achievements] {}", err);
+    }
+
+    // Register successfully loaded achievements
+    for (const auto& achievement : result.items) {
+        register_achievement(achievement);
+    }
+
+    core::log(core::LogLevel::Info, "[Achievements] Loaded {} achievements ({} errors)",
+              result.loaded_count(), result.error_count());
 }
 
 const AchievementDefinition* AchievementRegistry::get(const std::string& achievement_id) const {

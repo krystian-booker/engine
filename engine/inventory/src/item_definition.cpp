@@ -1,8 +1,138 @@
 #include <engine/inventory/item_definition.hpp>
+#include <engine/data/json_loader.hpp>
+#include <engine/stats/stat_definition.hpp>
 #include <engine/core/log.hpp>
 #include <algorithm>
 
 namespace engine::inventory {
+
+// ============================================================================
+// JSON Deserialization
+// ============================================================================
+
+namespace {
+
+// Deserialize a single ItemDefinition from JSON
+std::optional<ItemDefinition> deserialize_item(const nlohmann::json& j, std::string& error) {
+    using namespace data::json_helpers;
+
+    // Required: item_id
+    if (!require_string(j, "item_id", error)) {
+        return std::nullopt;
+    }
+
+    ItemDefinition def;
+    def.item_id = j["item_id"].get<std::string>();
+
+    // Basic strings
+    def.display_name = get_string(j, "display_name", def.item_id);
+    def.description = get_string(j, "description");
+    def.lore = get_string(j, "lore");
+    def.icon_path = get_string(j, "icon_path");
+    def.mesh_path = get_string(j, "mesh_path");
+    def.drop_vfx = get_string(j, "drop_vfx");
+    def.pickup_sfx = get_string(j, "pickup_sfx");
+
+    // Enums (as integers)
+    def.type = get_enum<ItemType>(j, "type", ItemType::Misc);
+    def.rarity = get_enum<ItemRarity>(j, "rarity", ItemRarity::Common);
+    def.slot = get_enum<EquipmentSlot>(j, "slot", EquipmentSlot::None);
+    def.weapon_type = get_enum<WeaponType>(j, "weapon_type", WeaponType::None);
+    def.armor_type = get_enum<ArmorType>(j, "armor_type", ArmorType::None);
+
+    // Numeric values
+    def.max_stack = get_int(j, "max_stack", 1);
+    def.weight = get_float(j, "weight", 0.0f);
+    def.base_value = get_int(j, "base_value", 0);
+    def.buy_price = get_int(j, "buy_price", 0);
+    def.max_durability = get_int(j, "max_durability", 0);
+    def.min_level = get_int(j, "min_level", 1);
+    def.max_level = get_int(j, "max_level", 100);
+
+    // Boolean flags
+    def.is_unique = get_bool(j, "is_unique", false);
+    def.is_quest_item = get_bool(j, "is_quest_item", false);
+    def.is_tradeable = get_bool(j, "is_tradeable", true);
+    def.is_sellable = get_bool(j, "is_sellable", true);
+    def.is_droppable = get_bool(j, "is_droppable", true);
+    def.destroys_on_use = get_bool(j, "destroys_on_use", true);
+    def.breaks_when_depleted = get_bool(j, "breaks_when_depleted", false);
+
+    // Tags
+    def.tags = get_string_array(j, "tags");
+
+    // Effect IDs
+    def.apply_effects = get_string_array(j, "apply_effects");
+
+    // Stat bonuses: array of {stat: "StatName", value: float}
+    if (j.contains("stat_bonuses") && j["stat_bonuses"].is_array()) {
+        auto& stat_reg = stats::stat_registry();
+        for (const auto& bonus : j["stat_bonuses"]) {
+            if (bonus.is_object() && bonus.contains("stat") && bonus.contains("value")) {
+                std::string stat_name = bonus["stat"].get<std::string>();
+                float value = bonus["value"].get<float>();
+                stats::StatType stat_type = stat_reg.get_type_by_name(stat_name);
+                if (stat_type != stats::StatType::Count) {
+                    def.stat_bonuses.emplace_back(stat_type, value);
+                } else {
+                    core::log(core::LogLevel::Warn, "[Inventory] Unknown stat '{}' in item '{}'",
+                              stat_name, def.item_id);
+                }
+            }
+        }
+    }
+
+    // Stat scaling: array of {stat: "StatName", value: float}
+    if (j.contains("stat_scaling") && j["stat_scaling"].is_array()) {
+        auto& stat_reg = stats::stat_registry();
+        for (const auto& scale : j["stat_scaling"]) {
+            if (scale.is_object() && scale.contains("stat") && scale.contains("value")) {
+                std::string stat_name = scale["stat"].get<std::string>();
+                float value = scale["value"].get<float>();
+                stats::StatType stat_type = stat_reg.get_type_by_name(stat_name);
+                if (stat_type != stats::StatType::Count) {
+                    def.stat_scaling.emplace_back(stat_type, value);
+                }
+            }
+        }
+    }
+
+    // Instant heals: array of {stat: "StatName", amount: float}
+    if (j.contains("instant_heals") && j["instant_heals"].is_array()) {
+        auto& stat_reg = stats::stat_registry();
+        for (const auto& heal : j["instant_heals"]) {
+            if (heal.is_object() && heal.contains("stat") && heal.contains("amount")) {
+                std::string stat_name = heal["stat"].get<std::string>();
+                float amount = heal["amount"].get<float>();
+                stats::StatType stat_type = stat_reg.get_type_by_name(stat_name);
+                if (stat_type != stats::StatType::Count) {
+                    def.instant_heals.emplace_back(stat_type, amount);
+                }
+            }
+        }
+    }
+
+    // Requirements: array of {stat: "StatName", min_value: float, description?: string}
+    if (j.contains("requirements") && j["requirements"].is_array()) {
+        auto& stat_reg = stats::stat_registry();
+        for (const auto& req : j["requirements"]) {
+            if (req.is_object() && req.contains("stat") && req.contains("min_value")) {
+                ItemRequirement item_req;
+                std::string stat_name = req["stat"].get<std::string>();
+                item_req.stat = stat_reg.get_type_by_name(stat_name);
+                item_req.min_value = req["min_value"].get<float>();
+                item_req.description = get_string(req, "description");
+                if (item_req.stat != stats::StatType::Count) {
+                    def.requirements.push_back(item_req);
+                }
+            }
+        }
+    }
+
+    return def;
+}
+
+} // anonymous namespace
 
 // ============================================================================
 // ItemDefinition
@@ -36,8 +166,27 @@ void ItemRegistry::register_item(const ItemDefinition& def) {
 }
 
 void ItemRegistry::load_items(const std::string& path) {
-    // TODO: Load items from JSON file
     core::log(core::LogLevel::Info, "[Inventory] Loading items from: {}", path);
+
+    auto result = data::load_json_array<ItemDefinition>(path, deserialize_item, "items");
+
+    // Log warnings
+    for (const auto& warn : result.warnings) {
+        core::log(core::LogLevel::Warn, "[Inventory] {}", warn);
+    }
+
+    // Log errors
+    for (const auto& err : result.errors) {
+        core::log(core::LogLevel::Error, "[Inventory] {}", err);
+    }
+
+    // Register successfully loaded items
+    for (const auto& item : result.items) {
+        register_item(item);
+    }
+
+    core::log(core::LogLevel::Info, "[Inventory] Loaded {} items ({} errors)",
+              result.loaded_count(), result.error_count());
 }
 
 const ItemDefinition* ItemRegistry::get(const std::string& item_id) const {

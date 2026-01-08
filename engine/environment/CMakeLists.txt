@@ -49,3 +49,8 @@ target_link_libraries(engine_environment
 set_target_properties(engine_environment PROPERTIES
     FOLDER "engine"
 )
+
+# Unit tests
+if(ENGINE_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests")
+    add_subdirectory(tests)
+endif()

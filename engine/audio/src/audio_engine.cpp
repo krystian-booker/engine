@@ -245,6 +245,39 @@ bool AudioEngine::is_bus_muted(AudioBusHandle bus) const {
     return is_bus_muted_impl(m_impl.get(), bus);
 }
 
+// Per-channel volume convenience methods
+void AudioEngine::set_sfx_volume(float volume) {
+    set_bus_volume(AudioBusHandle{static_cast<uint32_t>(BuiltinBus::SFX)}, volume);
+}
+
+float AudioEngine::get_sfx_volume() const {
+    return get_bus_volume(AudioBusHandle{static_cast<uint32_t>(BuiltinBus::SFX)});
+}
+
+void AudioEngine::set_voice_volume(float volume) {
+    set_bus_volume(AudioBusHandle{static_cast<uint32_t>(BuiltinBus::Voice)}, volume);
+}
+
+float AudioEngine::get_voice_volume() const {
+    return get_bus_volume(AudioBusHandle{static_cast<uint32_t>(BuiltinBus::Voice)});
+}
+
+void AudioEngine::set_ambient_volume(float volume) {
+    set_bus_volume(AudioBusHandle{static_cast<uint32_t>(BuiltinBus::Ambient)}, volume);
+}
+
+float AudioEngine::get_ambient_volume() const {
+    return get_bus_volume(AudioBusHandle{static_cast<uint32_t>(BuiltinBus::Ambient)});
+}
+
+void AudioEngine::set_ui_volume(float volume) {
+    set_bus_volume(AudioBusHandle{static_cast<uint32_t>(BuiltinBus::UI)}, volume);
+}
+
+float AudioEngine::get_ui_volume() const {
+    return get_bus_volume(AudioBusHandle{static_cast<uint32_t>(BuiltinBus::UI)});
+}
+
 SoundHandle AudioEngine::play(const std::string& path, float volume, bool loop) {
     SoundHandle handle = load_sound(path);
     if (!handle.valid()) {

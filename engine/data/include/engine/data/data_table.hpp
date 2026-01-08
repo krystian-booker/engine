@@ -251,6 +251,7 @@ public:
         DataRow operator*() const { return DataRow(m_table, m_index); }
         Iterator& operator++() { ++m_index; return *this; }
         bool operator!=(const Iterator& other) const { return m_index != other.m_index; }
+        bool operator==(const Iterator& other) const { return m_index == other.m_index; }
 
     private:
         const DataTable* m_table;

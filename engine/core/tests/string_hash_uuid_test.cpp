@@ -3,7 +3,9 @@
 #include <engine/core/uuid.hpp>
 #include <engine/core/asset_handle.hpp>
 
-int main() {
+#include <catch2/catch_test_macros.hpp>
+
+TEST_CASE("StringHash and UUID compile-time checks", "[core][hash][uuid]") {
     using namespace engine::core;
     
     // Test StringHash
@@ -12,9 +14,9 @@ int main() {
     static_assert(hash1 != hash2, "Different strings should have different hashes");
     static_assert(hash1 == StringHash("Player"), "Same strings should have same hash");
     
-    StringHash runtime_hash(std::string("Dynamic"));
-    if (runtime_hash == "Dynamic"_sh) {
-        // OK
+    SECTION("Runtime StringHash") {
+        StringHash runtime_hash(std::string("Dynamic"));
+        REQUIRE(runtime_hash == "Dynamic"_sh);
     }
     
     // Test UUID (compile-time only - no generation test)
@@ -25,15 +27,15 @@ int main() {
     static_assert(!from_parts.is_null(), "Non-zero UUID should not be null");
     
     // Test AssetHandle
-    MeshAssetHandle mesh_handle;
+    constexpr MeshAssetHandle mesh_handle;
     static_assert(!mesh_handle.valid() == true, "Default handle should be invalid");
     static_assert(MeshAssetHandle::type() == AssetType::Mesh, "Type should match");
     
-    TextureAssetHandle tex_handle(from_parts);
-    if (tex_handle.valid()) {
+    SECTION("TextureAssetHandle validation") {
+        TextureAssetHandle tex_handle(from_parts);
+        REQUIRE(tex_handle.valid());
+        
         UUID id = tex_handle.uuid();
-        (void)id;
+        REQUIRE(!id.is_null());
     }
-    
-    return 0;
 }

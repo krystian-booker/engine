@@ -229,6 +229,24 @@ if(EXISTS "${bgfx_cmake_SOURCE_DIR}/bgfx/3rdparty/stb/stb_textedit.h")
     message(STATUS "Patched bgfx dear-imgui imstb_textedit.h")
 endif()
 
+if(EXISTS "${bgfx_cmake_SOURCE_DIR}/bgfx/3rdparty/stb/stb_rect_pack.h")
+    file(COPY_FILE
+        "${bgfx_cmake_SOURCE_DIR}/bgfx/3rdparty/stb/stb_rect_pack.h"
+        "${bgfx_cmake_SOURCE_DIR}/bgfx/3rdparty/dear-imgui/imstb_rectpack.h"
+        ONLY_IF_DIFFERENT
+    )
+    message(STATUS "Patched bgfx dear-imgui imstb_rectpack.h")
+endif()
+
+if(EXISTS "${bgfx_cmake_SOURCE_DIR}/bgfx/3rdparty/stb/stb_truetype.h")
+    file(COPY_FILE
+        "${bgfx_cmake_SOURCE_DIR}/bgfx/3rdparty/stb/stb_truetype.h"
+        "${bgfx_cmake_SOURCE_DIR}/bgfx/3rdparty/dear-imgui/imstb_truetype.h"
+        ONLY_IF_DIFFERENT
+    )
+    message(STATUS "Patched bgfx dear-imgui imstb_truetype.h")
+endif()
+
 # Create namespace aliases
 add_library(bgfx::bgfx ALIAS bgfx)
 add_library(bgfx::bx ALIAS bx)

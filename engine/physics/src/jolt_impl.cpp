@@ -94,8 +94,15 @@ public:
 class ObjectVsBroadPhaseLayerFilterImpl : public ObjectVsBroadPhaseLayerFilter {
 public:
     bool ShouldCollide(ObjectLayer layer1, BroadPhaseLayer layer2) const override {
-        if (layer1 == 0) return layer2 == BroadPhaseLayers::NON_MOVING || layer2 == BroadPhaseLayers::MOVING;
-        return layer2 == BroadPhaseLayers::MOVING;
+        switch (layer1) {
+            case 0: // layers::STATIC
+                return layer2 == BroadPhaseLayers::MOVING;
+            case 1: // layers::DYNAMIC
+                return true; // Collide with everything
+            default:
+                // User layers etc. - default to true for safety
+                return true;
+        }
     }
 };
 
@@ -579,6 +586,12 @@ PhysicsBodyId create_body_impl(PhysicsWorld::Impl* impl, const BodySettings& set
     body_settings.mAngularDamping = settings.angular_damping;
     body_settings.mAllowSleeping = settings.allow_sleep;
     body_settings.mIsSensor = settings.is_sensor;
+
+    // Set mass for dynamic bodies
+    if (motion_type == EMotionType::Dynamic) {
+        body_settings.mOverrideMassProperties = EOverrideMassProperties::CalculateInertia;
+        body_settings.mMassPropertiesOverride.mMass = settings.mass;
+    }
 
     BodyInterface& body_interface = impl->physics_system->GetBodyInterface();
     Body* body = body_interface.CreateBody(body_settings);
