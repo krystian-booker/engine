@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <algorithm>
 #include <regex>
+#include <chrono>
 
 namespace fs = std::filesystem;
 
@@ -123,7 +124,7 @@ FileInfo FileSystem::get_file_info(const std::string& path) {
         auto ftime = fs::last_write_time(p, ec);
         if (!ec) {
             auto sctp = std::chrono::time_point_cast<std::chrono::seconds>(
-                std::chrono::file_clock::to_sys(ftime)
+                std::chrono::clock_cast<std::chrono::system_clock>(ftime)
             );
             info.modified_time = static_cast<uint64_t>(sctp.time_since_epoch().count());
         }
@@ -147,7 +148,7 @@ uint64_t FileSystem::get_modified_time(const std::string& path) {
     if (ec) return 0;
 
     auto sctp = std::chrono::time_point_cast<std::chrono::seconds>(
-        std::chrono::file_clock::to_sys(ftime)
+        std::chrono::clock_cast<std::chrono::system_clock>(ftime)
     );
     return static_cast<uint64_t>(sctp.time_since_epoch().count());
 }

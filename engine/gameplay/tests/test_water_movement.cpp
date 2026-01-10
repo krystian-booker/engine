@@ -2,6 +2,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <engine/gameplay/character_movement.hpp>
 #include <engine/gameplay/water_volume.hpp>
+#include <engine/scene/entity.hpp>
 
 using namespace engine::gameplay;
 using namespace Catch::Matchers;
@@ -230,7 +231,7 @@ TEST_CASE("WaterQueryResult defaults", "[gameplay][water]") {
 
     SECTION("Default is not in water") {
         REQUIRE_FALSE(result.in_water);
-        REQUIRE(result.water_entity == scene::NullEntity);
+        REQUIRE(result.water_entity == engine::scene::NullEntity);
     }
 
     SECTION("Default values are safe") {
