@@ -10,10 +10,12 @@ target_sources(engine_core
         src/job_system.cpp
         src/time.cpp
         src/filesystem.cpp
+        src/file_watcher.cpp
         src/project_settings.cpp
         src/application.cpp
         src/serialize.cpp
         src/input.cpp
+        src/input_buffer.cpp
         src/profiler.cpp
         src/event_dispatcher.cpp
         src/allocators.cpp
@@ -32,11 +34,13 @@ target_sources(engine_core
             include/engine/core/job_system.hpp
             include/engine/core/time.hpp
             include/engine/core/filesystem.hpp
+            include/engine/core/file_watcher.hpp
             include/engine/core/math.hpp
             include/engine/core/project_settings.hpp
             include/engine/core/game_clock.hpp
             include/engine/core/application.hpp
             include/engine/core/input.hpp
+            include/engine/core/input_buffer.hpp
             include/engine/core/serialize.hpp
             include/engine/core/profiler.hpp
             include/engine/core/core.hpp

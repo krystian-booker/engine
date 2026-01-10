@@ -45,6 +45,7 @@ target_sources(engine_render
         src/render_component_registration.cpp
         src/water_renderer.cpp
         src/tp_camera.cpp
+        src/bone_mask_presets.cpp
     PUBLIC
         FILE_SET public_headers
         TYPE HEADERS
@@ -89,6 +90,7 @@ target_sources(engine_render
             include/engine/render/oit.hpp
             include/engine/render/water_renderer.hpp
             include/engine/render/tp_camera.hpp
+            include/engine/render/bone_mask_presets.hpp
 )
 
 target_include_directories(engine_render

@@ -32,6 +32,8 @@ add_subdirectory(data)
 add_subdirectory(settings)
 add_subdirectory(achievements)
 add_subdirectory(environment)
+add_subdirectory(gameplay)
+add_subdirectory(companion)
 
 # Umbrella target for convenience
 add_library(engine INTERFACE)
@@ -68,4 +70,6 @@ target_link_libraries(engine INTERFACE
     engine::settings
     engine::achievements
     engine::environment
+    engine::gameplay
+    engine::companion
 )
