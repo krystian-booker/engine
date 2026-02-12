@@ -62,7 +62,7 @@ target_link_libraries(engine_physics
         engine::core
         engine::render
         engine::scene
-        Jolt
+        Jolt::Jolt
     PRIVATE
         engine_compiler_flags
 )

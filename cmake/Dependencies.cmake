@@ -1,131 +1,72 @@
 # Dependencies.cmake
-# External dependencies including bgfx.cmake
+# External dependencies: vcpkg packages via find_package() + bgfx/ufbx via FetchContent
 
 include(FetchContent)
 
 # ============================================================================
+# vcpkg packages (installed automatically via manifest mode)
+# ============================================================================
+
 # GLM (math library)
-# ============================================================================
-FetchContent_Declare(
-    glm
-    GIT_REPOSITORY https://github.com/g-truc/glm.git
-    GIT_TAG 1.0.1
-    GIT_SHALLOW TRUE
-)
-set(GLM_ENABLE_CXX_20 ON CACHE BOOL "" FORCE)
-set(GLM_ENABLE_EXPERIMENTAL ON CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(glm)
-
-# Add GLM_ENABLE_EXPERIMENTAL as compile definition to glm target
-if(TARGET glm)
-    target_compile_definitions(glm INTERFACE GLM_ENABLE_EXPERIMENTAL)
+find_package(glm CONFIG REQUIRED)
+# vcpkg's glm target is glm::glm - matches our usage
+# Add experimental extensions define
+if(TARGET glm::glm)
+    target_compile_definitions(glm::glm INTERFACE GLM_ENABLE_EXPERIMENTAL)
 endif()
 
-# ============================================================================
 # nlohmann/json (serialization)
-# ============================================================================
-FetchContent_Declare(
-    json
-    GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG v3.11.3
-    GIT_SHALLOW TRUE
-)
-set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(json)
+find_package(nlohmann_json CONFIG REQUIRED)
+# Target: nlohmann_json::nlohmann_json - matches our usage
 
-# ============================================================================
 # stb (image loading - header only)
-# ============================================================================
-FetchContent_Declare(
-    stb
-    GIT_REPOSITORY https://github.com/nothings/stb.git
-    GIT_TAG master
-    GIT_SHALLOW TRUE
-    UPDATE_DISCONNECTED TRUE
-)
-FetchContent_GetProperties(stb)
-if(NOT stb_POPULATED)
-    FetchContent_Populate(stb)
+find_package(Stb REQUIRED)
+# vcpkg provides Stb_INCLUDE_DIR, not a target - create one
+if(NOT TARGET stb::stb)
+    add_library(stb INTERFACE)
+    add_library(stb::stb ALIAS stb)
+    target_include_directories(stb INTERFACE ${Stb_INCLUDE_DIR})
 endif()
-add_library(stb INTERFACE)
-add_library(stb::stb ALIAS stb)
-target_include_directories(stb INTERFACE ${stb_SOURCE_DIR})
-include_directories(${stb_SOURCE_DIR})
 
-# ============================================================================
 # cgltf (glTF loading - header only)
-# ============================================================================
-FetchContent_Declare(
-    cgltf
-    GIT_REPOSITORY https://github.com/jkuhlmann/cgltf.git
-    GIT_TAG v1.14
-    GIT_SHALLOW TRUE
-    UPDATE_DISCONNECTED TRUE
-)
-FetchContent_GetProperties(cgltf)
-if(NOT cgltf_POPULATED)
-    FetchContent_Populate(cgltf)
+find_path(CGLTF_INCLUDE_DIR NAMES cgltf.h)
+if(NOT CGLTF_INCLUDE_DIR)
+    message(FATAL_ERROR "cgltf header not found. Ensure vcpkg cgltf package is installed.")
 endif()
-add_library(cgltf INTERFACE)
-add_library(cgltf::cgltf ALIAS cgltf)
-target_include_directories(cgltf INTERFACE ${cgltf_SOURCE_DIR})
+if(NOT TARGET cgltf::cgltf)
+    add_library(cgltf INTERFACE)
+    add_library(cgltf::cgltf ALIAS cgltf)
+    target_include_directories(cgltf INTERFACE ${CGLTF_INCLUDE_DIR})
+endif()
 
-# ============================================================================
 # miniaudio (audio - header only)
-# ============================================================================
-FetchContent_Declare(
-    miniaudio
-    GIT_REPOSITORY https://github.com/mackron/miniaudio.git
-    GIT_TAG 0.11.21
-    GIT_SHALLOW TRUE
-    UPDATE_DISCONNECTED TRUE
-)
-FetchContent_GetProperties(miniaudio)
-if(NOT miniaudio_POPULATED)
-    FetchContent_Populate(miniaudio)
+find_path(MINIAUDIO_INCLUDE_DIR NAMES miniaudio.h)
+if(NOT MINIAUDIO_INCLUDE_DIR)
+    message(FATAL_ERROR "miniaudio header not found. Ensure vcpkg miniaudio package is installed.")
 endif()
-add_library(miniaudio INTERFACE)
-add_library(miniaudio::miniaudio ALIAS miniaudio)
-target_include_directories(miniaudio INTERFACE ${miniaudio_SOURCE_DIR}/extras/miniaudio_split)
+if(NOT TARGET miniaudio::miniaudio)
+    add_library(miniaudio INTERFACE)
+    add_library(miniaudio::miniaudio ALIAS miniaudio)
+    target_include_directories(miniaudio INTERFACE ${MINIAUDIO_INCLUDE_DIR})
+endif()
 
-# ============================================================================
 # dr_libs (audio format parsing - header only: dr_wav, dr_mp3, dr_flac)
-# ============================================================================
-FetchContent_Declare(
-    dr_libs
-    GIT_REPOSITORY https://github.com/mackron/dr_libs.git
-    GIT_TAG master
-    GIT_SHALLOW TRUE
-    UPDATE_DISCONNECTED TRUE
-)
-FetchContent_GetProperties(dr_libs)
-if(NOT dr_libs_POPULATED)
-    FetchContent_Populate(dr_libs)
+find_path(DR_LIBS_INCLUDE_DIR NAMES dr_wav.h dr_mp3.h dr_flac.h)
+if(NOT DR_LIBS_INCLUDE_DIR)
+    message(FATAL_ERROR "dr_libs headers not found. Ensure vcpkg drlibs package is installed.")
 endif()
-add_library(dr_libs INTERFACE)
-add_library(dr_libs::dr_libs ALIAS dr_libs)
-target_include_directories(dr_libs INTERFACE ${dr_libs_SOURCE_DIR})
+if(NOT TARGET dr_libs::dr_libs)
+    add_library(dr_libs INTERFACE)
+    add_library(dr_libs::dr_libs ALIAS dr_libs)
+    target_include_directories(dr_libs INTERFACE ${DR_LIBS_INCLUDE_DIR})
+endif()
 
-# ============================================================================
 # tinyobjloader (OBJ file parsing - header only)
-# ============================================================================
-FetchContent_Declare(
-    tinyobjloader
-    GIT_REPOSITORY https://github.com/tinyobjloader/tinyobjloader.git
-    GIT_TAG v2.0.0rc13
-    GIT_SHALLOW TRUE
-    UPDATE_DISCONNECTED TRUE
-)
-FetchContent_GetProperties(tinyobjloader)
-if(NOT tinyobjloader_POPULATED)
-    FetchContent_Populate(tinyobjloader)
-endif()
-add_library(tinyobjloader INTERFACE)
-add_library(tinyobjloader::tinyobjloader ALIAS tinyobjloader)
-target_include_directories(tinyobjloader INTERFACE ${tinyobjloader_SOURCE_DIR})
+find_package(tinyobjloader CONFIG REQUIRED)
+# vcpkg provides tinyobjloader::tinyobjloader - matches our usage
 
 # ============================================================================
-# ufbx (FBX file parsing - single header, MIT license)
+# ufbx (FBX file parsing - single file, not in vcpkg)
 # ============================================================================
 FetchContent_Declare(
     ufbx
@@ -146,48 +87,34 @@ target_compile_definitions(ufbx PUBLIC UFBX_REAL_IS_FLOAT)
 # ============================================================================
 # Jolt Physics
 # ============================================================================
-FetchContent_Declare(
-    JoltPhysics
-    GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
-    GIT_TAG v5.2.0
-    GIT_SHALLOW TRUE
-    SOURCE_SUBDIR Build
-    UPDATE_DISCONNECTED TRUE
-)
-set(ENABLE_ALL_WARNINGS OFF CACHE BOOL "" FORCE)
-set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF CACHE BOOL "" FORCE)
-set(ENABLE_OBJECT_STREAM OFF CACHE BOOL "" FORCE)
-set(OVERRIDE_CXX_FLAGS OFF CACHE BOOL "" FORCE)
-set(INTERPROCEDURAL_OPTIMIZATION OFF CACHE BOOL "" FORCE)
-set(CPP_EXCEPTIONS_ENABLED ON CACHE BOOL "" FORCE)  # Enable exceptions to match rest of project
-FetchContent_MakeAvailable(JoltPhysics)
+find_package(Jolt CONFIG REQUIRED)
+# vcpkg provides Jolt::Jolt - physics/CMakeLists.txt updated to use this
 
 # ============================================================================
 # Recast Navigation (pathfinding)
 # ============================================================================
-# Set policy version minimum to handle older cmake_minimum_required in recastnavigation
-set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
-FetchContent_Declare(
-    recastnavigation
-    GIT_REPOSITORY https://github.com/recastnavigation/recastnavigation.git
-    GIT_TAG v1.6.0
-    GIT_SHALLOW TRUE
-    UPDATE_DISCONNECTED TRUE
-)
-set(RECASTNAVIGATION_DEMO OFF CACHE BOOL "" FORCE)
-set(RECASTNAVIGATION_TESTS OFF CACHE BOOL "" FORCE)
-set(RECASTNAVIGATION_EXAMPLES OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(recastnavigation)
-
-# Create namespace aliases for Recast/Detour
-add_library(Recast::Recast ALIAS Recast)
-add_library(Recast::Detour ALIAS Detour)
-add_library(Recast::DetourCrowd ALIAS DetourCrowd)
-add_library(Recast::DetourTileCache ALIAS DetourTileCache)
+find_package(recastnavigation CONFIG REQUIRED)
+# vcpkg provides RecastNavigation::Recast etc.
+# Our code uses Recast::Recast, Recast::Detour, etc. - create aliases
+if(NOT TARGET Recast::Recast)
+    add_library(Recast::Recast ALIAS RecastNavigation::Recast)
+endif()
+if(NOT TARGET Recast::Detour)
+    add_library(Recast::Detour ALIAS RecastNavigation::Detour)
+endif()
+if(NOT TARGET Recast::DetourCrowd)
+    add_library(Recast::DetourCrowd ALIAS RecastNavigation::DetourCrowd)
+endif()
+if(NOT TARGET Recast::DetourTileCache)
+    add_library(Recast::DetourTileCache ALIAS RecastNavigation::DetourTileCache)
+endif()
 
 # ============================================================================
-# bgfx.cmake (via FetchContent)
+# bgfx.cmake (via FetchContent - vcpkg version is older and missing shader tools)
 # ============================================================================
+# Cache bgfx outside the build directory so clean builds don't re-download
+set(FETCHCONTENT_BASE_DIR "${CMAKE_SOURCE_DIR}/.deps" CACHE PATH "FetchContent base directory")
+
 FetchContent_Declare(
     bgfx_cmake
     GIT_REPOSITORY https://github.com/bkaradzic/bgfx.cmake.git
@@ -215,6 +142,9 @@ if(CMAKE_BUILD_TYPE)
 endif()
 
 FetchContent_MakeAvailable(bgfx_cmake)
+
+# Restore FETCHCONTENT_BASE_DIR to default for any future FetchContent usage
+set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/_deps" CACHE PATH "FetchContent base directory" FORCE)
 
 # Fix broken imstb_textedit.h wrapper in bgfx's dear-imgui bundle
 # The bundled imstb_textedit.h is a 47-line wrapper that incorrectly bridges to stb_textedit.h,
@@ -259,112 +189,37 @@ add_library(bgfx::bimg ALIAS bimg)
 # Tools: shaderc, geometryc, texturec
 
 # ============================================================================
-# EnTT Entity Component System (via FetchContent)
+# EnTT Entity Component System
 # ============================================================================
-FetchContent_Declare(
-    entt
-    GIT_REPOSITORY https://github.com/skypjack/entt.git
-    GIT_TAG v3.16.0
-    GIT_SHALLOW TRUE
-    UPDATE_DISCONNECTED TRUE
-)
-FetchContent_MakeAvailable(entt)
-
-# Create lowercase alias for EnTT
+find_package(EnTT CONFIG REQUIRED)
+# vcpkg provides EnTT::EnTT - our code uses entt::entt (lowercase)
 if(NOT TARGET entt::entt)
-    add_library(entt::entt ALIAS EnTT)
+    add_library(entt::entt ALIAS EnTT::EnTT)
 endif()
 
 # ============================================================================
 # Lua (scripting runtime)
 # ============================================================================
-FetchContent_Declare(
-    lua
-    GIT_REPOSITORY https://github.com/lua/lua.git
-    GIT_TAG v5.4.7
-    GIT_SHALLOW TRUE
-    UPDATE_DISCONNECTED TRUE
-)
-FetchContent_GetProperties(lua)
-if(NOT lua_POPULATED)
-    FetchContent_Populate(lua)
-endif()
-
-# Build Lua as a static library
-set(LUA_SOURCES
-    ${lua_SOURCE_DIR}/lapi.c
-    ${lua_SOURCE_DIR}/lauxlib.c
-    ${lua_SOURCE_DIR}/lbaselib.c
-    ${lua_SOURCE_DIR}/lcode.c
-    ${lua_SOURCE_DIR}/lcorolib.c
-    ${lua_SOURCE_DIR}/lctype.c
-    ${lua_SOURCE_DIR}/ldblib.c
-    ${lua_SOURCE_DIR}/ldebug.c
-    ${lua_SOURCE_DIR}/ldo.c
-    ${lua_SOURCE_DIR}/ldump.c
-    ${lua_SOURCE_DIR}/lfunc.c
-    ${lua_SOURCE_DIR}/lgc.c
-    ${lua_SOURCE_DIR}/linit.c
-    ${lua_SOURCE_DIR}/liolib.c
-    ${lua_SOURCE_DIR}/llex.c
-    ${lua_SOURCE_DIR}/lmathlib.c
-    ${lua_SOURCE_DIR}/lmem.c
-    ${lua_SOURCE_DIR}/loadlib.c
-    ${lua_SOURCE_DIR}/lobject.c
-    ${lua_SOURCE_DIR}/lopcodes.c
-    ${lua_SOURCE_DIR}/loslib.c
-    ${lua_SOURCE_DIR}/lparser.c
-    ${lua_SOURCE_DIR}/lstate.c
-    ${lua_SOURCE_DIR}/lstring.c
-    ${lua_SOURCE_DIR}/lstrlib.c
-    ${lua_SOURCE_DIR}/ltable.c
-    ${lua_SOURCE_DIR}/ltablib.c
-    ${lua_SOURCE_DIR}/ltm.c
-    ${lua_SOURCE_DIR}/lundump.c
-    ${lua_SOURCE_DIR}/lutf8lib.c
-    ${lua_SOURCE_DIR}/lvm.c
-    ${lua_SOURCE_DIR}/lzio.c
-)
-add_library(lua STATIC ${LUA_SOURCES})
-add_library(lua::lua ALIAS lua)
-target_include_directories(lua PUBLIC ${lua_SOURCE_DIR})
-# Compile as C++
-set_source_files_properties(${LUA_SOURCES} PROPERTIES LANGUAGE CXX)
-target_compile_definitions(lua PRIVATE LUA_USE_WINDOWS)
+find_package(lua CONFIG REQUIRED)
+# vcpkg's lua with "cpp" feature compiles as C++ - provides lua target
 
 # ============================================================================
 # sol2 (C++ Lua wrapper - header only)
 # ============================================================================
-FetchContent_Declare(
-    sol2
-    GIT_REPOSITORY https://github.com/ThePhD/sol2.git
-    GIT_TAG v3.3.1
-    GIT_SHALLOW TRUE
-    UPDATE_DISCONNECTED TRUE
-)
-FetchContent_GetProperties(sol2)
-if(NOT sol2_POPULATED)
-    FetchContent_Populate(sol2)
+find_package(sol2 CONFIG REQUIRED)
+# Add required compile definitions for safety and C++ Lua compatibility
+if(TARGET sol2::sol2)
+    set_property(TARGET sol2::sol2 APPEND PROPERTY
+        INTERFACE_COMPILE_DEFINITIONS SOL_ALL_SAFETIES_ON=1 SOL_USING_CXX_LUA=1)
+elseif(TARGET sol2)
+    set_property(TARGET sol2 APPEND PROPERTY
+        INTERFACE_COMPILE_DEFINITIONS SOL_ALL_SAFETIES_ON=1 SOL_USING_CXX_LUA=1)
 endif()
-add_library(sol2 INTERFACE)
-add_library(sol2::sol2 ALIAS sol2)
-target_include_directories(sol2 INTERFACE ${sol2_SOURCE_DIR}/include)
-target_link_libraries(sol2 INTERFACE lua::lua)
-target_compile_definitions(sol2 INTERFACE
-    SOL_ALL_SAFETIES_ON=1
-    SOL_USING_CXX_LUA=1
-)
 
 # ============================================================================
 # Catch2 (unit testing framework)
 # ============================================================================
 if(ENGINE_BUILD_TESTS)
-    FetchContent_Declare(
-        Catch2
-        GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-        GIT_TAG v3.5.2
-        GIT_SHALLOW TRUE
-    )
-    FetchContent_MakeAvailable(Catch2)
-    list(APPEND CMAKE_MODULE_PATH ${Catch2_SOURCE_DIR}/extras)
+    find_package(Catch2 3 CONFIG REQUIRED)
+    list(APPEND CMAKE_MODULE_PATH ${Catch2_DIR})
 endif()

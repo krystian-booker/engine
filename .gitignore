@@ -439,8 +439,11 @@ FodyWeavers.xsd
 CMakeUserPresets.json
 
 /.claude
+/.deps
 /out
+/vcpkg_installed
 CLAUDE.md
 TESTING.md
 notes/
 GEMINI.md
+nul

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "engine",
+  "version": "0.1.0",
+  "description": "C++ Game Engine",
+  "dependencies": [
+    "glm",
+    "nlohmann-json",
+    "stb",
+    "cgltf",
+    "miniaudio",
+    "drlibs",
+    "tinyobjloader",
+    "joltphysics",
+    "recastnavigation",
+    "entt",
+    {
+      "name": "lua",
+      "features": ["cpp"]
+    },
+    "sol2",
+    {
+      "name": "catch2",
+      "platform": "!uwp"
+    }
+  ]
+}
