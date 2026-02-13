@@ -95,7 +95,7 @@ void SSAOShaders::create() {
     u_ssaoParams = bgfx::createUniform("u_ssaoParams", bgfx::UniformType::Vec4);
     u_projParams = bgfx::createUniform("u_projParams", bgfx::UniformType::Vec4);
     u_noiseScale = bgfx::createUniform("u_noiseScale", bgfx::UniformType::Vec4);
-    u_samples = bgfx::createUniform("u_samples", bgfx::UniformType::Vec4, 16);
+    u_samples = bgfx::createUniform("u_samples", bgfx::UniformType::Vec4, 64);
     s_depth = bgfx::createUniform("s_depth", bgfx::UniformType::Sampler);
     s_normal = bgfx::createUniform("s_normal", bgfx::UniformType::Sampler);
     s_noise = bgfx::createUniform("s_noise", bgfx::UniformType::Sampler);
@@ -375,7 +375,7 @@ TextureHandle SSAOSystem::render(
     bgfx::setUniform(s_ssao_shaders.u_ssaoParams, &ssao_params);
     bgfx::setUniform(s_ssao_shaders.u_projParams, &proj_params);
     bgfx::setUniform(s_ssao_shaders.u_noiseScale, &noise_scale);
-    bgfx::setUniform(s_ssao_shaders.u_samples, m_kernel.data(), 16);
+    bgfx::setUniform(s_ssao_shaders.u_samples, m_kernel.data(), std::min(m_config.sample_count, 64u));
 
     // Bind textures
     bgfx::setTexture(0, s_ssao_shaders.s_depth, depth_handle);
@@ -395,23 +395,33 @@ TextureHandle SSAOSystem::render(
     // Draw SSAO fullscreen pass
     s_ssao_shaders.draw_fullscreen(view_id, s_ssao_shaders.ssao);
 
-    // Bilateral blur passes if enabled
+    // Bilateral blur passes if enabled — ping-pong between AO and blur temp targets
     if (m_config.blur_enabled && bgfx::isValid(s_ssao_shaders.blur) && m_blur_temp_target.valid()) {
         uint16_t blur_view_id = static_cast<uint16_t>(RenderView::SSAOBlur);
 
-        TextureHandle ao_tex = m_renderer->get_render_target_texture(m_ao_target, 0);
-        uint16_t ao_idx = m_renderer->get_native_texture_handle(ao_tex);
+        for (int pass = 0; pass < m_config.blur_passes; ++pass) {
+            // Even passes: read AO -> write blur_temp
+            // Odd passes:  read blur_temp -> write AO
+            bool even = (pass % 2 == 0);
+            RenderTargetHandle read_target = even ? m_ao_target : m_blur_temp_target;
+            RenderTargetHandle write_target = even ? m_blur_temp_target : m_ao_target;
 
-        if (ao_idx != bgfx::kInvalidHandle) {
-            bgfx::TextureHandle ao_handle = { ao_idx };
+            TextureHandle read_tex = m_renderer->get_render_target_texture(read_target, 0);
+            uint16_t read_idx = m_renderer->get_native_texture_handle(read_tex);
+            if (read_idx == bgfx::kInvalidHandle) break;
 
-            for (int pass = 0; pass < m_config.blur_passes; ++pass) {
-                // Bind AO texture as input
-                bgfx::setTexture(0, s_ssao_shaders.s_aoInput, ao_handle);
+            bgfx::TextureHandle read_handle = { read_idx };
 
-                // Draw blur pass
-                s_ssao_shaders.draw_fullscreen(blur_view_id, s_ssao_shaders.blur);
-            }
+            // Reconfigure the blur view to write to the current output target
+            ViewConfig blur_view_config;
+            blur_view_config.render_target = write_target;
+            blur_view_config.clear_color_enabled = false;
+            blur_view_config.clear_depth_enabled = false;
+            m_renderer->configure_view(RenderView::SSAOBlur, blur_view_config);
+
+            // Bind input texture and draw
+            bgfx::setTexture(0, s_ssao_shaders.s_aoInput, read_handle);
+            s_ssao_shaders.draw_fullscreen(blur_view_id, s_ssao_shaders.blur);
         }
     }
 
@@ -419,8 +429,13 @@ TextureHandle SSAOSystem::render(
 }
 
 TextureHandle SSAOSystem::get_ao_texture() const {
-    if (m_config.blur_enabled && m_blur_temp_target.valid()) {
-        return m_renderer->get_render_target_texture(m_blur_temp_target, 0);
+    if (m_config.blur_enabled && m_blur_temp_target.valid() && m_config.blur_passes > 0) {
+        // After ping-pong: odd pass count -> result is in blur_temp,
+        // even pass count -> result is in ao_target
+        bool result_in_blur_temp = (m_config.blur_passes % 2 != 0);
+        if (result_in_blur_temp) {
+            return m_renderer->get_render_target_texture(m_blur_temp_target, 0);
+        }
     }
     return m_renderer->get_render_target_texture(m_ao_target, 0);
 }

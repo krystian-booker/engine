@@ -1398,14 +1398,15 @@ AudioEngine::ReverbParams get_reverb_preset_params(ReverbPreset preset) {
 // Include reverb node implementation
 // Include implementations (extern "C" to link correctly)
 extern "C" {
-    #include <miniaudio.c>
-    
+    #define MINIAUDIO_IMPLEMENTATION
+    #include <miniaudio.h>
+
     #define VERBLIB_IMPLEMENTATION
     #include <verblib.h>
 
     #ifndef MA_ZERO_OBJECT
     #define MA_ZERO_OBJECT(p) memset((void*)(p), 0, sizeof(*(p)))
     #endif
-    
+
     #include <ma_reverb_node.c>
 }

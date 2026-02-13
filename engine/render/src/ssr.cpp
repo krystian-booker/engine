@@ -146,21 +146,15 @@ void SSRSystem::resize(uint32_t width, uint32_t height) {
 }
 
 void SSRSystem::create_textures(uint32_t width, uint32_t height) {
-    // Reflection texture (RGBA16F for HDR)
-    m_reflection_texture = bgfx::createTexture2D(
-        m_trace_width, m_trace_height, false, 1,
-        bgfx::TextureFormat::RGBA16F,
-        BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP
-    );
-
-    // History for temporal filtering
-    if (m_config.temporal_enabled) {
-        m_reflection_history = bgfx::createTexture2D(
+    // Reflection textures — ping-pong pair (RGBA16F for HDR)
+    for (int i = 0; i < 2; ++i) {
+        m_reflection_textures[i] = bgfx::createTexture2D(
             m_trace_width, m_trace_height, false, 1,
             bgfx::TextureFormat::RGBA16F,
             BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP
         );
     }
+    m_history_index = 0;
 
     // Hi-Z texture with mip chain
     if (m_config.use_hiz) {
@@ -192,23 +186,25 @@ void SSRSystem::create_textures(uint32_t width, uint32_t height) {
         BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP
     );
 
-    // Create framebuffers
-    bgfx::TextureHandle trace_attachments[] = { m_reflection_texture, m_hit_texture };
-    m_trace_fb = bgfx::createFrameBuffer(2, trace_attachments);
+    // Pre-create framebuffers for both ping-pong configurations
+    for (int i = 0; i < 2; ++i) {
+        bgfx::TextureHandle trace_attachments[] = { m_reflection_textures[i], m_hit_texture };
+        m_trace_fbs[i] = bgfx::createFrameBuffer(2, trace_attachments);
+    }
 
     if (m_config.temporal_enabled) {
-        m_resolve_fb = bgfx::createFrameBuffer(1, &m_reflection_history);
+        for (int i = 0; i < 2; ++i) {
+            m_resolve_fbs[i] = bgfx::createFrameBuffer(1, &m_reflection_textures[1 - i]);
+        }
     }
 }
 
 void SSRSystem::destroy_textures() {
-    if (bgfx::isValid(m_reflection_texture)) {
-        bgfx::destroy(m_reflection_texture);
-        m_reflection_texture = BGFX_INVALID_HANDLE;
-    }
-    if (bgfx::isValid(m_reflection_history)) {
-        bgfx::destroy(m_reflection_history);
-        m_reflection_history = BGFX_INVALID_HANDLE;
+    for (int i = 0; i < 2; ++i) {
+        if (bgfx::isValid(m_reflection_textures[i])) {
+            bgfx::destroy(m_reflection_textures[i]);
+            m_reflection_textures[i] = BGFX_INVALID_HANDLE;
+        }
     }
     if (bgfx::isValid(m_hiz_texture)) {
         bgfx::destroy(m_hiz_texture);
@@ -218,13 +214,15 @@ void SSRSystem::destroy_textures() {
         bgfx::destroy(m_hit_texture);
         m_hit_texture = BGFX_INVALID_HANDLE;
     }
-    if (bgfx::isValid(m_trace_fb)) {
-        bgfx::destroy(m_trace_fb);
-        m_trace_fb = BGFX_INVALID_HANDLE;
-    }
-    if (bgfx::isValid(m_resolve_fb)) {
-        bgfx::destroy(m_resolve_fb);
-        m_resolve_fb = BGFX_INVALID_HANDLE;
+    for (int i = 0; i < 2; ++i) {
+        if (bgfx::isValid(m_trace_fbs[i])) {
+            bgfx::destroy(m_trace_fbs[i]);
+            m_trace_fbs[i] = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_resolve_fbs[i])) {
+            bgfx::destroy(m_resolve_fbs[i]);
+            m_resolve_fbs[i] = BGFX_INVALID_HANDLE;
+        }
     }
 
     for (auto& fb : m_hiz_fbs) {
@@ -325,8 +323,9 @@ void SSRSystem::generate_hiz(bgfx::ViewId view_id, bgfx::TextureHandle depth_tex
     uint32_t mip_height = m_height;
 
     for (uint32_t i = 0; i < m_config.hiz_levels && i < m_hiz_fbs.size(); ++i) {
-        bgfx::setViewFrameBuffer(view_id + i, m_hiz_fbs[i]);
-        bgfx::setViewRect(view_id + i, 0, 0, mip_width, mip_height);
+        bgfx::ViewId vid = static_cast<bgfx::ViewId>(view_id + i);
+        bgfx::setViewFrameBuffer(vid, m_hiz_fbs[i]);
+        bgfx::setViewRect(vid, 0, 0, static_cast<uint16_t>(mip_width), static_cast<uint16_t>(mip_height));
 
         // Texel size
         float texel_size[4] = {
@@ -349,7 +348,7 @@ void SSRSystem::generate_hiz(bgfx::ViewId view_id, bgfx::TextureHandle depth_tex
         }
 
         bgfx::setState(BGFX_STATE_WRITE_R);
-        bgfx::submit(view_id + i, m_hiz_program);
+        bgfx::submit(vid, m_hiz_program);
 
         mip_width = std::max(1u, mip_width / 2);
         mip_height = std::max(1u, mip_height / 2);
@@ -367,8 +366,8 @@ void SSRSystem::trace(bgfx::ViewId view_id,
                       const Mat4& inv_view_matrix) {
     if (!bgfx::isValid(m_trace_program)) return;
 
-    bgfx::setViewFrameBuffer(view_id, m_trace_fb);
-    bgfx::setViewRect(view_id, 0, 0, m_trace_width, m_trace_height);
+    bgfx::setViewFrameBuffer(view_id, m_trace_fbs[m_history_index]);
+    bgfx::setViewRect(view_id, 0, 0, static_cast<uint16_t>(m_trace_width), static_cast<uint16_t>(m_trace_height));
 
     // Set matrices
     bgfx::setUniform(u_view_matrix, glm::value_ptr(view_matrix));
@@ -425,8 +424,8 @@ void SSRSystem::temporal_resolve(bgfx::ViewId view_id,
                                   const Mat4& prev_view_proj) {
     if (!m_config.temporal_enabled || !bgfx::isValid(m_resolve_program)) return;
 
-    bgfx::setViewFrameBuffer(view_id, m_resolve_fb);
-    bgfx::setViewRect(view_id, 0, 0, m_trace_width, m_trace_height);
+    bgfx::setViewFrameBuffer(view_id, m_resolve_fbs[m_history_index]);
+    bgfx::setViewRect(view_id, 0, 0, static_cast<uint16_t>(m_trace_width), static_cast<uint16_t>(m_trace_height));
 
     // Previous view-proj for reprojection
     bgfx::setUniform(u_prev_view_proj, glm::value_ptr(prev_view_proj));
@@ -447,17 +446,17 @@ void SSRSystem::temporal_resolve(bgfx::ViewId view_id,
     };
     bgfx::setUniform(u_texel_size, texel_size);
 
-    // Bind textures
-    bgfx::setTexture(0, s_reflection, m_reflection_texture);
-    bgfx::setTexture(1, s_history, m_reflection_history);
+    // Bind textures — current is [m_history_index], history is [1-m_history_index]
+    bgfx::setTexture(0, s_reflection, m_reflection_textures[m_history_index]);
+    bgfx::setTexture(1, s_history, m_reflection_textures[1 - m_history_index]);
     bgfx::setTexture(2, s_velocity, velocity_texture);
     bgfx::setTexture(3, s_hit, m_hit_texture);
 
     bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
     bgfx::submit(view_id, m_resolve_program);
 
-    // Swap history buffers
-    std::swap(m_reflection_texture, m_reflection_history);
+    // Flip ping-pong index (pre-created framebuffers already reference the correct textures)
+    m_history_index = 1 - m_history_index;
 }
 
 void SSRSystem::composite(bgfx::ViewId view_id,
@@ -484,7 +483,7 @@ void SSRSystem::composite(bgfx::ViewId view_id,
 
     // Bind textures
     bgfx::setTexture(0, s_color, scene_color);
-    bgfx::setTexture(1, s_reflection, m_reflection_texture);
+    bgfx::setTexture(1, s_reflection, m_reflection_textures[m_history_index]);
     bgfx::setTexture(2, s_roughness, roughness_texture);
     bgfx::setTexture(3, s_hit, m_hit_texture);
 
@@ -507,13 +506,16 @@ void SSRSystem::render(bgfx::ViewId trace_view,
                        const Mat4& prev_view_proj) {
     if (!m_initialized) return;
 
-    // Generate hi-z if enabled
+    // Generate hi-z if enabled — uses view IDs starting at trace_view
     if (m_config.use_hiz) {
         generate_hiz(trace_view, depth_texture);
     }
 
-    // Trace reflections
-    trace(trace_view, color_texture, depth_texture, normal_texture, roughness_texture,
+    // Trace reflections — offset by hiz_levels to avoid view ID collision
+    bgfx::ViewId actual_trace_view = m_config.use_hiz
+        ? static_cast<bgfx::ViewId>(trace_view + m_config.hiz_levels)
+        : trace_view;
+    trace(actual_trace_view, color_texture, depth_texture, normal_texture, roughness_texture,
           view_matrix, proj_matrix, inv_proj_matrix, inv_view_matrix);
 
     // Temporal resolve if enabled

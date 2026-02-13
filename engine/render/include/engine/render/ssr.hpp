@@ -127,7 +127,7 @@ public:
                    bgfx::TextureHandle roughness_texture);
 
     // Get result texture (for external compositing)
-    bgfx::TextureHandle get_reflection_texture() const { return m_reflection_texture; }
+    bgfx::TextureHandle get_reflection_texture() const { return m_reflection_textures[m_history_index]; }
     bgfx::TextureHandle get_hiz_texture() const { return m_hiz_texture; }
 
     // Full SSR pass (trace + temporal + composite)
@@ -168,15 +168,15 @@ private:
     uint32_t m_trace_width = 0;
     uint32_t m_trace_height = 0;
 
-    // Textures
-    bgfx::TextureHandle m_reflection_texture = BGFX_INVALID_HANDLE;
-    bgfx::TextureHandle m_reflection_history = BGFX_INVALID_HANDLE;
+    // Textures — ping-pong pair for temporal resolve
+    bgfx::TextureHandle m_reflection_textures[2] = { BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE };
+    int m_history_index = 0;  // m_reflection_textures[m_history_index] = current, [1-m_history_index] = history
     bgfx::TextureHandle m_hiz_texture = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle m_hit_texture = BGFX_INVALID_HANDLE;  // UV + PDF
 
-    // Framebuffers
-    bgfx::FrameBufferHandle m_trace_fb = BGFX_INVALID_HANDLE;
-    bgfx::FrameBufferHandle m_resolve_fb = BGFX_INVALID_HANDLE;
+    // Framebuffers — pre-created for both ping-pong configurations
+    bgfx::FrameBufferHandle m_trace_fbs[2] = { BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE };
+    bgfx::FrameBufferHandle m_resolve_fbs[2] = { BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE };
     std::vector<bgfx::FrameBufferHandle> m_hiz_fbs;
 
     // Programs

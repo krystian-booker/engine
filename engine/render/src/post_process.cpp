@@ -333,14 +333,10 @@ void PostProcessSystem::render_bloom_downsample(TextureHandle input, int mip) {
 
     bgfx::TextureHandle tex_handle = { tex_idx };
 
-    // Calculate texel size for the input texture
-    uint32_t input_width = m_width >> mip;  // Previous mip size
+    // Input texture for downsample pass N is the output of pass N-1
+    // For pass 0, input is full-res HDR; pass N reads from mip N (size = m_width >> mip)
+    uint32_t input_width = m_width >> mip;
     uint32_t input_height = m_height >> mip;
-    if (mip > 0) {
-        // For mip > 0, input is the previous downsample target
-        input_width = m_width >> mip;
-        input_height = m_height >> mip;
-    }
 
     Vec4 texel_size(1.0f / float(input_width), 1.0f / float(input_height), 0.0f, 0.0f);
     Vec4 bloom_params(m_config.bloom.threshold, m_config.bloom.threshold * 0.5f, 0.0f, 0.0f);
@@ -575,10 +571,8 @@ Vec2 TAASystem::get_jitter(uint32_t frame_index) const {
     int idx = frame_index % JITTER_SAMPLES;
     Vec2 jitter = m_jitter_sequence[idx] * m_config.jitter_scale;
 
-    // Scale jitter to pixel size
-    jitter.x /= static_cast<float>(m_width);
-    jitter.y /= static_cast<float>(m_height);
-
+    // Return jitter in pixel units — the pipeline converts to clip space
+    // via: jitter * 2.0f / resolution
     return jitter;
 }
 

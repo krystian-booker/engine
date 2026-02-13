@@ -49,6 +49,7 @@ target_link_libraries(engine_script
         engine::reflect
         engine::scene
         sol2::sol2
+        lua-cpp
     PRIVATE
         engine_compiler_flags
         engine::localization

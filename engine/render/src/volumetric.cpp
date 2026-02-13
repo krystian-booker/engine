@@ -88,7 +88,7 @@ void VolumetricShaders::create() {
     u_lightColor = bgfx::createUniform("u_lightColor", bgfx::UniformType::Vec4);
     u_cameraPos = bgfx::createUniform("u_cameraPos", bgfx::UniformType::Vec4);
     u_projParams = bgfx::createUniform("u_projParams", bgfx::UniformType::Vec4);
-    u_shadowMatrix = bgfx::createUniform("u_shadowMatrix", bgfx::UniformType::Mat4);
+    u_shadowMatrix = bgfx::createUniform("u_shadowMatrix", bgfx::UniformType::Mat4, 4);
     s_depth = bgfx::createUniform("s_depth", bgfx::UniformType::Sampler);
     s_shadowMap0 = bgfx::createUniform("s_shadowMap0", bgfx::UniformType::Sampler);
     s_shadowMap1 = bgfx::createUniform("s_shadowMap1", bgfx::UniformType::Sampler);
@@ -223,11 +223,21 @@ void VolumetricSystem::create_render_targets() {
 
     m_volumetric_result = m_renderer->create_render_target(desc);
 
+    // Create temporal history volumes for reprojection
+    if (m_config.temporal_reprojection) {
+        RenderTargetDesc history_desc = desc;
+        history_desc.debug_name = "Volumetric_History0";
+        m_history_volume[0] = m_renderer->create_render_target(history_desc);
+
+        history_desc.debug_name = "Volumetric_History1";
+        m_history_volume[1] = m_renderer->create_render_target(history_desc);
+    }
+
     // Configure view
     ViewConfig view_config;
     view_config.render_target = m_volumetric_result;
     view_config.clear_color_enabled = true;
-    view_config.clear_color = 0x00000000;
+    view_config.clear_color = 0x000000FF;
     view_config.clear_depth_enabled = false;
 
     m_renderer->configure_view(RenderView::VolumetricScatter, view_config);
@@ -446,7 +456,7 @@ void VolumetricSystem::integration_pass() {
         m_config.fog_albedo.x,
         m_config.fog_albedo.y,
         m_config.fog_albedo.z,
-        m_config.fog_height_falloff
+        0.0f  // reserved (fog_height_falloff is in u_fogHeight.y)
     );
 
     Vec4 fog_height(
@@ -479,7 +489,7 @@ void VolumetricSystem::integration_pass() {
     bgfx::setUniform(s_vol_shaders.u_lightColor, &light_color);
     bgfx::setUniform(s_vol_shaders.u_cameraPos, &cam_pos);
     bgfx::setUniform(s_vol_shaders.u_projParams, &proj_params);
-    bgfx::setUniform(s_vol_shaders.u_shadowMatrix, &m_shadow_matrices[0]);
+    bgfx::setUniform(s_vol_shaders.u_shadowMatrix, m_shadow_matrices.data(), 4);
 
     // Bind textures
     bgfx::setTexture(0, s_vol_shaders.s_depth, depth_handle);
@@ -518,19 +528,19 @@ namespace phase {
 float henyey_greenstein(float cos_theta, float g) {
     float g2 = g * g;
     float denom = 1.0f + g2 - 2.0f * g * cos_theta;
-    return (1.0f - g2) / (4.0f * 3.14159265f * std::pow(denom, 1.5f));
+    return (1.0f - g2) / (4.0f * 3.14159265f * std::pow(std::max(denom, 1e-6f), 1.5f));
 }
 
 float schlick_phase(float cos_theta, float g) {
     float k = 1.55f * g - 0.55f * g * g * g;
     float denom = 1.0f - k * cos_theta;
-    return (1.0f - k * k) / (4.0f * 3.14159265f * denom * denom);
+    return (1.0f - k * k) / (4.0f * 3.14159265f * std::max(denom * denom, 1e-6f));
 }
 
 float cornette_shanks(float cos_theta, float g) {
     float g2 = g * g;
     float num = 3.0f * (1.0f - g2) * (1.0f + cos_theta * cos_theta);
-    float denom = 2.0f * (2.0f + g2) * std::pow(1.0f + g2 - 2.0f * g * cos_theta, 1.5f);
+    float denom = 2.0f * (2.0f + g2) * std::pow(std::max(1.0f + g2 - 2.0f * g * cos_theta, 1e-6f), 1.5f);
     return num / denom;
 }
 

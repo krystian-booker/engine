@@ -23,5 +23,11 @@
       "name": "catch2",
       "platform": "!uwp"
     }
+  ],
+  "overrides": [
+    {
+      "name": "lua",
+      "version": "5.4.7"
+    }
   ]
 }

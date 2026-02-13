@@ -71,11 +71,18 @@ enum class RenderView : uint16_t {
 
     // Volumetric lighting
     VolumetricScatter = 38,
-    VolumetricIntegrate = 39,
+
+    // Skybox rendering (must be before MainOpaque so it paints the background
+    // before opaque geometry is drawn on top; uses DEPTH_TEST_LEQUAL without
+    // writing depth, so it only fills where depth == 1.0)
+    Skybox = 39,
 
     // Main rendering pass (forward/forward+)
     MainOpaque = 40,
     MainTransparent = 41,
+
+    // Volumetric integration (after main passes, before post-processing)
+    VolumetricIntegrate = 44,
 
     // Post-processing chain
     PostProcess0 = 50,
@@ -115,9 +122,6 @@ enum class RenderView : uint16_t {
 
     // Final composite to backbuffer
     Final = 64,
-
-    // Skybox rendering
-    Skybox = 66,
 
     // Maximum view count
     Count = 80

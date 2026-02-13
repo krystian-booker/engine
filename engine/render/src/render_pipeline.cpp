@@ -19,12 +19,15 @@ RenderPipeline::~RenderPipeline() {
 void RenderPipeline::init(IRenderer* renderer, const RenderPipelineConfig& config) {
     m_renderer = renderer;
     m_config = config;
+    m_config.render_scale = std::clamp(m_config.render_scale, 0.25f, 2.0f);
+    m_config.shadow_config.cascade_count =
+        std::min(m_config.shadow_config.cascade_count, MAX_CASCADES);
     m_width = renderer->get_width();
     m_height = renderer->get_height();
 
     // Calculate internal resolution based on render scale
-    m_internal_width = static_cast<uint32_t>(m_width * config.render_scale);
-    m_internal_height = static_cast<uint32_t>(m_height * config.render_scale);
+    m_internal_width = static_cast<uint32_t>(m_width * m_config.render_scale);
+    m_internal_height = static_cast<uint32_t>(m_height * m_config.render_scale);
 
     // Create render targets
     create_render_targets();
@@ -78,6 +81,9 @@ void RenderPipeline::shutdown() {
     m_ssao_system.shutdown();
     m_shadow_system.shutdown();
 
+    // Clear custom passes
+    m_custom_passes.clear();
+
     // Destroy render targets
     destroy_render_targets();
 
@@ -89,30 +95,58 @@ void RenderPipeline::shutdown() {
 
 void RenderPipeline::set_config(const RenderPipelineConfig& config) {
     bool needs_resize = (config.render_scale != m_config.render_scale);
-    m_config = config;
+    RenderPassFlags old_passes = m_config.enabled_passes;
 
-    // Update subsystem configs
-    if (has_flag(config.enabled_passes, RenderPassFlags::Shadows)) {
-        m_shadow_system.set_config(config.shadow_config);
+    // Clamp render_scale to valid range
+    RenderPipelineConfig validated_config = config;
+    validated_config.render_scale = std::clamp(validated_config.render_scale, 0.25f, 2.0f);
+    validated_config.shadow_config.cascade_count =
+        std::min(validated_config.shadow_config.cascade_count, MAX_CASCADES);
+
+    m_config = validated_config;
+
+    // Initialize newly-enabled subsystems, update already-enabled ones
+    if (has_flag(validated_config.enabled_passes, RenderPassFlags::Shadows)) {
+        if (!has_flag(old_passes, RenderPassFlags::Shadows)) {
+            m_shadow_system.init(m_renderer, validated_config.shadow_config);
+        } else {
+            m_shadow_system.set_config(validated_config.shadow_config);
+        }
     }
 
-    if (has_flag(config.enabled_passes, RenderPassFlags::SSAO)) {
-        m_ssao_system.set_config(config.ssao_config);
+    if (has_flag(validated_config.enabled_passes, RenderPassFlags::SSAO)) {
+        if (!has_flag(old_passes, RenderPassFlags::SSAO)) {
+            m_ssao_system.init(m_renderer, validated_config.ssao_config);
+        } else {
+            m_ssao_system.set_config(validated_config.ssao_config);
+        }
     }
 
-    if (has_flag(config.enabled_passes, RenderPassFlags::PostProcess)) {
+    if (has_flag(validated_config.enabled_passes, RenderPassFlags::PostProcess)) {
         PostProcessConfig pp_config;
-        pp_config.bloom = config.bloom_config;
-        pp_config.tonemapping = config.tonemap_config;
-        m_post_process_system.set_config(pp_config);
+        pp_config.bloom = validated_config.bloom_config;
+        pp_config.tonemapping = validated_config.tonemap_config;
+        if (!has_flag(old_passes, RenderPassFlags::PostProcess)) {
+            m_post_process_system.init(m_renderer, pp_config);
+        } else {
+            m_post_process_system.set_config(pp_config);
+        }
     }
 
-    if (has_flag(config.enabled_passes, RenderPassFlags::TAA)) {
-        m_taa_system.set_config(config.taa_config);
+    if (has_flag(validated_config.enabled_passes, RenderPassFlags::TAA)) {
+        if (!has_flag(old_passes, RenderPassFlags::TAA)) {
+            m_taa_system.init(m_renderer, validated_config.taa_config);
+        } else {
+            m_taa_system.set_config(validated_config.taa_config);
+        }
     }
 
-    if (has_flag(config.enabled_passes, RenderPassFlags::Volumetric)) {
-        m_volumetric_system.set_config(config.volumetric_config);
+    if (has_flag(validated_config.enabled_passes, RenderPassFlags::Volumetric)) {
+        if (!has_flag(old_passes, RenderPassFlags::Volumetric)) {
+            m_volumetric_system.init(m_renderer, validated_config.volumetric_config);
+        } else {
+            m_volumetric_system.set_config(validated_config.volumetric_config);
+        }
     }
 
     if (needs_resize) {
@@ -120,8 +154,9 @@ void RenderPipeline::set_config(const RenderPipelineConfig& config) {
     }
 }
 
-void RenderPipeline::apply_quality_preset(RenderQuality quality) {
-    RenderPipelineConfig config = m_config;
+RenderPipelineConfig apply_quality_preset_to_config(
+    const RenderPipelineConfig& base, RenderQuality quality) {
+    RenderPipelineConfig config = base;
     config.quality = quality;
 
     switch (quality) {
@@ -132,6 +167,7 @@ void RenderPipeline::apply_quality_preset(RenderQuality quality) {
             config.ssao_config.sample_count = 8;
             config.ssao_config.half_resolution = true;
             config.bloom_config.enabled = false;
+            config.bloom_config.mip_count = 0;
             config.taa_config.enabled = false;
             config.volumetric_config.froxel_depth = 32;
             config.enabled_passes = RenderPassFlags::Shadows |
@@ -192,7 +228,14 @@ void RenderPipeline::apply_quality_preset(RenderQuality quality) {
             break;
     }
 
-    set_config(config);
+    // Ensure cascade count never exceeds array bounds
+    config.shadow_config.cascade_count = std::min(config.shadow_config.cascade_count, MAX_CASCADES);
+
+    return config;
+}
+
+void RenderPipeline::apply_quality_preset(RenderQuality quality) {
+    set_config(apply_quality_preset_to_config(m_config, quality));
 }
 
 void RenderPipeline::begin_frame() {
@@ -212,87 +255,87 @@ void RenderPipeline::render(const CameraData& camera,
                             const std::vector<LightData>& lights) {
     if (!m_initialized) return;
 
-    // Update camera uniforms
-    update_camera_uniforms(camera);
+    // Apply TAA jitter to camera if enabled
+    CameraData jittered_camera = camera;
+    if (has_flag(m_config.enabled_passes, RenderPassFlags::TAA) && m_config.taa_config.enabled) {
+        Vec2 jitter = m_taa_system.get_jitter(m_frame_count);
 
-    // Cull objects
-    cull_objects(camera, objects, m_visible_opaque);
+        // Apply sub-pixel jitter offset to projection matrix
+        Mat4 jittered_proj = camera.projection_matrix;
+        jittered_proj[2][0] += jitter.x * 2.0f / static_cast<float>(m_internal_width);
+        jittered_proj[2][1] += jitter.y * 2.0f / static_cast<float>(m_internal_height);
 
-    // Separate opaque and transparent based on blend mode
-    m_visible_transparent.clear();
-    auto it = std::partition(m_visible_opaque.begin(), m_visible_opaque.end(),
-        [](const RenderObject* obj) {
-            // Check blend mode - BlendMode enum: 0=Opaque, 1=AlphaTest, 2+=Transparent
-            // Opaque and AlphaTest render with the opaque batch
-            return obj->blend_mode <= 1;
-        });
-    m_visible_transparent.assign(it, m_visible_opaque.end());
-    m_visible_opaque.erase(it, m_visible_opaque.end());
-
-    // Sort opaque front-to-back for early-z
-    sort_objects_front_to_back(camera, m_visible_opaque);
-
-    // Sort transparent back-to-front
-    sort_objects_back_to_front(camera, m_visible_transparent);
-
-    // Find shadow casters
-    for (const auto* obj : m_visible_opaque) {
-        if (obj->casts_shadows) {
-            m_shadow_casters.push_back(obj);
-        }
+        jittered_camera.projection_matrix = jittered_proj;
+        jittered_camera.view_projection = jittered_proj * camera.view_matrix;
+        jittered_camera.inverse_projection = inverse(jittered_proj);
+        jittered_camera.inverse_view_projection = inverse(jittered_camera.view_projection);
+        jittered_camera.jitter = jitter;
+        jittered_camera.prev_jitter = m_prev_jitter;
     }
+
+    // Store previous frame data for TAA/motion vectors
+    jittered_camera.prev_view_projection = m_prev_view_projection;
+
+    // Cull, partition, sort, and find shadow casters
+    prepare_frame_data(jittered_camera, objects);
 
     // Execute render passes in order
     if (has_flag(m_config.enabled_passes, RenderPassFlags::Shadows)) {
-        shadow_pass(camera, objects, lights);
+        shadow_pass(jittered_camera, objects, lights);
     }
 
     if (has_flag(m_config.enabled_passes, RenderPassFlags::DepthPrepass)) {
-        depth_prepass(camera, objects);
+        depth_prepass(jittered_camera);
     }
 
     // GBuffer pass for normals (needed by SSAO)
     if (has_flag(m_config.enabled_passes, RenderPassFlags::GBuffer)) {
-        gbuffer_pass(camera, objects);
+        gbuffer_pass(jittered_camera);
     }
 
     // Motion vectors pass (needed by TAA)
     if (has_flag(m_config.enabled_passes, RenderPassFlags::TAA) && m_config.taa_config.enabled) {
-        motion_vector_pass(camera, objects);
+        motion_vector_pass(jittered_camera);
     }
 
     if (has_flag(m_config.enabled_passes, RenderPassFlags::SSAO)) {
-        ssao_pass(camera);
+        ssao_pass(jittered_camera);
     }
 
-    // Skybox pass (after depth prepass but before main opaque to use early-z)
+    // Skybox pass (rendered after depth prepass for correct compositing, but uses
+    // its own depth test; the depth prepass serves SSAO/screen-space effects, not early-z
+    // for the main pass since the main pass writes to a separate render target with its own depth)
     if (has_flag(m_config.enabled_passes, RenderPassFlags::Skybox)) {
-        skybox_pass(camera);
+        skybox_pass(jittered_camera);
     }
 
     if (has_flag(m_config.enabled_passes, RenderPassFlags::MainOpaque)) {
-        main_pass(camera, objects, lights);
+        main_pass(jittered_camera, lights);
     }
 
     if (has_flag(m_config.enabled_passes, RenderPassFlags::Volumetric)) {
-        volumetric_pass(camera, lights);
+        volumetric_pass(jittered_camera, lights);
     }
 
     if (has_flag(m_config.enabled_passes, RenderPassFlags::Transparent)) {
-        transparent_pass(camera, objects, lights);
+        transparent_pass(jittered_camera, lights);
     }
 
     if (has_flag(m_config.enabled_passes, RenderPassFlags::PostProcess)) {
-        post_process_pass(camera);
+        post_process_pass(jittered_camera);
     }
 
     if (has_flag(m_config.enabled_passes, RenderPassFlags::Debug)) {
-        debug_pass(camera);
+        debug_pass(jittered_camera);
     }
 
     if (has_flag(m_config.enabled_passes, RenderPassFlags::Final)) {
         final_pass();
     }
+
+    // Store current view-projection for next frame's TAA/motion vectors
+    m_prev_view_projection = jittered_camera.view_projection;
+    m_prev_jitter = jittered_camera.jitter;
 
     // Update stats
     m_stats.objects_rendered = static_cast<uint32_t>(m_visible_opaque.size() + m_visible_transparent.size());
@@ -318,7 +361,7 @@ void RenderPipeline::render_to_target(RenderTargetHandle target,
     // Temporarily use the custom target and passes
     m_config.enabled_passes = passes;
 
-    // Configure view to render to the custom target
+    // Configure views to render to the custom target
     ViewConfig view_config;
     view_config.render_target = target;
     view_config.clear_color_enabled = true;
@@ -327,36 +370,17 @@ void RenderPipeline::render_to_target(RenderTargetHandle target,
     view_config.clear_depth = 1.0f;
     m_renderer->configure_view(RenderView::MainOpaque, view_config);
 
+    ViewConfig transparent_view_config;
+    transparent_view_config.render_target = target;
+    transparent_view_config.clear_color_enabled = false;
+    transparent_view_config.clear_depth_enabled = false;
+    m_renderer->configure_view(RenderView::MainTransparent, transparent_view_config);
+
     // Use the target as our HDR target temporarily
     m_hdr_target = target;
 
-    // Render using the standard pipeline
-    // Update camera uniforms
-    update_camera_uniforms(camera);
-
-    // Cull objects
-    cull_objects(camera, objects, m_visible_opaque);
-
-    // Separate opaque and transparent
-    m_visible_transparent.clear();
-    auto it = std::partition(m_visible_opaque.begin(), m_visible_opaque.end(),
-        [](const RenderObject* obj) {
-            return obj->blend_mode <= 1;
-        });
-    m_visible_transparent.assign(it, m_visible_opaque.end());
-    m_visible_opaque.erase(it, m_visible_opaque.end());
-
-    // Sort
-    sort_objects_front_to_back(camera, m_visible_opaque);
-    sort_objects_back_to_front(camera, m_visible_transparent);
-
-    // Find shadow casters
-    m_shadow_casters.clear();
-    for (const auto* obj : m_visible_opaque) {
-        if (obj->casts_shadows) {
-            m_shadow_casters.push_back(obj);
-        }
-    }
+    // Cull, partition, sort, and find shadow casters
+    prepare_frame_data(camera, objects);
 
     // Execute enabled passes
     if (has_flag(passes, RenderPassFlags::Shadows)) {
@@ -368,25 +392,31 @@ void RenderPipeline::render_to_target(RenderTargetHandle target,
     }
 
     if (has_flag(passes, RenderPassFlags::MainOpaque)) {
-        main_pass(camera, objects, lights);
+        main_pass(camera, lights);
     }
 
     if (has_flag(passes, RenderPassFlags::Transparent)) {
-        transparent_pass(camera, objects, lights);
+        transparent_pass(camera, lights);
     }
 
     // Restore original config
     m_config.enabled_passes = original_passes;
     m_hdr_target = original_hdr;
 
-    // Restore original view config
-    ViewConfig restore_config;
-    restore_config.render_target = m_hdr_target;
-    restore_config.clear_color_enabled = true;
-    restore_config.clear_color = 0x000000FF;
-    restore_config.clear_depth_enabled = true;
-    restore_config.clear_depth = 1.0f;
-    m_renderer->configure_view(RenderView::MainOpaque, restore_config);
+    // Restore original view configs for both opaque and transparent views
+    ViewConfig restore_opaque;
+    restore_opaque.render_target = m_hdr_target;
+    restore_opaque.clear_color_enabled = true;
+    restore_opaque.clear_color = 0x000000FF;
+    restore_opaque.clear_depth_enabled = true;
+    restore_opaque.clear_depth = 1.0f;
+    m_renderer->configure_view(RenderView::MainOpaque, restore_opaque);
+
+    ViewConfig restore_transparent;
+    restore_transparent.render_target = m_hdr_target;
+    restore_transparent.clear_color_enabled = false;
+    restore_transparent.clear_depth_enabled = false;
+    m_renderer->configure_view(RenderView::MainTransparent, restore_transparent);
 }
 
 void RenderPipeline::submit_object(const RenderObject& object) {
@@ -412,6 +442,8 @@ void RenderPipeline::resize(uint32_t width, uint32_t height) {
     m_post_process_system.resize(m_internal_width, m_internal_height);
     m_taa_system.resize(m_internal_width, m_internal_height);
     m_volumetric_system.resize(m_internal_width, m_internal_height);
+    // Note: Shadow system is not resized here because shadow map resolution
+    // is independent of viewport size (configured via ShadowConfig::cascade_resolution).
 
     log(LogLevel::Info, "Render pipeline resized to {}x{} (internal: {}x{})",
         width, height, m_internal_width, m_internal_height);
@@ -426,7 +458,7 @@ TextureHandle RenderPipeline::get_final_texture() const {
 
 TextureHandle RenderPipeline::get_depth_texture() const {
     if (m_depth_target.valid()) {
-        return m_renderer->get_render_target_texture(m_depth_target, 0);
+        return m_renderer->get_render_target_texture(m_depth_target, UINT32_MAX);
     }
     return TextureHandle{};
 }
@@ -434,7 +466,7 @@ TextureHandle RenderPipeline::get_depth_texture() const {
 TextureHandle RenderPipeline::get_shadow_debug_texture() const {
     RenderTargetHandle rt = m_shadow_system.get_cascade_render_target(0);
     if (rt.valid()) {
-        return m_renderer->get_render_target_texture(rt, 0);
+        return m_renderer->get_render_target_texture(rt, UINT32_MAX);
     }
     return TextureHandle{};
 }
@@ -449,6 +481,44 @@ TextureHandle RenderPipeline::get_volumetric_debug_texture() const {
 
 void RenderPipeline::add_custom_pass(RenderView after_view, CustomRenderCallback callback) {
     m_custom_passes.emplace_back(after_view, std::move(callback));
+}
+
+void RenderPipeline::clear_custom_passes() {
+    m_custom_passes.clear();
+}
+
+void RenderPipeline::prepare_frame_data(const CameraData& camera,
+                                         const std::vector<RenderObject>& objects) {
+    // Update camera uniforms
+    update_camera_uniforms(camera);
+
+    // Cull objects against frustum
+    cull_objects(camera, objects, m_visible_opaque);
+
+    // Separate opaque and transparent based on blend mode
+    m_visible_transparent.clear();
+    auto it = std::partition(m_visible_opaque.begin(), m_visible_opaque.end(),
+        [](const RenderObject* obj) {
+            return obj->blend_mode <= 1;
+        });
+    m_visible_transparent.assign(it, m_visible_opaque.end());
+    m_visible_opaque.erase(it, m_visible_opaque.end());
+
+    // Sort opaque front-to-back for early-z
+    sort_objects_front_to_back(camera, m_visible_opaque);
+
+    // Sort transparent back-to-front
+    sort_objects_back_to_front(camera, m_visible_transparent);
+
+    // Find shadow casters — gather from ALL objects, not just camera-visible ones.
+    // Objects outside the camera frustum but inside the shadow cascade frustum
+    // must still cast shadows to avoid missing shadows at screen edges.
+    m_shadow_casters.clear();
+    for (const auto& obj : objects) {
+        if (obj.visible && obj.casts_shadows && obj.blend_mode <= 1) {
+            m_shadow_casters.push_back(&obj);
+        }
+    }
 }
 
 void RenderPipeline::create_render_targets() {
@@ -530,8 +600,8 @@ void RenderPipeline::create_render_targets() {
     // LDR output target
     {
         RenderTargetDesc desc;
-        desc.width = m_width;
-        desc.height = m_height;
+        desc.width = m_internal_width;
+        desc.height = m_internal_height;
         desc.color_attachment_count = 1;
         desc.color_format = TextureFormat::RGBA8;
         desc.has_depth = false;
@@ -615,6 +685,10 @@ void RenderPipeline::update_light_uniforms(const std::vector<LightData>& lights)
     // Pack lights into uniform buffer
     // Max 8 lights currently supported
     constexpr int MAX_LIGHTS = 8;
+    if (lights.size() > MAX_LIGHTS) {
+        log(LogLevel::Warn, "Scene has {} lights but only {} are supported; excess lights will be ignored",
+            lights.size(), MAX_LIGHTS);
+    }
     int light_count = std::min(static_cast<int>(lights.size()), MAX_LIGHTS);
 
     for (int i = 0; i < light_count; ++i) {
@@ -719,7 +793,7 @@ void RenderPipeline::cull_objects(const CameraData& camera,
         }
 
         // If object has valid bounds, perform frustum culling
-        if (obj.bounds.min != Vec3(0) || obj.bounds.max != Vec3(0)) {
+        if (obj.bounds.min != obj.bounds.max) {
             // Transform AABB to world space
             // For simplicity, we transform the center and half-extents
             Vec3 center = (obj.bounds.min + obj.bounds.max) * 0.5f;
@@ -818,8 +892,9 @@ void RenderPipeline::shadow_pass(const CameraData& camera,
     }
 }
 
-void RenderPipeline::depth_prepass(const CameraData& camera,
-                                    const std::vector<RenderObject>& objects) {
+void RenderPipeline::depth_prepass(const CameraData& camera) {
+    m_renderer->set_view_transform(RenderView::DepthPrepass, camera.view_matrix, camera.projection_matrix);
+
     for (const auto* obj : m_visible_opaque) {
         // Submit with depth-only material
         m_renderer->submit_mesh(RenderView::DepthPrepass, obj->mesh, obj->material, obj->transform);
@@ -827,8 +902,7 @@ void RenderPipeline::depth_prepass(const CameraData& camera,
     }
 }
 
-void RenderPipeline::gbuffer_pass(const CameraData& camera,
-                                   const std::vector<RenderObject>& objects) {
+void RenderPipeline::gbuffer_pass(const CameraData& camera) {
     // Set view transform for GBuffer pass
     m_renderer->set_view_transform(RenderView::GBuffer, camera.view_matrix, camera.projection_matrix);
 
@@ -845,8 +919,7 @@ void RenderPipeline::gbuffer_pass(const CameraData& camera,
     }
 }
 
-void RenderPipeline::motion_vector_pass(const CameraData& camera,
-                                         const std::vector<RenderObject>& objects) {
+void RenderPipeline::motion_vector_pass(const CameraData& camera) {
     // Set view transform for motion vector pass
     m_renderer->set_view_transform(RenderView::MotionVectors, camera.view_matrix, camera.projection_matrix);
 
@@ -879,7 +952,6 @@ void RenderPipeline::ssao_pass(const CameraData& camera) {
 }
 
 void RenderPipeline::main_pass(const CameraData& camera,
-                                const std::vector<RenderObject>& objects,
                                 const std::vector<LightData>& lights) {
     // Update light uniforms
     update_light_uniforms(lights);
@@ -926,22 +998,22 @@ void RenderPipeline::main_pass(const CameraData& camera,
 
 void RenderPipeline::volumetric_pass(const CameraData& camera,
                                       const std::vector<LightData>& lights) {
-    // Gather shadow data
-    auto shadow_matrices = m_shadow_system.get_cascade_matrices();
-    std::array<TextureHandle, 4> shadow_maps;
-    for (uint32_t i = 0; i < 4; ++i) {
-        auto rt = m_shadow_system.get_cascade_render_target(i);
-        shadow_maps[i] = m_renderer->get_render_target_texture(rt, UINT32_MAX);
+    // Gather shadow data only if shadows are enabled and initialized
+    std::array<Mat4, 4> shadow_matrices{};
+    std::array<TextureHandle, 4> shadow_maps{};
+    if (has_flag(m_config.enabled_passes, RenderPassFlags::Shadows)) {
+        shadow_matrices = m_shadow_system.get_cascade_matrices();
+        for (uint32_t i = 0; i < m_config.shadow_config.cascade_count; ++i) {
+            auto rt = m_shadow_system.get_cascade_render_target(i);
+            shadow_maps[i] = m_renderer->get_render_target_texture(rt, UINT32_MAX);
+        }
     }
 
     TextureHandle depth_tex = get_depth_texture();
     if (!depth_tex.valid()) return;
 
-    m_volumetric_system.update(camera.view_matrix, camera.projection_matrix,
-                                camera.prev_view_projection, depth_tex,
-                                shadow_maps, shadow_matrices);
-
-    // Convert lights to volumetric format
+    // Convert lights to volumetric format and set BEFORE update()
+    // so that integration_pass() uses current-frame lights
     std::vector<VolumetricLightData> vol_lights;
     for (const auto& light : lights) {
         VolumetricLightData vl;
@@ -950,16 +1022,27 @@ void RenderPipeline::volumetric_pass(const CameraData& camera,
         vl.color = light.color;
         vl.intensity = light.intensity;
         vl.range = light.range;
-        vl.spot_angle_cos = std::cos(light.outer_angle * 3.14159f / 180.0f);
+        // Set spot_angle_cos based on light type:
+        // directional (0): 1.0 (parallel rays), point (1): -1.0 (full sphere), spot (2): actual cone angle
+        if (light.type == 2) {
+            vl.spot_angle_cos = std::cos(light.outer_angle * 3.14159f / 180.0f);
+        } else if (light.type == 1) {
+            vl.spot_angle_cos = -1.0f;
+        } else {
+            vl.spot_angle_cos = 1.0f;
+        }
         vl.type = light.type;
         vl.shadow_cascade = light.shadow_map_index;
         vol_lights.push_back(vl);
     }
     m_volumetric_system.set_lights(vol_lights);
+
+    m_volumetric_system.update(camera.view_matrix, camera.projection_matrix,
+                                camera.prev_view_projection, depth_tex,
+                                shadow_maps, shadow_matrices);
 }
 
 void RenderPipeline::transparent_pass(const CameraData& camera,
-                                       const std::vector<RenderObject>& objects,
                                        const std::vector<LightData>& lights) {
     for (const auto* obj : m_visible_transparent) {
         if (obj->skinned && obj->bone_matrices) {
@@ -1032,7 +1115,9 @@ void RenderPipeline::skybox_pass(const CameraData& camera) {
     view_config.clear_depth_enabled = false;
     m_renderer->configure_view(RenderView::Skybox, view_config);
 
-    // Set view transform (identity for fullscreen pass)
+    // Set view transform to identity for fullscreen pass. The skybox shader
+    // reconstructs world-space ray direction from camera.inverse_view_projection
+    // (passed via submit_skybox), so bgfx's built-in view/projection are unused.
     m_renderer->set_view_transform(RenderView::Skybox, Mat4{1.0f}, Mat4{1.0f});
 
     // Render skybox using fullscreen triangle with cubemap sampling

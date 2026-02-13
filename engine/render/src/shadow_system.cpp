@@ -42,6 +42,7 @@ void ShadowSystem::set_config(const ShadowConfig& config) {
                            config.cascade_count != m_config.cascade_count);
 
     m_config = config;
+    m_config.cascade_count = std::min(m_config.cascade_count, MAX_CASCADES);
 
     if (needs_recreate && m_initialized) {
         destroy_cascade_render_targets();
@@ -104,8 +105,10 @@ void ShadowSystem::update_cascades(const Mat4& camera_view, const Mat4& camera_p
         }
         center /= 8.0f;
 
-        // Create light view matrix
-        Mat4 light_view = glm::lookAt(center - light_dir * 100.0f, center, Vec3(0.0f, 1.0f, 0.0f));
+        // Create light view matrix — use alternative up vector when light is near-vertical
+        Vec3 up = (std::abs(glm::dot(light_dir, Vec3(0.0f, 1.0f, 0.0f))) > 0.99f)
+                   ? Vec3(0.0f, 0.0f, 1.0f) : Vec3(0.0f, 1.0f, 0.0f);
+        Mat4 light_view = glm::lookAt(center - light_dir * 100.0f, center, up);
 
         // Calculate bounds in light space
         Vec3 min_bounds(std::numeric_limits<float>::max());
@@ -355,8 +358,8 @@ Mat4 create_stable_ortho_projection(const Vec3& min_bounds, const Vec3& max_boun
     snapped_max.y = std::floor(max_bounds.y / world_units_per_texel) * world_units_per_texel;
     snapped_max.z = max_bounds.z;
 
-    // Extend depth range a bit to avoid near-plane clipping
-    float z_mult = 10.0f;
+    // Extend depth range to avoid near-plane clipping (kept small to preserve depth precision)
+    float z_mult = 0.5f;
     float z_range = snapped_max.z - snapped_min.z;
 
     return glm::ortho(

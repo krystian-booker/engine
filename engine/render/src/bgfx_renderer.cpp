@@ -9,6 +9,7 @@
 #include <cmath>
 #include <fstream>
 #include <array>
+#include <chrono>
 
 namespace engine::render {
 
@@ -130,7 +131,7 @@ struct PBRUniforms {
     }
 };
 
-static PBRUniforms s_pbr_uniforms;
+// PBRUniforms instance is now a member of BGFXRenderer (m_pbr_uniforms)
 
 // Helper function to load shader binary from file
 static bgfx::ShaderHandle load_shader_from_file(const std::string& path) {
@@ -316,6 +317,20 @@ public:
             m_skybox_vertex_layout
         );
 
+        // Load blit (fullscreen passthrough) shader
+        bgfx::ShaderHandle blit_vsh = load_shader_from_file(shader_path + "vs_blit.sc.bin");
+        bgfx::ShaderHandle blit_fsh = load_shader_from_file(shader_path + "fs_blit.sc.bin");
+
+        if (bgfx::isValid(blit_vsh) && bgfx::isValid(blit_fsh)) {
+            m_blit_program = bgfx::createProgram(blit_vsh, blit_fsh, true);
+            log(LogLevel::Info, "Blit shader program loaded successfully");
+        } else {
+            // Clean up any partially loaded shaders
+            if (bgfx::isValid(blit_vsh)) bgfx::destroy(blit_vsh);
+            if (bgfx::isValid(blit_fsh)) bgfx::destroy(blit_fsh);
+            log(LogLevel::Warn, "Failed to load blit shader program - will fallback to skybox program");
+        }
+
         // Load billboard shader
         bgfx::ShaderHandle billboard_vsh = load_shader_from_file(shader_path + "vs_billboard.sc.bin");
         bgfx::ShaderHandle billboard_fsh = load_shader_from_file(shader_path + "fs_billboard.sc.bin");
@@ -334,7 +349,7 @@ public:
         m_s_billboard = bgfx::createUniform("s_billboard", bgfx::UniformType::Sampler);
 
         // Create PBR uniforms
-        s_pbr_uniforms.create();
+        m_pbr_uniforms.create();
 
         // Create default 1x1 white texture for missing textures
         uint32_t white_pixel = 0xFFFFFFFF;
@@ -399,6 +414,10 @@ public:
             bgfx::destroy(m_billboard_program);
             m_billboard_program = BGFX_INVALID_HANDLE;
         }
+        if (bgfx::isValid(m_blit_program)) {
+            bgfx::destroy(m_blit_program);
+            m_blit_program = BGFX_INVALID_HANDLE;
+        }
         if (bgfx::isValid(m_u_boneMatrices)) {
             bgfx::destroy(m_u_boneMatrices);
             m_u_boneMatrices = BGFX_INVALID_HANDLE;
@@ -441,7 +460,7 @@ public:
         }
 
         // Destroy PBR uniforms
-        s_pbr_uniforms.destroy();
+        m_pbr_uniforms.destroy();
 
         // Destroy default textures
         if (bgfx::isValid(m_white_texture)) {
@@ -493,7 +512,15 @@ public:
 
     void begin_frame() override {
         bgfx::touch(0);
-        m_total_time += 0.016f;  // Approximate 60fps delta time
+
+        auto now = std::chrono::steady_clock::now();
+        if (m_last_frame_time.time_since_epoch().count() != 0) {
+            auto elapsed = std::chrono::duration<float>(now - m_last_frame_time).count();
+            // Clamp to prevent huge jumps (e.g. after breakpoint or sleep)
+            m_delta_time = std::min(elapsed, 0.25f);
+        }
+        m_last_frame_time = now;
+        m_total_time += m_delta_time;
     }
 
     void end_frame() override {
@@ -746,12 +773,19 @@ public:
 
         if (!bgfx::isValid(rt.fbh)) {
             log(LogLevel::Error, "Failed to create render target");
-            // Cleanup textures
+            // Cleanup bgfx textures
             for (auto th : rt.color_attachments) {
                 bgfx::destroy(th);
             }
             if (bgfx::isValid(rt.depth_attachment)) {
                 bgfx::destroy(rt.depth_attachment);
+            }
+            // Cleanup external texture handle mappings
+            for (auto& ext : rt.color_texture_handles) {
+                m_textures.erase(ext.id);
+            }
+            if (rt.depth_texture_handle.valid()) {
+                m_textures.erase(rt.depth_texture_handle.id);
             }
             return RenderTargetHandle{};
         }
@@ -818,17 +852,76 @@ public:
         auto it = m_render_targets.find(h.id);
         if (it == m_render_targets.end()) return;
 
-        RenderTargetDesc new_desc = it->second.desc;
-        new_desc.width = width;
-        new_desc.height = height;
+        auto& rt = it->second;
+        rt.desc.width = width;
+        rt.desc.height = height;
 
-        // Destroy old render target
-        destroy_render_target(h);
+        // Destroy only the bgfx GPU objects (framebuffer)
+        if (bgfx::isValid(rt.fbh)) {
+            bgfx::destroy(rt.fbh);
+            rt.fbh = BGFX_INVALID_HANDLE;
+        }
 
-        // Create new one with same handle ID
-        // We need to recreate with the same ID, so we temporarily reserve it
-        m_next_render_target_id--;  // Reuse the ID
-        create_render_target(new_desc);
+        // Calculate texture flags
+        uint64_t flags = BGFX_TEXTURE_RT;
+        if (rt.desc.samplable) {
+            flags |= BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+        }
+
+        // Recreate color attachment GPU textures in-place
+        std::vector<bgfx::Attachment> attachments;
+        for (size_t i = 0; i < rt.color_attachments.size(); ++i) {
+            // Destroy old bgfx texture
+            bgfx::destroy(rt.color_attachments[i]);
+
+            // Create new bgfx texture at new size
+            bgfx::TextureHandle th = bgfx::createTexture2D(
+                uint16_t(width), uint16_t(height),
+                rt.desc.generate_mipmaps, 1,
+                to_bgfx_format(rt.desc.color_format), flags);
+            rt.color_attachments[i] = th;
+
+            // Update the existing external handle mapping (preserves TextureHandle for callers)
+            m_textures[rt.color_texture_handles[i].id] = th;
+
+            bgfx::Attachment att;
+            att.init(th);
+            attachments.push_back(att);
+        }
+
+        // Recreate depth attachment GPU texture in-place
+        if (rt.desc.has_depth && bgfx::isValid(rt.depth_attachment)) {
+            bgfx::destroy(rt.depth_attachment);
+
+            uint64_t depth_flags = rt.desc.samplable
+                ? (BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP)
+                : (BGFX_TEXTURE_RT | BGFX_TEXTURE_RT_WRITE_ONLY);
+            bgfx::TextureHandle th = bgfx::createTexture2D(
+                uint16_t(width), uint16_t(height),
+                false, 1,
+                to_bgfx_format(rt.desc.depth_format), depth_flags);
+            rt.depth_attachment = th;
+
+            // Update external handle mapping
+            m_textures[rt.depth_texture_handle.id] = th;
+
+            bgfx::Attachment att;
+            att.init(th);
+            attachments.push_back(att);
+        }
+
+        // Recreate framebuffer
+        rt.fbh = bgfx::createFrameBuffer(
+            static_cast<uint8_t>(attachments.size()),
+            attachments.data(),
+            false);
+
+        if (rt.desc.debug_name) {
+            bgfx::setName(rt.fbh, rt.desc.debug_name);
+        }
+
+        log(LogLevel::Debug, ("Resized render target " + std::to_string(h.id) +
+            " to " + std::to_string(width) + "x" + std::to_string(height)).c_str());
     }
 
     void configure_view(RenderView view, const ViewConfig& config) override {
@@ -970,9 +1063,9 @@ public:
             Vec4 pbr_params(mat_data->metallic, mat_data->roughness, mat_data->ao, mat_data->alpha_cutoff);
             Vec4 emissive_color(mat_data->emissive.x, mat_data->emissive.y, mat_data->emissive.z, 0.0f);
 
-            bgfx::setUniform(s_pbr_uniforms.u_albedoColor, &albedo_color);
-            bgfx::setUniform(s_pbr_uniforms.u_pbrParams, &pbr_params);
-            bgfx::setUniform(s_pbr_uniforms.u_emissiveColor, &emissive_color);
+            bgfx::setUniform(m_pbr_uniforms.u_albedoColor, &albedo_color);
+            bgfx::setUniform(m_pbr_uniforms.u_pbrParams, &pbr_params);
+            bgfx::setUniform(m_pbr_uniforms.u_emissiveColor, &emissive_color);
 
             // Set textures
             auto bind_texture = [this](bgfx::UniformHandle uniform, TextureHandle tex, uint8_t slot, bgfx::TextureHandle fallback) {
@@ -984,21 +1077,21 @@ public:
                 }
             };
 
-            bind_texture(s_pbr_uniforms.s_albedo, mat_data->albedo_map, 0, m_white_texture);
-            bind_texture(s_pbr_uniforms.s_normal, mat_data->normal_map, 1, m_default_normal);
-            bind_texture(s_pbr_uniforms.s_metallicRoughness, mat_data->metallic_roughness_map, 2, m_white_texture);
-            bind_texture(s_pbr_uniforms.s_ao, mat_data->ao_map, 3, m_white_texture);
-            bind_texture(s_pbr_uniforms.s_emissive, mat_data->emissive_map, 4, m_white_texture);
+            bind_texture(m_pbr_uniforms.s_albedo, mat_data->albedo_map, 0, m_white_texture);
+            bind_texture(m_pbr_uniforms.s_normal, mat_data->normal_map, 1, m_default_normal);
+            bind_texture(m_pbr_uniforms.s_metallicRoughness, mat_data->metallic_roughness_map, 2, m_white_texture);
+            bind_texture(m_pbr_uniforms.s_ao, mat_data->ao_map, 3, m_white_texture);
+            bind_texture(m_pbr_uniforms.s_emissive, mat_data->emissive_map, 4, m_white_texture);
         }
 
         // Set camera position for PBR specular
         Vec4 cam_pos(m_camera_position.x, m_camera_position.y, m_camera_position.z, 1.0f);
-        bgfx::setUniform(s_pbr_uniforms.u_cameraPos, &cam_pos);
+        bgfx::setUniform(m_pbr_uniforms.u_cameraPos, &cam_pos);
 
         // Set render state
         uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
                          BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
-                         BGFX_STATE_CULL_CCW | BGFX_STATE_MSAA;
+                         BGFX_STATE_CULL_CW | BGFX_STATE_MSAA;
 
         bgfx::setState(state);
         bgfx::submit(view_id, m_skinned_pbr_program);
@@ -1083,16 +1176,23 @@ public:
     void blit_to_screen(RenderView view, TextureHandle source) override {
         // Blit a texture to the final backbuffer
         auto it = m_textures.find(source.id);
-        if (it != m_textures.end()) {
-            bgfx::setTexture(0, s_pbr_uniforms.s_blit_texture, it->second);
-            bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+        if (it == m_textures.end()) return;
 
-            // Submit fullscreen quad using the default program
-            // A proper implementation would use a dedicated blit shader
-            if (bgfx::isValid(m_default_program)) {
-                bgfx::submit(static_cast<uint16_t>(view), m_default_program);
-            }
+        // Select blit program: dedicated blit > skybox fallback
+        bgfx::ProgramHandle program = BGFX_INVALID_HANDLE;
+        if (bgfx::isValid(m_blit_program)) {
+            program = m_blit_program;
+        } else if (bgfx::isValid(m_skybox_program)) {
+            program = m_skybox_program;
+        } else {
+            log(LogLevel::Error, "No blit or fallback shader available for blit_to_screen");
+            return;
         }
+
+        bgfx::setTexture(0, m_pbr_uniforms.s_blit_texture, it->second);
+        bgfx::setVertexBuffer(0, m_fullscreen_triangle_vb);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+        bgfx::submit(static_cast<uint16_t>(view), program);
     }
 
     void submit_skybox(RenderView view, TextureHandle cubemap,
@@ -1301,7 +1401,7 @@ public:
     void upload_pbr_uniforms(const MaterialData* mat_data = nullptr) {
         // Camera position
         Vec4 cam_pos(m_camera_position, 1.0f);
-        bgfx::setUniform(s_pbr_uniforms.u_cameraPos, glm::value_ptr(cam_pos));
+        bgfx::setUniform(m_pbr_uniforms.u_cameraPos, glm::value_ptr(cam_pos));
 
         // Material values - use provided material data or fall back to defaults
         Vec4 albedo = mat_data
@@ -1313,9 +1413,9 @@ public:
         Vec4 emissive = mat_data
             ? Vec4(mat_data->emissive.x, mat_data->emissive.y, mat_data->emissive.z, 0.0f)
             : Vec4(0.0f, 0.0f, 0.0f, 0.0f);
-        bgfx::setUniform(s_pbr_uniforms.u_albedoColor, glm::value_ptr(albedo));
-        bgfx::setUniform(s_pbr_uniforms.u_pbrParams, glm::value_ptr(pbr_params));
-        bgfx::setUniform(s_pbr_uniforms.u_emissiveColor, glm::value_ptr(emissive));
+        bgfx::setUniform(m_pbr_uniforms.u_albedoColor, glm::value_ptr(albedo));
+        bgfx::setUniform(m_pbr_uniforms.u_pbrParams, glm::value_ptr(pbr_params));
+        bgfx::setUniform(m_pbr_uniforms.u_emissiveColor, glm::value_ptr(emissive));
 
         // Pack and upload light data
         std::array<Vec4, 32> light_data{};
@@ -1333,48 +1433,65 @@ public:
             }
         }
 
-        bgfx::setUniform(s_pbr_uniforms.u_lights, light_data.data(), 32);
+        bgfx::setUniform(m_pbr_uniforms.u_lights, light_data.data(), 32);
         Vec4 light_count(static_cast<float>(active_light_count), 0.0f, 0.0f, 0.0f);
-        bgfx::setUniform(s_pbr_uniforms.u_lightCount, glm::value_ptr(light_count));
+        bgfx::setUniform(m_pbr_uniforms.u_lightCount, glm::value_ptr(light_count));
 
         // IBL params (disabled by default)
         Vec4 ibl_params(0.0f, 0.0f, 5.0f, 0.0f);  // intensity, rotation, max_mip, unused
-        bgfx::setUniform(s_pbr_uniforms.u_iblParams, glm::value_ptr(ibl_params));
+        bgfx::setUniform(m_pbr_uniforms.u_iblParams, glm::value_ptr(ibl_params));
 
         // Time uniform
-        Vec4 time_data(m_total_time, 0.016f, std::sin(m_total_time), std::cos(m_total_time));
-        bgfx::setUniform(s_pbr_uniforms.u_time, glm::value_ptr(time_data));
+        Vec4 time_data(m_total_time, m_delta_time, std::sin(m_total_time), std::cos(m_total_time));
+        bgfx::setUniform(m_pbr_uniforms.u_time, glm::value_ptr(time_data));
 
         // Shadow uniforms
         if (m_shadows_enabled) {
-            bgfx::setUniform(s_pbr_uniforms.u_shadowParams, glm::value_ptr(m_shadow_params));
-            bgfx::setUniform(s_pbr_uniforms.u_cascadeSplits, glm::value_ptr(m_cascade_splits));
-            bgfx::setUniform(s_pbr_uniforms.u_shadowMatrix0, glm::value_ptr(m_shadow_matrices[0]));
-            bgfx::setUniform(s_pbr_uniforms.u_shadowMatrix1, glm::value_ptr(m_shadow_matrices[1]));
-            bgfx::setUniform(s_pbr_uniforms.u_shadowMatrix2, glm::value_ptr(m_shadow_matrices[2]));
-            bgfx::setUniform(s_pbr_uniforms.u_shadowMatrix3, glm::value_ptr(m_shadow_matrices[3]));
+            bgfx::setUniform(m_pbr_uniforms.u_shadowParams, glm::value_ptr(m_shadow_params));
+            bgfx::setUniform(m_pbr_uniforms.u_cascadeSplits, glm::value_ptr(m_cascade_splits));
+            bgfx::setUniform(m_pbr_uniforms.u_shadowMatrix0, glm::value_ptr(m_shadow_matrices[0]));
+            bgfx::setUniform(m_pbr_uniforms.u_shadowMatrix1, glm::value_ptr(m_shadow_matrices[1]));
+            bgfx::setUniform(m_pbr_uniforms.u_shadowMatrix2, glm::value_ptr(m_shadow_matrices[2]));
+            bgfx::setUniform(m_pbr_uniforms.u_shadowMatrix3, glm::value_ptr(m_shadow_matrices[3]));
         } else {
             // Set zero bias to disable shadows in shader
             Vec4 disabled_params(0.0f, 0.0f, 0.0f, 0.0f);
-            bgfx::setUniform(s_pbr_uniforms.u_shadowParams, glm::value_ptr(disabled_params));
+            bgfx::setUniform(m_pbr_uniforms.u_shadowParams, glm::value_ptr(disabled_params));
         }
 
-        // Bind default textures
-        bgfx::setTexture(0, s_pbr_uniforms.s_albedo, m_white_texture);
-        bgfx::setTexture(1, s_pbr_uniforms.s_normal, m_default_normal);
-        bgfx::setTexture(2, s_pbr_uniforms.s_metallicRoughness, m_white_texture);
-        bgfx::setTexture(3, s_pbr_uniforms.s_ao, m_white_texture);
-        bgfx::setTexture(4, s_pbr_uniforms.s_emissive, m_white_texture);
+        // Bind material textures (fall back to defaults when absent)
+        auto bind_texture = [this](bgfx::UniformHandle uniform, TextureHandle tex, uint8_t slot, bgfx::TextureHandle fallback) {
+            auto it = m_textures.find(tex.id);
+            if (it != m_textures.end() && bgfx::isValid(it->second)) {
+                bgfx::setTexture(slot, uniform, it->second);
+            } else {
+                bgfx::setTexture(slot, uniform, fallback);
+            }
+        };
+
+        if (mat_data) {
+            bind_texture(m_pbr_uniforms.s_albedo, mat_data->albedo_map, 0, m_white_texture);
+            bind_texture(m_pbr_uniforms.s_normal, mat_data->normal_map, 1, m_default_normal);
+            bind_texture(m_pbr_uniforms.s_metallicRoughness, mat_data->metallic_roughness_map, 2, m_white_texture);
+            bind_texture(m_pbr_uniforms.s_ao, mat_data->ao_map, 3, m_white_texture);
+            bind_texture(m_pbr_uniforms.s_emissive, mat_data->emissive_map, 4, m_white_texture);
+        } else {
+            bgfx::setTexture(0, m_pbr_uniforms.s_albedo, m_white_texture);
+            bgfx::setTexture(1, m_pbr_uniforms.s_normal, m_default_normal);
+            bgfx::setTexture(2, m_pbr_uniforms.s_metallicRoughness, m_white_texture);
+            bgfx::setTexture(3, m_pbr_uniforms.s_ao, m_white_texture);
+            bgfx::setTexture(4, m_pbr_uniforms.s_emissive, m_white_texture);
+        }
 
         // Bind shadow map textures (slots 8-11) - always bind with comparison filtering
         // Must use D32F format textures for comparison sampling (SampleCmp); use dummy shadow texture as fallback
         for (int i = 0; i < 4; ++i) {
             bgfx::UniformHandle sampler;
             switch (i) {
-                case 0: sampler = s_pbr_uniforms.s_shadowMap0; break;
-                case 1: sampler = s_pbr_uniforms.s_shadowMap1; break;
-                case 2: sampler = s_pbr_uniforms.s_shadowMap2; break;
-                default: sampler = s_pbr_uniforms.s_shadowMap3; break;
+                case 0: sampler = m_pbr_uniforms.s_shadowMap0; break;
+                case 1: sampler = m_pbr_uniforms.s_shadowMap1; break;
+                case 2: sampler = m_pbr_uniforms.s_shadowMap2; break;
+                default: sampler = m_pbr_uniforms.s_shadowMap3; break;
             }
             bool is_valid = bgfx::isValid(m_shadow_textures[i]);
             bgfx::TextureHandle shadow_tex = is_valid
@@ -1629,6 +1746,7 @@ private:
     bgfx::ProgramHandle m_skinned_pbr_program = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_skybox_program = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_billboard_program = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_blit_program = BGFX_INVALID_HANDLE;
 
     // Skybox resources
     bgfx::VertexBufferHandle m_fullscreen_triangle_vb = BGFX_INVALID_HANDLE;
@@ -1648,6 +1766,9 @@ private:
 
     // Debug vertex layout (position + color)
     bgfx::VertexLayout m_debug_vertex_layout;
+
+    // PBR uniforms (per-instance, not shared across renderers)
+    PBRUniforms m_pbr_uniforms;
 
     // Default textures for PBR
     bgfx::TextureHandle m_white_texture = BGFX_INVALID_HANDLE;
@@ -1669,8 +1790,10 @@ private:
         BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE
     }};
 
-    // Total time for shader animations
+    // Time tracking for shader animations
     float m_total_time = 0.0f;
+    float m_delta_time = 0.016f;
+    std::chrono::steady_clock::time_point m_last_frame_time{};
 
     // Resources
     uint32_t m_next_mesh_id = 1;

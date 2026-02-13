@@ -13,12 +13,15 @@ using namespace engine::core;
 
 class IRenderer;
 
+// Maximum number of shadow cascades supported
+static constexpr uint32_t MAX_CASCADES = 4;
+
 // Shadow map configuration
 struct ShadowConfig {
     // Cascaded Shadow Map settings (for directional lights)
-    uint32_t cascade_count = 4;
+    uint32_t cascade_count = MAX_CASCADES;
     uint32_t cascade_resolution = 2048;
-    std::array<float, 4> cascade_splits = {0.05f, 0.15f, 0.35f, 1.0f};
+    std::array<float, 4> cascade_splits = {0.0f, 0.0f, 0.0f, 0.0f};  // 0 = use automatic log-linear split
 
     // Point/spot light shadow settings
     uint32_t point_light_resolution = 512;

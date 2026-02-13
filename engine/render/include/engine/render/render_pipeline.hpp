@@ -216,6 +216,7 @@ public:
 
     // Custom render pass injection
     void add_custom_pass(RenderView after_view, CustomRenderCallback callback);
+    void clear_custom_passes();
 
     // Statistics
     const RenderStats& get_stats() const { return m_stats; }
@@ -238,26 +239,23 @@ private:
                      const std::vector<RenderObject>& objects,
                      const std::vector<LightData>& lights);
     void skybox_pass(const CameraData& camera);
-    void depth_prepass(const CameraData& camera,
-                       const std::vector<RenderObject>& objects);
-    void gbuffer_pass(const CameraData& camera,
-                      const std::vector<RenderObject>& objects);
-    void motion_vector_pass(const CameraData& camera,
-                            const std::vector<RenderObject>& objects);
+    void depth_prepass(const CameraData& camera);
+    void gbuffer_pass(const CameraData& camera);
+    void motion_vector_pass(const CameraData& camera);
     void ssao_pass(const CameraData& camera);
     void main_pass(const CameraData& camera,
-                   const std::vector<RenderObject>& objects,
                    const std::vector<LightData>& lights);
     void volumetric_pass(const CameraData& camera,
                          const std::vector<LightData>& lights);
     void transparent_pass(const CameraData& camera,
-                          const std::vector<RenderObject>& objects,
                           const std::vector<LightData>& lights);
     void post_process_pass(const CameraData& camera);
     void debug_pass(const CameraData& camera);
     void final_pass();
 
     // Helper methods
+    void prepare_frame_data(const CameraData& camera,
+                            const std::vector<RenderObject>& objects);
     void create_render_targets();
     void destroy_render_targets();
     void update_camera_uniforms(const CameraData& camera);
@@ -308,12 +306,21 @@ private:
     // Frame counter
     uint32_t m_frame_count = 0;
 
+    // Previous frame view-projection for TAA/motion vectors
+    Mat4 m_prev_view_projection{1.0f};
+    Vec2 m_prev_jitter{0.0f};
+
     // Skybox
-    TextureHandle m_skybox_cubemap;
+    TextureHandle m_skybox_cubemap{};
     float m_skybox_intensity = 1.0f;
     float m_skybox_rotation = 0.0f;
     ShaderHandle m_skybox_shader;
 };
+
+// Apply a quality preset to a config, returning the modified config.
+// This is a pure function usable without an initialized pipeline (for testing/UI).
+RenderPipelineConfig apply_quality_preset_to_config(
+    const RenderPipelineConfig& base, RenderQuality quality);
 
 // Helper to build camera data from common parameters
 CameraData make_camera_data(
