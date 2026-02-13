@@ -140,7 +140,7 @@ protected:
         render::ViewConfig view_config;
         view_config.render_target = render::RenderTargetHandle{};
         view_config.clear_color_enabled = true;
-        view_config.clear_color = 0x1a1a2eff;  // Dark blue-gray background
+        view_config.clear_color = 0x87CEEBff;  // Sky blue background
         view_config.clear_depth_enabled = true;
         view_config.clear_depth = 1.0f;
         view_config.viewport_width = static_cast<uint16_t>(window_width());
@@ -148,12 +148,13 @@ protected:
         renderer->configure_view(static_cast<render::RenderView>(0), view_config);
 
         renderer->begin_frame();
-        renderer->clear(0x1a1a2eff, 1.0f);
+        renderer->clear(0x87CEEBff, 1.0f);
+        renderer->set_ibl_intensity(0.35f);
 
         // Lighting setup
         render::LightData sun_light;
         sun_light.type = 0; // Directional
-        sun_light.direction = glm::normalize(Vec3{-0.5f, -1.0f, -0.3f});
+        sun_light.direction = glm::normalize(Vec3{-0.3f, -1.0f, -0.2f});
         sun_light.color = Vec3{1.0f, 0.95f, 0.9f}; // Warm sunlight
         sun_light.intensity = 2.0f;
         sun_light.cast_shadows = true;
@@ -162,11 +163,20 @@ protected:
         // Add a secondary fill light (blue-ish) from opposite direction
         render::LightData fill_light;
         fill_light.type = 0; // Directional
-        fill_light.direction = glm::normalize(Vec3{0.5f, 0.5f, 0.3f});
-        fill_light.color = Vec3{0.6f, 0.7f, 1.0f}; // Cool fill
-        fill_light.intensity = 0.5f;
+        fill_light.direction = glm::normalize(Vec3{0.3f, -0.5f, 0.5f});
+        fill_light.color = Vec3{0.7f, 0.8f, 1.0f}; // Cool fill
+        fill_light.intensity = 0.8f;
         fill_light.cast_shadows = false;
         renderer->set_light(1, fill_light);
+
+        // Back light for rim highlights
+        render::LightData back_light;
+        back_light.type = 0;
+        back_light.direction = glm::normalize(Vec3{0.0f, -0.3f, 0.8f});
+        back_light.color = Vec3{1.0f, 0.95f, 0.85f};
+        back_light.intensity = 0.4f;
+        back_light.cast_shadows = false;
+        renderer->set_light(2, back_light);
 
         // Set up camera
         float aspect = static_cast<float>(window_width()) / static_cast<float>(window_height());
@@ -236,7 +246,7 @@ private:
 
         // Floor material (Dark matte)
         render::MaterialData floor_mat_data;
-        floor_mat_data.albedo = Vec4{0.2f, 0.2f, 0.25f, 1.0f};
+        floor_mat_data.albedo = Vec4{0.9f, 0.9f, 0.92f, 1.0f};
         floor_mat_data.roughness = 0.9f;
         floor_mat_data.metallic = 0.0f;
         auto floor_mat = get_renderer()->create_material(floor_mat_data);

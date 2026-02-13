@@ -133,6 +133,9 @@ public:
     virtual void set_ao_enabled(bool enabled) = 0;
     virtual bool get_ao_enabled() const = 0;
 
+    virtual void set_ibl_intensity(float intensity) = 0;
+    virtual float get_ibl_intensity() const = 0;
+
     virtual void set_motion_blur_enabled(bool enabled) = 0;
     virtual bool get_motion_blur_enabled() const = 0;
 

@@ -57,6 +57,7 @@ void RenderPipeline::init(IRenderer* renderer, const RenderPipelineConfig& confi
     }
 
     // Initialize particle system
+    // TODO: Add particle_pass() that calls m_particle_system->render() after transparent pass
     if (has_flag(config.enabled_passes, RenderPassFlags::Particles)) {
         m_particle_system = std::make_unique<ParticleSystem>();
         m_particle_system->init(renderer);
@@ -419,12 +420,12 @@ void RenderPipeline::render_to_target(RenderTargetHandle target,
     m_renderer->configure_view(RenderView::MainTransparent, restore_transparent);
 }
 
+// TODO: Implement streaming submission API for incremental scene building
+// (alternative to passing full object/light vectors to render())
 void RenderPipeline::submit_object(const RenderObject& object) {
-    // For streaming submission (not used in current implementation)
 }
 
 void RenderPipeline::submit_light(const LightData& light) {
-    // For streaming submission (not used in current implementation)
 }
 
 void RenderPipeline::resize(uint32_t width, uint32_t height) {
@@ -479,6 +480,7 @@ TextureHandle RenderPipeline::get_volumetric_debug_texture() const {
     return m_volumetric_system.get_volumetric_texture();
 }
 
+// TODO: Execute m_custom_passes callbacks at their specified after_view points in the render loop
 void RenderPipeline::add_custom_pass(RenderView after_view, CustomRenderCallback callback) {
     m_custom_passes.emplace_back(after_view, std::move(callback));
 }
@@ -624,8 +626,11 @@ void RenderPipeline::create_render_targets() {
     {
         ViewConfig view_config;
         view_config.render_target = m_hdr_target;
-        view_config.clear_color_enabled = true;
-        view_config.clear_color = 0x000000FF;  // Black
+        // Don't clear color if skybox is enabled — the skybox pass (view 39) already
+        // paints the background before MainOpaque (view 40). Clearing here would
+        // destroy the skybox output.
+        view_config.clear_color_enabled = !has_flag(m_config.enabled_passes, RenderPassFlags::Skybox);
+        view_config.clear_color = 0x000000FF;  // Black (used when skybox is disabled)
         view_config.clear_depth_enabled = true;
         view_config.clear_depth = 1.0f;
         m_renderer->configure_view(RenderView::MainOpaque, view_config);
@@ -953,6 +958,19 @@ void RenderPipeline::ssao_pass(const CameraData& camera) {
 
 void RenderPipeline::main_pass(const CameraData& camera,
                                 const std::vector<LightData>& lights) {
+    // Reconfigure MainOpaque clear: skip color clear when skybox is active,
+    // since the skybox pass (view 39) already painted the HDR background.
+    bool skybox_active = has_flag(m_config.enabled_passes, RenderPassFlags::Skybox) && m_skybox_cubemap.valid();
+    {
+        ViewConfig view_config;
+        view_config.render_target = m_hdr_target;
+        view_config.clear_color_enabled = !skybox_active;
+        view_config.clear_color = 0x000000FF;
+        view_config.clear_depth_enabled = true;
+        view_config.clear_depth = 1.0f;
+        m_renderer->configure_view(RenderView::MainOpaque, view_config);
+    }
+
     // Update light uniforms
     update_light_uniforms(lights);
 
@@ -1025,7 +1043,7 @@ void RenderPipeline::volumetric_pass(const CameraData& camera,
         // Set spot_angle_cos based on light type:
         // directional (0): 1.0 (parallel rays), point (1): -1.0 (full sphere), spot (2): actual cone angle
         if (light.type == 2) {
-            vl.spot_angle_cos = std::cos(light.outer_angle * 3.14159f / 180.0f);
+            vl.spot_angle_cos = std::cos(light.outer_angle * glm::pi<float>() / 180.0f);
         } else if (light.type == 1) {
             vl.spot_angle_cos = -1.0f;
         } else {
@@ -1069,6 +1087,10 @@ void RenderPipeline::post_process_pass(const CameraData& camera) {
             // The tone mapping shader will blend: hdr * vol.a + vol.rgb
             m_post_process_system.set_volumetric_texture(vol_tex);
         }
+    } else {
+        // Clear stale volumetric texture when the effect is disabled, otherwise
+        // the post-process system would keep compositing the last active frame.
+        m_post_process_system.set_volumetric_texture(TextureHandle{});
     }
 
     // Apply TAA
@@ -1168,7 +1190,7 @@ CameraData make_camera_data(
 
     // Calculate projection matrix
     camera.projection_matrix = glm::perspective(
-        fov_y * 3.14159f / 180.0f,
+        fov_y * glm::pi<float>() / 180.0f,
         aspect_ratio,
         near_plane,
         far_plane

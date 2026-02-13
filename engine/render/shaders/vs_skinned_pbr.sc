@@ -91,7 +91,16 @@ void main()
     v_worldPos = vec4(worldPos.xyz, viewSpaceDepth);
 
     // Transform skinned normal and tangent to world space
-    mat3 normalMatrix = mat3(u_model[0][0].xyz, u_model[0][1].xyz, u_model[0][2].xyz);
+    // Use cofactor matrix (== inverse-transpose * det) to handle non-uniform scale.
+    // Since we normalize afterwards, skipping the determinant division is fine.
+    vec3 c0 = u_model[0][0].xyz;
+    vec3 c1 = u_model[0][1].xyz;
+    vec3 c2 = u_model[0][2].xyz;
+    mat3 normalMatrix = mat3(
+        cross(c1, c2),
+        cross(c2, c0),
+        cross(c0, c1)
+    );
     v_normal = normalize(mul(normalMatrix, skinnedNormal));
     v_tangent = normalize(mul(normalMatrix, skinnedTangent));
     v_bitangent = cross(v_normal, v_tangent);

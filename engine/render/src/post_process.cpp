@@ -12,6 +12,8 @@ using namespace engine::core;
 // Post-process shader programs and uniforms
 struct PostProcessShaders {
     bgfx::ProgramHandle bloom_downsample = BGFX_INVALID_HANDLE;
+    // TODO: Implement specialized first-pass bloom downsample with Karis average
+    // to prevent firefly artifacts from bright sub-pixel features.
     bgfx::ProgramHandle bloom_downsample_first = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle bloom_upsample = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle tonemap = BGFX_INVALID_HANDLE;
@@ -241,6 +243,10 @@ void PostProcessSystem::shutdown() {
     if (m_avg_luminance.valid()) {
         m_renderer->destroy_render_target(m_avg_luminance);
     }
+
+    // Destroy static shader resources before bgfx shutdown to avoid
+    // dangling handle destruction in static destructors.
+    s_pp_shaders.destroy();
 
     m_initialized = false;
     m_renderer = nullptr;

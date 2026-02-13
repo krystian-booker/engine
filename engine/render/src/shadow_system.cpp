@@ -105,14 +105,31 @@ void ShadowSystem::update_cascades(const Mat4& camera_view, const Mat4& camera_p
         }
         center /= 8.0f;
 
-        // Create light view matrix — use alternative up vector when light is near-vertical
+        // Create light view matrix — use alternative up vector when light is near-vertical.
+        // First pass with a temporary eye position to compute light-space bounds,
+        // then recompute with a proper offset derived from those bounds.
         Vec3 up = (std::abs(glm::dot(light_dir, Vec3(0.0f, 1.0f, 0.0f))) > 0.99f)
                    ? Vec3(0.0f, 0.0f, 1.0f) : Vec3(0.0f, 1.0f, 0.0f);
-        Mat4 light_view = glm::lookAt(center - light_dir * 100.0f, center, up);
+        Mat4 light_view = glm::lookAt(center - light_dir, center, up);
 
         // Calculate bounds in light space
         Vec3 min_bounds(std::numeric_limits<float>::max());
         Vec3 max_bounds(std::numeric_limits<float>::lowest());
+
+        for (const auto& corner : corners) {
+            Vec4 light_space = light_view * Vec4(corner, 1.0f);
+            min_bounds = glm::min(min_bounds, Vec3(light_space));
+            max_bounds = glm::max(max_bounds, Vec3(light_space));
+        }
+
+        // Recompute light view with offset derived from cascade extent, so the
+        // light camera sits far enough back to avoid near-plane clipping.
+        float light_offset = glm::length(max_bounds - min_bounds);
+        light_view = glm::lookAt(center - light_dir * light_offset, center, up);
+
+        // Recalculate bounds with the corrected view matrix
+        min_bounds = Vec3(std::numeric_limits<float>::max());
+        max_bounds = Vec3(std::numeric_limits<float>::lowest());
 
         for (const auto& corner : corners) {
             Vec4 light_space = light_view * Vec4(corner, 1.0f);
@@ -128,8 +145,12 @@ void ShadowSystem::update_cascades(const Mat4& camera_view, const Mat4& camera_p
         m_cascades[i].view_proj = light_proj * light_view;
         m_cascades[i].split_distance = far_split;
 
-        // Calculate bounding sphere for culling
-        float radius = glm::length(max_bounds - min_bounds) * 0.5f;
+        // Calculate bounding sphere for culling — use world-space corners so
+        // that center (world space) and radius are in the same coordinate space.
+        float radius = 0.0f;
+        for (const auto& corner : corners) {
+            radius = std::max(radius, glm::length(corner - center));
+        }
         m_cascades[i].sphere = Vec4(center, radius);
 
         // Update view transform for rendering

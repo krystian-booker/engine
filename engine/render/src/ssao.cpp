@@ -194,6 +194,10 @@ void SSAOSystem::shutdown() {
         m_renderer->destroy_texture(m_noise_texture);
     }
 
+    // Destroy static shader resources before bgfx shutdown to avoid
+    // dangling handle destruction in static destructors.
+    s_ssao_shaders.destroy();
+
     m_initialized = false;
     m_renderer = nullptr;
 
@@ -222,13 +226,21 @@ void SSAOSystem::generate_kernel() {
     std::uniform_real_distribution<float> rand_float(0.0f, 1.0f);
 
     for (uint32_t i = 0; i < 64; ++i) {
-        // Generate random point in hemisphere
-        Vec3 sample(
-            rand_float(gen) * 2.0f - 1.0f,
-            rand_float(gen) * 2.0f - 1.0f,
-            rand_float(gen)  // Hemisphere - positive Z only
-        );
+        // Generate uniform random point in hemisphere using rejection sampling.
+        // Sampling X,Y in [-1,1] and Z in [0,1] then normalizing biases the
+        // distribution toward the equator. Rejection sampling ensures uniformity.
+        Vec3 sample;
+        do {
+            sample = Vec3(
+                rand_float(gen) * 2.0f - 1.0f,
+                rand_float(gen) * 2.0f - 1.0f,
+                rand_float(gen) * 2.0f - 1.0f
+            );
+        } while (glm::dot(sample, sample) > 1.0f || glm::dot(sample, sample) < 1e-6f);
         sample = glm::normalize(sample);
+
+        // Flip to positive hemisphere (Z > 0)
+        if (sample.z < 0.0f) sample.z = -sample.z;
 
         // Scale to be within hemisphere (random length)
         sample *= rand_float(gen);
@@ -467,7 +479,7 @@ void generate_hilbert_noise(std::vector<uint8_t>& pixels, uint32_t size) {
             uint32_t idx = (y * size + x) * 4;
 
             // Spatial-temporal noise pattern
-            float angle = rand_float(gen) * 2.0f * 3.14159265f;
+            float angle = rand_float(gen) * 2.0f * glm::pi<float>();
             float offset = rand_float(gen);
 
             pixels[idx + 0] = static_cast<uint8_t>(std::cos(angle) * 127.5f + 127.5f);

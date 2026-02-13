@@ -188,6 +188,10 @@ void VolumetricSystem::shutdown() {
         m_renderer->destroy_texture(m_blue_noise);
     }
 
+    // Destroy static shader resources before bgfx shutdown to avoid
+    // dangling handle destruction in static destructors.
+    s_vol_shaders.destroy();
+
     m_initialized = false;
     m_renderer = nullptr;
 
@@ -467,6 +471,9 @@ void VolumetricSystem::integration_pass() {
     );
 
     // Find directional light
+    // TODO: Support multiple light types (point/spot) in volumetric scattering.
+    // Currently only the first directional light contributes; point and spot lights
+    // are ignored by the integration shader.
     Vec4 light_dir(0.0f, -1.0f, 0.0f, 1.0f);
     Vec4 light_color(1.0f, 1.0f, 1.0f, 1.0f);
 
@@ -528,13 +535,13 @@ namespace phase {
 float henyey_greenstein(float cos_theta, float g) {
     float g2 = g * g;
     float denom = 1.0f + g2 - 2.0f * g * cos_theta;
-    return (1.0f - g2) / (4.0f * 3.14159265f * std::pow(std::max(denom, 1e-6f), 1.5f));
+    return (1.0f - g2) / (4.0f * glm::pi<float>() * std::pow(std::max(denom, 1e-6f), 1.5f));
 }
 
 float schlick_phase(float cos_theta, float g) {
     float k = 1.55f * g - 0.55f * g * g * g;
     float denom = 1.0f - k * cos_theta;
-    return (1.0f - k * k) / (4.0f * 3.14159265f * std::max(denom * denom, 1e-6f));
+    return (1.0f - k * k) / (4.0f * glm::pi<float>() * std::max(denom * denom, 1e-6f));
 }
 
 float cornette_shanks(float cos_theta, float g) {
@@ -563,7 +570,7 @@ void generate_3d_noise(std::vector<uint8_t>& data, uint32_t size) {
     // Generate gradient vectors
     std::vector<Vec3> gradients(256);
     for (int i = 0; i < 256; ++i) {
-        float theta = dist(gen) * 2.0f * 3.14159265f;
+        float theta = dist(gen) * 2.0f * glm::pi<float>();
         float phi = std::acos(2.0f * dist(gen) - 1.0f);
         gradients[i] = Vec3(
             std::sin(phi) * std::cos(theta),

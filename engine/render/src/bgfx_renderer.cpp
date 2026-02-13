@@ -328,7 +328,7 @@ public:
             // Clean up any partially loaded shaders
             if (bgfx::isValid(blit_vsh)) bgfx::destroy(blit_vsh);
             if (bgfx::isValid(blit_fsh)) bgfx::destroy(blit_fsh);
-            log(LogLevel::Warn, "Failed to load blit shader program - will fallback to skybox program");
+            log(LogLevel::Warn, "Failed to load blit shader program - blit_to_screen will be unavailable");
         }
 
         // Load billboard shader
@@ -368,6 +368,21 @@ public:
         // BGFX_TEXTURE_RT creates a samplable render target (don't use RT_WRITE_ONLY - that can't be sampled)
         m_dummy_shadow_texture = bgfx::createTexture2D(1, 1, false, 1, bgfx::TextureFormat::D32F,
             BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+
+        // Create 1x1 white cubemap for IBL fallback (irradiance + prefilter)
+        // 6 faces, each 1x1 RGBA8 white pixel
+        uint32_t white_faces[6] = { 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+                                    0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF };
+        m_default_irradiance = bgfx::createTextureCube(1, false, 1, bgfx::TextureFormat::RGBA8,
+            BGFX_TEXTURE_NONE | BGFX_SAMPLER_POINT, bgfx::copy(white_faces, sizeof(white_faces)));
+
+        m_default_prefilter = bgfx::createTextureCube(1, false, 1, bgfx::TextureFormat::RGBA8,
+            BGFX_TEXTURE_NONE | BGFX_SAMPLER_POINT, bgfx::copy(white_faces, sizeof(white_faces)));
+
+        // BRDF LUT: 1x1 with R=1.0, G=0.0 — scale=1, bias=0
+        uint32_t brdf_pixel = 0x000000FF; // R=255 (1.0), G=0 (0.0) in RGBA8
+        m_default_brdf_lut = bgfx::createTexture2D(1, 1, false, 1, bgfx::TextureFormat::RGBA8,
+            BGFX_TEXTURE_NONE | BGFX_SAMPLER_POINT, bgfx::copy(&brdf_pixel, sizeof(brdf_pixel)));
 
         m_initialized = true;
         return true;
@@ -471,6 +486,15 @@ public:
         }
         if (bgfx::isValid(m_dummy_shadow_texture)) {
             bgfx::destroy(m_dummy_shadow_texture);
+        }
+        if (bgfx::isValid(m_default_irradiance)) {
+            bgfx::destroy(m_default_irradiance);
+        }
+        if (bgfx::isValid(m_default_prefilter)) {
+            bgfx::destroy(m_default_prefilter);
+        }
+        if (bgfx::isValid(m_default_brdf_lut)) {
+            bgfx::destroy(m_default_brdf_lut);
         }
 
         // Destroy all resources
@@ -1178,16 +1202,14 @@ public:
         auto it = m_textures.find(source.id);
         if (it == m_textures.end()) return;
 
-        // Select blit program: dedicated blit > skybox fallback
-        bgfx::ProgramHandle program = BGFX_INVALID_HANDLE;
-        if (bgfx::isValid(m_blit_program)) {
-            program = m_blit_program;
-        } else if (bgfx::isValid(m_skybox_program)) {
-            program = m_skybox_program;
-        } else {
-            log(LogLevel::Error, "No blit or fallback shader available for blit_to_screen");
+        // Blit program required — skybox shader can't be used as fallback because
+        // it expects a cubemap sampler (s_skybox), not the 2D sampler (s_texture)
+        // used by blit, producing a black screen or garbage output.
+        if (!bgfx::isValid(m_blit_program)) {
+            log(LogLevel::Error, "Blit shader program unavailable for blit_to_screen");
             return;
         }
+        bgfx::ProgramHandle program = m_blit_program;
 
         bgfx::setTexture(0, m_pbr_uniforms.s_blit_texture, it->second);
         bgfx::setVertexBuffer(0, m_fullscreen_triangle_vb);
@@ -1438,7 +1460,7 @@ public:
         bgfx::setUniform(m_pbr_uniforms.u_lightCount, glm::value_ptr(light_count));
 
         // IBL params (disabled by default)
-        Vec4 ibl_params(0.0f, 0.0f, 5.0f, 0.0f);  // intensity, rotation, max_mip, unused
+        Vec4 ibl_params(m_ibl_intensity, 0.0f, 5.0f, 0.0f);  // intensity, rotation, max_mip, unused
         bgfx::setUniform(m_pbr_uniforms.u_iblParams, glm::value_ptr(ibl_params));
 
         // Time uniform
@@ -1482,6 +1504,11 @@ public:
             bgfx::setTexture(3, m_pbr_uniforms.s_ao, m_white_texture);
             bgfx::setTexture(4, m_pbr_uniforms.s_emissive, m_white_texture);
         }
+
+        // IBL textures (slots 5-7) — use fallback white cubemaps when no real IBL is loaded
+        bgfx::setTexture(5, m_pbr_uniforms.s_irradiance, m_default_irradiance);
+        bgfx::setTexture(6, m_pbr_uniforms.s_prefilter, m_default_prefilter);
+        bgfx::setTexture(7, m_pbr_uniforms.s_brdfLUT, m_default_brdf_lut);
 
         // Bind shadow map textures (slots 8-11) - always bind with comparison filtering
         // Must use D32F format textures for comparison sampling (SampleCmp); use dummy shadow texture as fallback
@@ -1546,6 +1573,9 @@ public:
 
     void set_ao_enabled(bool enabled) override { m_ao_enabled = enabled; }
     bool get_ao_enabled() const override { return m_ao_enabled; }
+
+    void set_ibl_intensity(float intensity) override { m_ibl_intensity = std::max(0.0f, intensity); }
+    float get_ibl_intensity() const override { return m_ibl_intensity; }
 
     void set_motion_blur_enabled(bool enabled) override { m_motion_blur_enabled = enabled; }
     bool get_motion_blur_enabled() const override { return m_motion_blur_enabled; }
@@ -1653,12 +1683,12 @@ private:
         MeshData data;
 
         for (int ring = 0; ring <= rings; ++ring) {
-            float theta = static_cast<float>(ring) * 3.14159265f / static_cast<float>(rings);
+            float theta = static_cast<float>(ring) * glm::pi<float>() / static_cast<float>(rings);
             float sin_theta = std::sin(theta);
             float cos_theta = std::cos(theta);
 
             for (int seg = 0; seg <= segments; ++seg) {
-                float phi = static_cast<float>(seg) * 2.0f * 3.14159265f / static_cast<float>(segments);
+                float phi = static_cast<float>(seg) * 2.0f * glm::pi<float>() / static_cast<float>(segments);
                 float sin_phi = std::sin(phi);
                 float cos_phi = std::cos(phi);
 
@@ -1736,6 +1766,7 @@ private:
     bool m_bloom_enabled = true;
     float m_bloom_intensity = 1.0f;
     bool m_ao_enabled = true;
+    float m_ibl_intensity = 0.0f;
     bool m_motion_blur_enabled = false;
 
     // Shader programs
@@ -1774,6 +1805,11 @@ private:
     bgfx::TextureHandle m_white_texture = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle m_default_normal = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle m_dummy_shadow_texture = BGFX_INVALID_HANDLE;  // D32F format for shadow sampler fallback
+
+    // Default IBL textures (fallback when no environment map is loaded)
+    bgfx::TextureHandle m_default_irradiance = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle m_default_prefilter = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle m_default_brdf_lut = BGFX_INVALID_HANDLE;
 
     // Camera position (for PBR specular)
     Vec3 m_camera_position{0.0f};
