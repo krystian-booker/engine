@@ -345,7 +345,8 @@ void PostProcessSystem::render_bloom_downsample(TextureHandle input, int mip) {
     uint32_t input_height = m_height >> mip;
 
     Vec4 texel_size(1.0f / float(input_width), 1.0f / float(input_height), 0.0f, 0.0f);
-    Vec4 bloom_params(m_config.bloom.threshold, m_config.bloom.threshold * 0.5f, 0.0f, 0.0f);
+    float threshold = (mip == 0) ? m_config.bloom.threshold : 0.0f;
+    Vec4 bloom_params(threshold, threshold * 0.5f, 0.0f, 0.0f);
 
     // Set uniforms
     bgfx::setUniform(s_pp_shaders.u_texelSize, &texel_size);
@@ -479,9 +480,19 @@ void PostProcessSystem::render_tonemapping(TextureHandle scene, TextureHandle bl
 
 void PostProcessSystem::process(
     TextureHandle hdr_scene,
-    RenderTargetHandle /*output_target*/
+    RenderTargetHandle output_target
 ) {
     if (!m_initialized) return;
+
+    // Configure tonemapping view to write to output target (LDR)
+    if (output_target.valid()) {
+        ViewConfig view_config;
+        view_config.render_target = output_target;
+        view_config.clear_color_enabled = true;
+        view_config.clear_color = 0x000000FF;
+        view_config.clear_depth_enabled = false;
+        m_renderer->configure_view(RenderView::Tonemapping, view_config);
+    }
 
     // Bloom pass
     TextureHandle bloom_texture;

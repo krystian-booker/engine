@@ -315,6 +315,25 @@ if(TARGET bgfx::shaderc AND ENGINE_COMPILE_SHADERS)
         INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
     )
 
+    # Blit (fullscreen texture copy) shaders
+    bgfx_compile_shaders(
+        TYPE VERTEX
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vs_blit.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_blit.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR VS_BLIT_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
+    bgfx_compile_shaders(
+        TYPE FRAGMENT
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fs_blit.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_blit.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR FS_BLIT_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
     # OIT shaders
     bgfx_compile_shaders(
         TYPE FRAGMENT
@@ -385,6 +404,7 @@ if(TARGET bgfx::shaderc AND ENGINE_COMPILE_SHADERS)
         ${VS_DEBUG_OUTPUTS} ${FS_DEBUG_OUTPUTS}
         ${VS_SKYBOX_OUTPUTS} ${FS_SKYBOX_OUTPUTS}
         ${VS_BILLBOARD_OUTPUTS} ${FS_BILLBOARD_OUTPUTS}
+        ${VS_BLIT_OUTPUTS} ${FS_BLIT_OUTPUTS}
         ${FS_OIT_ACCUM_OUTPUTS} ${FS_OIT_COMPOSITE_OUTPUTS}
         ${FS_SSR_HIZ_OUTPUTS} ${FS_SSR_TRACE_OUTPUTS}
         ${FS_SSR_RESOLVE_OUTPUTS} ${FS_SSR_COMPOSITE_OUTPUTS}

@@ -15,10 +15,10 @@ class IRenderer;
 // Bloom configuration
 struct BloomConfig {
     bool enabled = true;
-    float threshold = 1.0f;      // Brightness threshold for bloom extraction
-    float intensity = 0.5f;      // Bloom intensity
+    float threshold = 1.5f;      // Brightness threshold for bloom extraction
+    float intensity = 0.15f;     // Bloom intensity
     float scatter = 0.7f;        // How much bloom spreads (0-1)
-    int mip_count = 5;           // Number of blur mip levels (default: 5)
+    int mip_count = 4;           // Number of blur mip levels (max: 4)
 };
 
 // Tone mapping operators
@@ -103,7 +103,7 @@ private:
     uint32_t m_height = 0;
 
     // Bloom mip chain
-    static const int MAX_BLOOM_MIPS = 8;
+    static const int MAX_BLOOM_MIPS = 4;
     std::array<RenderTargetHandle, MAX_BLOOM_MIPS> m_bloom_downsample;
     std::array<RenderTargetHandle, MAX_BLOOM_MIPS> m_bloom_upsample;
     int m_bloom_mip_count = 0;

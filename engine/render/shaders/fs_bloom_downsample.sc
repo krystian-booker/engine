@@ -27,11 +27,11 @@ vec3 downsample13Tap(vec2 uv, vec2 texelSize)
 
     // Weighted combination (tent filter)
     vec3 result = vec3_splat(0.0);
-    result += (D + E + I + J) * 0.5;
-    result += (A + B + F + G) * 0.125;
-    result += (B + C + G + H) * 0.125;
-    result += (F + G + K + L) * 0.125;
-    result += (G + H + L + M) * 0.125;
+    result += (D + E + I + J) * 0.125;
+    result += (A + B + F + G) * 0.03125;
+    result += (B + C + G + H) * 0.03125;
+    result += (F + G + K + L) * 0.03125;
+    result += (G + H + L + M) * 0.03125;
 
     return result;
 }
@@ -58,10 +58,8 @@ void main()
     vec2 texelSize = u_texelSize.xy;
     vec3 color = downsample13Tap(v_texcoord0, texelSize);
 
-    // Apply threshold on first downsample (mip 0)
-    #ifdef FIRST_MIP
+    // Apply threshold (prefilter is identity when threshold=0)
     color = prefilter(color);
-    #endif
 
     gl_FragColor = vec4(color, 1.0);
 }

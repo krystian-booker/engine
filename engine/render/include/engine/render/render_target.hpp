@@ -109,22 +109,24 @@ enum class RenderView : uint16_t {
     BloomUpsample2 = 76,
     BloomUpsample3 = 77,
 
-    // Tone mapping / final output
-    ToneMap = 61,
+    // Tone mapping (after bloom so bloom results are available)
+    ToneMap = 78,
     Tonemapping = ToneMap,
 
     // Debug visualization
-    Debug = 62,
-    DebugOverlay = 65,
+    Debug = 79,
 
     // UI overlay
-    UI = 63,
+    UI = 80,
 
     // Final composite to backbuffer
-    Final = 64,
+    Final = 81,
+
+    // Debug overlay (on top of everything)
+    DebugOverlay = 82,
 
     // Maximum view count
-    Count = 80
+    Count = 84
 };
 
 // View configuration for a render pass

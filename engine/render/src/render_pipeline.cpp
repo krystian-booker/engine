@@ -203,7 +203,7 @@ RenderPipelineConfig apply_quality_preset_to_config(
             config.ssao_config.sample_count = 32;
             config.ssao_config.half_resolution = false;
             config.bloom_config.enabled = true;
-            config.bloom_config.mip_count = 5;
+            config.bloom_config.mip_count = 4;
             config.taa_config.enabled = true;
             config.volumetric_config.froxel_depth = 128;
             config.enabled_passes = RenderPassFlags::All;
@@ -217,7 +217,7 @@ RenderPipelineConfig apply_quality_preset_to_config(
             config.ssao_config.sample_count = 64;
             config.ssao_config.half_resolution = false;
             config.bloom_config.enabled = true;
-            config.bloom_config.mip_count = 6;
+            config.bloom_config.mip_count = 4;
             config.taa_config.enabled = true;
             config.volumetric_config.froxel_depth = 128;
             config.volumetric_config.temporal_reprojection = true;
@@ -321,6 +321,9 @@ void RenderPipeline::render(const CameraData& camera,
     if (has_flag(m_config.enabled_passes, RenderPassFlags::Transparent)) {
         transparent_pass(jittered_camera, lights);
     }
+
+    // Flush queued scene draw calls to bgfx
+    m_renderer->flush();
 
     if (has_flag(m_config.enabled_passes, RenderPassFlags::PostProcess)) {
         post_process_pass(jittered_camera);
@@ -630,7 +633,7 @@ void RenderPipeline::create_render_targets() {
         // paints the background before MainOpaque (view 40). Clearing here would
         // destroy the skybox output.
         view_config.clear_color_enabled = !has_flag(m_config.enabled_passes, RenderPassFlags::Skybox);
-        view_config.clear_color = 0x000000FF;  // Black (used when skybox is disabled)
+        view_config.clear_color = m_config.clear_color;
         view_config.clear_depth_enabled = true;
         view_config.clear_depth = 1.0f;
         m_renderer->configure_view(RenderView::MainOpaque, view_config);
@@ -645,8 +648,9 @@ void RenderPipeline::create_render_targets() {
     }
 
     {
+        // Final view renders to the backbuffer (no render target)
+        // blit_to_screen reads from m_ldr_target and writes to the screen
         ViewConfig view_config;
-        view_config.render_target = m_ldr_target;
         view_config.clear_color_enabled = true;
         view_config.clear_color = 0x000000FF;
         view_config.clear_depth_enabled = false;
@@ -684,9 +688,13 @@ void RenderPipeline::destroy_render_targets() {
 void RenderPipeline::update_camera_uniforms(const CameraData& camera) {
     m_renderer->set_view_transform(RenderView::MainOpaque, camera.view_matrix, camera.projection_matrix);
     m_renderer->set_view_transform(RenderView::MainTransparent, camera.view_matrix, camera.projection_matrix);
+    m_renderer->set_camera_position(camera.position);
 }
 
 void RenderPipeline::update_light_uniforms(const std::vector<LightData>& lights) {
+    // Clear stale lights from previous frame before setting new ones
+    m_renderer->clear_lights();
+
     // Pack lights into uniform buffer
     // Max 8 lights currently supported
     constexpr int MAX_LIGHTS = 8;
@@ -965,7 +973,7 @@ void RenderPipeline::main_pass(const CameraData& camera,
         ViewConfig view_config;
         view_config.render_target = m_hdr_target;
         view_config.clear_color_enabled = !skybox_active;
-        view_config.clear_color = 0x000000FF;
+        view_config.clear_color = m_config.clear_color;
         view_config.clear_depth_enabled = true;
         view_config.clear_depth = 1.0f;
         m_renderer->configure_view(RenderView::MainOpaque, view_config);

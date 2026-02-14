@@ -88,6 +88,9 @@ struct RenderPipelineConfig {
     // Volumetric settings
     VolumetricConfig volumetric_config;
 
+    // Clear color (used when skybox is disabled)
+    uint32_t clear_color = 0x000000FF;
+
     // Transparency settings
     bool order_independent_transparency = false;
     int max_oit_layers = 4;

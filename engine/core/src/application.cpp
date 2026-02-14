@@ -230,13 +230,23 @@ int Application::run(int argc, char** argv) {
             ui::ui_input_end_frame(*m_ui_input_state);
         }
 
+        // Begin renderer frame
+        if (m_renderer) {
+            m_renderer->begin_frame();
+        }
+
         // Run PreRender phase
         if (m_system_registry) {
             m_system_registry->run(*m_world, dt, scene::Phase::PreRender);
         }
 
-        // Rendering
+        // Rendering (custom hook for subclassed apps)
         on_render(m_clock.get_alpha());
+
+        // Run Render phase (render_submit_system fires here)
+        if (m_system_registry) {
+            m_system_registry->run(*m_world, dt, scene::Phase::Render);
+        }
 
         // Render UI (after 3D scene, before PostRender)
         if (m_ui_context && m_renderer) {
@@ -247,6 +257,11 @@ int Application::run(int argc, char** argv) {
         // Run PostRender phase
         if (m_system_registry) {
             m_system_registry->run(*m_world, dt, scene::Phase::PostRender);
+        }
+
+        // End renderer frame
+        if (m_renderer) {
+            m_renderer->end_frame();
         }
     }
 

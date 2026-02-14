@@ -369,18 +369,34 @@ public:
         m_dummy_shadow_texture = bgfx::createTexture2D(1, 1, false, 1, bgfx::TextureFormat::D32F,
             BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
 
-        // Create 1x1 white cubemap for IBL fallback (irradiance + prefilter)
-        // 6 faces, each 1x1 RGBA8 white pixel
-        uint32_t white_faces[6] = { 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
-                                    0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF };
+        // Create 1x1 cubemap for IBL fallback with sky-ground gradient
+        // Face order: +X, -X, +Y, -Y, +Z, -Z. Pixel format RGBA8: 0xAABBGGRR
+        // Irradiance (diffuse ambient): dimmed sky-ground gradient for subtle default ambient
+        uint32_t irr_faces[6] = {
+            0xFF382F2E,  // +X horizon (0.18, 0.19, 0.22)
+            0xFF382F2E,  // -X horizon
+            0xFF73594D,  // +Y sky     (0.3, 0.35, 0.45)
+            0xFF0A0508,  // -Y ground  (0.05, 0.03, 0.04)
+            0xFF382F2E,  // +Z horizon
+            0xFF382F2E   // -Z horizon
+        };
         m_default_irradiance = bgfx::createTextureCube(1, false, 1, bgfx::TextureFormat::RGBA8,
-            BGFX_TEXTURE_NONE | BGFX_SAMPLER_POINT, bgfx::copy(white_faces, sizeof(white_faces)));
+            BGFX_TEXTURE_NONE | BGFX_SAMPLER_POINT, bgfx::copy(irr_faces, sizeof(irr_faces)));
 
+        // Prefilter (specular reflections): subtle sky reflection, near-black ground
+        uint32_t pf_faces[6] = {
+            0xFF241C1A,  // +X horizon (0.10, 0.11, 0.14)
+            0xFF241C1A,  // -X horizon
+            0xFF4D3833,  // +Y sky     (0.20, 0.22, 0.30)
+            0xFF050505,  // -Y ground  (0.03, 0.03, 0.02)
+            0xFF241C1A,  // +Z horizon
+            0xFF241C1A   // -Z horizon
+        };
         m_default_prefilter = bgfx::createTextureCube(1, false, 1, bgfx::TextureFormat::RGBA8,
-            BGFX_TEXTURE_NONE | BGFX_SAMPLER_POINT, bgfx::copy(white_faces, sizeof(white_faces)));
+            BGFX_TEXTURE_NONE | BGFX_SAMPLER_POINT, bgfx::copy(pf_faces, sizeof(pf_faces)));
 
-        // BRDF LUT: 1x1 with R=1.0, G=0.0 — scale=1, bias=0
-        uint32_t brdf_pixel = 0x000000FF; // R=255 (1.0), G=0 (0.0) in RGBA8
+        // BRDF LUT: 1x1 with R≈0.5, G≈0.06 — moderate scale + small bias
+        uint32_t brdf_pixel = 0x00001080; // R=128 (0.5), G=16 (0.06) in RGBA8
         m_default_brdf_lut = bgfx::createTexture2D(1, 1, false, 1, bgfx::TextureFormat::RGBA8,
             BGFX_TEXTURE_NONE | BGFX_SAMPLER_POINT, bgfx::copy(&brdf_pixel, sizeof(brdf_pixel)));
 
@@ -535,6 +551,9 @@ public:
     }
 
     void begin_frame() override {
+        if (m_frame_active) return;
+        m_frame_active = true;
+
         bgfx::touch(0);
 
         auto now = std::chrono::steady_clock::now();
@@ -548,6 +567,9 @@ public:
     }
 
     void end_frame() override {
+        if (!m_frame_active) return;
+        m_frame_active = false;
+
         bgfx::frame();
     }
 
@@ -1003,6 +1025,10 @@ public:
         m_camera_position = Vec3(inv_view[3]);
     }
 
+    void set_camera_position(const Vec3& position) override {
+        m_camera_position = position;
+    }
+
     void set_light(uint32_t index, const LightData& light) override {
         if (index < 8) {
             m_lights[index] = light;
@@ -1081,36 +1107,9 @@ public:
             bgfx::setIndexBuffer(bgfx_mesh.ibh);
         }
 
-        // Set PBR material uniforms (same as regular PBR)
-        if (mat_data) {
-            Vec4 albedo_color(mat_data->albedo.x, mat_data->albedo.y, mat_data->albedo.z, mat_data->albedo.w);
-            Vec4 pbr_params(mat_data->metallic, mat_data->roughness, mat_data->ao, mat_data->alpha_cutoff);
-            Vec4 emissive_color(mat_data->emissive.x, mat_data->emissive.y, mat_data->emissive.z, 0.0f);
-
-            bgfx::setUniform(m_pbr_uniforms.u_albedoColor, &albedo_color);
-            bgfx::setUniform(m_pbr_uniforms.u_pbrParams, &pbr_params);
-            bgfx::setUniform(m_pbr_uniforms.u_emissiveColor, &emissive_color);
-
-            // Set textures
-            auto bind_texture = [this](bgfx::UniformHandle uniform, TextureHandle tex, uint8_t slot, bgfx::TextureHandle fallback) {
-                auto it = m_textures.find(tex.id);
-                if (it != m_textures.end() && bgfx::isValid(it->second)) {
-                    bgfx::setTexture(slot, uniform, it->second);
-                } else {
-                    bgfx::setTexture(slot, uniform, fallback);
-                }
-            };
-
-            bind_texture(m_pbr_uniforms.s_albedo, mat_data->albedo_map, 0, m_white_texture);
-            bind_texture(m_pbr_uniforms.s_normal, mat_data->normal_map, 1, m_default_normal);
-            bind_texture(m_pbr_uniforms.s_metallicRoughness, mat_data->metallic_roughness_map, 2, m_white_texture);
-            bind_texture(m_pbr_uniforms.s_ao, mat_data->ao_map, 3, m_white_texture);
-            bind_texture(m_pbr_uniforms.s_emissive, mat_data->emissive_map, 4, m_white_texture);
-        }
-
-        // Set camera position for PBR specular
-        Vec4 cam_pos(m_camera_position.x, m_camera_position.y, m_camera_position.z, 1.0f);
-        bgfx::setUniform(m_pbr_uniforms.u_cameraPos, &cam_pos);
+        // Upload full PBR uniforms (material, lights, camera, shadows, IBL, textures)
+        // so skinned meshes receive the same lighting as queued draws
+        upload_pbr_uniforms(mat_data);
 
         // Set render state
         uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
@@ -1439,19 +1438,19 @@ public:
         bgfx::setUniform(m_pbr_uniforms.u_pbrParams, glm::value_ptr(pbr_params));
         bgfx::setUniform(m_pbr_uniforms.u_emissiveColor, glm::value_ptr(emissive));
 
-        // Pack and upload light data
+        // Pack and upload light data (contiguous — no gaps)
         std::array<Vec4, 32> light_data{};
         int active_light_count = 0;
 
         for (int i = 0; i < 8; ++i) {
             if (m_lights[i].intensity > 0.0f) {
                 GPULightData gpu_light = packLightForGPU(m_lights[i]);
-                int base = i * 4;
+                int base = active_light_count * 4;
                 light_data[base + 0] = gpu_light.position_type;
                 light_data[base + 1] = gpu_light.direction_range;
                 light_data[base + 2] = gpu_light.color_intensity;
                 light_data[base + 3] = gpu_light.spot_params;
-                active_light_count = i + 1;
+                active_light_count++;
             }
         }
 
@@ -1753,6 +1752,7 @@ private:
 
     // State
     bool m_initialized = false;
+    bool m_frame_active = false;
     bool m_vsync = true;
     uint32_t m_width = 0;
     uint32_t m_height = 0;

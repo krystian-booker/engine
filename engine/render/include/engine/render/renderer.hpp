@@ -67,6 +67,7 @@ public:
 
     // Camera and lighting
     virtual void set_camera(const Mat4& view, const Mat4& proj) = 0;
+    virtual void set_camera_position(const Vec3& position) = 0;
     virtual void set_light(uint32_t index, const LightData& light) = 0;
     virtual void clear_lights() = 0;
 

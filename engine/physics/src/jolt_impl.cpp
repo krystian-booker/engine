@@ -378,6 +378,14 @@ void init_physics_impl(PhysicsWorld::Impl* impl, const PhysicsSettings& settings
         impl->object_layer_pair_filter
     );
 
+    // Configure physics settings for stable stacking and sleep
+    JPH::PhysicsSettings jolt_settings;
+    jolt_settings.mMinVelocityForRestitution = 1.0f;     // Zero restitution below 1 m/s
+    jolt_settings.mNumPositionSteps = 4;                  // Better convergence for stacked piles
+    jolt_settings.mPointVelocitySleepThreshold = 0.2f;    // Must exceed g*dt (0.164 m/s at 60Hz) to allow sleep
+    jolt_settings.mTimeBeforeSleep = 0.3f;                // Faster sleep onset
+    impl->physics_system->SetPhysicsSettings(jolt_settings);
+
     impl->contact_listener = std::make_unique<ContactListenerImpl>(*impl);
     impl->physics_system->SetContactListener(impl->contact_listener.get());
 
