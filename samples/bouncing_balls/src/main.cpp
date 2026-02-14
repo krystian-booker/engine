@@ -85,7 +85,11 @@ protected:
         auto* pipeline = get_render_pipeline();
         if (pipeline) {
             render::RenderPipelineConfig config;
-            config.enabled_passes = render::RenderPassFlags::MainOpaque
+            config.enabled_passes = render::RenderPassFlags::Shadows
+                                  | render::RenderPassFlags::DepthPrepass
+                                  | render::RenderPassFlags::GBuffer
+                                  | render::RenderPassFlags::SSAO
+                                  | render::RenderPassFlags::MainOpaque
                                   | render::RenderPassFlags::Transparent
                                   | render::RenderPassFlags::PostProcess
                                   | render::RenderPassFlags::Final;
@@ -174,7 +178,7 @@ private:
 
         LightDef defs[] = {
             // Sun light
-            {{-0.3f, -1.0f, -0.2f}, {1.0f, 0.95f, 0.9f}, 1.5f, false},
+            {{-0.3f, -1.0f, -0.2f}, {1.0f, 0.95f, 0.9f}, 1.5f, true},
             // Fill light
             {{0.3f, -0.5f, 0.5f}, {0.7f, 0.8f, 1.0f}, 0.4f, false},
             // Back light
@@ -277,7 +281,7 @@ private:
                 MaterialHandle{is_floor ? floor_mat.id : wall_mat.id},
                 0,
                 true,   // visible
-                false,  // cast_shadows
+                true,   // cast_shadows
                 true    // receive_shadows
             });
 
@@ -338,7 +342,7 @@ private:
                 MaterialHandle{mat_handle.id},
                 0,
                 true,   // visible
-                false,  // cast_shadows
+                true,   // cast_shadows
                 true    // receive_shadows
             });
 

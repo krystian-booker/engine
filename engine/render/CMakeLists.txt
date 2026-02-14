@@ -107,6 +107,7 @@ target_link_libraries(engine_render
         bgfx::bimg
     PRIVATE
         engine_compiler_flags
+        stb::stb
 )
 
 set_target_properties(engine_render PROPERTIES

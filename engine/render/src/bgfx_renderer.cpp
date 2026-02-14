@@ -4,6 +4,7 @@
 #include <engine/core/log.hpp>
 #include <bgfx/bgfx.h>
 #include <bgfx/platform.h>
+#include <stb_image_write.h>
 #include <algorithm>
 #include <unordered_map>
 #include <cmath>
@@ -570,7 +571,29 @@ public:
         if (!m_frame_active) return;
         m_frame_active = false;
 
-        bgfx::frame();
+        uint32_t current_frame = bgfx::frame();
+
+        // Check if pending screenshot data is ready
+        if (m_pending_screenshot.pending && current_frame >= m_pending_screenshot.target_frame) {
+            stbi_flip_vertically_on_write(1);
+            int ok = stbi_write_png(
+                m_pending_screenshot.path.c_str(),
+                static_cast<int>(m_pending_screenshot.width),
+                static_cast<int>(m_pending_screenshot.height),
+                4,  // RGBA
+                m_pending_screenshot.data.data(),
+                static_cast<int>(m_pending_screenshot.width * 4));
+
+            if (ok) {
+                log(LogLevel::Info, "Screenshot saved: {}", m_pending_screenshot.path);
+            } else {
+                log(LogLevel::Error, "Failed to write screenshot: {}", m_pending_screenshot.path);
+            }
+
+            m_pending_screenshot.pending = false;
+            m_pending_screenshot.data.clear();
+            m_pending_screenshot.data.shrink_to_fit();
+        }
     }
 
     void resize(uint32_t width, uint32_t height) override {
@@ -1216,6 +1239,46 @@ public:
         bgfx::submit(static_cast<uint16_t>(view), program);
     }
 
+    bool save_screenshot(const std::string& path, TextureHandle source) override {
+        if (m_pending_screenshot.pending) {
+            log(LogLevel::Warn, "Screenshot already pending, ignoring request");
+            return false;
+        }
+
+        auto tex_it = m_textures.find(source.id);
+        if (tex_it == m_textures.end()) {
+            log(LogLevel::Error, "Screenshot: source texture not found");
+            return false;
+        }
+
+        // Find the render target that owns this texture to get dimensions
+        uint32_t width = m_width;
+        uint32_t height = m_height;
+        for (const auto& [id, rt] : m_render_targets) {
+            for (size_t i = 0; i < rt.color_texture_handles.size(); ++i) {
+                if (rt.color_texture_handles[i].id == source.id) {
+                    width = rt.desc.width;
+                    height = rt.desc.height;
+                    break;
+                }
+            }
+        }
+
+        m_pending_screenshot.path = path;
+        m_pending_screenshot.width = width;
+        m_pending_screenshot.height = height;
+        m_pending_screenshot.data.resize(width * height * 4);
+
+        // bgfx::readTexture returns the frame number when the data will be ready
+        m_pending_screenshot.target_frame = bgfx::readTexture(
+            tex_it->second, m_pending_screenshot.data.data());
+        m_pending_screenshot.pending = true;
+
+        log(LogLevel::Info, "Screenshot requested: {} ({}x{}, ready at frame {})",
+            path, width, height, m_pending_screenshot.target_frame);
+        return true;
+    }
+
     void submit_skybox(RenderView view, TextureHandle cubemap,
                                 const Mat4& inverse_view_proj,
                                 float intensity, float rotation) override {
@@ -1825,6 +1888,16 @@ private:
     std::array<bgfx::TextureHandle, 4> m_shadow_textures{{
         BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE
     }};
+
+    // Pending screenshot state
+    struct PendingScreenshot {
+        std::string path;
+        std::vector<uint8_t> data;
+        uint32_t width = 0;
+        uint32_t height = 0;
+        uint32_t target_frame = 0;
+        bool pending = false;
+    } m_pending_screenshot;
 
     // Time tracking for shader animations
     float m_total_time = 0.0f;

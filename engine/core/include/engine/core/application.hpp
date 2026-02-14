@@ -96,6 +96,9 @@ protected:
     // Get clock for fixed timestep management
     GameClock& clock() { return m_clock; }
 
+    // Screenshot capture (uses render pipeline's final texture)
+    bool save_screenshot(const std::string& path);
+
     // Parse command line arguments
     void parse_args(int argc, char** argv);
 
@@ -126,6 +129,11 @@ private:
     std::filesystem::path m_game_dll_path;
     bool m_hot_reload_enabled = true;
     bool m_hot_reload_override = false;  // True if set via command line
+
+    // Screenshot automation (--screenshot=<path> --screenshot-frame=<N>)
+    std::string m_screenshot_path;
+    int m_screenshot_frame = 60;
+    uint32_t m_frame_counter = 0;
 
     // Register core engine systems (transform, audio, etc.)
     void register_engine_systems();

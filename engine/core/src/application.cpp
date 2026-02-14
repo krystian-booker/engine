@@ -263,6 +263,18 @@ int Application::run(int argc, char** argv) {
         if (m_renderer) {
             m_renderer->end_frame();
         }
+
+        // Screenshot automation: capture at target frame, quit a few frames later
+        ++m_frame_counter;
+        if (!m_screenshot_path.empty()) {
+            if (m_frame_counter == static_cast<uint32_t>(m_screenshot_frame)) {
+                save_screenshot(m_screenshot_path);
+            }
+            // Quit a few frames after the screenshot to let the async read complete
+            if (m_frame_counter >= static_cast<uint32_t>(m_screenshot_frame) + 5) {
+                m_quit_requested = true;
+            }
+        }
     }
 
     // Call user shutdown
@@ -372,6 +384,13 @@ bool Application::has_game_plugin() const {
     return m_hot_reload_manager && m_hot_reload_manager->get_loader().is_loaded();
 }
 
+bool Application::save_screenshot(const std::string& path) {
+    if (!m_renderer || !m_render_pipeline) return false;
+    auto tex = m_render_pipeline->get_final_texture();
+    if (tex.id == 0) return false;
+    return m_renderer->save_screenshot(path, tex);
+}
+
 void Application::parse_args(int argc, char** argv) {
     if (argc <= 0 || argv == nullptr) {
         return;
@@ -405,6 +424,20 @@ void Application::parse_args(int argc, char** argv) {
         else if (std::strcmp(arg, "--no-hot-reload") == 0) {
             m_hot_reload_enabled = false;
             m_hot_reload_override = true;
+        }
+        // --screenshot=<path>
+        else if (std::strncmp(arg, "--screenshot=", 13) == 0) {
+            m_screenshot_path = arg + 13;
+        } else if (std::strcmp(arg, "--screenshot") == 0 && i + 1 < argc) {
+            m_screenshot_path = argv[++i];
+        }
+        // --screenshot-frame=<N>
+        else if (std::strncmp(arg, "--screenshot-frame=", 19) == 0) {
+            m_screenshot_frame = std::atoi(arg + 19);
+            if (m_screenshot_frame < 1) m_screenshot_frame = 1;
+        } else if (std::strcmp(arg, "--screenshot-frame") == 0 && i + 1 < argc) {
+            m_screenshot_frame = std::atoi(argv[++i]);
+            if (m_screenshot_frame < 1) m_screenshot_frame = 1;
         }
     }
 }

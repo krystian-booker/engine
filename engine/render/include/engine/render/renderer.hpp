@@ -4,6 +4,7 @@
 #include <engine/render/render_target.hpp>
 #include <array>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace engine::render {
@@ -88,6 +89,9 @@ public:
 
     // Screen output
     virtual void blit_to_screen(RenderView view, TextureHandle source) = 0;
+
+    // Screenshot capture (async - data is ready after a few frames)
+    virtual bool save_screenshot(const std::string& path, TextureHandle source) = 0;
 
     // Skybox rendering
     virtual void submit_skybox(RenderView view, TextureHandle cubemap,

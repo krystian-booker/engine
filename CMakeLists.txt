@@ -101,10 +101,14 @@ if(ENGINE_BUILD_SAMPLES)
     add_subdirectory(samples/environment_demo)
     add_subdirectory(samples/bouncing_balls)
     add_subdirectory(samples/ai_demo)
+    add_subdirectory(samples/render_test)
 endif()
 
 # CLI Tool for game development
 add_subdirectory(tools/engine-cli)
+
+# Image comparison tool for visual regression testing
+add_subdirectory(tools/image_compare)
 
 # Installation rules (optional, disabled by default for dev builds)
 if(ENGINE_INSTALL)
