@@ -76,6 +76,25 @@ int Application::run(int argc, char** argv) {
     // Parse command line arguments
     parse_args(argc, argv);
 
+    // Set working directory to the executable's directory so relative paths
+    // (shaders/, project.json, etc.) resolve correctly from any launch location
+    {
+        std::filesystem::path exe_dir;
+#ifdef _WIN32
+        char exe_path[MAX_PATH];
+        if (GetModuleFileNameA(nullptr, exe_path, MAX_PATH) > 0) {
+            exe_dir = std::filesystem::path(exe_path).parent_path();
+        }
+#else
+        if (argc > 0 && argv && argv[0]) {
+            exe_dir = std::filesystem::path(argv[0]).parent_path();
+        }
+#endif
+        if (!exe_dir.empty() && std::filesystem::exists(exe_dir)) {
+            std::filesystem::current_path(exe_dir);
+        }
+    }
+
     // Load project settings
     settings().load("project.json");
 
