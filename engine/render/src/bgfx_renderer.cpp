@@ -575,7 +575,7 @@ public:
 
         // Check if pending screenshot data is ready
         if (m_pending_screenshot.pending && current_frame >= m_pending_screenshot.target_frame) {
-            stbi_flip_vertically_on_write(1);
+            stbi_flip_vertically_on_write(0);
             int ok = stbi_write_png(
                 m_pending_screenshot.path.c_str(),
                 static_cast<int>(m_pending_screenshot.width),
@@ -593,6 +593,10 @@ public:
             m_pending_screenshot.pending = false;
             m_pending_screenshot.data.clear();
             m_pending_screenshot.data.shrink_to_fit();
+            if (bgfx::isValid(m_pending_screenshot.staging)) {
+                bgfx::destroy(m_pending_screenshot.staging);
+                m_pending_screenshot.staging = BGFX_INVALID_HANDLE;
+            }
         }
     }
 
@@ -1269,9 +1273,24 @@ public:
         m_pending_screenshot.height = height;
         m_pending_screenshot.data.resize(width * height * 4);
 
-        // bgfx::readTexture returns the frame number when the data will be ready
+        // RT textures don't have READ_BACK flag, so we must blit to a staging texture first
+        m_pending_screenshot.staging = bgfx::createTexture2D(
+            uint16_t(width), uint16_t(height), false, 1,
+            bgfx::TextureFormat::RGBA8,
+            BGFX_TEXTURE_BLIT_DST | BGFX_TEXTURE_READ_BACK | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+
+        if (!bgfx::isValid(m_pending_screenshot.staging)) {
+            log(LogLevel::Error, "Screenshot: failed to create staging texture");
+            m_pending_screenshot.data.clear();
+            return false;
+        }
+
+        // Blit from the RT texture to the staging texture (uses view 255)
+        bgfx::blit(255, m_pending_screenshot.staging, 0, 0, tex_it->second, 0, 0, uint16_t(width), uint16_t(height));
+
+        // readTexture from the staging texture — returns frame when data is available
         m_pending_screenshot.target_frame = bgfx::readTexture(
-            tex_it->second, m_pending_screenshot.data.data());
+            m_pending_screenshot.staging, m_pending_screenshot.data.data());
         m_pending_screenshot.pending = true;
 
         log(LogLevel::Info, "Screenshot requested: {} ({}x{}, ready at frame {})",
@@ -1893,6 +1912,7 @@ private:
     struct PendingScreenshot {
         std::string path;
         std::vector<uint8_t> data;
+        bgfx::TextureHandle staging = BGFX_INVALID_HANDLE;
         uint32_t width = 0;
         uint32_t height = 0;
         uint32_t target_frame = 0;
