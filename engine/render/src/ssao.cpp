@@ -325,7 +325,11 @@ void SSAOSystem::create_render_targets() {
         blur_view_config.clear_color_enabled = false;
         blur_view_config.clear_depth_enabled = false;
 
-        m_renderer->configure_view(RenderView::SSAOBlur, blur_view_config);
+        // Initialize view states for up to 4 potential passes
+        m_renderer->configure_view(RenderView::SSAOBlur0, blur_view_config);
+        m_renderer->configure_view(RenderView::SSAOBlur1, blur_view_config);
+        m_renderer->configure_view(RenderView::SSAOBlur2, blur_view_config);
+        m_renderer->configure_view(RenderView::SSAOBlur3, blur_view_config);
     }
 }
 
@@ -409,9 +413,9 @@ TextureHandle SSAOSystem::render(
 
     // Bilateral blur passes if enabled — ping-pong between AO and blur temp targets
     if (m_config.blur_enabled && bgfx::isValid(s_ssao_shaders.blur) && m_blur_temp_target.valid()) {
-        uint16_t blur_view_id = static_cast<uint16_t>(RenderView::SSAOBlur);
+        for (int pass = 0; pass < std::min(m_config.blur_passes, 4); ++pass) {
+            uint16_t blur_view_id = static_cast<uint16_t>(RenderView::SSAOBlur0) + pass;
 
-        for (int pass = 0; pass < m_config.blur_passes; ++pass) {
             // Even passes: read AO -> write blur_temp
             // Odd passes:  read blur_temp -> write AO
             bool even = (pass % 2 == 0);
@@ -429,10 +433,11 @@ TextureHandle SSAOSystem::render(
             blur_view_config.render_target = write_target;
             blur_view_config.clear_color_enabled = false;
             blur_view_config.clear_depth_enabled = false;
-            m_renderer->configure_view(RenderView::SSAOBlur, blur_view_config);
+            m_renderer->configure_view(static_cast<RenderView>(blur_view_id), blur_view_config);
 
-            // Bind input texture and draw
+            // Bind input textures and draw
             bgfx::setTexture(0, s_ssao_shaders.s_aoInput, read_handle);
+            bgfx::setTexture(1, s_ssao_shaders.s_depth, depth_handle);
             s_ssao_shaders.draw_fullscreen(blur_view_id, s_ssao_shaders.blur);
         }
     }

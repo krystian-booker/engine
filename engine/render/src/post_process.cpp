@@ -307,7 +307,7 @@ void PostProcessSystem::create_bloom_chain() {
 
         view_config.render_target = m_bloom_upsample[i];
         m_renderer->configure_view(
-            static_cast<RenderView>(static_cast<uint16_t>(RenderView::BloomUpsample0) + i),
+            static_cast<RenderView>(static_cast<uint16_t>(RenderView::BloomUpsample0) + (m_bloom_mip_count - 1 - i)),
             view_config
         );
     }
@@ -362,8 +362,8 @@ void PostProcessSystem::render_bloom_downsample(TextureHandle input, int mip) {
 void PostProcessSystem::render_bloom_upsample(int mip) {
     if (!bgfx::isValid(s_pp_shaders.bloom_upsample)) return;
 
-    // Get the view for this mip level
-    uint16_t view_id = static_cast<uint16_t>(RenderView::BloomUpsample0) + mip;
+    // Get the view for this mip level (smallest mip gets lowest view ID)
+    uint16_t view_id = static_cast<uint16_t>(RenderView::BloomUpsample0) + (m_bloom_mip_count - 1 - mip);
 
     // Get source (lower resolution mip from downsample chain or previous upsample)
     TextureHandle source_tex;

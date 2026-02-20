@@ -489,6 +489,7 @@ void render_gather_system(scene::World& world, double dt) {
             obj.layer_mask = 1u << mesh_renderer.render_layer;
             obj.casts_shadows = mesh_renderer.cast_shadows;
             obj.receives_shadows = mesh_renderer.receive_shadows;
+            obj.blend_mode = mesh_renderer.blend_mode;
 
             // Check for previous transform for motion vectors
             auto* prev_tf = world.try_get<PreviousTransform>(entity);

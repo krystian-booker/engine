@@ -92,17 +92,17 @@ vec3 cookTorranceBRDF(vec3 N, vec3 V, vec3 L, vec3 albedo, float metallic, float
 }
 
 // Get normal from normal map
+// Uses explicit vector math instead of mat3 * vec3 to avoid
+// GLSL vs HLSL mat3 constructor column/row order differences.
 vec3 getNormalFromMap(vec3 normalMapSample, vec3 worldNormal, vec3 worldTangent, vec3 worldBitangent)
 {
     vec3 tangentNormal = normalMapSample * 2.0 - 1.0;
 
-    mat3 TBN = mat3(
-        normalize(worldTangent),
-        normalize(worldBitangent),
-        normalize(worldNormal)
-    );
+    vec3 T = normalize(worldTangent);
+    vec3 B = normalize(worldBitangent);
+    vec3 N = normalize(worldNormal);
 
-    return normalize(mul(TBN, tangentNormal));
+    return normalize(T * tangentNormal.x + B * tangentNormal.y + N * tangentNormal.z);
 }
 
 // Perceptual roughness to linear roughness

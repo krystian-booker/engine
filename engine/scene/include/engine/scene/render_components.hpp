@@ -20,6 +20,7 @@ struct MeshRenderer {
     bool visible = true;
     bool cast_shadows = true;
     bool receive_shadows = true;
+    uint8_t blend_mode = 0;  // 0=Opaque, 1=AlphaTest, 2=AlphaBlend, 3=Additive, 4=Multiply
 };
 
 // Camera component

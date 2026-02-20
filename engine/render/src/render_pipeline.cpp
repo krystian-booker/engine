@@ -990,7 +990,7 @@ void RenderPipeline::main_pass(const CameraData& camera,
         m_renderer->set_shadow_data(shadow_matrices, cascade_splits,
                                      Vec4(m_config.shadow_config.shadow_bias,
                                           m_config.shadow_config.normal_bias,
-                                          static_cast<float>(m_config.shadow_config.pcf_samples),
+                                          m_config.shadow_config.cascade_blend_distance,
                                           1.0f));
 
         for (uint32_t i = 0; i < m_config.shadow_config.cascade_count; ++i) {

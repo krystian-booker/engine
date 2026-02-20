@@ -66,23 +66,26 @@ enum class RenderView : uint16_t {
 
     // Screen-space effects
     SSAO = 35,
-    SSAOBlur = 36,
-    SSR = 37,
+    SSAOBlur0 = 36,
+    SSAOBlur1 = 37,
+    SSAOBlur2 = 38,
+    SSAOBlur3 = 39,
+    SSR = 40,
 
     // Volumetric lighting
-    VolumetricScatter = 38,
+    VolumetricScatter = 41,
 
     // Skybox rendering (must be before MainOpaque so it paints the background
     // before opaque geometry is drawn on top; uses DEPTH_TEST_LEQUAL without
     // writing depth, so it only fills where depth == 1.0)
-    Skybox = 39,
+    Skybox = 42,
 
     // Main rendering pass (forward/forward+)
-    MainOpaque = 40,
-    MainTransparent = 41,
+    MainOpaque = 43,
+    MainTransparent = 44,
 
     // Volumetric integration (after main passes, before post-processing)
-    VolumetricIntegrate = 44,
+    VolumetricIntegrate = 45,
 
     // Post-processing chain
     PostProcess0 = 50,

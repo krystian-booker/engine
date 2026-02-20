@@ -372,26 +372,26 @@ public:
 
         // Create 1x1 cubemap for IBL fallback with sky-ground gradient
         // Face order: +X, -X, +Y, -Y, +Z, -Z. Pixel format RGBA8: 0xAABBGGRR
-        // Irradiance (diffuse ambient): dimmed sky-ground gradient for subtle default ambient
+        // Irradiance (diffuse ambient): moderate ambient to approximate outdoor lighting
         uint32_t irr_faces[6] = {
-            0xFF382F2E,  // +X horizon (0.18, 0.19, 0.22)
-            0xFF382F2E,  // -X horizon
-            0xFF73594D,  // +Y sky     (0.3, 0.35, 0.45)
-            0xFF0A0508,  // -Y ground  (0.05, 0.03, 0.04)
-            0xFF382F2E,  // +Z horizon
-            0xFF382F2E   // -Z horizon
+            0xFF8C7A6E,  // +X horizon (0.43, 0.48, 0.55)
+            0xFF8C7A6E,  // -X horizon
+            0xFFB89880,  // +Y sky     (0.50, 0.60, 0.72)
+            0xFF2A1810,  // -Y ground  (0.06, 0.09, 0.16)
+            0xFF8C7A6E,  // +Z horizon
+            0xFF8C7A6E   // -Z horizon
         };
         m_default_irradiance = bgfx::createTextureCube(1, false, 1, bgfx::TextureFormat::RGBA8,
             BGFX_TEXTURE_NONE | BGFX_SAMPLER_POINT, bgfx::copy(irr_faces, sizeof(irr_faces)));
 
-        // Prefilter (specular reflections): subtle sky reflection, near-black ground
+        // Prefilter (specular reflections): moderate sky reflection for metallic surfaces
         uint32_t pf_faces[6] = {
-            0xFF241C1A,  // +X horizon (0.10, 0.11, 0.14)
-            0xFF241C1A,  // -X horizon
-            0xFF4D3833,  // +Y sky     (0.20, 0.22, 0.30)
-            0xFF050505,  // -Y ground  (0.03, 0.03, 0.02)
-            0xFF241C1A,  // +Z horizon
-            0xFF241C1A   // -Z horizon
+            0xFF604840,  // +X horizon (0.25, 0.28, 0.38)
+            0xFF604840,  // -X horizon
+            0xFF8C7060,  // +Y sky     (0.38, 0.44, 0.55)
+            0xFF100808,  // -Y ground  (0.03, 0.03, 0.06)
+            0xFF604840,  // +Z horizon
+            0xFF604840   // -Z horizon
         };
         m_default_prefilter = bgfx::createTextureCube(1, false, 1, bgfx::TextureFormat::RGBA8,
             BGFX_TEXTURE_NONE | BGFX_SAMPLER_POINT, bgfx::copy(pf_faces, sizeof(pf_faces)));
@@ -1134,9 +1134,40 @@ public:
             bgfx::setIndexBuffer(bgfx_mesh.ibh);
         }
 
-        // Upload full PBR uniforms (material, lights, camera, shadows, IBL, textures)
-        // so skinned meshes receive the same lighting as queued draws
-        upload_pbr_uniforms(mat_data);
+        // Check if this is a shadow pass (RenderView 0-3)
+        // If so, avoid uploading full PBR uniforms because that binds all shadow maps
+        // which creates a read-write hazard (binding a resource as SRV while writing to it as DSV)
+        constexpr uint16_t kShadowCascade0 = static_cast<uint16_t>(RenderView::ShadowCascade0);
+        constexpr uint16_t kShadowCascade3 = static_cast<uint16_t>(RenderView::ShadowCascade3);
+        bool is_shadow_pass = (view_id >= kShadowCascade0 && view_id <= kShadowCascade3);
+
+        if (is_shadow_pass) {
+            // Minimal uniform upload for shadow pass
+            // We only need the bone matrices (already set above) and transform (set above)
+            // But we must bind fallback textures to satisfy D3D11 shader expectations
+            // similar to the static mesh shadow pass fix
+            bgfx::setTexture(0, m_pbr_uniforms.s_albedo, m_white_texture);
+            bgfx::setTexture(1, m_pbr_uniforms.s_normal, m_default_normal);
+            bgfx::setTexture(2, m_pbr_uniforms.s_metallicRoughness, m_white_texture);
+            bgfx::setTexture(3, m_pbr_uniforms.s_ao, m_white_texture);
+            bgfx::setTexture(4, m_pbr_uniforms.s_emissive, m_white_texture);
+            
+            // Also need to bind dummy shadow maps to slots 8-11 to prevent D3D11 warnings
+            // about expected SRVs, even if not used by the shadow shader logic.
+            // Crucially, we use the dummy texture, NOT the real shadow maps!
+            for (int i = 0; i < 4; ++i) {
+                bgfx::setTexture(8 + i, 
+                    (i==0 ? m_pbr_uniforms.s_shadowMap0 : 
+                     (i==1 ? m_pbr_uniforms.s_shadowMap1 : 
+                      (i==2 ? m_pbr_uniforms.s_shadowMap2 : m_pbr_uniforms.s_shadowMap3))), 
+                    m_dummy_shadow_texture,
+                    BGFX_SAMPLER_COMPARE_LEQUAL | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+            }
+
+        } else {
+            // Standard PBR pass - upload everything including shadow maps
+            upload_pbr_uniforms(mat_data);
+        }
 
         // Set render state
         uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
@@ -1463,10 +1494,41 @@ public:
             bgfx::setIndexBuffer(mesh.ibh);
         }
 
-        // Set state
-        uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
-                         BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
-                         BGFX_STATE_CULL_CW | BGFX_STATE_MSAA;
+        // Shadow cascade views use depth-only shadow program to avoid
+        // read-write hazard (shadow maps bound as both render target and texture input)
+        constexpr uint16_t kShadowCascade0 = static_cast<uint16_t>(RenderView::ShadowCascade0);
+        constexpr uint16_t kShadowCascade3 = static_cast<uint16_t>(RenderView::ShadowCascade3);
+        if (view_id >= kShadowCascade0 && view_id <= kShadowCascade3 &&
+            bgfx::isValid(m_shadow_program)) {
+            // Bind fallback textures to satisfy D3D11 shader expectations
+            // Even though the shadow shader only writes depth, D3D11 warns if the pixel shader checks
+            // for samplers (which might happen due to BGFX's shader compilation or underlying platform behavior)
+            bgfx::setTexture(0, m_pbr_uniforms.s_albedo, m_white_texture);
+            bgfx::setTexture(1, m_pbr_uniforms.s_normal, m_default_normal);
+
+            uint64_t state = BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
+                             BGFX_STATE_CULL_CW | BGFX_STATE_MSAA;
+            bgfx::setState(state);
+            bgfx::submit(view_id, m_shadow_program);
+            return;
+        }
+
+        // Check material for transparency
+        auto mat_it = m_materials.find(call.material.id);
+        bool is_transparent = (mat_it != m_materials.end()) && mat_it->second.transparent;
+
+        // Set state — transparent objects use alpha blending and don't write depth
+        uint64_t state;
+        if (is_transparent) {
+            state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                    BGFX_STATE_DEPTH_TEST_LESS |
+                    BGFX_STATE_CULL_CW | BGFX_STATE_MSAA |
+                    BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_INV_SRC_ALPHA);
+        } else {
+            state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                    BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
+                    BGFX_STATE_CULL_CW | BGFX_STATE_MSAA;
+        }
 
         bgfx::setState(state);
 
@@ -1474,7 +1536,6 @@ public:
         bgfx::ProgramHandle program = m_default_program;
         bool use_pbr = false;
 
-        auto mat_it = m_materials.find(call.material.id);
         if (mat_it != m_materials.end()) {
             if (mat_it->second.shader.valid()) {
                 auto shader_it = m_shaders.find(mat_it->second.shader.id);
@@ -1514,7 +1575,7 @@ public:
             ? Vec4(mat_data->metallic, mat_data->roughness, mat_data->ao, mat_data->alpha_cutoff)
             : Vec4(0.0f, 0.5f, 1.0f, 0.5f);  // metallic, roughness, ao, alpha_cutoff
         Vec4 emissive = mat_data
-            ? Vec4(mat_data->emissive.x, mat_data->emissive.y, mat_data->emissive.z, 0.0f)
+            ? Vec4(mat_data->emissive.x, mat_data->emissive.y, mat_data->emissive.z, 1.0f)
             : Vec4(0.0f, 0.0f, 0.0f, 0.0f);
         bgfx::setUniform(m_pbr_uniforms.u_albedoColor, glm::value_ptr(albedo));
         bgfx::setUniform(m_pbr_uniforms.u_pbrParams, glm::value_ptr(pbr_params));

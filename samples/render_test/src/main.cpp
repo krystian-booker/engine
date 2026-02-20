@@ -83,7 +83,7 @@ protected:
             pipeline->set_config(config);
         }
 
-        renderer->set_ibl_intensity(1.0f);
+        renderer->set_ibl_intensity(0.35f);
 
         create_camera(world);
         create_lights(world, renderer);
@@ -316,7 +316,7 @@ private:
         world->emplace<WorldTransform>(entity);
         world->emplace<PreviousTransform>(entity);
         world->emplace<MeshRenderer>(entity, MeshRenderer{
-            MeshHandle{m_sphere_mesh.id}, MaterialHandle{mat.id}, 0, true, false, true
+            MeshHandle{m_sphere_mesh.id}, MaterialHandle{mat.id}, 0, true, false, true, 2
         });
     }
 

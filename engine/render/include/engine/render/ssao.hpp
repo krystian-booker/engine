@@ -62,9 +62,8 @@ public:
     // Resize SSAO render targets (call on window resize)
     void resize(uint32_t width, uint32_t height);
 
-    // Get the render view for SSAO pass
     RenderView get_ssao_view() const { return RenderView::SSAO; }
-    RenderView get_ssao_blur_view() const { return RenderView::SSAOBlur; }
+    RenderView get_ssao_blur_view() const { return RenderView::SSAOBlur0; }
 
 private:
     void create_render_targets();
