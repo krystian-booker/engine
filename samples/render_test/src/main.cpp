@@ -83,7 +83,7 @@ protected:
             pipeline->set_config(config);
         }
 
-        renderer->set_ibl_intensity(0.35f);
+        renderer->set_ibl_intensity(1.0f);
 
         create_camera(world);
         create_lights(world, renderer);
@@ -114,12 +114,12 @@ private:
     // ---- Camera ----
     void create_camera(World* world) {
         auto cam_entity = world->create("Camera");
-        auto& local_tf = world->emplace<LocalTransform>(cam_entity, Vec3{0.0f, 6.0f, 14.0f});
-        local_tf.look_at(Vec3{0.0f, 1.0f, 0.0f});
+        auto& local_tf = world->emplace<LocalTransform>(cam_entity, Vec3{0.0f, 7.5f, 21.0f});
+        local_tf.look_at(Vec3(0.0f, 1.0f, 0.0f));
         world->emplace<WorldTransform>(cam_entity);
 
         Camera cam;
-        cam.fov = 55.0f;
+        cam.fov = 32.0f;
         cam.aspect_ratio = static_cast<float>(window_width()) / static_cast<float>(window_height());
         cam.near_plane = 0.1f;
         cam.far_plane = 200.0f;
@@ -132,7 +132,7 @@ private:
         // Sun light — warm white, casts shadows
         {
             auto entity = world->create("Sun");
-            Vec3 dir = glm::normalize(Vec3{-0.4f, -1.0f, -0.3f});
+            Vec3 dir = glm::normalize(Vec3{0.5f, -1.0f, 0.5f});
             Vec3 up = (std::abs(dir.y) > 0.99f) ? Vec3(0.0f, 0.0f, 1.0f) : Vec3(0.0f, 1.0f, 0.0f);
             Quat rot = glm::quatLookAt(dir, up);
             world->emplace<LocalTransform>(entity, Vec3{0.0f}, rot);
@@ -307,12 +307,13 @@ private:
         mat_data.roughness = 0.1f;
         mat_data.metallic = 0.0f;
         mat_data.transparent = true;
+        mat_data.alpha_cutoff = 0.0f; // Disable alpha test to prevent discard
         auto mat = renderer->create_material(mat_data);
         m_materials.push_back(mat);
 
         auto entity = world->create("GlassSphere");
-        auto& tf = world->emplace<LocalTransform>(entity, Vec3{3.0f, 1.2f, 5.0f});
-        tf.scale = Vec3{1.2f};
+        auto& tf = world->emplace<LocalTransform>(entity, Vec3{2.0f, 1.2f, 3.5f});
+        tf.scale = Vec3{1.4f};
         world->emplace<WorldTransform>(entity);
         world->emplace<PreviousTransform>(entity);
         world->emplace<MeshRenderer>(entity, MeshRenderer{

@@ -888,6 +888,24 @@ void RenderPipeline::shadow_pass(const CameraData& camera,
     m_shadow_system.update_cascades(camera.view_matrix, camera.projection_matrix,
                                      sun_light->direction, camera.near_plane, camera.far_plane);
 
+    // Pass shadow configuration to renderer
+    Vec4 shadow_params(
+        m_config.shadow_config.shadow_bias,
+        m_config.shadow_config.normal_bias,
+        m_config.shadow_config.cascade_blend_distance,
+        2.0f // PCF radius default
+    );
+    m_renderer->set_shadow_data(m_shadow_system.get_cascade_matrices(),
+                                m_shadow_system.get_cascade_splits(),
+                                shadow_params);
+
+    // Bind shadow map textures to renderer
+    for (uint32_t cascade = 0; cascade < m_config.shadow_config.cascade_count; ++cascade) {
+        auto rt = m_shadow_system.get_cascade_render_target(cascade);
+        TextureHandle shadow_tex = m_renderer->get_render_target_texture(rt, UINT32_MAX);
+        m_renderer->set_shadow_texture(cascade, shadow_tex);
+    }
+
     // Render shadow casters to each cascade
     for (uint32_t cascade = 0; cascade < m_config.shadow_config.cascade_count; ++cascade) {
         RenderView shadow_view = static_cast<RenderView>(

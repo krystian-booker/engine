@@ -1505,6 +1505,20 @@ public:
             // for samplers (which might happen due to BGFX's shader compilation or underlying platform behavior)
             bgfx::setTexture(0, m_pbr_uniforms.s_albedo, m_white_texture);
             bgfx::setTexture(1, m_pbr_uniforms.s_normal, m_default_normal);
+            bgfx::setTexture(2, m_pbr_uniforms.s_metallicRoughness, m_white_texture);
+            bgfx::setTexture(3, m_pbr_uniforms.s_ao, m_white_texture);
+            bgfx::setTexture(4, m_pbr_uniforms.s_emissive, m_white_texture);
+            
+            // Also need to bind dummy shadow maps to slots 8-11 to prevent D3D11 warnings
+            // about State Setting Hazards across frames
+            for (int i = 0; i < 4; ++i) {
+                bgfx::setTexture(8 + i, 
+                    (i==0 ? m_pbr_uniforms.s_shadowMap0 : 
+                     (i==1 ? m_pbr_uniforms.s_shadowMap1 : 
+                      (i==2 ? m_pbr_uniforms.s_shadowMap2 : m_pbr_uniforms.s_shadowMap3))), 
+                    m_dummy_shadow_texture,
+                    BGFX_SAMPLER_COMPARE_LEQUAL | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+            }
 
             uint64_t state = BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
                              BGFX_STATE_CULL_CW | BGFX_STATE_MSAA;
