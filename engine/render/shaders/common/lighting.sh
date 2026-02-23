@@ -137,7 +137,10 @@ vec3 evaluateAllLights(
     return totalLight;
 }
 
-// Evaluate all active lights with shadow factor for main directional light
+// Evaluate all active lights with shadow factor applied to the main directional light.
+// Light 0 is assumed to be the primary directional light that casts shadows.
+// Shadow is applied as a post-multiply to avoid bgfx shader compiler issues where
+// conditional branches and function parameters get optimized away.
 vec3 evaluateAllLightsWithShadow(
     vec3 worldPos,
     vec3 N,
@@ -151,20 +154,21 @@ vec3 evaluateAllLightsWithShadow(
     vec3 totalLight = vec3_splat(0.0);
     int numLights = int(u_lightCount.x);
 
-    for (int i = 0; i < 8; i++)
+    // First light (directional) — always apply shadow via post-multiply
+    if (numLights > 0)
+    {
+        Light light = getLight(0);
+        vec3 contribution = evaluateLight(light, worldPos, N, V, albedo, metallic, roughness, 1.0);
+        totalLight += contribution * mainShadowFactor;
+    }
+
+    // Remaining lights — no shadow
+    for (int i = 1; i < 8; i++)
     {
         if (i < numLights)
         {
             Light light = getLight(i);
-
-            // Apply shadow only to main directional light (index 0)
-            float shadow = 1.0;
-            if (i == 0 && light.type == LIGHT_TYPE_DIRECTIONAL)
-            {
-                shadow = mainShadowFactor;
-            }
-
-            totalLight += evaluateLight(light, worldPos, N, V, albedo, metallic, roughness, shadow);
+            totalLight += evaluateLight(light, worldPos, N, V, albedo, metallic, roughness, 1.0);
         }
     }
 

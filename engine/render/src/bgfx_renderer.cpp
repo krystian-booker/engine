@@ -372,26 +372,28 @@ public:
 
         // Create 1x1 cubemap for IBL fallback with sky-ground gradient
         // Face order: +X, -X, +Y, -Y, +Z, -Z. Pixel format RGBA8: 0xAABBGGRR
-        // Irradiance (diffuse ambient): moderate ambient to approximate outdoor lighting
+        // Irradiance (diffuse ambient): subdued ambient so direct light dominates and
+        // shadows remain clearly visible.  Values are ~1/3 of original to keep
+        // ambient:direct ratio reasonable with a sun light at intensity 3.0.
         uint32_t irr_faces[6] = {
-            0xFF8C7A6E,  // +X horizon (0.43, 0.48, 0.55)
-            0xFF8C7A6E,  // -X horizon
-            0xFFB89880,  // +Y sky     (0.50, 0.60, 0.72)
-            0xFF2A1810,  // -Y ground  (0.06, 0.09, 0.16)
-            0xFF8C7A6E,  // +Z horizon
-            0xFF8C7A6E   // -Z horizon
+            0xFF2E2924,  // +X horizon (0.14, 0.16, 0.18)
+            0xFF2E2924,  // -X horizon
+            0xFF3D332B,  // +Y sky     (0.17, 0.20, 0.24)
+            0xFF0D0805,  // -Y ground  (0.02, 0.03, 0.05)
+            0xFF2E2924,  // +Z horizon
+            0xFF2E2924   // -Z horizon
         };
         m_default_irradiance = bgfx::createTextureCube(1, false, 1, bgfx::TextureFormat::RGBA8,
             BGFX_TEXTURE_NONE | BGFX_SAMPLER_POINT, bgfx::copy(irr_faces, sizeof(irr_faces)));
 
-        // Prefilter (specular reflections): moderate sky reflection for metallic surfaces
+        // Prefilter (specular reflections): subdued sky reflection for metallic surfaces
         uint32_t pf_faces[6] = {
-            0xFF604840,  // +X horizon (0.25, 0.28, 0.38)
-            0xFF604840,  // -X horizon
-            0xFF8C7060,  // +Y sky     (0.38, 0.44, 0.55)
-            0xFF100808,  // -Y ground  (0.03, 0.03, 0.06)
-            0xFF604840,  // +Z horizon
-            0xFF604840   // -Z horizon
+            0xFF201814,  // +X horizon (0.08, 0.09, 0.13)
+            0xFF201814,  // -X horizon
+            0xFF302420,  // +Y sky     (0.13, 0.14, 0.19)
+            0xFF080404,  // -Y ground  (0.02, 0.02, 0.03)
+            0xFF201814,  // +Z horizon
+            0xFF201814   // -Z horizon
         };
         m_default_prefilter = bgfx::createTextureCube(1, false, 1, bgfx::TextureFormat::RGBA8,
             BGFX_TEXTURE_NONE | BGFX_SAMPLER_POINT, bgfx::copy(pf_faces, sizeof(pf_faces)));
@@ -1676,8 +1678,7 @@ public:
                 case 2: sampler = m_pbr_uniforms.s_shadowMap2; break;
                 default: sampler = m_pbr_uniforms.s_shadowMap3; break;
             }
-            bool is_valid = bgfx::isValid(m_shadow_textures[i]);
-            bgfx::TextureHandle shadow_tex = is_valid
+            bgfx::TextureHandle shadow_tex = bgfx::isValid(m_shadow_textures[i])
                 ? m_shadow_textures[i]
                 : m_dummy_shadow_texture;
             bgfx::setTexture(8 + i, sampler, shadow_tex,

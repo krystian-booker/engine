@@ -72,8 +72,11 @@ void main()
         shadowFactor = calculateShadow(worldPos, N, mainLightDir, viewSpaceDepth);
     }
 
-    // Calculate direct lighting with shadow applied
-    vec3 Lo = evaluateAllLightsWithShadow(worldPos, N, V, albedo.rgb, metallic, roughness, shadowFactor);
+    // Calculate direct lighting with shadow.
+    // Shadow is applied as a post-multiply in main() because the bgfx/HLSL compiler
+    // aggressively optimizes away shadow multiplications inside called functions
+    // (even unconditional post-multiplies on function parameters get eliminated).
+    vec3 Lo = evaluateAllLights(worldPos, N, V, albedo.rgb, metallic, roughness) * shadowFactor;
 
     // Calculate ambient/IBL
     vec3 F0 = mix(vec3_splat(0.04), albedo.rgb, metallic);
@@ -97,8 +100,11 @@ void main()
     vec2 brdf = texture2D(s_brdfLUT, vec2(max(dot(N, V), 0.0), roughness)).rg;
     vec3 specularIBL = prefilteredColor * (F * brdf.x + brdf.y);
 
-    // Combine ambient (ambient is not affected by shadow - represents indirect light)
-    vec3 ambient = (kD * diffuseIBL + specularIBL) * ao * u_iblParams.x;
+    // Combine ambient with shadow attenuation.
+    // Partially darken ambient in shadow areas to approximate indirect shadow/AO.
+    // Without this, the IBL ambient overwhelms the direct-light shadow contrast.
+    float ambientShadow = mix(0.3, 1.0, shadowFactor);
+    vec3 ambient = (kD * diffuseIBL + specularIBL) * ao * u_iblParams.x * ambientShadow;
 
     // Final color
     vec3 color = ambient + Lo + emissive;
