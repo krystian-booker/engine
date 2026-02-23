@@ -109,7 +109,8 @@ vec3 getShadowCoord(vec3 worldPos, int cascade)
         shadowPos = mul(u_shadowMatrix3, vec4(worldPos, 1.0));
 
     // Perspective divide and remap to [0,1]
-    vec3 projCoord = shadowPos.xyz / shadowPos.w;
+    // Guard w to avoid HLSL compile-time division-by-zero warning
+    vec3 projCoord = shadowPos.xyz / max(shadowPos.w, 0.0001);
     projCoord = projCoord * 0.5 + 0.5;
 
     // Flip Y for DirectX

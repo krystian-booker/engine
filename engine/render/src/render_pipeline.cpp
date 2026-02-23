@@ -882,7 +882,9 @@ void RenderPipeline::shadow_pass(const CameraData& camera,
         }
     }
 
-    if (!sun_light) return;
+    if (!sun_light) {
+        return;
+    }
 
     // Update shadow system
     m_shadow_system.update_cascades(camera.view_matrix, camera.projection_matrix,

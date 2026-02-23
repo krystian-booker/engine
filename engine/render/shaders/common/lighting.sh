@@ -52,16 +52,17 @@ void calculateLightDirAndAttenuation(Light light, vec3 worldPos, out vec3 lightD
 {
     if (light.type == LIGHT_TYPE_DIRECTIONAL)
     {
-        // Directional light
-        lightDir = -normalize(light.direction);
+        // Directional light — safe normalize to avoid HLSL div-by-zero warning
+        float dirLen = max(length(light.direction), 0.0001);
+        lightDir = -light.direction / dirLen;
         attenuation = 1.0;
     }
     else
     {
         // Point or spot light
         vec3 toLight = light.position - worldPos;
-        float distance = length(toLight);
-        lightDir = toLight / max(distance, 0.0001);
+        float distance = max(length(toLight), 0.0001);
+        lightDir = toLight / distance;
 
         // Distance attenuation (inverse square with range falloff)
         float rangeAtten = 1.0 - saturate(distance / max(light.range, 0.0001));
@@ -71,7 +72,8 @@ void calculateLightDirAndAttenuation(Light light, vec3 worldPos, out vec3 lightD
         // Spot light cone attenuation
         if (light.type == LIGHT_TYPE_SPOT)
         {
-            float cosAngle = dot(-lightDir, normalize(light.direction));
+            float spotDirLen = max(length(light.direction), 0.0001);
+            float cosAngle = dot(-lightDir, light.direction / spotDirLen);
             float innerCos = cos(light.innerAngle);
             float outerCos = cos(light.outerAngle);
             float spotAtten = saturate((cosAngle - outerCos) / max(innerCos - outerCos, 0.0001));
@@ -122,12 +124,14 @@ vec3 evaluateAllLights(
     vec3 totalLight = vec3_splat(0.0);
     int numLights = int(u_lightCount.x);
 
-    for (int i = 0; i < numLights && i < 8; i++)
+    for (int i = 0; i < 8; i++)
     {
-        Light light = getLight(i);
-        float shadow = 1.0; // No shadow by default
-
-        totalLight += evaluateLight(light, worldPos, N, V, albedo, metallic, roughness, shadow);
+        if (i < numLights)
+        {
+            Light light = getLight(i);
+            float shadow = 1.0; // No shadow by default
+            totalLight += evaluateLight(light, worldPos, N, V, albedo, metallic, roughness, shadow);
+        }
     }
 
     return totalLight;
@@ -147,18 +151,21 @@ vec3 evaluateAllLightsWithShadow(
     vec3 totalLight = vec3_splat(0.0);
     int numLights = int(u_lightCount.x);
 
-    for (int i = 0; i < numLights && i < 8; i++)
+    for (int i = 0; i < 8; i++)
     {
-        Light light = getLight(i);
-
-        // Apply shadow only to main directional light (index 0)
-        float shadow = 1.0;
-        if (i == 0 && light.type == LIGHT_TYPE_DIRECTIONAL)
+        if (i < numLights)
         {
-            shadow = mainShadowFactor;
-        }
+            Light light = getLight(i);
 
-        totalLight += evaluateLight(light, worldPos, N, V, albedo, metallic, roughness, shadow);
+            // Apply shadow only to main directional light (index 0)
+            float shadow = 1.0;
+            if (i == 0 && light.type == LIGHT_TYPE_DIRECTIONAL)
+            {
+                shadow = mainShadowFactor;
+            }
+
+            totalLight += evaluateLight(light, worldPos, N, V, albedo, metallic, roughness, shadow);
+        }
     }
 
     return totalLight;

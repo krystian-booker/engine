@@ -383,11 +383,17 @@ Mat4 create_stable_ortho_projection(const Vec3& min_bounds, const Vec3& max_boun
     float z_mult = 0.5f;
     float z_range = snapped_max.z - snapped_min.z;
 
+    // glm::ortho (RH) expects positive near/far distances. Light-view-space z
+    // values are negative (in front of the camera), so negate and swap:
+    //   near = closest to camera = negated max_z (smallest positive distance)
+    //   far  = farthest from camera = negated min_z (largest positive distance)
+    float near_val = -(snapped_max.z + z_range * z_mult);
+    float far_val  = -(snapped_min.z - z_range * z_mult);
+
     return glm::ortho(
         snapped_min.x, snapped_max.x,
         snapped_min.y, snapped_max.y,
-        snapped_min.z - z_range * z_mult,
-        snapped_max.z + z_range * z_mult
+        near_val, far_val
     );
 }
 
