@@ -72,7 +72,9 @@ enum class TextureFormat : uint8_t {
     RGBA16F,
     RGBA32F,
     R8,
+    R32F,
     RG8,
+    Depth16,
     Depth24,
     Depth32F,
     BC1,  // DXT1

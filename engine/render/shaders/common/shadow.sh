@@ -1,4 +1,6 @@
 // Shadow mapping functions for PBR shaders
+// Uses color-based shadow maps (R32F) with manual depth comparison
+// to avoid D3D11 TYPELESS/COMPARE_LEQUAL issues.
 
 #ifndef SHADOW_SH
 #define SHADOW_SH
@@ -11,66 +13,26 @@ uniform mat4 u_shadowMatrix1;    // Cascade 1 light space matrix
 uniform mat4 u_shadowMatrix2;    // Cascade 2 light space matrix
 uniform mat4 u_shadowMatrix3;    // Cascade 3 light space matrix
 
-// Shadow samplers - using comparison samplers for hardware PCF
-SAMPLER2DSHADOW(s_shadowMap0, 8);
-SAMPLER2DSHADOW(s_shadowMap1, 9);
-SAMPLER2DSHADOW(s_shadowMap2, 10);
-SAMPLER2DSHADOW(s_shadowMap3, 11);
+// Shadow samplers - regular 2D samplers (color-based shadow maps)
+SAMPLER2D(s_shadowMap0, 8);
+SAMPLER2D(s_shadowMap1, 9);
+SAMPLER2D(s_shadowMap2, 10);
+SAMPLER2D(s_shadowMap3, 11);
 
-// Poisson disk sample lookup to avoid cross-language initializer quirks
-vec2 poissonSample(int i)
+// Sample a single shadow map with manual depth comparison
+float sampleShadowMap(sampler2D shadowMap, vec3 shadowCoord, float bias)
 {
-    int idx = i - (i / 16) * 16;
-    if (idx == 0) return vec2(-0.94201624, -0.39906216);
-    else if (idx == 1) return vec2(0.94558609, -0.76890725);
-    else if (idx == 2) return vec2(-0.094184101, -0.92938870);
-    else if (idx == 3) return vec2(0.34495938, 0.29387760);
-    else if (idx == 4) return vec2(-0.91588581, 0.45771432);
-    else if (idx == 5) return vec2(-0.81544232, -0.87912464);
-    else if (idx == 6) return vec2(-0.38277543, 0.27676845);
-    else if (idx == 7) return vec2(0.97484398, 0.75648379);
-    else if (idx == 8) return vec2(0.44323325, -0.97511554);
-    else if (idx == 9) return vec2(0.53742981, -0.47373420);
-    else if (idx == 10) return vec2(-0.26496911, -0.41893023);
-    else if (idx == 11) return vec2(0.79197514, 0.19090188);
-    else if (idx == 12) return vec2(-0.24188840, 0.99706507);
-    else if (idx == 13) return vec2(-0.81409955, 0.91437590);
-    else if (idx == 14) return vec2(0.19984126, 0.78641367);
-    return vec2(0.14383161, -0.14100790);
+    // Use texture2DLod to avoid gradient issues in divergent control flow
+    float storedDepth = texture2DLod(shadowMap, shadowCoord.xy, 0.0).r;
+    float currentDepth = shadowCoord.z - bias;
+    return step(currentDepth, storedDepth);
 }
 
-// Sample a single shadow map with hardware PCF
-float sampleShadowMapPCF(sampler2DShadow shadowMap, vec3 shadowCoord, float bias)
+// PCF 3x3 kernel for smooth shadows (manual comparison)
+// Uses texture2DLod (SampleLevel) to avoid HLSL gradient-in-loop errors
+float sampleShadowMapPCF3x3(sampler2D shadowMap, vec3 shadowCoord, float bias, vec2 texelSize)
 {
-    // Apply bias
-    shadowCoord.z -= bias;
-
-    // Single hardware PCF sample
-    return shadow2D(shadowMap, shadowCoord);
-}
-
-// Sample shadow map with software PCF (Poisson disk)
-float sampleShadowMapSoftPCF(sampler2DShadow shadowMap, vec3 shadowCoord, float bias, vec2 texelSize, int samples)
-{
-    shadowCoord.z -= bias;
-
-    float shadow = 0.0;
-    float radius = u_shadowParams.w;
-
-    for (int i = 0; i < samples; i++)
-    {
-        vec2 offset = poissonSample(i) * radius * texelSize;
-        shadow += shadow2D(shadowMap, vec3(shadowCoord.xy + offset, shadowCoord.z));
-    }
-
-    return shadow / float(samples);
-}
-
-// PCF 3x3 kernel for smooth shadows
-float sampleShadowMapPCF3x3(sampler2DShadow shadowMap, vec3 shadowCoord, float bias, vec2 texelSize)
-{
-    shadowCoord.z -= bias;
-
+    float currentDepth = shadowCoord.z - bias;
     float shadow = 0.0;
 
     for (int x = -1; x <= 1; x++)
@@ -78,7 +40,8 @@ float sampleShadowMapPCF3x3(sampler2DShadow shadowMap, vec3 shadowCoord, float b
         for (int y = -1; y <= 1; y++)
         {
             vec2 offset = vec2(float(x), float(y)) * texelSize;
-            shadow += shadow2D(shadowMap, vec3(shadowCoord.xy + offset, shadowCoord.z));
+            float storedDepth = texture2DLod(shadowMap, shadowCoord.xy + offset, 0.0).r;
+            shadow += step(currentDepth, storedDepth);
         }
     }
 
@@ -99,6 +62,10 @@ vec3 getShadowCoord(vec3 worldPos, int cascade)
 {
     vec4 shadowPos;
 
+    // Use mul() not instMul() for custom Mat4 uniforms.
+    // bgfx uploads GLM column-major data via raw memCopy into column_major
+    // HLSL cbuffers, so mul(M, v) = M * v gives the correct result.
+    // instMul(M, v) = mul(v, M) in HLSL would compute M^T * v (wrong).
     if (cascade == 0)
         shadowPos = mul(u_shadowMatrix0, vec4(worldPos, 1.0));
     else if (cascade == 1)
@@ -108,15 +75,17 @@ vec3 getShadowCoord(vec3 worldPos, int cascade)
     else
         shadowPos = mul(u_shadowMatrix3, vec4(worldPos, 1.0));
 
-    // Perspective divide and remap to [0,1]
+    // Perspective divide
     // Guard w to avoid HLSL compile-time division-by-zero warning
     vec3 projCoord = shadowPos.xyz / max(shadowPos.w, 0.0001);
-    projCoord = projCoord * 0.5 + 0.5;
 
-    // Flip Y for DirectX
-#if BGFX_SHADER_LANGUAGE_HLSL
+    // Remap xy from [-1,1] to [0,1] for UV lookup.
+    // z is already in [0,1] (orthoRH_ZO projection), so leave it as-is.
+    projCoord.xy = projCoord.xy * 0.5 + 0.5;
+
+    // D3D11 Y-flip: clip Y=+1 maps to texture row 0 (v=0),
+    // but our remap gives v=1.0 for Y=+1. Flip to correct.
     projCoord.y = 1.0 - projCoord.y;
-#endif
 
     return projCoord;
 }
@@ -160,7 +129,7 @@ float calculateShadow(vec3 worldPos, vec3 normal, vec3 lightDir, float viewSpace
     // Get shadow coordinates
     vec3 shadowCoord = getShadowCoord(worldPos, cascade);
 
-    // Check if we're outside shadow map bounds
+    // Check if were outside shadow map bounds
     if (shadowCoord.x < 0.0 || shadowCoord.x > 1.0 ||
         shadowCoord.y < 0.0 || shadowCoord.y > 1.0 ||
         shadowCoord.z < 0.0 || shadowCoord.z > 1.0)

@@ -470,7 +470,7 @@ TextureHandle RenderPipeline::get_depth_texture() const {
 TextureHandle RenderPipeline::get_shadow_debug_texture() const {
     RenderTargetHandle rt = m_shadow_system.get_cascade_render_target(0);
     if (rt.valid()) {
-        return m_renderer->get_render_target_texture(rt, UINT32_MAX);
+        return m_renderer->get_render_target_texture(rt, 0);
     }
     return TextureHandle{};
 }
@@ -901,10 +901,10 @@ void RenderPipeline::shadow_pass(const CameraData& camera,
                                 m_shadow_system.get_cascade_splits(),
                                 shadow_params);
 
-    // Bind shadow map textures to renderer
+    // Bind shadow map textures to renderer (color attachment 0 = R32F depth-as-color)
     for (uint32_t cascade = 0; cascade < m_config.shadow_config.cascade_count; ++cascade) {
         auto rt = m_shadow_system.get_cascade_render_target(cascade);
-        TextureHandle shadow_tex = m_renderer->get_render_target_texture(rt, UINT32_MAX);
+        TextureHandle shadow_tex = m_renderer->get_render_target_texture(rt, 0);
         m_renderer->set_shadow_texture(cascade, shadow_tex);
     }
 
@@ -1015,7 +1015,7 @@ void RenderPipeline::main_pass(const CameraData& camera,
 
         for (uint32_t i = 0; i < m_config.shadow_config.cascade_count; ++i) {
             auto rt = m_shadow_system.get_cascade_render_target(i);
-            TextureHandle shadow_tex = m_renderer->get_render_target_texture(rt, UINT32_MAX);
+            TextureHandle shadow_tex = m_renderer->get_render_target_texture(rt, 0);
             m_renderer->set_shadow_texture(i, shadow_tex);
         }
 
@@ -1051,7 +1051,7 @@ void RenderPipeline::volumetric_pass(const CameraData& camera,
         shadow_matrices = m_shadow_system.get_cascade_matrices();
         for (uint32_t i = 0; i < m_config.shadow_config.cascade_count; ++i) {
             auto rt = m_shadow_system.get_cascade_render_target(i);
-            shadow_maps[i] = m_renderer->get_render_target_texture(rt, UINT32_MAX);
+            shadow_maps[i] = m_renderer->get_render_target_texture(rt, 0);
         }
     }
 

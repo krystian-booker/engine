@@ -2,8 +2,6 @@
 
 void main()
 {
-    // Depth-only fragment shader
-    // The depth buffer is written automatically
-    // We don't need to output anything for opaque shadow casters
-    gl_FragColor = vec4_splat(0.0);
+    // Write gl_FragCoord.z as depth
+    gl_FragColor = vec4(gl_FragCoord.z, 0.0, 0.0, 1.0);
 }

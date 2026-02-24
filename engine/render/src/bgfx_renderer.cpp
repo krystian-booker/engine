@@ -364,36 +364,40 @@ public:
             BGFX_TEXTURE_NONE | BGFX_SAMPLER_POINT,
             bgfx::copy(&normal_pixel, sizeof(normal_pixel)));
 
-        // Create 1x1 dummy shadow texture (D32F format for comparison sampling support)
-        // Note: D32F render targets initialize to 0.0 (near depth), so all shadow tests pass (no shadow)
-        // BGFX_TEXTURE_RT creates a samplable render target (don't use RT_WRITE_ONLY - that can't be sampled)
-        m_dummy_shadow_texture = bgfx::createTexture2D(1, 1, false, 1, bgfx::TextureFormat::D32F,
-            BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+        // Create 1x1 dummy shadow texture (R32F color, value 1.0 = max depth = no shadow)
+        // Color-based shadow maps store depth in R32F; 1.0 means "infinitely far" so
+        // all comparison tests pass (no shadow).
+        float dummy_depth = 1.0f;
+        m_dummy_shadow_texture = bgfx::createTexture2D(1, 1, false, 1, bgfx::TextureFormat::R32F,
+            BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP,
+            bgfx::copy(&dummy_depth, sizeof(dummy_depth)));
 
-        // Create 1x1 cubemap for IBL fallback with sky-ground gradient
+        // Create 1x1 cubemap for IBL fallback with sky-ground gradient.
         // Face order: +X, -X, +Y, -Y, +Z, -Z. Pixel format RGBA8: 0xAABBGGRR
-        // Irradiance (diffuse ambient): subdued ambient so direct light dominates and
-        // shadows remain clearly visible.  Values are ~1/3 of original to keep
-        // ambient:direct ratio reasonable with a sun light at intensity 3.0.
+        // Irradiance (diffuse ambient): warm-tinted gradient so metallic surfaces
+        // pick up environment color. Shadow contrast is preserved by ambientShadow.
         uint32_t irr_faces[6] = {
-            0xFF2E2924,  // +X horizon (0.14, 0.16, 0.18)
-            0xFF2E2924,  // -X horizon
-            0xFF3D332B,  // +Y sky     (0.17, 0.20, 0.24)
-            0xFF0D0805,  // -Y ground  (0.02, 0.03, 0.05)
-            0xFF2E2924,  // +Z horizon
-            0xFF2E2924   // -Z horizon
+            0xFF1E1E1E,  // +X  horizon (R=G=B=30)
+            0xFF1E1E1E,  // -X
+            0xFF282828,  // +Y  sky (R=G=B=40)
+            0xFF0E0E0E,  // -Y  ground (R=G=B=14)
+            0xFF1E1E1E,  // +Z
+            0xFF1E1E1E   // -Z
         };
         m_default_irradiance = bgfx::createTextureCube(1, false, 1, bgfx::TextureFormat::RGBA8,
             BGFX_TEXTURE_NONE | BGFX_SAMPLER_POINT, bgfx::copy(irr_faces, sizeof(irr_faces)));
 
-        // Prefilter (specular reflections): subdued sky reflection for metallic surfaces
+        // Prefilter (specular reflections) — bright, warm-tinted to simulate
+        // afternoon sunlight environment. Metallic PBR surfaces get all their
+        // color from specular IBL, so this needs to be bright and warm.
+        // Format: 0xAABBGGRR (little-endian ABGR)
         uint32_t pf_faces[6] = {
-            0xFF201814,  // +X horizon (0.08, 0.09, 0.13)
-            0xFF201814,  // -X horizon
-            0xFF302420,  // +Y sky     (0.13, 0.14, 0.19)
-            0xFF080404,  // -Y ground  (0.02, 0.02, 0.03)
-            0xFF201814,  // +Z horizon
-            0xFF201814   // -Z horizon
+            0xFFB0C8D8,  // +X  warm horizon (R=216, G=200, B=176)
+            0xFFB0C8D8,  // -X
+            0xFFE0F0FF,  // +Y  warm sky (R=255, G=240, B=224)
+            0xFF706868,  // -Y  cool ground (R=104, G=104, B=112)
+            0xFFB0C8D8,  // +Z
+            0xFFB0C8D8   // -Z
         };
         m_default_prefilter = bgfx::createTextureCube(1, false, 1, bgfx::TextureFormat::RGBA8,
             BGFX_TEXTURE_NONE | BGFX_SAMPLER_POINT, bgfx::copy(pf_faces, sizeof(pf_faces)));
@@ -574,6 +578,8 @@ public:
         m_frame_active = false;
 
         uint32_t current_frame = bgfx::frame();
+
+        m_shadow_draw_count = 0;
 
         // Check if pending screenshot data is ready
         if (m_pending_screenshot.pending && current_frame >= m_pending_screenshot.target_frame) {
@@ -815,10 +821,16 @@ public:
 
         // Create depth attachment if requested
         if (desc.has_depth) {
-            // Use RT_WRITE_ONLY only if not samplable (write-only is faster but can't be read in shaders)
-            uint64_t depth_flags = desc.samplable
-                ? (BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP)
-                : (BGFX_TEXTURE_RT | BGFX_TEXTURE_RT_WRITE_ONLY);
+            // When color attachments exist, depth is only for depth testing — make it
+            // write-only to avoid D3D11 issues with non-TYPELESS depth formats needing SRVs.
+            // Depth-only samplable RTs would need COMPARE_LEQUAL which crashes on some drivers,
+            // so color-based shadow maps avoid that path entirely.
+            uint64_t depth_flags;
+            if (!desc.samplable || desc.color_attachment_count > 0) {
+                depth_flags = BGFX_TEXTURE_RT | BGFX_TEXTURE_RT_WRITE_ONLY;
+            } else {
+                depth_flags = BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+            }
             bgfx::TextureHandle th = bgfx::createTexture2D(
                 uint16_t(desc.width),
                 uint16_t(desc.height),
@@ -839,12 +851,14 @@ public:
             attachments.push_back(att);
         }
 
-        // Create framebuffer
-        rt.fbh = bgfx::createFrameBuffer(
-            static_cast<uint8_t>(attachments.size()),
-            attachments.data(),
-            false  // Don't destroy textures with framebuffer
-        );
+        // Create framebuffer (for RTs with color attachments)
+        if (!bgfx::isValid(rt.fbh)) {
+            rt.fbh = bgfx::createFrameBuffer(
+                static_cast<uint8_t>(attachments.size()),
+                attachments.data(),
+                false  // Don't destroy textures with framebuffer
+            );
+        }
 
         if (!bgfx::isValid(rt.fbh)) {
             log(LogLevel::Error, "Failed to create render target");
@@ -968,9 +982,12 @@ public:
         if (rt.desc.has_depth && bgfx::isValid(rt.depth_attachment)) {
             bgfx::destroy(rt.depth_attachment);
 
-            uint64_t depth_flags = rt.desc.samplable
-                ? (BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP)
-                : (BGFX_TEXTURE_RT | BGFX_TEXTURE_RT_WRITE_ONLY);
+            uint64_t depth_flags;
+            if (!rt.desc.samplable || rt.desc.color_attachment_count > 0) {
+                depth_flags = BGFX_TEXTURE_RT | BGFX_TEXTURE_RT_WRITE_ONLY;
+            } else {
+                depth_flags = BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+            }
             bgfx::TextureHandle th = bgfx::createTexture2D(
                 uint16_t(width), uint16_t(height),
                 false, 1,
@@ -985,11 +1002,13 @@ public:
             attachments.push_back(att);
         }
 
-        // Recreate framebuffer
-        rt.fbh = bgfx::createFrameBuffer(
-            static_cast<uint8_t>(attachments.size()),
-            attachments.data(),
-            false);
+        // Recreate framebuffer for color+depth RTs
+        if (!bgfx::isValid(rt.fbh)) {
+            rt.fbh = bgfx::createFrameBuffer(
+                static_cast<uint8_t>(attachments.size()),
+                attachments.data(),
+                false);
+        }
 
         if (rt.desc.debug_name) {
             bgfx::setName(rt.fbh, rt.desc.debug_name);
@@ -1136,7 +1155,7 @@ public:
             bgfx::setIndexBuffer(bgfx_mesh.ibh);
         }
 
-        // Check if this is a shadow pass (RenderView 0-3)
+        // Check if this is a shadow pass
         // If so, avoid uploading full PBR uniforms because that binds all shadow maps
         // which creates a read-write hazard (binding a resource as SRV while writing to it as DSV)
         constexpr uint16_t kShadowCascade0 = static_cast<uint16_t>(RenderView::ShadowCascade0);
@@ -1153,17 +1172,20 @@ public:
             bgfx::setTexture(2, m_pbr_uniforms.s_metallicRoughness, m_white_texture);
             bgfx::setTexture(3, m_pbr_uniforms.s_ao, m_white_texture);
             bgfx::setTexture(4, m_pbr_uniforms.s_emissive, m_white_texture);
+            bgfx::setTexture(5, m_pbr_uniforms.s_irradiance, m_default_irradiance);
+            bgfx::setTexture(6, m_pbr_uniforms.s_prefilter, m_default_prefilter);
+            bgfx::setTexture(7, m_pbr_uniforms.s_brdfLUT, m_default_brdf_lut);
             
             // Also need to bind dummy shadow maps to slots 8-11 to prevent D3D11 warnings
             // about expected SRVs, even if not used by the shadow shader logic.
             // Crucially, we use the dummy texture, NOT the real shadow maps!
             for (int i = 0; i < 4; ++i) {
-                bgfx::setTexture(8 + i, 
-                    (i==0 ? m_pbr_uniforms.s_shadowMap0 : 
-                     (i==1 ? m_pbr_uniforms.s_shadowMap1 : 
-                      (i==2 ? m_pbr_uniforms.s_shadowMap2 : m_pbr_uniforms.s_shadowMap3))), 
+                bgfx::setTexture(8 + i,
+                    (i==0 ? m_pbr_uniforms.s_shadowMap0 :
+                     (i==1 ? m_pbr_uniforms.s_shadowMap1 :
+                      (i==2 ? m_pbr_uniforms.s_shadowMap2 : m_pbr_uniforms.s_shadowMap3))),
                     m_dummy_shadow_texture,
-                    BGFX_SAMPLER_COMPARE_LEQUAL | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+                    BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
             }
 
         } else {
@@ -1502,30 +1524,14 @@ public:
         constexpr uint16_t kShadowCascade3 = static_cast<uint16_t>(RenderView::ShadowCascade3);
         if (view_id >= kShadowCascade0 && view_id <= kShadowCascade3 &&
             bgfx::isValid(m_shadow_program)) {
-            // Bind fallback textures to satisfy D3D11 shader expectations
-            // Even though the shadow shader only writes depth, D3D11 warns if the pixel shader checks
-            // for samplers (which might happen due to BGFX's shader compilation or underlying platform behavior)
-            bgfx::setTexture(0, m_pbr_uniforms.s_albedo, m_white_texture);
-            bgfx::setTexture(1, m_pbr_uniforms.s_normal, m_default_normal);
-            bgfx::setTexture(2, m_pbr_uniforms.s_metallicRoughness, m_white_texture);
-            bgfx::setTexture(3, m_pbr_uniforms.s_ao, m_white_texture);
-            bgfx::setTexture(4, m_pbr_uniforms.s_emissive, m_white_texture);
-            
-            // Also need to bind dummy shadow maps to slots 8-11 to prevent D3D11 warnings
-            // about State Setting Hazards across frames
-            for (int i = 0; i < 4; ++i) {
-                bgfx::setTexture(8 + i, 
-                    (i==0 ? m_pbr_uniforms.s_shadowMap0 : 
-                     (i==1 ? m_pbr_uniforms.s_shadowMap1 : 
-                      (i==2 ? m_pbr_uniforms.s_shadowMap2 : m_pbr_uniforms.s_shadowMap3))), 
-                    m_dummy_shadow_texture,
-                    BGFX_SAMPLER_COMPARE_LEQUAL | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
-            }
-
-            uint64_t state = BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
+            // Color-based shadow maps: write depth to both the depth buffer (for
+            // depth testing) and R32F color attachment (for sampling in PBR pass)
+            uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_Z |
+                             BGFX_STATE_DEPTH_TEST_LESS |
                              BGFX_STATE_CULL_CW | BGFX_STATE_MSAA;
             bgfx::setState(state);
             bgfx::submit(view_id, m_shadow_program);
+            m_shadow_draw_count++;
             return;
         }
 
@@ -1668,8 +1674,7 @@ public:
         bgfx::setTexture(6, m_pbr_uniforms.s_prefilter, m_default_prefilter);
         bgfx::setTexture(7, m_pbr_uniforms.s_brdfLUT, m_default_brdf_lut);
 
-        // Bind shadow map textures (slots 8-11) - always bind with comparison filtering
-        // Must use D32F format textures for comparison sampling (SampleCmp); use dummy shadow texture as fallback
+        // Bind shadow map textures (slots 8-11) — color-based R32F shadow maps
         for (int i = 0; i < 4; ++i) {
             bgfx::UniformHandle sampler;
             switch (i) {
@@ -1682,8 +1687,9 @@ public:
                 ? m_shadow_textures[i]
                 : m_dummy_shadow_texture;
             bgfx::setTexture(8 + i, sampler, shadow_tex,
-                BGFX_SAMPLER_COMPARE_LEQUAL | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+                BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
         }
+
     }
 
     void clear(uint32_t color, float depth) override {
@@ -1912,6 +1918,7 @@ private:
     bool m_initialized = false;
     bool m_frame_active = false;
     bool m_vsync = true;
+    uint32_t m_shadow_draw_count = 0;
     uint32_t m_width = 0;
     uint32_t m_height = 0;
 
@@ -2035,7 +2042,9 @@ private:
             case TextureFormat::RGBA16F:  return bgfx::TextureFormat::RGBA16F;
             case TextureFormat::RGBA32F:  return bgfx::TextureFormat::RGBA32F;
             case TextureFormat::R8:       return bgfx::TextureFormat::R8;
+            case TextureFormat::R32F:     return bgfx::TextureFormat::R32F;
             case TextureFormat::RG8:      return bgfx::TextureFormat::RG8;
+            case TextureFormat::Depth16:  return bgfx::TextureFormat::D16;
             case TextureFormat::Depth24:  return bgfx::TextureFormat::D24;
             case TextureFormat::Depth32F: return bgfx::TextureFormat::D32F;
             case TextureFormat::BC1:      return bgfx::TextureFormat::BC1;

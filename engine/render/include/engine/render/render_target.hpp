@@ -39,21 +39,24 @@ struct RenderTargetDesc {
 
 // Predefined render views for the rendering pipeline
 enum class RenderView : uint16_t {
+    // View 0 is reserved for the backbuffer (bgfx default view)
+    Backbuffer = 0,
+
     // Shadow passes (4 cascades for CSM)
-    ShadowCascade0 = 0,
-    ShadowCascade1 = 1,
-    ShadowCascade2 = 2,
-    ShadowCascade3 = 3,
+    ShadowCascade0 = 1,
+    ShadowCascade1 = 2,
+    ShadowCascade2 = 3,
+    ShadowCascade3 = 4,
 
     // Additional shadow views for point/spot lights
-    ShadowSpot0 = 4,
-    ShadowSpot1 = 5,
-    ShadowSpot2 = 6,
-    ShadowSpot3 = 7,
+    ShadowSpot0 = 5,
+    ShadowSpot1 = 6,
+    ShadowSpot2 = 7,
+    ShadowSpot3 = 8,
 
     // Point light shadow cubemap faces (6 faces, up to 4 lights)
-    ShadowPoint0Face0 = 8,
-    // ... faces 1-5 follow (8-13, 14-19, 20-25, 26-31)
+    ShadowPoint0Face0 = 9,
+    // ... faces 1-5 follow (9-14, 15-20, 21-26, 27-31)
 
     // Depth pre-pass
     DepthPrepass = 32,

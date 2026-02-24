@@ -72,11 +72,11 @@ void main()
         shadowFactor = calculateShadow(worldPos, N, mainLightDir, viewSpaceDepth);
     }
 
-    // Calculate direct lighting with shadow.
-    // Shadow is applied as a post-multiply in main() because the bgfx/HLSL compiler
-    // aggressively optimizes away shadow multiplications inside called functions
-    // (even unconditional post-multiplies on function parameters get eliminated).
-    vec3 Lo = evaluateAllLights(worldPos, N, V, albedo.rgb, metallic, roughness) * shadowFactor;
+    // Calculate direct lighting with shadow applied only to the main directional light.
+    // evaluateAllLightsWithShadow applies shadow as a post-multiply on light 0 only,
+    // leaving fill lights unaffected. This avoids the bgfx/HLSL compiler issue where
+    // shadow multiplications inside called functions get optimized away.
+    vec3 Lo = evaluateAllLightsWithShadow(worldPos, N, V, albedo.rgb, metallic, roughness, shadowFactor);
 
     // Calculate ambient/IBL
     vec3 F0 = mix(vec3_splat(0.04), albedo.rgb, metallic);
@@ -106,9 +106,8 @@ void main()
     float ambientShadow = mix(0.3, 1.0, shadowFactor);
     vec3 ambient = (kD * diffuseIBL + specularIBL) * ao * u_iblParams.x * ambientShadow;
 
-    // Final color
+    // Final color (linear HDR — tonemapping + gamma applied by post-processing pipeline)
     vec3 color = ambient + Lo + emissive;
 
-    // Output (HDR - will be tonemapped later)
     gl_FragColor = vec4(color, albedo.a);
 }

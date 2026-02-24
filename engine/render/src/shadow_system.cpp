@@ -55,9 +55,12 @@ void ShadowSystem::create_cascade_render_targets() {
         RenderTargetDesc desc;
         desc.width = m_config.cascade_resolution;
         desc.height = m_config.cascade_resolution;
-        desc.color_attachment_count = 0;  // Depth only
+        // Color-based shadow maps: write depth as R32F color to avoid
+        // D3D11 TYPELESS/COMPARE_LEQUAL issues with depth texture sampling.
+        desc.color_attachment_count = 1;
+        desc.color_format = TextureFormat::R32F;
         desc.has_depth = true;
-        desc.depth_format = TextureFormat::Depth32F;
+        desc.depth_format = TextureFormat::Depth16;
         desc.samplable = true;
         desc.debug_name = "ShadowCascade";
 
@@ -66,7 +69,8 @@ void ShadowSystem::create_cascade_render_targets() {
         // Configure the view for this cascade
         ViewConfig view_config;
         view_config.render_target = m_cascade_render_targets[i];
-        view_config.clear_color_enabled = false;
+        view_config.clear_color_enabled = true;
+        view_config.clear_color = 0xFFFFFFFF;  // Clear to 1.0 (max depth = no shadow)
         view_config.clear_depth_enabled = true;
         view_config.clear_depth = 1.0f;
 
@@ -387,10 +391,12 @@ Mat4 create_stable_ortho_projection(const Vec3& min_bounds, const Vec3& max_boun
     // values are negative (in front of the camera), so negate and swap:
     //   near = closest to camera = negated max_z (smallest positive distance)
     //   far  = farthest from camera = negated min_z (largest positive distance)
-    float near_val = -(snapped_max.z + z_range * z_mult);
-    float far_val  = -(snapped_min.z - z_range * z_mult);
+    float near_val = -snapped_max.z - z_range * z_mult;
+    float far_val  = -snapped_min.z + z_range * z_mult;
 
-    return glm::ortho(
+    // Use ZO (zero-to-one) depth range to match D3D11's [0,1] clip space.
+    // glm::ortho produces [-1,1] z (OpenGL convention) which is wrong for D3D11.
+    return glm::orthoRH_ZO(
         snapped_min.x, snapped_max.x,
         snapped_min.y, snapped_max.y,
         near_val, far_val

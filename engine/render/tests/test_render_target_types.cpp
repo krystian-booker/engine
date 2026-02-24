@@ -61,10 +61,10 @@ TEST_CASE("ViewConfig defaults", "[render][rt_types]") {
 // --- RenderView enum values ---
 
 TEST_CASE("RenderView shadow cascade values", "[render][rt_types]") {
-    REQUIRE(static_cast<uint16_t>(RenderView::ShadowCascade0) == 0);
-    REQUIRE(static_cast<uint16_t>(RenderView::ShadowCascade1) == 1);
-    REQUIRE(static_cast<uint16_t>(RenderView::ShadowCascade2) == 2);
-    REQUIRE(static_cast<uint16_t>(RenderView::ShadowCascade3) == 3);
+    REQUIRE(static_cast<uint16_t>(RenderView::ShadowCascade0) == 1);
+    REQUIRE(static_cast<uint16_t>(RenderView::ShadowCascade1) == 2);
+    REQUIRE(static_cast<uint16_t>(RenderView::ShadowCascade2) == 3);
+    REQUIRE(static_cast<uint16_t>(RenderView::ShadowCascade3) == 4);
 }
 
 TEST_CASE("RenderView main pass values", "[render][rt_types]") {

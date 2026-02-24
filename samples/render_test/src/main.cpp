@@ -61,9 +61,9 @@ protected:
                                   | render::RenderPassFlags::PostProcess
                                   | render::RenderPassFlags::Final;
 
-            // Tone mapping: ACES
+            // Tone mapping
             config.tonemap_config.op = render::ToneMappingOperator::ACES;
-            config.tonemap_config.exposure = 1.0f;
+            config.tonemap_config.exposure = 0.6f;
 
             // Bloom
             config.bloom_config.enabled = true;
@@ -77,13 +77,17 @@ protected:
             // Shadows
             config.shadow_config.cascade_resolution = 2048;
             config.shadow_config.cascade_count = 4;
+            config.shadow_config.shadow_bias = 0.005f;
+            config.shadow_config.normal_bias = 0.1f;
 
-            config.clear_color = 0x1a1a2eFF;  // Dark blue-ish background
+            // Clear color goes through ACES tonemapping + gamma in the HDR pipeline,
+            // so use a darker linear value that produces ~sRGB(26,26,46) after processing.
+            config.clear_color = 0x050509FF;
 
             pipeline->set_config(config);
         }
 
-        renderer->set_ibl_intensity(1.0f);
+        renderer->set_ibl_intensity(1.2f);
 
         create_camera(world);
         create_lights(world, renderer);
@@ -114,12 +118,15 @@ private:
     // ---- Camera ----
     void create_camera(World* world) {
         auto cam_entity = world->create("Camera");
-        auto& local_tf = world->emplace<LocalTransform>(cam_entity, Vec3{0.0f, 7.5f, 21.0f});
-        local_tf.look_at(Vec3(0.0f, 1.0f, 0.0f));
+        Vec3 cam_pos{0.0f, 6.0f, 14.0f};
+        Vec3 look_target{0.0f, 1.0f, 0.0f};
+        auto& tf = world->emplace<LocalTransform>(cam_entity, cam_pos);
+        Quat rot = glm::quatLookAt(glm::normalize(look_target - cam_pos), Vec3(0.0f, 1.0f, 0.0f));
+        tf.rotation = rot;
         world->emplace<WorldTransform>(cam_entity);
 
         Camera cam;
-        cam.fov = 32.0f;
+        cam.fov = 55.0f;
         cam.aspect_ratio = static_cast<float>(window_width()) / static_cast<float>(window_height());
         cam.near_plane = 0.1f;
         cam.far_plane = 200.0f;
@@ -132,7 +139,7 @@ private:
         // Sun light — warm white, casts shadows
         {
             auto entity = world->create("Sun");
-            Vec3 dir = glm::normalize(Vec3{0.5f, -1.0f, 0.5f});
+            Vec3 dir = glm::normalize(Vec3{-0.4f, -1.0f, -0.3f});
             Vec3 up = (std::abs(dir.y) > 0.99f) ? Vec3(0.0f, 0.0f, 1.0f) : Vec3(0.0f, 1.0f, 0.0f);
             Quat rot = glm::quatLookAt(dir, up);
             world->emplace<LocalTransform>(entity, Vec3{0.0f}, rot);
@@ -227,22 +234,35 @@ private:
 
     // ---- Shadow Casters (tall cubes) ----
     void create_shadow_casters(World* world, render::IRenderer* renderer) {
-        render::MaterialData mat_data;
-        mat_data.albedo = Vec4{0.3f, 0.3f, 0.35f, 1.0f};
-        mat_data.roughness = 0.6f;
-        mat_data.metallic = 0.0f;
-        auto mat = renderer->create_material(mat_data);
-        m_materials.push_back(mat);
+        // Left cube — neutral gray
+        render::MaterialData left_mat_data;
+        left_mat_data.albedo = Vec4{0.3f, 0.3f, 0.35f, 1.0f};
+        left_mat_data.roughness = 0.6f;
+        left_mat_data.metallic = 0.0f;
+        auto left_mat = renderer->create_material(left_mat_data);
+        m_materials.push_back(left_mat);
 
-        Vec3 positions[] = {{6.0f, 2.0f, -2.0f}, {-6.0f, 2.0f, 1.0f}};
+        // Right cube — copper/rose-gold metallic
+        render::MaterialData right_mat_data;
+        right_mat_data.albedo = Vec4{0.95f, 0.64f, 0.54f, 1.0f};
+        right_mat_data.roughness = 0.35f;
+        right_mat_data.metallic = 0.9f;
+        auto right_mat = renderer->create_material(right_mat_data);
+        m_materials.push_back(right_mat);
+
+        struct CubeInfo { Vec3 pos; render::MaterialHandle mat; };
+        CubeInfo cubes[] = {
+            {{-6.0f, 2.0f, 1.0f}, left_mat},
+            {{6.0f, 2.0f, -2.0f}, right_mat}
+        };
         for (int i = 0; i < 2; ++i) {
             auto entity = world->create("ShadowCube_" + std::to_string(i));
-            auto& tf = world->emplace<LocalTransform>(entity, positions[i]);
+            auto& tf = world->emplace<LocalTransform>(entity, cubes[i].pos);
             tf.scale = Vec3{1.0f, 4.0f, 1.0f};
             world->emplace<WorldTransform>(entity);
             world->emplace<PreviousTransform>(entity);
             world->emplace<MeshRenderer>(entity, MeshRenderer{
-                MeshHandle{m_cube_mesh.id}, MaterialHandle{mat.id}, 0, true, true, true
+                MeshHandle{m_cube_mesh.id}, MaterialHandle{cubes[i].mat.id}, 0, true, true, true
             });
         }
     }
@@ -312,8 +332,8 @@ private:
         m_materials.push_back(mat);
 
         auto entity = world->create("GlassSphere");
-        auto& tf = world->emplace<LocalTransform>(entity, Vec3{2.0f, 1.2f, 3.5f});
-        tf.scale = Vec3{1.4f};
+        auto& tf = world->emplace<LocalTransform>(entity, Vec3{3.0f, 1.2f, 5.0f});
+        tf.scale = Vec3{1.2f};
         world->emplace<WorldTransform>(entity);
         world->emplace<PreviousTransform>(entity);
         world->emplace<MeshRenderer>(entity, MeshRenderer{
