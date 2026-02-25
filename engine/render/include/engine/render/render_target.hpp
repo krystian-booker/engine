@@ -83,7 +83,7 @@ enum class RenderView : uint16_t {
     // writing depth, so it only fills where depth == 1.0)
     Skybox = 42,
 
-    // Main rendering pass (forward/forward+)
+    // Main rendering pass (forward)
     MainOpaque = 43,
     MainTransparent = 44,
 

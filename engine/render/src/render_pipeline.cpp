@@ -1139,10 +1139,18 @@ void RenderPipeline::post_process_pass(const CameraData& camera) {
 }
 
 void RenderPipeline::debug_pass(const CameraData& camera) {
-    if (!m_config.show_debug_overlay) return;
+    if (m_config.debug_view_mode == DebugViewMode::Normals && m_gbuffer.valid()) {
+        TextureHandle normals_tex = m_renderer->get_render_target_texture(m_gbuffer, 0);
+        m_renderer->submit_debug_view(RenderView::DebugOverlay, normals_tex, 1, camera.near_plane, camera.far_plane);
+    } else if (m_config.debug_view_mode == DebugViewMode::LinearDepth && m_depth_target.valid()) {
+        TextureHandle depth_tex = m_renderer->get_render_target_texture(m_depth_target, UINT32_MAX);
+        m_renderer->submit_debug_view(RenderView::DebugOverlay, depth_tex, 2, camera.near_plane, camera.far_plane);
+    }
 
-    // Debug rendering is handled by DebugDraw system
-    m_renderer->flush_debug_draw(RenderView::Debug);
+    if (m_config.show_debug_overlay) {
+        // Debug rendering is handled by DebugDraw system
+        m_renderer->flush_debug_draw(RenderView::DebugOverlay);
+    }
 }
 
 void RenderPipeline::final_pass() {

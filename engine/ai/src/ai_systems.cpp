@@ -231,6 +231,7 @@ void register_ai_components() {
 }
 
 void register_ai_systems(scene::World& world) {
+    (void)world;
     core::log(core::LogLevel::Info, "AI systems ready for registration");
 }
 

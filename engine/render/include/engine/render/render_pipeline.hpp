@@ -64,6 +64,13 @@ enum class RenderQuality {
     Custom      // User-defined settings
 };
 
+// Debug view mode
+enum class DebugViewMode : uint8_t {
+    None,
+    Normals,
+    LinearDepth
+};
+
 // Render pipeline configuration
 struct RenderPipelineConfig {
     RenderQuality quality = RenderQuality::High;
@@ -98,6 +105,7 @@ struct RenderPipelineConfig {
     // Debug settings
     bool show_debug_overlay = false;
     bool wireframe_mode = false;
+    DebugViewMode debug_view_mode = DebugViewMode::None;
 };
 
 // Camera data for rendering

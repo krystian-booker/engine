@@ -9,7 +9,9 @@
 #include <engine/render/debug_draw.hpp>
 #include <engine/core/input.hpp>
 
+#ifndef ENGINE_DEBUG_GUI_DISABLED
 #include <imgui.h>
+#endif
 
 namespace engine::navigation {
 
@@ -34,6 +36,7 @@ uint32_t DebugNavigationWindow::get_shortcut_key() const {
 }
 
 void DebugNavigationWindow::draw() {
+#ifndef ENGINE_DEBUG_GUI_DISABLED
     ImGui::SetNextWindowSize(ImVec2(300, 400), ImGuiCond_FirstUseEver);
 
     if (!ImGui::Begin(get_title(), &m_open)) {
@@ -180,6 +183,7 @@ void DebugNavigationWindow::draw() {
     }
 
     ImGui::End();
+#endif
 }
 
 void DebugNavigationWindow::draw_navmesh_visualization() {

@@ -316,6 +316,44 @@ if(TARGET bgfx::shaderc AND ENGINE_COMPILE_SHADERS)
         INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
     )
 
+    # Debug View shaders
+    bgfx_compile_shaders(
+        TYPE VERTEX
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vs_debug_view.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_debug_view.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR VS_DEBUG_VIEW_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
+    bgfx_compile_shaders(
+        TYPE FRAGMENT
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fs_debug_view.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_debug_view.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR FS_DEBUG_VIEW_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
+    # Debug Geometry shaders
+    bgfx_compile_shaders(
+        TYPE VERTEX
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vs_debug_geom.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_debug_geom.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR VS_DEBUG_GEOM_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
+    bgfx_compile_shaders(
+        TYPE FRAGMENT
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fs_debug_geom.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_debug_geom.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR FS_DEBUG_GEOM_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+    )
+
     # Blit (fullscreen texture copy) shaders
     bgfx_compile_shaders(
         TYPE VERTEX
@@ -406,6 +444,8 @@ if(TARGET bgfx::shaderc AND ENGINE_COMPILE_SHADERS)
         ${VS_SKYBOX_OUTPUTS} ${FS_SKYBOX_OUTPUTS}
         ${VS_BILLBOARD_OUTPUTS} ${FS_BILLBOARD_OUTPUTS}
         ${VS_BLIT_OUTPUTS} ${FS_BLIT_OUTPUTS}
+        ${VS_DEBUG_VIEW_OUTPUTS} ${FS_DEBUG_VIEW_OUTPUTS}
+        ${VS_DEBUG_GEOM_OUTPUTS} ${FS_DEBUG_GEOM_OUTPUTS}
         ${FS_OIT_ACCUM_OUTPUTS} ${FS_OIT_COMPOSITE_OUTPUTS}
         ${FS_SSR_HIZ_OUTPUTS} ${FS_SSR_TRACE_OUTPUTS}
         ${FS_SSR_RESOLVE_OUTPUTS} ${FS_SSR_COMPOSITE_OUTPUTS}

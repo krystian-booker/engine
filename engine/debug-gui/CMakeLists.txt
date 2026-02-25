@@ -15,6 +15,13 @@ if(NOT IS_DEBUG_BUILD)
     add_library(engine_debug_gui INTERFACE)
     add_library(engine::debug-gui ALIAS engine_debug_gui)
     target_compile_definitions(engine_debug_gui INTERFACE ENGINE_DEBUG_GUI_DISABLED=1)
+    
+    target_include_directories(engine_debug_gui
+        INTERFACE
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<INSTALL_INTERFACE:include>
+    )
+
     message(STATUS "debug-gui: Disabled in Release build")
     return()
 endif()

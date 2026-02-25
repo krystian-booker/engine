@@ -49,9 +49,9 @@ target_link_libraries(engine_navigation
         Recast::Detour
         Recast::DetourCrowd
         Recast::DetourTileCache
+        engine::debug-gui
     PRIVATE
         engine_compiler_flags
-        engine::debug-gui
         engine::render
 )
 

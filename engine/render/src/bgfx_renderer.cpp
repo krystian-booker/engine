@@ -343,11 +343,26 @@ public:
             log(LogLevel::Warn, "Failed to load billboard shader program");
         }
 
+        // Load debug view shader
+        bgfx::ShaderHandle debug_view_vsh = load_shader_from_file(shader_path + "vs_debug_view.sc.bin");
+        bgfx::ShaderHandle debug_view_fsh = load_shader_from_file(shader_path + "fs_debug_view.sc.bin");
+
+        if (bgfx::isValid(debug_view_vsh) && bgfx::isValid(debug_view_fsh)) {
+            m_debug_view_program = bgfx::createProgram(debug_view_vsh, debug_view_fsh, true);
+            log(LogLevel::Info, "Debug view shader program loaded successfully");
+        } else {
+            if (bgfx::isValid(debug_view_vsh)) bgfx::destroy(debug_view_vsh);
+            if (bgfx::isValid(debug_view_fsh)) bgfx::destroy(debug_view_fsh);
+            log(LogLevel::Warn, "Failed to load debug view shader program - debug views will be unavailable");
+        }
+
         // Create billboard uniforms
         m_u_billboardColor = bgfx::createUniform("u_billboardColor", bgfx::UniformType::Vec4);
         m_u_billboardUV = bgfx::createUniform("u_billboardUV", bgfx::UniformType::Vec4);
         m_u_billboardParams = bgfx::createUniform("u_billboardParams", bgfx::UniformType::Vec4);
         m_s_billboard = bgfx::createUniform("s_billboard", bgfx::UniformType::Sampler);
+
+        m_u_debugMode = bgfx::createUniform("u_debugMode", bgfx::UniformType::Vec4);
 
         // Create PBR uniforms
         m_pbr_uniforms.create();
@@ -387,17 +402,19 @@ public:
         m_default_irradiance = bgfx::createTextureCube(1, false, 1, bgfx::TextureFormat::RGBA8,
             BGFX_TEXTURE_NONE | BGFX_SAMPLER_POINT, bgfx::copy(irr_faces, sizeof(irr_faces)));
 
-        // Prefilter (specular reflections) — bright, warm-tinted to simulate
-        // afternoon sunlight environment. Metallic PBR surfaces get all their
-        // color from specular IBL, so this needs to be bright and warm.
+        // Prefilter (specular reflections) — warm-tinted fallback.
+        // When no real IBL cubemap is loaded, specular reflections should be
+        // moderate.  Too bright washes out + destroys shadow contrast;
+        // too dim makes metallic surfaces look like dark clay.
+        // ~55% of a bright-sky environment.
         // Format: 0xAABBGGRR (little-endian ABGR)
         uint32_t pf_faces[6] = {
-            0xFFB0C8D8,  // +X  warm horizon (R=216, G=200, B=176)
-            0xFFB0C8D8,  // -X
-            0xFFE0F0FF,  // +Y  warm sky (R=255, G=240, B=224)
-            0xFF706868,  // -Y  cool ground (R=104, G=104, B=112)
-            0xFFB0C8D8,  // +Z
-            0xFFB0C8D8   // -Z
+            0xFF616E77,  // +X  warm horizon (R=119, G=110, B=97)
+            0xFF616E77,  // -X
+            0xFF7B848C,  // +Y  warm sky    (R=140, G=132, B=123)
+            0xFF3E3939,  // -Y  cool ground (R=57, G=57, B=62)
+            0xFF616E77,  // +Z
+            0xFF616E77   // -Z
         };
         m_default_prefilter = bgfx::createTextureCube(1, false, 1, bgfx::TextureFormat::RGBA8,
             BGFX_TEXTURE_NONE | BGFX_SAMPLER_POINT, bgfx::copy(pf_faces, sizeof(pf_faces)));
@@ -456,6 +473,10 @@ public:
             bgfx::destroy(m_blit_program);
             m_blit_program = BGFX_INVALID_HANDLE;
         }
+        if (bgfx::isValid(m_debug_view_program)) {
+            bgfx::destroy(m_debug_view_program);
+            m_debug_view_program = BGFX_INVALID_HANDLE;
+        }
         if (bgfx::isValid(m_u_boneMatrices)) {
             bgfx::destroy(m_u_boneMatrices);
             m_u_boneMatrices = BGFX_INVALID_HANDLE;
@@ -495,6 +516,10 @@ public:
         if (bgfx::isValid(m_s_billboard)) {
             bgfx::destroy(m_s_billboard);
             m_s_billboard = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_u_debugMode)) {
+            bgfx::destroy(m_u_debugMode);
+            m_u_debugMode = BGFX_INVALID_HANDLE;
         }
 
         // Destroy PBR uniforms
@@ -1278,6 +1303,24 @@ public:
         bgfx::submit(view_id, m_debug_program);
     }
 
+    void submit_debug_view(RenderView view, TextureHandle source, int debug_mode, float near_plane, float far_plane) override {
+        auto it = m_textures.find(source.id);
+        if (it == m_textures.end()) return;
+
+        if (!bgfx::isValid(m_debug_view_program)) {
+            log(LogLevel::Error, "Debug View shader program unavailable");
+            return;
+        }
+
+        bgfx::setTexture(0, m_pbr_uniforms.s_blit_texture, it->second);
+        Vec4 debug_mode_vec(static_cast<float>(debug_mode), near_plane, far_plane, 0.0f);
+        bgfx::setUniform(m_u_debugMode, glm::value_ptr(debug_mode_vec));
+
+        bgfx::setVertexBuffer(0, m_fullscreen_triangle_vb);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+        bgfx::submit(static_cast<uint16_t>(view), m_debug_view_program);
+    }
+
     void blit_to_screen(RenderView view, TextureHandle source) override {
         // Blit a texture to the final backbuffer
         auto it = m_textures.find(source.id);
@@ -1943,6 +1986,7 @@ private:
     bgfx::ProgramHandle m_skybox_program = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_billboard_program = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_blit_program = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_debug_view_program = BGFX_INVALID_HANDLE;
 
     // Skybox resources
     bgfx::VertexBufferHandle m_fullscreen_triangle_vb = BGFX_INVALID_HANDLE;
@@ -1956,6 +2000,9 @@ private:
     bgfx::UniformHandle m_u_billboardUV = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle m_u_billboardParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle m_s_billboard = BGFX_INVALID_HANDLE;
+
+    // Debug view mode uniform
+    bgfx::UniformHandle m_u_debugMode = BGFX_INVALID_HANDLE;
 
     // Skinned mesh uniform (128 bones * 4 vec4s per matrix = 512 vec4s)
     bgfx::UniformHandle m_u_boneMatrices = BGFX_INVALID_HANDLE;

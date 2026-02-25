@@ -89,6 +89,9 @@ public:
 
     // Screen output
     virtual void blit_to_screen(RenderView view, TextureHandle source) = 0;
+    
+    // Debug view output
+    virtual void submit_debug_view(RenderView view, TextureHandle source, int debug_mode, float near_plane, float far_plane) = 0;
 
     // Screenshot capture (async - data is ready after a few frames)
     virtual bool save_screenshot(const std::string& path, TextureHandle source) = 0;
