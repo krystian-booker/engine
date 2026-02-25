@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <fstream>
 
 namespace engine::render {
 
@@ -986,6 +987,12 @@ void RenderPipeline::ssao_pass(const CameraData& camera) {
 
 void RenderPipeline::main_pass(const CameraData& camera,
                                 const std::vector<LightData>& lights) {
+    {
+        std::ofstream out("my_debug.txt", std::ios::app);
+        out << "m_visible_opaque size: " << m_visible_opaque.size() << std::endl;
+    }
+    if (m_visible_opaque.empty()) return;
+
     // Reconfigure MainOpaque clear: skip color clear when skybox is active,
     // since the skybox pass (view 39) already painted the HDR background.
     bool skybox_active = has_flag(m_config.enabled_passes, RenderPassFlags::Skybox) && m_skybox_cubemap.valid();

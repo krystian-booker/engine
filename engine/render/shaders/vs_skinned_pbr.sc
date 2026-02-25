@@ -79,7 +79,7 @@ void main()
     // Apply skinning
     vec4 skinnedPosition = skinPosition(a_position, boneIndices, boneWeights);
     vec3 skinnedNormal = skinDirection(a_normal, boneIndices, boneWeights);
-    vec3 skinnedTangent = skinDirection(a_tangent, boneIndices, boneWeights);
+    vec3 skinnedTangent = skinDirection(a_tangent.xyz, boneIndices, boneWeights);
 
     // Transform skinned position to world space
     vec4 worldPos = mul(u_model[0], skinnedPosition);

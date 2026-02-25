@@ -43,7 +43,7 @@ void main()
         instanceTransform[2].xyz
     );
     v_normal = normalize(mul(normalMatrix, a_normal));
-    v_tangent = normalize(mul(normalMatrix, a_tangent));
+    v_tangent = normalize(mul(normalMatrix, a_tangent.xyz));
     v_bitangent = cross(v_normal, v_tangent);
 
     // Pass through UV and vertex color

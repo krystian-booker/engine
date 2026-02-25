@@ -1131,6 +1131,15 @@ public:
     }
 
     void set_camera_position(const Vec3& position) override {
+        static Vec3 last_pos(1e9, 1e9, 1e9);
+        if (glm::distance(last_pos, position) > 0.01f) {
+            std::string msg = "RENDERER: Camera set to (" + 
+                             std::to_string(position.x) + ", " + 
+                             std::to_string(position.y) + ", " + 
+                             std::to_string(position.z) + ")";
+            log(LogLevel::Info, msg.c_str());
+            last_pos = position;
+        }
         m_camera_position = position;
     }
 

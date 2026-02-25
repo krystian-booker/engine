@@ -1,0 +1,50 @@
+Physics world initialized
+Default shader program loaded successfully
+PBR shader program loaded successfully
+Shadow shader program loaded successfully
+Debug shader program loaded successfully
+Skinned PBR shader program loaded successfully
+Skybox shader program loaded successfully
+Blit shader program loaded successfully
+Billboard shader program loaded successfully
+Debug view shader program loaded successfully
+GBuffer normals shader program loaded successfully
+Shadow atlas created: 4096x4096 with 64 slots of 512x512
+Shadow system initialized
+SSAO shaders initialized
+SSAO system initialized
+Post-process shaders initialized
+Post-processing system initialized
+TAA system initialized
+Volumetric shaders initialized
+Volumetric system initialized
+Failed to load particle shaders, particles will not render
+Particle system initialized
+Render pipeline initialized (1280x720 @ 1x internal)
+Failed to load particle shaders, particles will not render
+Particle system initialized
+Initializing terrain systems
+Registered terrain ECS systems
+Initializing vegetation systems
+Registered vegetation ECS systems
+UIRenderer: Shader program loaded
+UIRenderer initialized
+UIContext initialized
+UI system initialized
+PBR Lighting Sample Initializing...
+PBR Lighting Sample ready. Debug modes cycle every 4s.
+Debug Mode %d: %s
+Screenshot requested: pbr_debug (1280x720, ready at frame 66)
+Screenshot saved: pbr_debug
+Navigation shutdown
+Shutting down terrain systems
+Particle system shut down
+UIRenderer shutdown
+UIContext shutdown
+Particle system shut down
+Volumetric system shutdown
+TAA system shutdown
+Post-processing system shutdown
+SSAO system shutdown
+Shadow system shutdown
+Render pipeline shutdown
