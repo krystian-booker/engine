@@ -5,8 +5,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <fstream>
-
 namespace engine::render {
 
 using namespace engine::core;
@@ -987,10 +985,6 @@ void RenderPipeline::ssao_pass(const CameraData& camera) {
 
 void RenderPipeline::main_pass(const CameraData& camera,
                                 const std::vector<LightData>& lights) {
-    {
-        std::ofstream out("my_debug.txt", std::ios::app);
-        out << "m_visible_opaque size: " << m_visible_opaque.size() << std::endl;
-    }
     if (m_visible_opaque.empty()) return;
 
     // Reconfigure MainOpaque clear: skip color clear when skybox is active,

@@ -6,7 +6,6 @@
 #include <engine/render/post_process.hpp>
 #include <engine/render/render_pipeline.hpp>
 
-#include <fstream>
 #include <engine/render/debug_draw.hpp>
 #include <engine/render/particle_system.hpp>
 #include <engine/render/decal_system.hpp>
@@ -431,15 +430,6 @@ void render_gather_system(scene::World& world, double dt) {
     {
         auto camera_view = world.view<Camera, WorldTransform>();
         
-        {
-            std::ofstream out("render_debug_log.txt", std::ios::app);
-            auto only_camera = world.view<Camera>();
-            int cam_count = 0, tf_count = 0;
-            for (auto e : only_camera) cam_count++;
-            for (auto e : camera_view) tf_count++;
-            out << "GATHER: Cameras total: " << cam_count << ", with WorldTransform: " << tf_count << std::endl;
-        }
-        
         for (auto entity : camera_view) {
             auto& camera = camera_view.get<Camera>(entity);
             auto& world_tf = camera_view.get<WorldTransform>(entity);
@@ -481,11 +471,6 @@ void render_gather_system(scene::World& world, double dt) {
         }
     }
 
-    {
-        std::ofstream out("render_debug_log.txt", std::ios::app);
-        out << "GATHER: active_camera is " << (ctx.has_active_camera ? "FOUND" : "NULL") << std::endl;
-    }
-    
     if (!ctx.has_active_camera) {
         return;
     }
@@ -533,12 +518,6 @@ void render_gather_system(scene::World& world, double dt) {
             ctx.objects.push_back(obj);
         }
 
-        {
-            std::ofstream out("render_debug_log.txt", std::ios::app);
-            out << "Gather Stats -- view_size: " << view_size 
-                << ", visible_failed: " << visible_failed 
-                << ", valid_failed: " << valid_failed << std::endl;
-        }
     }
 }
 
@@ -548,13 +527,6 @@ void render_gather_system(scene::World& world, double dt) {
 
 void render_submit_system(scene::World& world, double dt) {
     auto& ctx = get_render_context();
-
-    {
-        std::ofstream out("render_debug_log.txt", std::ios::app);
-        out << "ctx.pipeline ptr: " << ctx.pipeline << std::endl;
-        out << "ctx.camera.aspect_ratio: " << ctx.camera.aspect_ratio << std::endl;
-        out << "ctx.objects count: " << ctx.objects.size() << std::endl;
-    }
 
     if (!ctx.pipeline || !ctx.has_active_camera || ctx.camera.aspect_ratio <= 0.0f) {
         return;

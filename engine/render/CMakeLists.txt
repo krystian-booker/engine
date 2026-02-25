@@ -449,20 +449,11 @@ if(TARGET bgfx::shaderc AND ENGINE_COMPILE_SHADERS)
         INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH} ${SHADER_COMMON_DIR}
     )
 
-    # PBR data validation sample shaders
-    bgfx_compile_shaders(
-        TYPE VERTEX
-        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/vs_pbr_data_validation.sc
-        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_data_val.def.sc
-        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
-        OUT_FILES_VAR VS_PBR_DATA_VAL_OUTPUTS
-        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH} ${SHADER_COMMON_DIR}
-    )
-
+    # PBR data validation sample fragment shader (uses standard PBR vertex shader + varying)
     bgfx_compile_shaders(
         TYPE FRAGMENT
         SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fs_pbr_data_validation.sc
-        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_data_val.def.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_pbr.def.sc
         OUTPUT_DIR ${SHADER_OUTPUT_DIR}
         OUT_FILES_VAR FS_PBR_DATA_VAL_OUTPUTS
         INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH} ${SHADER_COMMON_DIR}
@@ -490,7 +481,7 @@ if(TARGET bgfx::shaderc AND ENGINE_COMPILE_SHADERS)
         ${FS_SSR_RESOLVE_OUTPUTS} ${FS_SSR_COMPOSITE_OUTPUTS}
         ${FS_COLOR_DEBUG_OUTPUTS}
         ${FS_PBR_DEBUG_OUTPUTS}
-        ${VS_PBR_DATA_VAL_OUTPUTS} ${FS_PBR_DATA_VAL_OUTPUTS}
+        ${FS_PBR_DATA_VAL_OUTPUTS}
     )
 
     # Copy compiled shaders next to the runtime binaries so the renderer can find them
