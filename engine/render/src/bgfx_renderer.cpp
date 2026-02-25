@@ -1974,12 +1974,12 @@ private:
                 int b = a + segments + 1;
 
                 data.indices.push_back(a);
-                data.indices.push_back(b);
                 data.indices.push_back(a + 1);
+                data.indices.push_back(b);
 
                 data.indices.push_back(b);
-                data.indices.push_back(b + 1);
                 data.indices.push_back(a + 1);
+                data.indices.push_back(b + 1);
             }
         }
 

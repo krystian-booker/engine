@@ -24,8 +24,8 @@ using namespace engine::render;
 //   2 - N dot V        (bright center, dark edges — the key validation)
 // =============================================================================
 
-static constexpr int   NUM_MODES       = 3;
-static constexpr float MODE_CYCLE_SEC  = 3.0f;
+static constexpr int   NUM_MODES = 3;
+static constexpr float MODE_CYCLE_SEC = 3.0f;
 
 static const char* MODE_NAMES[] = {
     "Normals",
@@ -39,7 +39,7 @@ protected:
         log(LogLevel::Info, "PBR Data Validation Initializing...");
 
         auto* renderer = get_renderer();
-        auto* world    = get_world();
+        auto* world = get_world();
         auto* pipeline = get_render_pipeline();
 
         if (!renderer || !world || !pipeline) return;
@@ -47,9 +47,9 @@ protected:
         RenderPipelineConfig config;
         config.quality = RenderQuality::High;
         config.enabled_passes = RenderPassFlags::DepthPrepass
-                              | RenderPassFlags::MainOpaque
-                              | RenderPassFlags::PostProcess
-                              | RenderPassFlags::Final;
+            | RenderPassFlags::MainOpaque
+            | RenderPassFlags::PostProcess
+            | RenderPassFlags::Final;
         config.show_debug_overlay = false;
         config.debug_view_mode = DebugViewMode::None;
         pipeline->set_config(config);
@@ -57,7 +57,7 @@ protected:
         // Load shader: standard PBR vertex + data validation fragment
         std::string shader_path = renderer->get_shader_path();
         ShaderData shader_data;
-        shader_data.vertex_binary   = FileSystem::read_binary(shader_path + "vs_pbr.sc.bin");
+        shader_data.vertex_binary = FileSystem::read_binary(shader_path + "vs_pbr.sc.bin");
         shader_data.fragment_binary = FileSystem::read_binary(shader_path + "fs_pbr_data_validation.sc.bin");
         m_shader = renderer->create_shader(shader_data);
 
@@ -72,11 +72,11 @@ protected:
         // Pre-create one material per debug mode (mode packed into alpha_cutoff → u_pbrParams.w)
         for (int m = 0; m < NUM_MODES; ++m) {
             MaterialData mat;
-            mat.shader       = m_shader;
-            mat.albedo       = Vec4(1.0f);
-            mat.metallic     = 0.0f;
-            mat.roughness    = 0.5f;
-            mat.ao           = 1.0f;
+            mat.shader = m_shader;
+            mat.albedo = Vec4(1.0f);
+            mat.metallic = 0.0f;
+            mat.roughness = 0.5f;
+            mat.ao = 1.0f;
             mat.alpha_cutoff = static_cast<float>(m);
             m_materials[m] = renderer->create_material(mat);
         }
@@ -90,7 +90,7 @@ protected:
             engine::scene::MeshHandle{m_sphere_mesh.id},
             engine::scene::MaterialHandle{m_materials[0].id},
             0, true, false, false
-        });
+            });
 
         // Camera
         m_camera = world->create("Camera");
@@ -99,21 +99,21 @@ protected:
         world->registry().emplace<WorldTransform>(m_camera);
 
         Camera cam_comp;
-        cam_comp.fov          = 60.0f;
+        cam_comp.fov = 60.0f;
         cam_comp.aspect_ratio = static_cast<float>(window_width()) / static_cast<float>(window_height());
-        cam_comp.near_plane   = 0.1f;
-        cam_comp.far_plane    = 100.0f;
-        cam_comp.active       = true;
+        cam_comp.near_plane = 0.1f;
+        cam_comp.far_plane = 100.0f;
+        cam_comp.active = true;
         world->registry().emplace<Camera>(m_camera, cam_comp);
 
         // Directional light entity (populates u_lights[] via engine light gather)
         m_light = world->create("Directional Light");
         Light l;
-        l.type         = LightType::Directional;
-        l.color        = Vec3(1.0f);
-        l.intensity    = 1.0f;
+        l.type = LightType::Directional;
+        l.color = Vec3(1.0f);
+        l.intensity = 1.0f;
         l.cast_shadows = false;
-        l.enabled      = true;
+        l.enabled = true;
         world->registry().emplace<Light>(m_light, l);
 
         world->registry().emplace<LocalTransform>(m_light, Vec3(0.0f),
@@ -152,10 +152,11 @@ protected:
             if (world) {
                 auto* comp = world->registry().try_get<MeshRenderer>(m_sphere_ent);
                 if (comp) {
-                    comp->material = engine::scene::MaterialHandle{m_materials[current_mode].id};
+                    comp->material = engine::scene::MaterialHandle{ m_materials[current_mode].id };
                 }
             }
         }
+
     }
 
     void on_shutdown() override {
@@ -177,8 +178,9 @@ private:
     engine::render::MaterialHandle m_materials[NUM_MODES];
 
     Entity m_sphere_ent = NullEntity;
-    Entity m_camera     = NullEntity;
-    Entity m_light      = NullEntity;
+    Entity m_camera = NullEntity;
+    Entity m_light = NullEntity;
+
 };
 
 #ifdef _WIN32
