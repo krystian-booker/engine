@@ -103,6 +103,7 @@ if(ENGINE_BUILD_SAMPLES)
     add_subdirectory(samples/ai_demo)
     add_subdirectory(samples/render_test)
     add_subdirectory(samples/rendering/transform_sample)
+    add_subdirectory(samples/rendering/color_pipeline_sample)
 endif()
 
 # CLI Tool for game development

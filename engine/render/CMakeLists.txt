@@ -429,6 +429,16 @@ if(TARGET bgfx::shaderc AND ENGINE_COMPILE_SHADERS)
         INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
     )
 
+    # Color pipeline debug shader (uses PBR varying for texture coordinate access)
+    bgfx_compile_shaders(
+        TYPE FRAGMENT
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fs_color_debug.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_pbr.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR FS_COLOR_DEBUG_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH} ${SHADER_COMMON_DIR}
+    )
+
     # Create custom target for shaders
     add_custom_target(engine_shaders DEPENDS
         ${VS_DEFAULT_OUTPUTS} ${FS_DEFAULT_OUTPUTS}
@@ -449,6 +459,7 @@ if(TARGET bgfx::shaderc AND ENGINE_COMPILE_SHADERS)
         ${FS_OIT_ACCUM_OUTPUTS} ${FS_OIT_COMPOSITE_OUTPUTS}
         ${FS_SSR_HIZ_OUTPUTS} ${FS_SSR_TRACE_OUTPUTS}
         ${FS_SSR_RESOLVE_OUTPUTS} ${FS_SSR_COMPOSITE_OUTPUTS}
+        ${FS_COLOR_DEBUG_OUTPUTS}
     )
 
     # Copy compiled shaders next to the runtime binaries so the renderer can find them
