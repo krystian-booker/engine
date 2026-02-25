@@ -200,7 +200,7 @@ public:
             .add(bgfx::Attrib::Normal, 3, bgfx::AttribType::Float)
             .add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
             .add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Float)
-            .add(bgfx::Attrib::Tangent, 3, bgfx::AttribType::Float)
+            .add(bgfx::Attrib::Tangent, 4, bgfx::AttribType::Float)
             .end();
 
         // Set view 0 as default
@@ -208,15 +208,15 @@ public:
         bgfx::setViewRect(0, 0, 0, uint16_t(width), uint16_t(height));
 
         // Load default shader based on renderer type
-        std::string shader_path;
         auto renderer_type = bgfx::getRendererType();
         switch (renderer_type) {
-            case bgfx::RendererType::Direct3D11: shader_path = "shaders/dx11/"; break;
-            case bgfx::RendererType::Direct3D12: shader_path = "shaders/dx11/"; break;
-            case bgfx::RendererType::Vulkan:     shader_path = "shaders/spirv/"; break;
-            case bgfx::RendererType::OpenGL:     shader_path = "shaders/glsl/"; break;
-            default:                             shader_path = "shaders/spirv/"; break;
+            case bgfx::RendererType::Direct3D11: m_shader_path = "shaders/dx11/"; break;
+            case bgfx::RendererType::Direct3D12: m_shader_path = "shaders/dx11/"; break;
+            case bgfx::RendererType::Vulkan:     m_shader_path = "shaders/spirv/"; break;
+            case bgfx::RendererType::OpenGL:     m_shader_path = "shaders/glsl/"; break;
+            default:                             m_shader_path = "shaders/spirv/"; break;
         }
+        const std::string& shader_path = m_shader_path;
 
         bgfx::ShaderHandle vsh = load_shader_from_file(shader_path + "vs_default.sc.bin");
         bgfx::ShaderHandle fsh = load_shader_from_file(shader_path + "fs_default.sc.bin");
@@ -356,6 +356,19 @@ public:
             log(LogLevel::Warn, "Failed to load debug view shader program - debug views will be unavailable");
         }
 
+        // Load GBuffer normals shader (debug_geom outputs world-space normals as [0,1] color)
+        bgfx::ShaderHandle gbuffer_vsh = load_shader_from_file(shader_path + "vs_debug_geom.sc.bin");
+        bgfx::ShaderHandle gbuffer_fsh = load_shader_from_file(shader_path + "fs_debug_geom.sc.bin");
+
+        if (bgfx::isValid(gbuffer_vsh) && bgfx::isValid(gbuffer_fsh)) {
+            m_gbuffer_program = bgfx::createProgram(gbuffer_vsh, gbuffer_fsh, true);
+            log(LogLevel::Info, "GBuffer normals shader program loaded successfully");
+        } else {
+            if (bgfx::isValid(gbuffer_vsh)) bgfx::destroy(gbuffer_vsh);
+            if (bgfx::isValid(gbuffer_fsh)) bgfx::destroy(gbuffer_fsh);
+            log(LogLevel::Warn, "Failed to load GBuffer normals shader program");
+        }
+
         // Create billboard uniforms
         m_u_billboardColor = bgfx::createUniform("u_billboardColor", bgfx::UniformType::Vec4);
         m_u_billboardUV = bgfx::createUniform("u_billboardUV", bgfx::UniformType::Vec4);
@@ -476,6 +489,10 @@ public:
         if (bgfx::isValid(m_debug_view_program)) {
             bgfx::destroy(m_debug_view_program);
             m_debug_view_program = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_gbuffer_program)) {
+            bgfx::destroy(m_gbuffer_program);
+            m_gbuffer_program = BGFX_INVALID_HANDLE;
         }
         if (bgfx::isValid(m_u_boneMatrices)) {
             bgfx::destroy(m_u_boneMatrices);
@@ -732,18 +749,33 @@ public:
 
     ShaderHandle create_shader(const ShaderData& data) override {
         if (data.vertex_binary.empty() || data.fragment_binary.empty()) {
+            log(LogLevel::Error, "create_shader failed: vertex or fragment binary is empty (shader file not found?)");
             return ShaderHandle{};
         }
-
-        ShaderHandle handle{m_next_shader_id++};
 
         const bgfx::Memory* vs_mem = bgfx::copy(data.vertex_binary.data(), static_cast<uint32_t>(data.vertex_binary.size()));
         const bgfx::Memory* fs_mem = bgfx::copy(data.fragment_binary.data(), static_cast<uint32_t>(data.fragment_binary.size()));
 
         bgfx::ShaderHandle vsh = bgfx::createShader(vs_mem);
+        if (!bgfx::isValid(vsh)) {
+            log(LogLevel::Error, "create_shader failed: vertex shader compilation failed");
+            return ShaderHandle{};
+        }
+
         bgfx::ShaderHandle fsh = bgfx::createShader(fs_mem);
+        if (!bgfx::isValid(fsh)) {
+            log(LogLevel::Error, "create_shader failed: fragment shader compilation failed");
+            bgfx::destroy(vsh);
+            return ShaderHandle{};
+        }
 
         bgfx::ProgramHandle program = bgfx::createProgram(vsh, fsh, true);
+        if (!bgfx::isValid(program)) {
+            log(LogLevel::Error, "create_shader failed: program linking failed");
+            return ShaderHandle{};
+        }
+
+        ShaderHandle handle{m_next_shader_id++};
         m_shaders[handle.id] = program;
 
         return handle;
@@ -1578,6 +1610,22 @@ public:
             return;
         }
 
+        // GBuffer pass: output world-space normals using the dedicated normals program
+        // instead of the full PBR shader (which would output lit color, not normals)
+        constexpr uint16_t kGBufferView = static_cast<uint16_t>(RenderView::GBuffer);
+        if (view_id == kGBufferView && bgfx::isValid(m_gbuffer_program)) {
+            // Set albedoColor.x = 0 for normals mode in debug_geom shader
+            Vec4 albedoColor(0.0f, 0.0f, 0.0f, 0.0f);
+            bgfx::setUniform(m_pbr_uniforms.u_albedoColor, glm::value_ptr(albedoColor));
+
+            uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                             BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
+                             BGFX_STATE_CULL_CW | BGFX_STATE_MSAA;
+            bgfx::setState(state);
+            bgfx::submit(view_id, m_gbuffer_program);
+            return;
+        }
+
         // Check material for transparency
         auto mat_it = m_materials.find(call.material.id);
         bool is_transparent = (mat_it != m_materials.end()) && mat_it->second.transparent;
@@ -1616,10 +1664,11 @@ public:
             }
         }
 
-        // Upload PBR uniforms if using PBR shader
-        if (use_pbr) {
-            const MaterialData* mat_ptr = (mat_it != m_materials.end()) ? &mat_it->second : nullptr;
-            upload_pbr_uniforms(mat_ptr);
+        // Upload material uniforms (needed by PBR and custom shaders that use u_albedoColor, etc.)
+        if (mat_it != m_materials.end()) {
+            upload_pbr_uniforms(&mat_it->second);
+        } else if (use_pbr) {
+            upload_pbr_uniforms(nullptr);
         }
 
         // Submit draw call
@@ -1786,6 +1835,10 @@ public:
     void set_motion_blur_enabled(bool enabled) override { m_motion_blur_enabled = enabled; }
     bool get_motion_blur_enabled() const override { return m_motion_blur_enabled; }
 
+    std::string get_shader_path() const override {
+        return m_shader_path;
+    }
+
     uint16_t get_native_texture_handle(TextureHandle h) const override {
         auto it = m_textures.find(h.id);
         if (it != m_textures.end()) {
@@ -1840,35 +1893,35 @@ private:
         // 24 vertices (4 per face for proper normals)
         data.vertices = {
             // Front face
-            {{-h, -h,  h}, {0, 0, 1}, {0, 0}, {1, 1, 1, 1}, {1, 0, 0}},
-            {{ h, -h,  h}, {0, 0, 1}, {1, 0}, {1, 1, 1, 1}, {1, 0, 0}},
-            {{ h,  h,  h}, {0, 0, 1}, {1, 1}, {1, 1, 1, 1}, {1, 0, 0}},
-            {{-h,  h,  h}, {0, 0, 1}, {0, 1}, {1, 1, 1, 1}, {1, 0, 0}},
+            {{-h, -h,  h}, {0, 0, 1}, {0, 0}, {1, 1, 1, 1}, {1, 0, 0, 1}},
+            {{ h, -h,  h}, {0, 0, 1}, {1, 0}, {1, 1, 1, 1}, {1, 0, 0, 1}},
+            {{ h,  h,  h}, {0, 0, 1}, {1, 1}, {1, 1, 1, 1}, {1, 0, 0, 1}},
+            {{-h,  h,  h}, {0, 0, 1}, {0, 1}, {1, 1, 1, 1}, {1, 0, 0, 1}},
             // Back face
-            {{ h, -h, -h}, {0, 0, -1}, {0, 0}, {1, 1, 1, 1}, {-1, 0, 0}},
-            {{-h, -h, -h}, {0, 0, -1}, {1, 0}, {1, 1, 1, 1}, {-1, 0, 0}},
-            {{-h,  h, -h}, {0, 0, -1}, {1, 1}, {1, 1, 1, 1}, {-1, 0, 0}},
-            {{ h,  h, -h}, {0, 0, -1}, {0, 1}, {1, 1, 1, 1}, {-1, 0, 0}},
+            {{ h, -h, -h}, {0, 0, -1}, {0, 0}, {1, 1, 1, 1}, {-1, 0, 0, 1}},
+            {{-h, -h, -h}, {0, 0, -1}, {1, 0}, {1, 1, 1, 1}, {-1, 0, 0, 1}},
+            {{-h,  h, -h}, {0, 0, -1}, {1, 1}, {1, 1, 1, 1}, {-1, 0, 0, 1}},
+            {{ h,  h, -h}, {0, 0, -1}, {0, 1}, {1, 1, 1, 1}, {-1, 0, 0, 1}},
             // Top face
-            {{-h,  h,  h}, {0, 1, 0}, {0, 0}, {1, 1, 1, 1}, {1, 0, 0}},
-            {{ h,  h,  h}, {0, 1, 0}, {1, 0}, {1, 1, 1, 1}, {1, 0, 0}},
-            {{ h,  h, -h}, {0, 1, 0}, {1, 1}, {1, 1, 1, 1}, {1, 0, 0}},
-            {{-h,  h, -h}, {0, 1, 0}, {0, 1}, {1, 1, 1, 1}, {1, 0, 0}},
+            {{-h,  h,  h}, {0, 1, 0}, {0, 0}, {1, 1, 1, 1}, {1, 0, 0, 1}},
+            {{ h,  h,  h}, {0, 1, 0}, {1, 0}, {1, 1, 1, 1}, {1, 0, 0, 1}},
+            {{ h,  h, -h}, {0, 1, 0}, {1, 1}, {1, 1, 1, 1}, {1, 0, 0, 1}},
+            {{-h,  h, -h}, {0, 1, 0}, {0, 1}, {1, 1, 1, 1}, {1, 0, 0, 1}},
             // Bottom face
-            {{-h, -h, -h}, {0, -1, 0}, {0, 0}, {1, 1, 1, 1}, {1, 0, 0}},
-            {{ h, -h, -h}, {0, -1, 0}, {1, 0}, {1, 1, 1, 1}, {1, 0, 0}},
-            {{ h, -h,  h}, {0, -1, 0}, {1, 1}, {1, 1, 1, 1}, {1, 0, 0}},
-            {{-h, -h,  h}, {0, -1, 0}, {0, 1}, {1, 1, 1, 1}, {1, 0, 0}},
+            {{-h, -h, -h}, {0, -1, 0}, {0, 0}, {1, 1, 1, 1}, {1, 0, 0, 1}},
+            {{ h, -h, -h}, {0, -1, 0}, {1, 0}, {1, 1, 1, 1}, {1, 0, 0, 1}},
+            {{ h, -h,  h}, {0, -1, 0}, {1, 1}, {1, 1, 1, 1}, {1, 0, 0, 1}},
+            {{-h, -h,  h}, {0, -1, 0}, {0, 1}, {1, 1, 1, 1}, {1, 0, 0, 1}},
             // Right face
-            {{ h, -h,  h}, {1, 0, 0}, {0, 0}, {1, 1, 1, 1}, {0, 0, -1}},
-            {{ h, -h, -h}, {1, 0, 0}, {1, 0}, {1, 1, 1, 1}, {0, 0, -1}},
-            {{ h,  h, -h}, {1, 0, 0}, {1, 1}, {1, 1, 1, 1}, {0, 0, -1}},
-            {{ h,  h,  h}, {1, 0, 0}, {0, 1}, {1, 1, 1, 1}, {0, 0, -1}},
+            {{ h, -h,  h}, {1, 0, 0}, {0, 0}, {1, 1, 1, 1}, {0, 0, -1, 1}},
+            {{ h, -h, -h}, {1, 0, 0}, {1, 0}, {1, 1, 1, 1}, {0, 0, -1, 1}},
+            {{ h,  h, -h}, {1, 0, 0}, {1, 1}, {1, 1, 1, 1}, {0, 0, -1, 1}},
+            {{ h,  h,  h}, {1, 0, 0}, {0, 1}, {1, 1, 1, 1}, {0, 0, -1, 1}},
             // Left face
-            {{-h, -h, -h}, {-1, 0, 0}, {0, 0}, {1, 1, 1, 1}, {0, 0, 1}},
-            {{-h, -h,  h}, {-1, 0, 0}, {1, 0}, {1, 1, 1, 1}, {0, 0, 1}},
-            {{-h,  h,  h}, {-1, 0, 0}, {1, 1}, {1, 1, 1, 1}, {0, 0, 1}},
-            {{-h,  h, -h}, {-1, 0, 0}, {0, 1}, {1, 1, 1, 1}, {0, 0, 1}},
+            {{-h, -h, -h}, {-1, 0, 0}, {0, 0}, {1, 1, 1, 1}, {0, 0, 1, 1}},
+            {{-h, -h,  h}, {-1, 0, 0}, {1, 0}, {1, 1, 1, 1}, {0, 0, 1, 1}},
+            {{-h,  h,  h}, {-1, 0, 0}, {1, 1}, {1, 1, 1, 1}, {0, 0, 1, 1}},
+            {{-h,  h, -h}, {-1, 0, 0}, {0, 1}, {1, 1, 1, 1}, {0, 0, 1, 1}}
         };
 
         // 36 indices (6 per face)
@@ -1902,7 +1955,7 @@ private:
                 Vec3 pos = normal * radius;
                 Vec2 uv{static_cast<float>(seg) / segments, static_cast<float>(ring) / rings};
 
-                data.vertices.push_back({pos, normal, uv, {1, 1, 1, 1}, {-sin_phi, 0, cos_phi}});
+                data.vertices.push_back({pos, normal, uv, {1, 1, 1, 1}, {-sin_phi, 0, cos_phi, 1.0f}});
             }
         }
 
@@ -1930,10 +1983,10 @@ private:
         float h = size * 0.5f;
 
         data.vertices = {
-            {{-h, 0, -h}, {0, 1, 0}, {0, 0}, {1, 1, 1, 1}, {1, 0, 0}},
-            {{ h, 0, -h}, {0, 1, 0}, {1, 0}, {1, 1, 1, 1}, {1, 0, 0}},
-            {{ h, 0,  h}, {0, 1, 0}, {1, 1}, {1, 1, 1, 1}, {1, 0, 0}},
-            {{-h, 0,  h}, {0, 1, 0}, {0, 1}, {1, 1, 1, 1}, {1, 0, 0}},
+            {{-h, 0, -h}, {0, 1, 0}, {0, 0}, {1, 1, 1, 1}, {1, 0, 0, 1.0f}},
+            {{ h, 0, -h}, {0, 1, 0}, {1, 0}, {1, 1, 1, 1}, {1, 0, 0, 1.0f}},
+            {{ h, 0,  h}, {0, 1, 0}, {1, 1}, {1, 1, 1, 1}, {1, 0, 0, 1.0f}},
+            {{-h, 0,  h}, {0, 1, 0}, {0, 1}, {1, 1, 1, 1}, {1, 0, 0, 1.0f}},
         };
 
         data.indices = {0, 1, 2, 0, 2, 3};
@@ -1946,10 +1999,10 @@ private:
         float h = size * 0.5f;
 
         data.vertices = {
-            {{-h, -h, 0}, {0, 0, 1}, {0, 0}, {1, 1, 1, 1}, {1, 0, 0}},
-            {{ h, -h, 0}, {0, 0, 1}, {1, 0}, {1, 1, 1, 1}, {1, 0, 0}},
-            {{ h,  h, 0}, {0, 0, 1}, {1, 1}, {1, 1, 1, 1}, {1, 0, 0}},
-            {{-h,  h, 0}, {0, 0, 1}, {0, 1}, {1, 1, 1, 1}, {1, 0, 0}},
+            {{-h, -h, 0}, {0, 0, 1}, {0, 0}, {1, 1, 1, 1}, {1, 0, 0, 1.0f}},
+            {{ h, -h, 0}, {0, 0, 1}, {1, 0}, {1, 1, 1, 1}, {1, 0, 0, 1.0f}},
+            {{ h,  h, 0}, {0, 0, 1}, {1, 1}, {1, 1, 1, 1}, {1, 0, 0, 1.0f}},
+            {{-h,  h, 0}, {0, 0, 1}, {0, 1}, {1, 1, 1, 1}, {1, 0, 0, 1.0f}},
         };
 
         data.indices = {0, 1, 2, 0, 2, 3};
@@ -1987,6 +2040,7 @@ private:
     bgfx::ProgramHandle m_billboard_program = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_blit_program = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_debug_view_program = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_gbuffer_program = BGFX_INVALID_HANDLE;
 
     // Skybox resources
     bgfx::VertexBufferHandle m_fullscreen_triangle_vb = BGFX_INVALID_HANDLE;
@@ -2053,6 +2107,9 @@ private:
     float m_total_time = 0.0f;
     float m_delta_time = 0.016f;
     std::chrono::steady_clock::time_point m_last_frame_time{};
+
+    // Shader path prefix (platform-specific)
+    std::string m_shader_path;
 
     // Resources
     uint32_t m_next_mesh_id = 1;

@@ -235,7 +235,7 @@ std::shared_ptr<MeshAsset> FbxImporter::import_mesh(
             Vec3& t = tangents[i];
             float len = std::sqrt(t.x * t.x + t.y * t.y + t.z * t.z);
             if (len > 1e-6f) {
-                all_vertices[i].tangent = Vec3{t.x / len, t.y / len, t.z / len};
+                all_vertices[i].tangent = Vec4{t.x / len, t.y / len, t.z / len, 1.0f};
             }
         }
     }

@@ -147,6 +147,9 @@ public:
     virtual void set_motion_blur_enabled(bool enabled) = 0;
     virtual bool get_motion_blur_enabled() const = 0;
 
+    // Platform-specific shader binary path prefix (e.g. "shaders/dx11/", "shaders/spirv/")
+    virtual std::string get_shader_path() const = 0;
+
     // Native handle access (for post-process effects that need direct GPU access)
     // Returns the native texture handle as uint16_t (bgfx::TextureHandle::idx)
     virtual uint16_t get_native_texture_handle(TextureHandle h) const = 0;

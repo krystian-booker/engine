@@ -1139,12 +1139,27 @@ void RenderPipeline::post_process_pass(const CameraData& camera) {
 }
 
 void RenderPipeline::debug_pass(const CameraData& camera) {
-    if (m_config.debug_view_mode == DebugViewMode::Normals && m_gbuffer.valid()) {
-        TextureHandle normals_tex = m_renderer->get_render_target_texture(m_gbuffer, 0);
-        m_renderer->submit_debug_view(RenderView::DebugOverlay, normals_tex, 1, camera.near_plane, camera.far_plane);
-    } else if (m_config.debug_view_mode == DebugViewMode::LinearDepth && m_depth_target.valid()) {
-        TextureHandle depth_tex = m_renderer->get_render_target_texture(m_depth_target, UINT32_MAX);
-        m_renderer->submit_debug_view(RenderView::DebugOverlay, depth_tex, 2, camera.near_plane, camera.far_plane);
+    if (m_config.debug_view_mode != DebugViewMode::None && m_ldr_target.valid()) {
+        // Render debug visualization to the LDR target so it replaces the post-processed
+        // scene. Use RenderView::Debug (view 79) which executes after tonemapping (78)
+        // but before Final (81), so the final blit picks up the debug view.
+        ViewConfig debug_view_config;
+        debug_view_config.render_target = m_ldr_target;
+        debug_view_config.clear_color_enabled = false;
+        debug_view_config.clear_depth_enabled = false;
+        m_renderer->configure_view(RenderView::Debug, debug_view_config);
+
+        if (m_config.debug_view_mode == DebugViewMode::Normals && m_gbuffer.valid()) {
+            // GBuffer now stores normals in [0,1] display-friendly range (via debug_geom shader).
+            // Use a simple blit (passthrough) to copy them to the LDR target.
+            TextureHandle normals_tex = m_renderer->get_render_target_texture(m_gbuffer, 0);
+            m_renderer->blit_to_screen(RenderView::Debug, normals_tex);
+        } else if (m_config.debug_view_mode == DebugViewMode::LinearDepth && m_depth_target.valid()) {
+            // Depth buffer is correct (written by depth prepass). Use the debug_view shader
+            // to linearize and visualize it.
+            TextureHandle depth_tex = m_renderer->get_render_target_texture(m_depth_target, UINT32_MAX);
+            m_renderer->submit_debug_view(RenderView::Debug, depth_tex, 2, camera.near_plane, camera.far_plane);
+        }
     }
 
     if (m_config.show_debug_overlay) {

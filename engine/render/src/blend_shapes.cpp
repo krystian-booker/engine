@@ -257,7 +257,7 @@ void BlendShapeDeformer::apply(
             Vertex& v = out_vertices[delta.vertex_index];
             v.position += delta.position_delta * weight;
             v.normal += delta.normal_delta * weight;
-            v.tangent += delta.tangent_delta * weight;
+            v.tangent += Vec4(delta.tangent_delta * weight, 0.0f);
         }
     }
 
@@ -267,9 +267,12 @@ void BlendShapeDeformer::apply(
         if (normal_len > 0.001f) {
             v.normal /= normal_len;
         }
-        float tangent_len = glm::length(v.tangent);
+        
+        Vec3 t_xyz = Vec3(v.tangent);
+        float tangent_len = glm::length(t_xyz);
         if (tangent_len > 0.001f) {
-            v.tangent /= tangent_len;
+            t_xyz /= tangent_len;
+            v.tangent = Vec4(t_xyz, v.tangent.w);
         }
     }
 }

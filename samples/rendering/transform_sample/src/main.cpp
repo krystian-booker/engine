@@ -53,9 +53,10 @@ protected:
         m_broken_material = engine::render::MaterialHandle{999999};
 
         // Debug Materials
+        std::string shader_path = renderer->get_shader_path();
         ShaderData debug_geom_shader_data;
-        debug_geom_shader_data.vertex_binary = FileSystem::read_binary("shaders/vs_debug_geom.sc.bin");
-        debug_geom_shader_data.fragment_binary = FileSystem::read_binary("shaders/fs_debug_geom.sc.bin");
+        debug_geom_shader_data.vertex_binary = FileSystem::read_binary(shader_path + "vs_debug_geom.sc.bin");
+        debug_geom_shader_data.fragment_binary = FileSystem::read_binary(shader_path + "fs_debug_geom.sc.bin");
         engine::render::ShaderHandle debug_geom_shader = renderer->create_shader(debug_geom_shader_data);
 
         MaterialData tangent_mat_data;

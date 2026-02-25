@@ -235,9 +235,9 @@ std::shared_ptr<MeshAsset> ObjImporter::import_mesh_with_materials(
             Vec3& t = tangents[i];
             float len = std::sqrt(t.x * t.x + t.y * t.y + t.z * t.z);
             if (len > 1e-6f) {
-                vertices[i].tangent = Vec3{t.x / len, t.y / len, t.z / len};
+                vertices[i].tangent = Vec4{t.x / len, t.y / len, t.z / len, 1.0f};
             } else {
-                vertices[i].tangent = Vec3{1.0f, 0.0f, 0.0f};
+                vertices[i].tangent = Vec4{1.0f, 0.0f, 0.0f, 1.0f};
             }
         }
     }

@@ -18,18 +18,24 @@ void main()
         vec3 color = normal * 0.5 + 0.5;
         gl_FragColor = vec4(color, 1.0);
     } else if (mode == 2) {
-        // Linear Depth
+        // Linear Depth visualization
         float raw_depth = texture2D(s_texture, v_texcoord0).r;
         float near = u_debugMode.y;
         float far = u_debugMode.z;
-        
-        // Convert non-linear depth to linear [0, 1]
-        float ndc = raw_depth * 2.0 - 1.0;
-        float linear_depth = (2.0 * near * far) / (far + near - ndc * (far - near));
-        
-        // Normalize linear depth relative to far plane for visualization
-        float normalized_depth = linear_depth / far;
-        gl_FragColor = vec4(vec3_splat(normalized_depth), 1.0);
+
+        // Linearize depth: convert [0,1] depth buffer to view-space distance.
+        // Formula: nf / (f - d*(f-n)), equivalent to the standard ndc-based form.
+        float linear_depth = (near * far) / (far - raw_depth * (far - near));
+
+        // Normalize to [0,1] where 0 = near plane, 1 = far plane
+        float t = clamp((linear_depth - near) / (far - near), 0.0, 1.0);
+
+        // Apply power curve (t^0.25) to spread near-field values across visible
+        // brightness. Without this, objects appear as black silhouettes because
+        // depth values are heavily packed toward the far plane (e.g. an object at
+        // z=5 with far=100 maps to only 5% brightness).
+        float vis = sqrt(sqrt(t));
+        gl_FragColor = vec4(vec3_splat(vis), 1.0);
     } else {
         // Fallback
         gl_FragColor = vec4(1.0, 0.0, 1.0, 1.0);

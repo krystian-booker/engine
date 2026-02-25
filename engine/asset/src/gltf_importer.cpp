@@ -107,7 +107,7 @@ void read_joint_indices(const cgltf_accessor* accessor, std::vector<IVec4>& out)
 void calculate_tangents(std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices) {
     // Reset tangents
     for (auto& v : vertices) {
-        v.tangent = Vec3(0.0f);
+        v.tangent = Vec4(0.0f, 0.0f, 0.0f, 1.0f);
     }
 
     // Calculate tangent for each triangle
@@ -145,21 +145,23 @@ void calculate_tangents(std::vector<Vertex>& vertices, const std::vector<uint32_
         tangent.y = f * (duv2.y * edge1.y - duv1.y * edge2.y);
         tangent.z = f * (duv2.y * edge1.z - duv1.y * edge2.z);
 
-        vertices[i0].tangent += tangent;
-        vertices[i1].tangent += tangent;
-        vertices[i2].tangent += tangent;
+        vertices[i0].tangent += Vec4(tangent, 0.0f);
+        vertices[i1].tangent += Vec4(tangent, 0.0f);
+        vertices[i2].tangent += Vec4(tangent, 0.0f);
     }
 
     // Normalize tangents and orthogonalize
     for (auto& v : vertices) {
-        float len = glm::length(v.tangent);
+        Vec3 t3 = Vec3(v.tangent);
+        float len = glm::length(t3);
         if (len > 1e-6f) {
-            v.tangent /= len;
+            t3 /= len;
             // Gram-Schmidt orthogonalize
-            v.tangent = glm::normalize(v.tangent - v.normal * glm::dot(v.normal, v.tangent));
+            t3 = glm::normalize(t3 - v.normal * glm::dot(v.normal, t3));
+            v.tangent = Vec4(t3, 1.0f);
         } else {
             // Default tangent
-            v.tangent = Vec3(1.0f, 0.0f, 0.0f);
+            v.tangent = Vec4(1.0f, 0.0f, 0.0f, 1.0f);
         }
     }
 }
@@ -277,7 +279,7 @@ ImportedMesh process_primitive(const cgltf_primitive* primitive, const cgltf_dat
         v.texcoord = texcoords[i];
         v.color = colors[i];
         if (!tangents.empty()) {
-            v.tangent = Vec3(tangents[i].x, tangents[i].y, tangents[i].z);
+            v.tangent = tangents[i];
         }
     }
 

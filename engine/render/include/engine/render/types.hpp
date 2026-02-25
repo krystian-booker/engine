@@ -37,7 +37,7 @@ struct Vertex {
     Vec3 normal{0.0f};
     Vec2 texcoord{0.0f};
     Vec4 color{1.0f};
-    Vec3 tangent{0.0f};
+    Vec4 tangent{0.0f, 0.0f, 0.0f, 1.0f};
 };
 
 // Skinned vertex format (animated meshes)
@@ -46,7 +46,7 @@ struct SkinnedVertex {
     Vec3 normal{0.0f};
     Vec2 texcoord{0.0f};
     Vec4 color{1.0f};
-    Vec3 tangent{0.0f};
+    Vec4 tangent{0.0f, 0.0f, 0.0f, 1.0f};
     IVec4 bone_indices{0};   // Up to 4 bone influences (indices into bone array)
     Vec4 bone_weights{0.0f}; // Corresponding weights (should sum to 1.0)
 };
