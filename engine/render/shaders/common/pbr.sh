@@ -32,7 +32,7 @@ float distributionGGX(vec3 N, vec3 H, float roughness)
     return nom / max(denom, 0.0001);
 }
 
-// Smith's Schlick-GGX Geometry Function
+// Smiths Schlick-GGX Geometry Function
 float geometrySchlickGGX(float NdotV, float roughness)
 {
     float r = roughness + 1.0;
@@ -77,7 +77,7 @@ vec3 cookTorranceBRDF(vec3 N, vec3 V, vec3 L, vec3 albedo, float metallic, float
 
     // Specular term
     vec3 numerator = D * G * F;
-    float denominator = 4.0 * NdotV * NdotL + 0.0001;
+    float denominator = 4.0 * max(NdotV, 1e-4) * max(NdotL, 1e-4);
     vec3 specular = numerator / denominator;
 
     // Diffuse term (energy conservation)
