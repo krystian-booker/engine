@@ -458,10 +458,16 @@ void PostProcessSystem::render_tonemapping(TextureHandle scene, TextureHandle bl
         if (bloom_idx != bgfx::kInvalidHandle) {
             bgfx::TextureHandle bloom_handle = { bloom_idx };
             bgfx::setTexture(1, s_pp_shaders.s_bloom, bloom_handle);
+
+            // Only apply intensity if the texture is actually valid and bound
+            bloom_params.x = m_config.bloom.intensity;
         }
     }
+    else {
+        bgfx::setTexture(1, s_pp_shaders.s_bloom, scene_handle); // Fallback
+    }
 
-    // Bind volumetric fog texture if available
+    // Bind volumetric fog texture if available, otherwise fallback
     // The shader composites: final = scene * vol.a + vol.rgb
     if (m_volumetric_texture.valid()) {
         uint16_t vol_idx = m_renderer->get_native_texture_handle(m_volumetric_texture);
@@ -469,6 +475,8 @@ void PostProcessSystem::render_tonemapping(TextureHandle scene, TextureHandle bl
             bgfx::TextureHandle vol_handle = { vol_idx };
             bgfx::setTexture(2, s_pp_shaders.s_volumetric, vol_handle);
         }
+    } else {
+        bgfx::setTexture(2, s_pp_shaders.s_volumetric, scene_handle); // Fallback
     }
 
     // Draw fullscreen quad
