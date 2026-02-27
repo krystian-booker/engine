@@ -478,6 +478,24 @@ if(TARGET bgfx::shaderc AND ENGINE_COMPILE_SHADERS)
         INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH} ${SHADER_COMMON_DIR}
     )
 
+    # Track shader include (.sh) dependencies that bgfx_compile_shaders doesn't handle.
+    # When any .sh file changes, touch all .sc source files to force recompilation.
+    file(GLOB SHADER_INCLUDES
+        "${CMAKE_CURRENT_SOURCE_DIR}/shaders/common/*.sh"
+        "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.sh"
+    )
+    file(GLOB SHADER_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.sc")
+
+    set(SHADER_INCLUDE_STAMP "${CMAKE_CURRENT_BINARY_DIR}/shader_includes.stamp")
+    add_custom_command(
+        OUTPUT ${SHADER_INCLUDE_STAMP}
+        COMMAND ${CMAKE_COMMAND} -E touch ${SHADER_SOURCES}
+        COMMAND ${CMAKE_COMMAND} -E touch ${SHADER_INCLUDE_STAMP}
+        DEPENDS ${SHADER_INCLUDES}
+        COMMENT "Shader includes changed - touching .sc files to force recompilation"
+    )
+    add_custom_target(shader_include_deps DEPENDS ${SHADER_INCLUDE_STAMP})
+
     # Create custom target for shaders
     add_custom_target(engine_shaders DEPENDS
         ${VS_DEFAULT_OUTPUTS} ${FS_DEFAULT_OUTPUTS}
@@ -504,6 +522,9 @@ if(TARGET bgfx::shaderc AND ENGINE_COMPILE_SHADERS)
         ${VS_PBR_ANALYTICAL_FINAL_OUTPUTS}
         ${FS_PBR_ANALYTICAL_FINAL_OUTPUTS}
     )
+
+    # Ensure include changes are detected before shader compilation
+    add_dependencies(engine_shaders shader_include_deps)
 
     # Copy compiled shaders next to the runtime binaries so the renderer can find them
     add_custom_command(TARGET engine_shaders POST_BUILD

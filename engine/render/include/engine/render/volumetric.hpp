@@ -81,7 +81,7 @@ public:
         const Mat4& proj_matrix,
         const Mat4& prev_view_proj,  // For temporal reprojection
         TextureHandle depth_texture,
-        const std::array<TextureHandle, 4>& shadow_maps,
+        TextureHandle shadow_array_map,
         const std::array<Mat4, 4>& shadow_matrices
     );
 
@@ -145,7 +145,7 @@ private:
 
     // Current frame data (stored in update() for use in passes)
     TextureHandle m_depth_texture;
-    std::array<TextureHandle, 4> m_shadow_maps;
+    TextureHandle m_shadow_array_map;
     std::array<Mat4, 4> m_shadow_matrices;
     Vec3 m_camera_pos{0.0f};
     float m_near_plane = 0.1f;

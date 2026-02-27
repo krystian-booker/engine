@@ -70,6 +70,7 @@ public:
                          const Vec3& light_direction, float camera_near, float camera_far);
     const CascadeData& get_cascade(uint32_t index) const { return m_cascades[index]; }
     RenderTargetHandle get_cascade_render_target(uint32_t index) const;
+    TextureHandle get_shadow_array_texture() const;
     TextureHandle get_shadow_atlas() const { return m_shadow_atlas_texture; }
 
     // Get cascade matrices for shader upload
@@ -97,6 +98,7 @@ private:
     bool m_initialized = false;
 
     // Cascade shadow maps
+    TextureHandle m_shadow_array_texture;
     std::array<RenderTargetHandle, 4> m_cascade_render_targets;
     std::array<CascadeData, 4> m_cascades;
     std::array<float, 5> m_cascade_distances;  // Near, split1, split2, split3, far

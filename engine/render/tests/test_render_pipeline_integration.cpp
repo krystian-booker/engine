@@ -44,6 +44,15 @@ public:
         return h;
     }
     void destroy_render_target(RenderTargetHandle) override {}
+    void create_shadow_cascades(uint32_t, uint32_t count, TextureHandle& out_array, std::array<RenderTargetHandle, 4>& out_rts) override {
+        out_array = TextureHandle{next_tex_id++};
+        for (uint32_t i = 0; i < count && i < 4; ++i) {
+            out_rts[i] = RenderTargetHandle{next_rt_id++};
+        }
+    }
+    void destroy_shadow_cascades(TextureHandle, std::array<RenderTargetHandle, 4>& rts) override {
+        for (auto& h : rts) h = RenderTargetHandle{};
+    }
     TextureHandle get_render_target_texture(RenderTargetHandle, uint32_t) override {
         return TextureHandle{next_tex_id++};
     }
@@ -60,7 +69,7 @@ public:
     void clear_lights() override {}
 
     void set_shadow_data(const std::array<Mat4, 4>&, const Vec4&, const Vec4&) override {}
-    void set_shadow_texture(uint32_t, TextureHandle) override {}
+    void set_shadow_array_texture(TextureHandle) override {}
     void enable_shadows(bool e) override { shadows_enabled = e; }
 
     void submit_mesh(RenderView, MeshHandle, MaterialHandle, const Mat4&) override { submit_count++; }
@@ -98,6 +107,7 @@ public:
     void set_motion_blur_enabled(bool) override {}
     bool get_motion_blur_enabled() const override { return false; }
     uint16_t get_native_texture_handle(TextureHandle) const override { return 0; }
+    uint16_t get_dummy_shadow_array() const override { return 0; }
     MeshBufferInfo get_mesh_buffer_info(MeshHandle) const override { return {}; }
 };
 

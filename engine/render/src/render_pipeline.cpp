@@ -467,11 +467,8 @@ TextureHandle RenderPipeline::get_depth_texture() const {
 }
 
 TextureHandle RenderPipeline::get_shadow_debug_texture() const {
-    RenderTargetHandle rt = m_shadow_system.get_cascade_render_target(0);
-    if (rt.valid()) {
-        return m_renderer->get_render_target_texture(rt, 0);
-    }
-    return TextureHandle{};
+    // Return the combined array texture for debugging
+    return m_shadow_system.get_shadow_array_texture();
 }
 
 TextureHandle RenderPipeline::get_ssao_debug_texture() const {
@@ -900,11 +897,10 @@ void RenderPipeline::shadow_pass(const CameraData& camera,
                                 m_shadow_system.get_cascade_splits(),
                                 shadow_params);
 
-    // Bind shadow map textures to renderer (color attachment 0 = R32F depth-as-color)
-    for (uint32_t cascade = 0; cascade < m_config.shadow_config.cascade_count; ++cascade) {
-        auto rt = m_shadow_system.get_cascade_render_target(cascade);
-        TextureHandle shadow_tex = m_renderer->get_render_target_texture(rt, 0);
-        m_renderer->set_shadow_texture(cascade, shadow_tex);
+    // Bind shadow map array texture to renderer
+    {
+        TextureHandle shadow_array_tex = m_shadow_system.get_shadow_array_texture();
+        m_renderer->set_shadow_array_texture(shadow_array_tex);
     }
 
     // Render shadow casters to each cascade
@@ -1014,10 +1010,9 @@ void RenderPipeline::main_pass(const CameraData& camera,
                                           m_config.shadow_config.cascade_blend_distance,
                                           1.0f));
 
-        for (uint32_t i = 0; i < m_config.shadow_config.cascade_count; ++i) {
-            auto rt = m_shadow_system.get_cascade_render_target(i);
-            TextureHandle shadow_tex = m_renderer->get_render_target_texture(rt, 0);
-            m_renderer->set_shadow_texture(i, shadow_tex);
+        {
+            TextureHandle shadow_array_tex = m_shadow_system.get_shadow_array_texture();
+            m_renderer->set_shadow_array_texture(shadow_array_tex);
         }
 
         m_renderer->enable_shadows(true);
@@ -1047,13 +1042,10 @@ void RenderPipeline::volumetric_pass(const CameraData& camera,
                                       const std::vector<LightData>& lights) {
     // Gather shadow data only if shadows are enabled and initialized
     std::array<Mat4, 4> shadow_matrices{};
-    std::array<TextureHandle, 4> shadow_maps{};
+    TextureHandle shadow_array_map; // Single handle for the array
     if (has_flag(m_config.enabled_passes, RenderPassFlags::Shadows)) {
         shadow_matrices = m_shadow_system.get_cascade_matrices();
-        for (uint32_t i = 0; i < m_config.shadow_config.cascade_count; ++i) {
-            auto rt = m_shadow_system.get_cascade_render_target(i);
-            shadow_maps[i] = m_renderer->get_render_target_texture(rt, 0);
-        }
+        shadow_array_map = m_shadow_system.get_shadow_array_texture();
     }
 
     TextureHandle depth_tex = get_depth_texture();
@@ -1086,7 +1078,7 @@ void RenderPipeline::volumetric_pass(const CameraData& camera,
 
     m_volumetric_system.update(camera.view_matrix, camera.projection_matrix,
                                 camera.prev_view_projection, depth_tex,
-                                shadow_maps, shadow_matrices);
+                                shadow_array_map, shadow_matrices);
 }
 
 void RenderPipeline::transparent_pass(const CameraData& camera,

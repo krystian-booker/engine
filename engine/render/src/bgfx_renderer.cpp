@@ -33,10 +33,7 @@ struct PBRUniforms {
     // Shadow uniforms
     bgfx::UniformHandle u_shadowParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_cascadeSplits = BGFX_INVALID_HANDLE;
-    bgfx::UniformHandle u_shadowMatrix0 = BGFX_INVALID_HANDLE;
-    bgfx::UniformHandle u_shadowMatrix1 = BGFX_INVALID_HANDLE;
-    bgfx::UniformHandle u_shadowMatrix2 = BGFX_INVALID_HANDLE;
-    bgfx::UniformHandle u_shadowMatrix3 = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_shadowMatrix = BGFX_INVALID_HANDLE;
 
     // Texture samplers
     bgfx::UniformHandle s_albedo = BGFX_INVALID_HANDLE;
@@ -49,10 +46,7 @@ struct PBRUniforms {
     bgfx::UniformHandle s_brdfLUT = BGFX_INVALID_HANDLE;
 
     // Shadow map samplers
-    bgfx::UniformHandle s_shadowMap0 = BGFX_INVALID_HANDLE;
-    bgfx::UniformHandle s_shadowMap1 = BGFX_INVALID_HANDLE;
-    bgfx::UniformHandle s_shadowMap2 = BGFX_INVALID_HANDLE;
-    bgfx::UniformHandle s_shadowMap3 = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_shadowMap = BGFX_INVALID_HANDLE;
 
     // Blit sampler (for blit_to_screen)
     bgfx::UniformHandle s_blit_texture = BGFX_INVALID_HANDLE;
@@ -70,10 +64,8 @@ struct PBRUniforms {
         // Shadow uniforms
         u_shadowParams = bgfx::createUniform("u_shadowParams", bgfx::UniformType::Vec4);
         u_cascadeSplits = bgfx::createUniform("u_cascadeSplits", bgfx::UniformType::Vec4);
-        u_shadowMatrix0 = bgfx::createUniform("u_shadowMatrix0", bgfx::UniformType::Mat4);
-        u_shadowMatrix1 = bgfx::createUniform("u_shadowMatrix1", bgfx::UniformType::Mat4);
-        u_shadowMatrix2 = bgfx::createUniform("u_shadowMatrix2", bgfx::UniformType::Mat4);
-        u_shadowMatrix3 = bgfx::createUniform("u_shadowMatrix3", bgfx::UniformType::Mat4);
+        u_shadowMatrix = bgfx::createUniform("u_shadowMatrix", bgfx::UniformType::Mat4, 4);
+        s_shadowMap = bgfx::createUniform("s_shadowMap", bgfx::UniformType::Sampler);
 
         s_albedo = bgfx::createUniform("s_albedo", bgfx::UniformType::Sampler);
         s_normal = bgfx::createUniform("s_normal", bgfx::UniformType::Sampler);
@@ -83,12 +75,6 @@ struct PBRUniforms {
         s_irradiance = bgfx::createUniform("s_irradiance", bgfx::UniformType::Sampler);
         s_prefilter = bgfx::createUniform("s_prefilter", bgfx::UniformType::Sampler);
         s_brdfLUT = bgfx::createUniform("s_brdfLUT", bgfx::UniformType::Sampler);
-
-        // Shadow map samplers
-        s_shadowMap0 = bgfx::createUniform("s_shadowMap0", bgfx::UniformType::Sampler);
-        s_shadowMap1 = bgfx::createUniform("s_shadowMap1", bgfx::UniformType::Sampler);
-        s_shadowMap2 = bgfx::createUniform("s_shadowMap2", bgfx::UniformType::Sampler);
-        s_shadowMap3 = bgfx::createUniform("s_shadowMap3", bgfx::UniformType::Sampler);
 
         // Blit sampler
         s_blit_texture = bgfx::createUniform("s_texture", bgfx::UniformType::Sampler);
@@ -107,10 +93,8 @@ struct PBRUniforms {
         // Shadow uniforms
         if (bgfx::isValid(u_shadowParams)) bgfx::destroy(u_shadowParams);
         if (bgfx::isValid(u_cascadeSplits)) bgfx::destroy(u_cascadeSplits);
-        if (bgfx::isValid(u_shadowMatrix0)) bgfx::destroy(u_shadowMatrix0);
-        if (bgfx::isValid(u_shadowMatrix1)) bgfx::destroy(u_shadowMatrix1);
-        if (bgfx::isValid(u_shadowMatrix2)) bgfx::destroy(u_shadowMatrix2);
-        if (bgfx::isValid(u_shadowMatrix3)) bgfx::destroy(u_shadowMatrix3);
+        if (bgfx::isValid(u_shadowMatrix)) bgfx::destroy(u_shadowMatrix);
+        if (bgfx::isValid(s_shadowMap)) bgfx::destroy(s_shadowMap);
 
         if (bgfx::isValid(s_albedo)) bgfx::destroy(s_albedo);
         if (bgfx::isValid(s_normal)) bgfx::destroy(s_normal);
@@ -120,12 +104,6 @@ struct PBRUniforms {
         if (bgfx::isValid(s_irradiance)) bgfx::destroy(s_irradiance);
         if (bgfx::isValid(s_prefilter)) bgfx::destroy(s_prefilter);
         if (bgfx::isValid(s_brdfLUT)) bgfx::destroy(s_brdfLUT);
-
-        // Shadow map samplers
-        if (bgfx::isValid(s_shadowMap0)) bgfx::destroy(s_shadowMap0);
-        if (bgfx::isValid(s_shadowMap1)) bgfx::destroy(s_shadowMap1);
-        if (bgfx::isValid(s_shadowMap2)) bgfx::destroy(s_shadowMap2);
-        if (bgfx::isValid(s_shadowMap3)) bgfx::destroy(s_shadowMap3);
 
         // Blit sampler
         if (bgfx::isValid(s_blit_texture)) bgfx::destroy(s_blit_texture);
@@ -392,13 +370,14 @@ public:
             BGFX_TEXTURE_NONE | BGFX_SAMPLER_POINT,
             bgfx::copy(&normal_pixel, sizeof(normal_pixel)));
 
-        // Create 1x1 dummy shadow texture (R32F color, value 1.0 = max depth = no shadow)
-        // Color-based shadow maps store depth in R32F; 1.0 means "infinitely far" so
-        // all comparison tests pass (no shadow).
-        float dummy_depth = 1.0f;
-        m_dummy_shadow_texture = bgfx::createTexture2D(1, 1, false, 1, bgfx::TextureFormat::R32F,
+        // Create 1x1 dummy shadow texture ARRAY (R32F, 4 layers, value 1.0 = no shadow)
+        float dummy_depth[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+        m_dummy_shadow_texture = bgfx::createTexture2D(
+            1, 1, false, 4, // 4 = number of layers
+            bgfx::TextureFormat::R32F,
             BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP,
-            bgfx::copy(&dummy_depth, sizeof(dummy_depth)));
+            bgfx::copy(dummy_depth, sizeof(dummy_depth))
+        );
 
         // Create 1x1 cubemap for IBL fallback with sky-ground gradient.
         // Face order: +X, -X, +Y, -Y, +Z, -Z. Pixel format RGBA8: 0xAABBGGRR
@@ -976,6 +955,69 @@ public:
         m_render_targets.erase(it);
     }
 
+    void create_shadow_cascades(uint32_t resolution, uint32_t count, TextureHandle& out_array, std::array<RenderTargetHandle, 4>& out_rts) override {
+        // 1. Create the shared Texture2DArray for color
+        uint64_t color_flags = BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+        bgfx::TextureHandle array_th = bgfx::createTexture2D(
+            uint16_t(resolution), uint16_t(resolution), false, uint16_t(count),
+            bgfx::TextureFormat::R32F, color_flags
+        );
+
+        out_array = TextureHandle{ m_next_texture_id++ };
+        m_textures[out_array.id] = array_th;
+
+        // 2. Create the shared Texture2DArray for DEPTH!
+        bgfx::TextureHandle depth_array_th = bgfx::createTexture2D(
+            uint16_t(resolution), uint16_t(resolution), false, uint16_t(count),
+            bgfx::TextureFormat::D32F,
+            BGFX_TEXTURE_RT | BGFX_TEXTURE_RT_WRITE_ONLY // Write-only since we don't sample the hardware depth
+        );
+
+        // 3. Create individual framebuffers tied to specific layers
+        for (uint32_t i = 0; i < count && i < 4; ++i) {
+            RenderTargetHandle rt_handle{ m_next_render_target_id++ };
+            BGFXRenderTarget rt;
+            rt.desc.width = resolution;
+            rt.desc.height = resolution;
+            rt.desc.debug_name = "ShadowCascade";
+
+            // Attach BOTH color and depth to this framebuffer layer
+            bgfx::Attachment atts[2];
+            atts[0].init(array_th, bgfx::Access::Write, static_cast<uint16_t>(i));
+            atts[1].init(depth_array_th, bgfx::Access::Write, static_cast<uint16_t>(i));
+
+            rt.fbh = bgfx::createFrameBuffer(2, atts, false);
+            rt.depth_attachment = depth_array_th; // Store safely for cleanup
+
+            m_render_targets[rt_handle.id] = std::move(rt);
+            out_rts[i] = rt_handle;
+        }
+    }
+
+    void destroy_shadow_cascades(TextureHandle array_tex, std::array<RenderTargetHandle, 4>& rts) override {
+        bgfx::TextureHandle shared_depth = BGFX_INVALID_HANDLE;
+
+        for (auto& h : rts) {
+            if (h.valid()) {
+                auto it = m_render_targets.find(h.id);
+                if (it != m_render_targets.end()) {
+                    if (bgfx::isValid(it->second.fbh)) {
+                        bgfx::destroy(it->second.fbh);
+                    }
+                    shared_depth = it->second.depth_attachment; // Capture the depth handle
+                    m_render_targets.erase(it);
+                }
+                h = RenderTargetHandle{};
+            }
+        }
+        if (array_tex.valid()) {
+            destroy_texture(array_tex);
+        }
+        if (bgfx::isValid(shared_depth)) {
+            bgfx::destroy(shared_depth); // Clean up the shared depth
+        }
+    }
+
     TextureHandle get_render_target_texture(RenderTargetHandle h, uint32_t attachment) override {
         auto it = m_render_targets.find(h.id);
         if (it == m_render_targets.end()) return TextureHandle{};
@@ -1163,17 +1205,22 @@ public:
         m_shadow_params = shadow_params;
     }
 
-    void set_shadow_texture(uint32_t cascade, TextureHandle texture) override {
-        if (cascade < 4) {
-            auto it = m_textures.find(texture.id);
-            if (it != m_textures.end()) {
-                m_shadow_textures[cascade] = it->second;
-            }
+    void set_shadow_array_texture(TextureHandle texture) override {
+        auto it = m_textures.find(texture.id);
+        if (it != m_textures.end()) {
+            m_shadow_array_texture = it->second;
+        }
+        else {
+            m_shadow_array_texture = BGFX_INVALID_HANDLE;
         }
     }
 
     void enable_shadows(bool enabled) override {
         m_shadows_enabled = enabled;
+    }
+
+    uint16_t get_dummy_shadow_array() const override {
+        return m_dummy_shadow_texture.idx;
     }
 
     void submit_mesh(RenderView view, MeshHandle mesh, MaterialHandle material, const Mat4& transform) override {
@@ -1241,18 +1288,10 @@ public:
             bgfx::setTexture(5, m_pbr_uniforms.s_irradiance, m_default_irradiance);
             bgfx::setTexture(6, m_pbr_uniforms.s_prefilter, m_default_prefilter);
             bgfx::setTexture(7, m_pbr_uniforms.s_brdfLUT, m_default_brdf_lut);
-            
-            // Also need to bind dummy shadow maps to slots 8-11 to prevent D3D11 warnings
-            // about expected SRVs, even if not used by the shadow shader logic.
-            // Crucially, we use the dummy texture, NOT the real shadow maps!
-            for (int i = 0; i < 4; ++i) {
-                bgfx::setTexture(8 + i,
-                    (i==0 ? m_pbr_uniforms.s_shadowMap0 :
-                     (i==1 ? m_pbr_uniforms.s_shadowMap1 :
-                      (i==2 ? m_pbr_uniforms.s_shadowMap2 : m_pbr_uniforms.s_shadowMap3))),
-                    m_dummy_shadow_texture,
-                    BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
-            }
+
+            // Bind dummy shadow map to slot 8 to prevent D3D11 warnings
+            bgfx::setTexture(8, m_pbr_uniforms.s_shadowMap, m_dummy_shadow_texture, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+
 
         } else {
             // Standard PBR pass - upload everything including shadow maps
@@ -1736,11 +1775,20 @@ public:
         if (m_shadows_enabled) {
             bgfx::setUniform(m_pbr_uniforms.u_shadowParams, glm::value_ptr(m_shadow_params));
             bgfx::setUniform(m_pbr_uniforms.u_cascadeSplits, glm::value_ptr(m_cascade_splits));
-            bgfx::setUniform(m_pbr_uniforms.u_shadowMatrix0, glm::value_ptr(m_shadow_matrices[0]));
-            bgfx::setUniform(m_pbr_uniforms.u_shadowMatrix1, glm::value_ptr(m_shadow_matrices[1]));
-            bgfx::setUniform(m_pbr_uniforms.u_shadowMatrix2, glm::value_ptr(m_shadow_matrices[2]));
-            bgfx::setUniform(m_pbr_uniforms.u_shadowMatrix3, glm::value_ptr(m_shadow_matrices[3]));
-        } else {
+
+            // Apply cross-platform Y-flip if the API has a top-left origin (D3D/Vulkan)
+            std::array<Mat4, 4> api_shadow_matrices = m_shadow_matrices;
+            if (!bgfx::getCaps()->originBottomLeft) {
+                Mat4 flipY = glm::scale(Mat4(1.0f), Vec3(1.0f, -1.0f, 1.0f));
+                for (int i = 0; i < 4; ++i) {
+                    api_shadow_matrices[i] = flipY * api_shadow_matrices[i];
+                }
+            }
+
+            // Upload all 4 matrices at once
+            bgfx::setUniform(m_pbr_uniforms.u_shadowMatrix, api_shadow_matrices.data(), 4);
+        }
+        else {
             // Set zero bias to disable shadows in shader
             Vec4 disabled_params(0.0f, 0.0f, 0.0f, 0.0f);
             bgfx::setUniform(m_pbr_uniforms.u_shadowParams, glm::value_ptr(disabled_params));
@@ -1775,21 +1823,12 @@ public:
         bgfx::setTexture(6, m_pbr_uniforms.s_prefilter, m_default_prefilter);
         bgfx::setTexture(7, m_pbr_uniforms.s_brdfLUT, m_default_brdf_lut);
 
-        // Bind shadow map textures (slots 8-11) — color-based R32F shadow maps
-        for (int i = 0; i < 4; ++i) {
-            bgfx::UniformHandle sampler;
-            switch (i) {
-                case 0: sampler = m_pbr_uniforms.s_shadowMap0; break;
-                case 1: sampler = m_pbr_uniforms.s_shadowMap1; break;
-                case 2: sampler = m_pbr_uniforms.s_shadowMap2; break;
-                default: sampler = m_pbr_uniforms.s_shadowMap3; break;
-            }
-            bgfx::TextureHandle shadow_tex = bgfx::isValid(m_shadow_textures[i])
-                ? m_shadow_textures[i]
-                : m_dummy_shadow_texture;
-            bgfx::setTexture(8 + i, sampler, shadow_tex,
-                BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
-        }
+        // Bind the single shadow map texture array (slot 8)
+        bgfx::TextureHandle shadow_tex = bgfx::isValid(m_shadow_array_texture)
+            ? m_shadow_array_texture
+            : m_dummy_shadow_texture;
+
+        bgfx::setTexture(8, m_pbr_uniforms.s_shadowMap, shadow_tex, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
 
     }
 
@@ -2097,9 +2136,7 @@ private:
     std::array<Mat4, 4> m_shadow_matrices{Mat4(1.0f), Mat4(1.0f), Mat4(1.0f), Mat4(1.0f)};
     Vec4 m_cascade_splits{10.0f, 30.0f, 100.0f, 500.0f};
     Vec4 m_shadow_params{0.001f, 0.01f, 0.1f, 1.0f};  // bias, normalBias, cascadeBlend, pcfRadius
-    std::array<bgfx::TextureHandle, 4> m_shadow_textures{{
-        BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE
-    }};
+    bgfx::TextureHandle m_shadow_array_texture = BGFX_INVALID_HANDLE;
 
     // Pending screenshot state
     struct PendingScreenshot {

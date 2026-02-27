@@ -50,6 +50,14 @@ public:
     virtual RenderTargetHandle create_render_target(const RenderTargetDesc& desc) = 0;
     virtual void destroy_render_target(RenderTargetHandle h) = 0;
 
+    // Shadow cascade array texture
+    virtual void create_shadow_cascades(uint32_t resolution, uint32_t count, TextureHandle& out_array, std::array<RenderTargetHandle, 4>& out_rts) = 0;
+    virtual void destroy_shadow_cascades(TextureHandle array_tex, std::array<RenderTargetHandle, 4>& rts) = 0;
+
+    // Returns a 4-layer R32F dummy shadow array (all 1.0 = no shadow) for binding
+    // when real shadows are unavailable. Prevents D3D11 unbound SAMPLER2DARRAY errors.
+    virtual uint16_t get_dummy_shadow_array() const = 0;
+
     // Get the texture from a render target attachment
     // attachment: 0 for first color attachment, 1+ for additional color attachments
     // Use UINT32_MAX for depth attachment
@@ -76,7 +84,7 @@ public:
     virtual void set_shadow_data(const std::array<Mat4, 4>& cascade_matrices,
                                   const Vec4& cascade_splits,
                                   const Vec4& shadow_params) = 0;
-    virtual void set_shadow_texture(uint32_t cascade, TextureHandle texture) = 0;
+    virtual void set_shadow_array_texture(TextureHandle texture) = 0;
     virtual void enable_shadows(bool enabled) = 0;
 
     // Direct mesh submission for specific views

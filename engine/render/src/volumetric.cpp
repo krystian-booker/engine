@@ -309,14 +309,14 @@ void VolumetricSystem::update(
     const Mat4& proj_matrix,
     const Mat4& prev_view_proj,
     TextureHandle depth_texture,
-    const std::array<TextureHandle, 4>& shadow_maps,
+    TextureHandle shadow_array_map,
     const std::array<Mat4, 4>& shadow_matrices
 ) {
     if (!m_initialized) return;
 
     // Store current frame data for use in passes
     m_depth_texture = depth_texture;
-    m_shadow_maps = shadow_maps;
+    m_shadow_array_map = shadow_array_map;
     m_shadow_matrices = shadow_matrices;
     m_prev_view_proj = prev_view_proj;
 
@@ -501,16 +501,18 @@ void VolumetricSystem::integration_pass() {
     // Bind textures
     bgfx::setTexture(0, s_vol_shaders.s_depth, depth_handle);
 
-    // Bind shadow maps if available
-    for (int i = 0; i < 2; ++i) {
-        if (m_shadow_maps[i].valid()) {
-            uint16_t shadow_idx = m_renderer->get_native_texture_handle(m_shadow_maps[i]);
-            if (shadow_idx != bgfx::kInvalidHandle) {
-                bgfx::TextureHandle shadow_handle = { shadow_idx };
-                if (i == 0) bgfx::setTexture(1, s_vol_shaders.s_shadowMap0, shadow_handle);
-                else bgfx::setTexture(2, s_vol_shaders.s_shadowMap1, shadow_handle);
-            }
+    // Always bind a shadow array texture to slot 1 — the shader expects a SAMPLER2DARRAY.
+    // Use the real shadow array when available, otherwise fall back to the dummy (all 1.0).
+    {
+        uint16_t shadow_idx = bgfx::kInvalidHandle;
+        if (m_shadow_array_map.valid()) {
+            shadow_idx = m_renderer->get_native_texture_handle(m_shadow_array_map);
         }
+        if (shadow_idx == bgfx::kInvalidHandle) {
+            shadow_idx = m_renderer->get_dummy_shadow_array();
+        }
+        bgfx::TextureHandle shadow_handle = { shadow_idx };
+        bgfx::setTexture(1, s_vol_shaders.s_shadowMap0, shadow_handle);
     }
 
     // Bind noise texture

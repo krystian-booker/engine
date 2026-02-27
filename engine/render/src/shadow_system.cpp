@@ -51,22 +51,15 @@ void ShadowSystem::set_config(const ShadowConfig& config) {
 }
 
 void ShadowSystem::create_cascade_render_targets() {
+    // Generate the array texture and layered framebuffers
+    m_renderer->create_shadow_cascades(
+        m_config.cascade_resolution,
+        m_config.cascade_count,
+        m_shadow_array_texture,
+        m_cascade_render_targets
+    );
+
     for (uint32_t i = 0; i < m_config.cascade_count && i < 4; ++i) {
-        RenderTargetDesc desc;
-        desc.width = m_config.cascade_resolution;
-        desc.height = m_config.cascade_resolution;
-        // Color-based shadow maps: write depth as R32F color to avoid
-        // D3D11 TYPELESS/COMPARE_LEQUAL issues with depth texture sampling.
-        desc.color_attachment_count = 1;
-        desc.color_format = TextureFormat::R32F;
-        desc.has_depth = true;
-        desc.depth_format = TextureFormat::Depth16;
-        desc.samplable = true;
-        desc.debug_name = "ShadowCascade";
-
-        m_cascade_render_targets[i] = m_renderer->create_render_target(desc);
-
-        // Configure the view for this cascade
         ViewConfig view_config;
         view_config.render_target = m_cascade_render_targets[i];
         view_config.clear_color_enabled = true;
@@ -79,12 +72,8 @@ void ShadowSystem::create_cascade_render_targets() {
 }
 
 void ShadowSystem::destroy_cascade_render_targets() {
-    for (uint32_t i = 0; i < 4; ++i) {
-        if (m_cascade_render_targets[i].valid()) {
-            m_renderer->destroy_render_target(m_cascade_render_targets[i]);
-            m_cascade_render_targets[i] = RenderTargetHandle{};
-        }
-    }
+    m_renderer->destroy_shadow_cascades(m_shadow_array_texture, m_cascade_render_targets);
+    m_shadow_array_texture = TextureHandle{};
 }
 
 void ShadowSystem::update_cascades(const Mat4& camera_view, const Mat4& camera_proj,
@@ -190,6 +179,10 @@ RenderTargetHandle ShadowSystem::get_cascade_render_target(uint32_t index) const
         return m_cascade_render_targets[index];
     }
     return RenderTargetHandle{};
+}
+
+TextureHandle ShadowSystem::get_shadow_array_texture() const {
+    return m_shadow_array_texture;
 }
 
 std::array<Mat4, 4> ShadowSystem::get_cascade_matrices() const {
