@@ -83,6 +83,7 @@ add_library(ufbx STATIC ${ufbx_SOURCE_DIR}/ufbx.c)
 add_library(ufbx::ufbx ALIAS ufbx)
 target_include_directories(ufbx PUBLIC ${ufbx_SOURCE_DIR})
 target_compile_definitions(ufbx PUBLIC UFBX_REAL_IS_FLOAT)
+set_target_properties(ufbx PROPERTIES FOLDER "Dependencies")
 
 # ============================================================================
 # Jolt Physics
@@ -188,6 +189,28 @@ add_library(bgfx::bimg ALIAS bimg)
 # - bgfx::bimg      (image library)
 # Tools: shaderc, geometryc, texturec
 
+# Group bgfx targets into IDE folders to reduce Visual Studio clutter
+set_target_properties(bgfx bx bimg PROPERTIES FOLDER "Dependencies/bgfx")
+foreach(_bgfx_lib bimg_decode bimg_encode bgfx-vertexlayout bgfx-shader)
+    if(TARGET ${_bgfx_lib})
+        set_target_properties(${_bgfx_lib} PROPERTIES FOLDER "Dependencies/bgfx")
+    endif()
+endforeach()
+foreach(_bgfx_tool shaderc geometryc geometryv texturec texturev bin2c)
+    if(TARGET ${_bgfx_tool})
+        set_target_properties(${_bgfx_tool} PROPERTIES FOLDER "Dependencies/bgfx/Tools")
+    endif()
+endforeach()
+foreach(_bgfx_3p fcpp glslang glsl-optimizer spirv-cross spirv-opt webgpu)
+    if(TARGET ${_bgfx_3p})
+        set_target_properties(${_bgfx_3p} PROPERTIES FOLDER "Dependencies/bgfx/3rdparty")
+    endif()
+endforeach()
+# example-common library (built even with BGFX_BUILD_EXAMPLES=OFF if tools need it)
+if(TARGET example-common)
+    set_target_properties(example-common PROPERTIES FOLDER "Dependencies/bgfx")
+endif()
+
 # ============================================================================
 # EnTT Entity Component System
 # ============================================================================
@@ -223,3 +246,12 @@ if(ENGINE_BUILD_TESTS)
     find_package(Catch2 3 CONFIG REQUIRED)
     list(APPEND CMAKE_MODULE_PATH ${Catch2_DIR})
 endif()
+
+# ============================================================================
+# Group FetchContent populate targets into IDE folder
+# ============================================================================
+foreach(_fc_target bgfx_cmake-populate ufbx-populate)
+    if(TARGET ${_fc_target})
+        set_target_properties(${_fc_target} PROPERTIES FOLDER "Dependencies/FetchContent")
+    endif()
+endforeach()
