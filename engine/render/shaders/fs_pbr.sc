@@ -98,7 +98,7 @@ void main()
 
     // BRDF LUT
     vec2 brdf = texture2D(s_brdfLUT, vec2(max(dot(N, V), 0.0), roughness)).rg;
-    vec3 specularIBL = prefilteredColor * (F * brdf.x + brdf.y);
+    vec3 specularIBL = prefilteredColor * (F0 * brdf.x + brdf.y);
 
     // Combine ambient with shadow attenuation.
     // Partially darken ambient in shadow areas to approximate indirect shadow/AO.
