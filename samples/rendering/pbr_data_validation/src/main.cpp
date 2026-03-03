@@ -145,7 +145,7 @@ protected:
         int current_mode = (static_cast<int>(m_time / MODE_CYCLE_SEC)) % NUM_MODES;
         if (current_mode != m_last_mode) {
             m_last_mode = current_mode;
-            log(LogLevel::Info, "[PBR Data Validation] Mode %d: %s", current_mode, MODE_NAMES[current_mode]);
+            log(LogLevel::Info, "[PBR Data Validation] Mode {}: {}", current_mode, MODE_NAMES[current_mode]);
 
             // Swap material on the sphere
             auto* world = get_world();

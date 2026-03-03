@@ -109,7 +109,7 @@ protected:
             glm::quatLookAt(glm::normalize(Vec3(-1.0f, -0.5f, -1.0f)), Vec3(0.0f, 1.0f, 0.0f)));
         world->registry().emplace<WorldTransform>(m_light);
 
-        log(LogLevel::Info, "Tonemapping Validation ready. Modes cycle every %.1f s.", MODE_CYCLE_SEC);
+        log(LogLevel::Info, "Tonemapping Validation ready. Modes cycle every {:.1f} s.", MODE_CYCLE_SEC);
         
         apply_mode(0); // Start clamped
     }
