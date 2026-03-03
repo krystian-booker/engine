@@ -104,6 +104,7 @@ public:
     bool get_ao_enabled() const override { return false; }
     void set_ibl_intensity(float) override {}
     float get_ibl_intensity() const override { return 0.0f; }
+    void set_ibl_textures(TextureHandle, TextureHandle, TextureHandle, uint32_t) override {}
     void set_motion_blur_enabled(bool) override {}
     bool get_motion_blur_enabled() const override { return false; }
     uint16_t get_native_texture_handle(TextureHandle) const override { return 0; }

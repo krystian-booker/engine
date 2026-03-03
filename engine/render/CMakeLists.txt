@@ -478,6 +478,16 @@ if(TARGET bgfx::shaderc AND ENGINE_COMPILE_SHADERS)
         INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH} ${SHADER_COMMON_DIR}
     )
 
+    # IBL validation sample shader (uses standard PBR vertex shader + varying)
+    bgfx_compile_shaders(
+        TYPE FRAGMENT
+        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fs_ibl_validation.sc
+        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_pbr.def.sc
+        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
+        OUT_FILES_VAR FS_IBL_VALIDATION_OUTPUTS
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH} ${SHADER_COMMON_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/shaders
+    )
+
     # Track shader include (.sh) dependencies that bgfx_compile_shaders doesn't handle.
     # When any .sh file changes, touch all .sc source files to force recompilation.
     file(GLOB SHADER_INCLUDES
@@ -521,6 +531,7 @@ if(TARGET bgfx::shaderc AND ENGINE_COMPILE_SHADERS)
         ${FS_PBR_DATA_VAL_OUTPUTS}
         ${VS_PBR_ANALYTICAL_FINAL_OUTPUTS}
         ${FS_PBR_ANALYTICAL_FINAL_OUTPUTS}
+        ${FS_IBL_VALIDATION_OUTPUTS}
     )
 
     # Ensure include changes are detected before shader compilation

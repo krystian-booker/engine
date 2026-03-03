@@ -1764,7 +1764,8 @@ public:
         bgfx::setUniform(m_pbr_uniforms.u_lightCount, glm::value_ptr(light_count));
 
         // IBL params (disabled by default)
-        Vec4 ibl_params(m_ibl_intensity, 0.0f, 5.0f, 0.0f);  // intensity, rotation, max_mip, unused
+        float max_mip = (m_custom_ibl_max_mip > 0) ? static_cast<float>(m_custom_ibl_max_mip) : 5.0f;
+        Vec4 ibl_params(m_ibl_intensity, 0.0f, max_mip, 0.0f);  // intensity, rotation, max_mip, unused
         bgfx::setUniform(m_pbr_uniforms.u_iblParams, glm::value_ptr(ibl_params));
 
         // Time uniform
@@ -1818,10 +1819,18 @@ public:
             bgfx::setTexture(4, m_pbr_uniforms.s_emissive, m_white_texture);
         }
 
-        // IBL textures (slots 5-7) — use fallback white cubemaps when no real IBL is loaded
-        bgfx::setTexture(5, m_pbr_uniforms.s_irradiance, m_default_irradiance);
-        bgfx::setTexture(6, m_pbr_uniforms.s_prefilter, m_default_prefilter);
-        bgfx::setTexture(7, m_pbr_uniforms.s_brdfLUT, m_default_brdf_lut);
+        // IBL textures (slots 5-7) — use custom textures when available, else fallback
+        auto resolve_ibl = [this](TextureHandle custom, bgfx::TextureHandle fallback) -> bgfx::TextureHandle {
+            if (custom.valid()) {
+                auto it = m_textures.find(custom.id);
+                if (it != m_textures.end() && bgfx::isValid(it->second))
+                    return it->second;
+            }
+            return fallback;
+        };
+        bgfx::setTexture(5, m_pbr_uniforms.s_irradiance, resolve_ibl(m_custom_irradiance, m_default_irradiance));
+        bgfx::setTexture(6, m_pbr_uniforms.s_prefilter, resolve_ibl(m_custom_prefilter, m_default_prefilter));
+        bgfx::setTexture(7, m_pbr_uniforms.s_brdfLUT, resolve_ibl(m_custom_brdf_lut, m_default_brdf_lut));
 
         // Bind the single shadow map texture array (slot 8)
         bgfx::TextureHandle shadow_tex = bgfx::isValid(m_shadow_array_texture)
@@ -1879,6 +1888,14 @@ public:
 
     void set_ibl_intensity(float intensity) override { m_ibl_intensity = std::max(0.0f, intensity); }
     float get_ibl_intensity() const override { return m_ibl_intensity; }
+
+    void set_ibl_textures(TextureHandle irradiance, TextureHandle prefilter,
+                           TextureHandle brdf_lut, uint32_t max_mip_level) override {
+        m_custom_irradiance = irradiance;
+        m_custom_prefilter = prefilter;
+        m_custom_brdf_lut = brdf_lut;
+        m_custom_ibl_max_mip = max_mip_level;
+    }
 
     void set_motion_blur_enabled(bool enabled) override { m_motion_blur_enabled = enabled; }
     bool get_motion_blur_enabled() const override { return m_motion_blur_enabled; }
@@ -2124,6 +2141,12 @@ private:
     bgfx::TextureHandle m_default_irradiance = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle m_default_prefilter = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle m_default_brdf_lut = BGFX_INVALID_HANDLE;
+
+    // Custom IBL textures (set by application via set_ibl_textures)
+    TextureHandle m_custom_irradiance;
+    TextureHandle m_custom_prefilter;
+    TextureHandle m_custom_brdf_lut;
+    uint32_t m_custom_ibl_max_mip = 0;
 
     // Camera position (for PBR specular)
     Vec3 m_camera_position{0.0f};
