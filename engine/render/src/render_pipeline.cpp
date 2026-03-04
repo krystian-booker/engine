@@ -691,17 +691,24 @@ void RenderPipeline::update_light_uniforms(const std::vector<LightData>& lights)
     // Clear stale lights from previous frame before setting new ones
     m_renderer->clear_lights();
 
+    std::vector<LightData> sorted_lights = lights;
+    auto it = std::find_if(sorted_lights.begin(), sorted_lights.end(),
+        [](const LightData& l) { return l.type == 0 && l.cast_shadows; });
+    if (it != sorted_lights.end() && it != sorted_lights.begin()) {
+        std::swap(*sorted_lights.begin(), *it);
+    }
+
     // Pack lights into uniform buffer
     // Max 8 lights currently supported
     constexpr int MAX_LIGHTS = 8;
-    if (lights.size() > MAX_LIGHTS) {
+    if (sorted_lights.size() > MAX_LIGHTS) {
         log(LogLevel::Warn, "Scene has {} lights but only {} are supported; excess lights will be ignored",
-            lights.size(), MAX_LIGHTS);
+            sorted_lights.size(), MAX_LIGHTS);
     }
-    int light_count = std::min(static_cast<int>(lights.size()), MAX_LIGHTS);
+    int light_count = std::min(static_cast<int>(sorted_lights.size()), MAX_LIGHTS);
 
     for (int i = 0; i < light_count; ++i) {
-        m_renderer->set_light(static_cast<uint32_t>(i), lights[i]);
+        m_renderer->set_light(static_cast<uint32_t>(i), sorted_lights[i]);
     }
 }
 
@@ -891,7 +898,7 @@ void RenderPipeline::shadow_pass(const CameraData& camera,
         m_config.shadow_config.shadow_bias,
         m_config.shadow_config.normal_bias,
         m_config.shadow_config.cascade_blend_distance,
-        2.0f // PCF radius default
+        1.0f / static_cast<float>(m_config.shadow_config.cascade_resolution)
     );
     m_renderer->set_shadow_data(m_shadow_system.get_cascade_matrices(),
                                 m_shadow_system.get_cascade_splits(),

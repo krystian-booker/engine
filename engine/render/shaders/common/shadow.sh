@@ -64,16 +64,12 @@ vec3 getShadowCoord(vec3 worldPos, int cascade)
 
 float calculateBias(vec3 normal, vec3 lightDir)
 {
-    float baseBias = u_shadowParams.x;
-    
-    // Algebra-based trigonometry optimization
-    float cosTheta = clamp(dot(normal, lightDir), 0.0, 1.0);
-    float sinTheta = sqrt(1.0 - (cosTheta * cosTheta));
-    float slopeBias = baseBias * (sinTheta / max(cosTheta, 0.001));
-    
-    slopeBias = clamp(slopeBias, 0.0, baseBias * 2.0);
+    vec3 N = normalize(normal);
+    vec3 L = normalize(lightDir);
+    float nDotL = clamp(dot(N, L), 0.0, 1.0);
 
-    return baseBias + slopeBias;
+    // Slope-scaled bias to reduce acne at grazing angles.
+    return max(0.005 * (1.0 - nDotL), 0.0005);
 }
 
 float calculateShadow(vec3 worldPos, vec3 normal, vec3 lightDir, float viewSpaceDepth)
@@ -84,7 +80,7 @@ float calculateShadow(vec3 worldPos, vec3 normal, vec3 lightDir, float viewSpace
     int cascade = selectCascade(viewSpaceDepth);
     vec3 shadowCoord = getShadowCoord(worldPos, cascade);
 
-    // Bounds check
+    // Bounds check disabled
     if (shadowCoord.x < 0.0 || shadowCoord.x > 1.0 ||
         shadowCoord.y < 0.0 || shadowCoord.y > 1.0 ||
         shadowCoord.z < 0.0 || shadowCoord.z > 1.0)

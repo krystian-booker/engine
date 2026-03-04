@@ -108,6 +108,7 @@ if(ENGINE_BUILD_SAMPLES)
     add_subdirectory(samples/rendering/pbr_analytical_final)
     add_subdirectory(samples/rendering/tonemapping_validation)
     add_subdirectory(samples/rendering/ibl_validation)
+    add_subdirectory(samples/rendering/shadow_validation)
 endif()
 
 # CLI Tool for game development

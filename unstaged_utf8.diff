@@ -1,0 +1,146 @@
+﻿diff --git a/engine/render/shaders/common/shadow.sh b/engine/render/shaders/common/shadow.sh
+index a2ec26b..caaf09b 100644
+--- a/engine/render/shaders/common/shadow.sh
++++ b/engine/render/shaders/common/shadow.sh
+@@ -21,8 +21,8 @@ float sampleShadowMapPCF3x3(vec3 projCoord, int cascade, float bias)
+     float currentDepth = projCoord.z - bias;
+     float shadow = 0.0;
+     
+-    // Dynamic texel size bypassed for debug
+-    float texelSize = 0.000488; // 1.0/2048.0 
++    // Dynamic texel size passed from C++
++    float texelSize = u_shadowParams.w; 
+ 
+     // texture2DArrayLod takes a vec3: (u, v, layer_index)
+     vec3 coord = vec3(projCoord.xy, float(cascade));
+@@ -64,22 +64,18 @@ vec3 getShadowCoord(vec3 worldPos, int cascade)
+ 
+ float calculateBias(vec3 normal, vec3 lightDir)
+ {
+-    float baseBias = u_shadowParams.x;
+-    
+-    // Algebra-based trigonometry optimization
+-    float cosTheta = clamp(dot(normal, lightDir), 0.0, 1.0);
+-    float sinTheta = sqrt(1.0 - (cosTheta * cosTheta));
+-    float slopeBias = baseBias * (sinTheta / max(cosTheta, 0.001));
+-    
+-    slopeBias = clamp(slopeBias, 0.0, baseBias * 2.0);
++    vec3 N = normalize(normal);
++    vec3 L = normalize(lightDir);
++    float nDotL = clamp(dot(N, L), 0.0, 1.0);
+ 
+-    return baseBias + slopeBias;
++    // Slope-scaled bias to reduce acne at grazing angles.
++    return max(0.005 * (1.0 - nDotL), 0.0005);
+ }
+ 
+ float calculateShadow(vec3 worldPos, vec3 normal, vec3 lightDir, float viewSpaceDepth)
+ {
+-    // float normalOffset = u_shadowParams.y;
+-    // worldPos += normal * normalOffset;
++    float normalOffset = u_shadowParams.y;
++    worldPos += normal * normalOffset;
+ 
+     int cascade = selectCascade(viewSpaceDepth);
+     vec3 shadowCoord = getShadowCoord(worldPos, cascade);
+@@ -92,13 +88,13 @@ float calculateShadow(vec3 worldPos, vec3 normal, vec3 lightDir, float viewSpace
+         return 1.0;
+     }
+ 
+-    float bias = max(0.005 * (1.0 - dot(normal, lightDir)), 0.0005);
++    float bias = calculateBias(normal, lightDir);
+     
+     // Branchless sampling
+     float shadow = sampleShadowMapPCF3x3(shadowCoord, cascade, bias);
+ 
+     // Cascade blending
+-    float blendDistance = max(u_shadowParams.z, 0.001);
++    float blendDistance = u_shadowParams.z;
+ 
+     if (cascade < 3)
+     {
+@@ -130,4 +126,4 @@ float calculateShadow(vec3 worldPos, vec3 normal, vec3 lightDir, float viewSpace
+     return shadow;
+ }
+ 
+-#endif // SHADOW_SH
+\ No newline at end of file
++#endif // SHADOW_SH
+diff --git a/engine/render/shaders/fs_shadow_validation.sc b/engine/render/shaders/fs_shadow_validation.sc
+index 751b4e2..9624be6 100644
+--- a/engine/render/shaders/fs_shadow_validation.sc
++++ b/engine/render/shaders/fs_shadow_validation.sc
+@@ -34,19 +34,33 @@ void main()
+     vec3 V = normalize(u_cameraPos.xyz - worldPos);
+ 
+     // Main directional light direction (light 0)
+-    vec3 mainLightDir = -u_lights[1].xyz;
++    vec3 mainLightDir = normalize(-u_lights[1].xyz);
+ 
+-    // 1. VERIFY COORDINATES: Get the Shadow UV and Depth for Cascade index
++    // 1. Coordinate-space audit:
++    //    - v_worldPos.w is linear view-space depth from vs_pbr.sc
++    //    - getShadowCoord() uses u_shadowMatrix[cascade] for the active sun light
+     int cascade_index = selectCascade(viewSpaceDepth);
+-    vec3 shadowCoord = getShadowCoord(worldPos, cascade_index);
++    vec3 cascadeShadowCoord = getShadowCoord(worldPos, cascade_index);
++    float cascadeDepthInMap = texture2DArrayLod(
++        s_shadowMap,
++        vec3(cascadeShadowCoord.xy, float(cascade_index)),
++        0.0
++    ).r;
+ 
+     // 2. MANUAL COMPARISON (The 'Auditor')
+-    // Sample the actual depth stored in the map
+-    float depthInMap = texture2DArrayLod(s_shadowMap, vec3(shadowCoord.xy, float(cascade_index)), 0.0).r;
++    // Sample cascade 0 directly to isolate projection data from cascade selection logic.
++    const int manualCascade = 0;
++    vec3 shadowCoord = getShadowCoord(worldPos, manualCascade);
++    float depthInMap = texture2DArrayLod(s_shadowMap, vec3(shadowCoord.xy, 0.0), 0.0).r;
+ 
+     // Compare pixel's light-space depth vs map depth + manual bias
+-    float manualBias = max(0.005 * (1.0 - dot(N, mainLightDir)), 0.0005);
+-    float isLit = shadowCoord.z < (depthInMap + manualBias) ? 1.0 : 0.0;
++    float ndotl = clamp(dot(N, mainLightDir), 0.0, 1.0);
++    float manualBias = max(0.005 * (1.0 - ndotl), 0.0005);
++    float inBounds = step(0.0, shadowCoord.x) * step(shadowCoord.x, 1.0)
++                   * step(0.0, shadowCoord.y) * step(shadowCoord.y, 1.0)
++                   * step(0.0, shadowCoord.z) * step(shadowCoord.z, 1.0);
++    float litTest = step(shadowCoord.z, depthInMap + manualBias);
++    float isLit = mix(1.0, litTest, inBounds);
+ 
+     // Compute real PBR shadow factor unconditionally to avoid HLSL compiler bug in divergent branches
+     float shadowFactor = calculateShadow(worldPos, N, mainLightDir, viewSpaceDepth);
+@@ -57,7 +71,7 @@ void main()
+     {
+         // Mode 1: Visualize the light's view of the world
+         // We use pow to boost the deep depth mapping so it looks cleanly grayscale
+-        color = vec3_splat(pow(max(depthInMap, 0.0), 80.0));
++        color = vec3_splat(pow(max(cascadeDepthInMap, 0.0), 80.0));
+     }
+     else if (mode == 2)
+     {
+@@ -67,8 +81,8 @@ void main()
+     }
+     else
+     {
+-        // Force the working `isLit` value directly into PBR to test lighting math bypasses
+-        vec3 Lo = evaluateAllLightsWithShadow(worldPos, N, V, albedo, metallic, roughness, isLit);
++        // Mode 0/3: Full PBR using the engine's built-in shadow factor
++        vec3 Lo = evaluateAllLightsWithShadow(worldPos, N, V, albedo, metallic, roughness, shadowFactor);
+         color = (vec3_splat(0.05) * albedo) + Lo;
+     }
+ 
+diff --git a/engine/render/shaders/vs_pbr.sc b/engine/render/shaders/vs_pbr.sc
+index d160ee3..67d1a81 100644
+--- a/engine/render/shaders/vs_pbr.sc
++++ b/engine/render/shaders/vs_pbr.sc
+@@ -8,7 +8,7 @@ void main()
+     // Transform to world space
+     vec4 worldPos = mul(u_model[0], vec4(a_position, 1.0));
+ 
+-    // Calculate view-space position for depth (used for cascade selection)
++    // Calculate linear view-space depth (used for cascade selection in shadow.sh)
+     vec4 viewPos = mul(u_view, worldPos);
+     float viewSpaceDepth = -viewPos.z;  // Negate because view space is negative Z forward
+ 

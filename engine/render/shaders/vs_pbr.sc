@@ -8,7 +8,7 @@ void main()
     // Transform to world space
     vec4 worldPos = mul(u_model[0], vec4(a_position, 1.0));
 
-    // Calculate view-space position for depth (used for cascade selection)
+    // Calculate linear view-space depth (used for cascade selection in shadow.sh)
     vec4 viewPos = mul(u_view, worldPos);
     float viewSpaceDepth = -viewPos.z;  // Negate because view space is negative Z forward
 

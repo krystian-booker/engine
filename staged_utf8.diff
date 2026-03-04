@@ -1,0 +1,547 @@
+﻿diff --git a/CMakeLists.txt b/CMakeLists.txt
+index fb89e52..1ae6301 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -108,6 +108,7 @@ if(ENGINE_BUILD_SAMPLES)
+     add_subdirectory(samples/rendering/pbr_analytical_final)
+     add_subdirectory(samples/rendering/tonemapping_validation)
+     add_subdirectory(samples/rendering/ibl_validation)
++    add_subdirectory(samples/rendering/shadow_validation)
+ endif()
+ 
+ # CLI Tool for game development
+diff --git a/engine/render/CMakeLists.txt b/engine/render/CMakeLists.txt
+index 1050bb6..4390e3e 100644
+--- a/engine/render/CMakeLists.txt
++++ b/engine/render/CMakeLists.txt
+@@ -488,6 +488,16 @@ if(TARGET bgfx::shaderc AND ENGINE_COMPILE_SHADERS)
+         INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH} ${SHADER_COMMON_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/shaders
+     )
+ 
++    # Shadow validation sample shader (uses standard PBR vertex shader + varying)
++    bgfx_compile_shaders(
++        TYPE FRAGMENT
++        SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/fs_shadow_validation.sc
++        VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_pbr.def.sc
++        OUTPUT_DIR ${SHADER_OUTPUT_DIR}
++        OUT_FILES_VAR FS_SHADOW_VALIDATION_OUTPUTS
++        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH} ${SHADER_COMMON_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/shaders
++    )
++
+     # Track shader include (.sh) dependencies that bgfx_compile_shaders doesn't handle.
+     # When any .sh file changes, touch all .sc source files to force recompilation.
+     file(GLOB SHADER_INCLUDES
+@@ -532,6 +542,7 @@ if(TARGET bgfx::shaderc AND ENGINE_COMPILE_SHADERS)
+         ${VS_PBR_ANALYTICAL_FINAL_OUTPUTS}
+         ${FS_PBR_ANALYTICAL_FINAL_OUTPUTS}
+         ${FS_IBL_VALIDATION_OUTPUTS}
++        ${FS_SHADOW_VALIDATION_OUTPUTS}
+     )
+ 
+     # Ensure include changes are detected before shader compilation
+diff --git a/engine/render/shaders/common/shadow.sh b/engine/render/shaders/common/shadow.sh
+index 3fe2bd4..a2ec26b 100644
+--- a/engine/render/shaders/common/shadow.sh
++++ b/engine/render/shaders/common/shadow.sh
+@@ -21,8 +21,8 @@ float sampleShadowMapPCF3x3(vec3 projCoord, int cascade, float bias)
+     float currentDepth = projCoord.z - bias;
+     float shadow = 0.0;
+     
+-    // Dynamic texel size passed from C++
+-    float texelSize = u_shadowParams.w; 
++    // Dynamic texel size bypassed for debug
++    float texelSize = 0.000488; // 1.0/2048.0 
+ 
+     // texture2DArrayLod takes a vec3: (u, v, layer_index)
+     vec3 coord = vec3(projCoord.xy, float(cascade));
+@@ -78,13 +78,13 @@ float calculateBias(vec3 normal, vec3 lightDir)
+ 
+ float calculateShadow(vec3 worldPos, vec3 normal, vec3 lightDir, float viewSpaceDepth)
+ {
+-    float normalOffset = u_shadowParams.y;
+-    worldPos += normal * normalOffset;
++    // float normalOffset = u_shadowParams.y;
++    // worldPos += normal * normalOffset;
+ 
+     int cascade = selectCascade(viewSpaceDepth);
+     vec3 shadowCoord = getShadowCoord(worldPos, cascade);
+ 
+-    // Bounds check
++    // Bounds check disabled
+     if (shadowCoord.x < 0.0 || shadowCoord.x > 1.0 ||
+         shadowCoord.y < 0.0 || shadowCoord.y > 1.0 ||
+         shadowCoord.z < 0.0 || shadowCoord.z > 1.0)
+@@ -92,13 +92,13 @@ float calculateShadow(vec3 worldPos, vec3 normal, vec3 lightDir, float viewSpace
+         return 1.0;
+     }
+ 
+-    float bias = calculateBias(normal, lightDir);
++    float bias = max(0.005 * (1.0 - dot(normal, lightDir)), 0.0005);
+     
+     // Branchless sampling
+     float shadow = sampleShadowMapPCF3x3(shadowCoord, cascade, bias);
+ 
+     // Cascade blending
+-    float blendDistance = u_shadowParams.z;
++    float blendDistance = max(u_shadowParams.z, 0.001);
+ 
+     if (cascade < 3)
+     {
+diff --git a/engine/render/shaders/fs_shadow_validation.sc b/engine/render/shaders/fs_shadow_validation.sc
+new file mode 100644
+index 0000000..751b4e2
+--- /dev/null
++++ b/engine/render/shaders/fs_shadow_validation.sc
+@@ -0,0 +1,76 @@
++$input v_worldPos, v_normal, v_tangent, v_bitangent, v_texcoord0, v_color0, v_clipPos
++
++#include <bgfx_shader.sh>
++#include "common/uniforms.sh"
++#include "common/pbr.sh"
++#include "common/lighting.sh"
++#include "common/shadow.sh"
++
++// PBR textures (must be declared even if unused ΓÇö bgfx uniform binding)
++SAMPLER2D(s_albedo,           0);
++SAMPLER2D(s_normal,           1);
++SAMPLER2D(s_metallicRoughness, 2);
++SAMPLER2D(s_ao,               3);
++SAMPLER2D(s_emissive,         4);
++
++// IBL textures (unused but keep slots consistent with vs_pbr)
++SAMPLERCUBE(s_irradiance,     5);
++SAMPLERCUBE(s_prefilter,      6);
++SAMPLER2D(s_brdfLUT,          7);
++
++// Shadow maps declared in shadow.sh (slot 8)
++
++void main()
++{
++    vec3 albedo    = u_albedoColor.xyz;
++    float metallic = u_pbrParams.x;
++    float roughness = max(u_pbrParams.y, 0.04);
++    float ao       = u_pbrParams.z;
++    int mode       = int(u_pbrParams.w);
++
++    vec3 N = normalize(v_normal);
++    vec3 worldPos = v_worldPos.xyz;
++    float viewSpaceDepth = v_worldPos.w;
++    vec3 V = normalize(u_cameraPos.xyz - worldPos);
++
++    // Main directional light direction (light 0)
++    vec3 mainLightDir = -u_lights[1].xyz;
++
++    // 1. VERIFY COORDINATES: Get the Shadow UV and Depth for Cascade index
++    int cascade_index = selectCascade(viewSpaceDepth);
++    vec3 shadowCoord = getShadowCoord(worldPos, cascade_index);
++
++    // 2. MANUAL COMPARISON (The 'Auditor')
++    // Sample the actual depth stored in the map
++    float depthInMap = texture2DArrayLod(s_shadowMap, vec3(shadowCoord.xy, float(cascade_index)), 0.0).r;
++
++    // Compare pixel's light-space depth vs map depth + manual bias
++    float manualBias = max(0.005 * (1.0 - dot(N, mainLightDir)), 0.0005);
++    float isLit = shadowCoord.z < (depthInMap + manualBias) ? 1.0 : 0.0;
++
++    // Compute real PBR shadow factor unconditionally to avoid HLSL compiler bug in divergent branches
++    float shadowFactor = calculateShadow(worldPos, N, mainLightDir, viewSpaceDepth);
++
++    vec3 color = vec3_splat(0.0);
++
++    if (mode == 1)
++    {
++        // Mode 1: Visualize the light's view of the world
++        // We use pow to boost the deep depth mapping so it looks cleanly grayscale
++        color = vec3_splat(pow(max(depthInMap, 0.0), 80.0));
++    }
++    else if (mode == 2)
++    {
++        // Mode 2: If this is black/white and matches the spheres,
++        // your World-to-Light transform is fixed!
++        color = vec3_splat(isLit);
++    }
++    else
++    {
++        // Force the working `isLit` value directly into PBR to test lighting math bypasses
++        vec3 Lo = evaluateAllLightsWithShadow(worldPos, N, V, albedo, metallic, roughness, isLit);
++        color = (vec3_splat(0.05) * albedo) + Lo;
++    }
++
++    gl_FragColor = vec4(color, 1.0);
++}
+diff --git a/engine/render/src/render_pipeline.cpp b/engine/render/src/render_pipeline.cpp
+index a037922..917979e 100644
+--- a/engine/render/src/render_pipeline.cpp
++++ b/engine/render/src/render_pipeline.cpp
+@@ -691,17 +691,24 @@ void RenderPipeline::update_light_uniforms(const std::vector<LightData>& lights)
+     // Clear stale lights from previous frame before setting new ones
+     m_renderer->clear_lights();
+ 
++    std::vector<LightData> sorted_lights = lights;
++    auto it = std::find_if(sorted_lights.begin(), sorted_lights.end(),
++        [](const LightData& l) { return l.type == 0 && l.cast_shadows; });
++    if (it != sorted_lights.end() && it != sorted_lights.begin()) {
++        std::swap(*sorted_lights.begin(), *it);
++    }
++
+     // Pack lights into uniform buffer
+     // Max 8 lights currently supported
+     constexpr int MAX_LIGHTS = 8;
+-    if (lights.size() > MAX_LIGHTS) {
++    if (sorted_lights.size() > MAX_LIGHTS) {
+         log(LogLevel::Warn, "Scene has {} lights but only {} are supported; excess lights will be ignored",
+-            lights.size(), MAX_LIGHTS);
++            sorted_lights.size(), MAX_LIGHTS);
+     }
+-    int light_count = std::min(static_cast<int>(lights.size()), MAX_LIGHTS);
++    int light_count = std::min(static_cast<int>(sorted_lights.size()), MAX_LIGHTS);
+ 
+     for (int i = 0; i < light_count; ++i) {
+-        m_renderer->set_light(static_cast<uint32_t>(i), lights[i]);
++        m_renderer->set_light(static_cast<uint32_t>(i), sorted_lights[i]);
+     }
+ }
+ 
+@@ -891,7 +898,7 @@ void RenderPipeline::shadow_pass(const CameraData& camera,
+         m_config.shadow_config.shadow_bias,
+         m_config.shadow_config.normal_bias,
+         m_config.shadow_config.cascade_blend_distance,
+-        2.0f // PCF radius default
++        1.0f / static_cast<float>(m_config.shadow_config.cascade_resolution)
+     );
+     m_renderer->set_shadow_data(m_shadow_system.get_cascade_matrices(),
+                                 m_shadow_system.get_cascade_splits(),
+diff --git a/samples/rendering/shadow_validation/CMakeLists.txt b/samples/rendering/shadow_validation/CMakeLists.txt
+new file mode 100644
+index 0000000..b1a5851
+--- /dev/null
++++ b/samples/rendering/shadow_validation/CMakeLists.txt
+@@ -0,0 +1,18 @@
++add_executable(shadow_validation WIN32
++    src/main.cpp
++)
++
++target_include_directories(shadow_validation
++    PRIVATE src
++)
++
++target_link_libraries(shadow_validation
++    PRIVATE
++        engine::engine
++        engine_compiler_flags
++)
++
++set_target_properties(shadow_validation PROPERTIES
++    FOLDER "samples/rendering"
++    VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
++)
+diff --git a/samples/rendering/shadow_validation/src/main.cpp b/samples/rendering/shadow_validation/src/main.cpp
+new file mode 100644
+index 0000000..d6689fd
+--- /dev/null
++++ b/samples/rendering/shadow_validation/src/main.cpp
+@@ -0,0 +1,304 @@
++#include <engine/core/application.hpp>
++#include <engine/core/log.hpp>
++#include <engine/core/math.hpp>
++#include <engine/scene/scene.hpp>
++#include <engine/scene/transform.hpp>
++#include <engine/render/renderer.hpp>
++#include <engine/render/render_pipeline.hpp>
++#include <engine/core/filesystem.hpp>
++
++#include <cmath>
++
++using namespace engine::core;
++using namespace engine::scene;
++using namespace engine::render;
++
++static constexpr int NUM_MODES = 4;
++static constexpr float MODE_CYCLE_SEC = 4.0f;
++static constexpr int NUM_SPHERES = 5;
++
++static const char* MODE_NAMES[] = {
++    "Full PBR + Shadows",
++    "Shadow Map Debug",
++    "Binary Shadows",
++    "PCF Softness Test"
++};
++
++class ShadowValidationSample : public Application {
++protected:
++    void on_init() override {
++        log(LogLevel::Info, "Shadow Validation Initializing...");
++
++        auto* renderer = get_renderer();
++        auto* world = get_world();
++        auto* pipeline = get_render_pipeline();
++        if (!renderer || !world || !pipeline) return;
++
++        // --- Pipeline config with shadows enabled ---
++        RenderPipelineConfig config;
++        config.quality = RenderQuality::High;
++        config.enabled_passes = RenderPassFlags::Shadows
++            | RenderPassFlags::DepthPrepass
++            | RenderPassFlags::MainOpaque
++            | RenderPassFlags::PostProcess
++            | RenderPassFlags::Final;
++        config.show_debug_overlay = false;
++        config.debug_view_mode = DebugViewMode::None;
++        config.bloom_config.enabled = false;
++        config.tonemap_config.op = ToneMappingOperator::ACES;
++        config.tonemap_config.gamma = 2.2f;
++        config.tonemap_config.exposure = 1.0f;
++        config.shadow_config.cascade_count = 4;
++        config.shadow_config.cascade_resolution = 2048;
++        config.shadow_config.shadow_bias = 0.001f;
++        config.shadow_config.normal_bias = 0.01f;
++        config.shadow_config.pcf_enabled = true;
++        pipeline->set_config(config);
++
++        // --- Load shader (reuse existing vs_pbr vertex shader) ---
++        std::string shader_path = renderer->get_shader_path();
++        ShaderData shader_data;
++        shader_data.vertex_binary = FileSystem::read_binary(shader_path + "vs_pbr.sc.bin");
++        shader_data.fragment_binary = FileSystem::read_binary(shader_path + "fs_shadow_validation.sc.bin");
++        m_shader = renderer->create_shader(shader_data);
++
++        // --- Create meshes ---
++        m_sphere_mesh = renderer->create_primitive(PrimitiveMesh::Sphere, 1.0f);
++        m_plane_mesh = renderer->create_primitive(PrimitiveMesh::Cube, 1.0f);
++
++        // --- Create materials for all modes ---
++        // Sphere material: red albedo, dielectric, medium roughness
++        // Ground material: gray albedo, dielectric, high roughness
++        for (int m = 0; m < NUM_MODES; ++m) {
++            // Sphere materials
++            MaterialData sphere_mat;
++            sphere_mat.shader = m_shader;
++            sphere_mat.albedo = Vec4(0.8f, 0.15f, 0.1f, 1.0f); // Red
++            sphere_mat.metallic = 0.0f;
++            sphere_mat.roughness = 0.4f;
++            sphere_mat.ao = 1.0f;
++            sphere_mat.alpha_cutoff = static_cast<float>(m);
++            m_sphere_materials[m] = renderer->create_material(sphere_mat);
++
++            // Ground materials
++            MaterialData ground_mat;
++            ground_mat.shader = m_shader;
++            ground_mat.albedo = Vec4(0.7f, 0.7f, 0.7f, 1.0f); // Gray
++            ground_mat.metallic = 0.0f;
++            ground_mat.roughness = 0.8f;
++            ground_mat.ao = 1.0f;
++            ground_mat.alpha_cutoff = static_cast<float>(m);
++            m_ground_materials[m] = renderer->create_material(ground_mat);
++        }
++
++        // --- Spawn ground plane ---
++        m_ground = world->create("Ground");
++        world->registry().emplace<LocalTransform>(m_ground,
++            Vec3(0.0f, 0.0f, 0.0f),
++            Quat{1.0f, 0.0f, 0.0f, 0.0f},
++            Vec3(20.0f, 1.0f, 20.0f));
++        world->registry().emplace<WorldTransform>(m_ground);
++        world->registry().emplace<PreviousTransform>(m_ground);
++        world->registry().emplace<MeshRenderer>(m_ground, MeshRenderer{
++            engine::scene::MeshHandle{m_plane_mesh.id},
++            engine::scene::MaterialHandle{m_ground_materials[0].id},
++            0, true, false, true  // visible=true, cast_shadows=false, receive_shadows=true
++        });
++
++        // --- Spawn spheres ---
++        // Row 1: three spheres in a line
++        Vec3 sphere_positions[] = {
++            Vec3(-3.0f, 1.5f, 0.0f),
++            Vec3( 0.0f, 1.5f, 0.0f),
++            Vec3( 3.0f, 1.5f, 0.0f),
++            // Row 2: two spheres offset for overlap shadows
++            Vec3(-1.5f, 1.5f, -2.5f),
++            Vec3( 1.5f, 1.5f, -2.5f)
++        };
++
++        for (int i = 0; i < NUM_SPHERES; ++i) {
++            Entity ent = world->create("Sphere_" + std::to_string(i));
++            world->registry().emplace<LocalTransform>(ent, sphere_positions[i]);
++            world->registry().emplace<WorldTransform>(ent);
++            world->registry().emplace<PreviousTransform>(ent);
++            world->registry().emplace<MeshRenderer>(ent, MeshRenderer{
++                engine::scene::MeshHandle{m_sphere_mesh.id},
++                engine::scene::MaterialHandle{m_sphere_materials[0].id},
++                0, true, true, true  // visible=true, cast_shadows=true, receive_shadows=true
++            });
++            m_spheres[i] = ent;
++        }
++
++        // --- Camera ---
++        m_camera = world->create("Camera");
++        Vec3 cam_pos(0.0f, 8.0f, 12.0f);
++        Vec3 cam_target(0.0f, 0.0f, 0.0f);
++        world->registry().emplace<LocalTransform>(m_camera, cam_pos,
++            glm::quatLookAt(glm::normalize(cam_target - cam_pos), Vec3(0.0f, 1.0f, 0.0f)));
++        world->registry().emplace<WorldTransform>(m_camera);
++
++        Camera cam_comp;
++        cam_comp.fov = 60.0f;
++        cam_comp.aspect_ratio = static_cast<float>(window_width()) / static_cast<float>(window_height());
++        cam_comp.near_plane = 0.1f;
++        cam_comp.far_plane = 100.0f;
++        cam_comp.active = true;
++        world->registry().emplace<Camera>(m_camera, cam_comp);
++
++        // Store default camera state for mode 3 restore
++        m_default_cam_pos = cam_pos;
++        m_default_cam_target = cam_target;
++        m_default_cam_fov = cam_comp.fov;
++
++        // --- Directional light (shadow-casting) ---
++        m_light = world->create("Directional Light");
++        Light l;
++        l.type = LightType::Directional;
++        l.color = Vec3(1.0f);
++        l.intensity = 3.0f;
++        l.cast_shadows = true;  // CRITICAL: enables shadow_pass()
++        l.enabled = true;
++        world->registry().emplace<Light>(m_light, l);
++
++        world->registry().emplace<LocalTransform>(m_light, Vec3(0.0f),
++            glm::quatLookAt(glm::normalize(Vec3(-1.0f, -0.7f, -1.0f)), Vec3(0.0f, 1.0f, 0.0f)));
++        world->registry().emplace<WorldTransform>(m_light);
++
++        log(LogLevel::Info, "Shadow Validation ready. Modes cycle every {:.1f} s.", MODE_CYCLE_SEC);
++    }
++
++    void on_update(double dt) override {
++        auto* world = get_world();
++        if (!world) return;
++
++        engine::scene::transform_system(*world, dt);
++
++        m_time += static_cast<float>(dt);
++
++        // Rotate sun direction
++        Vec3 sun_dir = glm::normalize(Vec3(-sinf(m_time * 0.3f), -0.7f, -cosf(m_time * 0.3f)));
++        auto& lt = world->registry().get<LocalTransform>(m_light);
++        lt.rotation = glm::quatLookAt(sun_dir, Vec3(0.0f, 1.0f, 0.0f));
++
++        // Cycle modes every 4 seconds
++        int current_mode = (static_cast<int>(m_time / MODE_CYCLE_SEC)) % NUM_MODES;
++        if (current_mode != m_last_mode) {
++            int prev_mode = m_last_mode;
++            m_last_mode = current_mode;
++            log(LogLevel::Info, "[Shadow Validation] Mode {}: {}", current_mode, MODE_NAMES[current_mode]);
++
++            // Swap materials for all entities
++            for (int i = 0; i < NUM_SPHERES; ++i) {
++                auto* comp = world->registry().try_get<MeshRenderer>(m_spheres[i]);
++                if (comp) {
++                    comp->material = engine::scene::MaterialHandle{m_sphere_materials[current_mode].id};
++                }
++            }
++            {
++                auto* comp = world->registry().try_get<MeshRenderer>(m_ground);
++                if (comp) {
++                    comp->material = engine::scene::MaterialHandle{m_ground_materials[current_mode].id};
++                }
++            }
++
++            // Mode 3: zoom camera to shadow edge for PCF softness test
++            if (current_mode == 3) {
++                auto& cam_lt = world->registry().get<LocalTransform>(m_camera);
++                Vec3 zoom_pos(2.0f, 1.0f, 3.0f);
++                Vec3 zoom_target(0.0f, 0.0f, 0.0f);
++                cam_lt.position = zoom_pos;
++                cam_lt.rotation = glm::quatLookAt(glm::normalize(zoom_target - zoom_pos), Vec3(0.0f, 1.0f, 0.0f));
++
++                auto& cam = world->registry().get<Camera>(m_camera);
++                cam.fov = 40.0f; // Narrow FOV for zoom
++            }
++            // Restore camera when leaving mode 3
++            else if (prev_mode == 3) {
++                auto& cam_lt = world->registry().get<LocalTransform>(m_camera);
++                cam_lt.position = m_default_cam_pos;
++                cam_lt.rotation = glm::quatLookAt(
++                    glm::normalize(m_default_cam_target - m_default_cam_pos),
++                    Vec3(0.0f, 1.0f, 0.0f));
++
++                auto& cam = world->registry().get<Camera>(m_camera);
++                cam.fov = m_default_cam_fov;
++            }
++        }
++
++        // --- Auto-Capture Screenshots ---
++        static const char* screenshot_names[] = {
++            "shadow_validation_mode0_pbr_shadows.png",
++            "shadow_validation_mode1_shadow_map_debug.png",
++            "shadow_validation_mode2_binary_shadows.png",
++            "shadow_validation_mode3_pcf_softness.png"
++        };
++
++        auto* renderer = get_renderer();
++        auto* pipeline = get_render_pipeline();
++        if (renderer && pipeline) {
++            for (int i = 0; i < NUM_MODES; ++i) {
++                float capture_time = 1.0f + i * MODE_CYCLE_SEC;
++                if (m_time > capture_time && !m_captured[i]) {
++                    m_captured[i] = true;
++                    renderer->save_screenshot(screenshot_names[i], pipeline->get_final_texture());
++                    log(LogLevel::Info, "Screenshot captured: {}", screenshot_names[i]);
++                }
++            }
++        }
++
++        // Quit after all modes have been shown and captured
++        if (m_time > NUM_MODES * MODE_CYCLE_SEC + 1.0f) {
++            quit();
++        }
++    }
++
++    void on_shutdown() override {
++        auto* renderer = get_renderer();
++        if (!renderer) return;
++
++        for (int m = 0; m < NUM_MODES; ++m) {
++            if (m_sphere_materials[m].valid()) renderer->destroy_material(m_sphere_materials[m]);
++            if (m_ground_materials[m].valid()) renderer->destroy_material(m_ground_materials[m]);
++        }
++        if (m_sphere_mesh.valid()) renderer->destroy_mesh(m_sphere_mesh);
++        if (m_plane_mesh.valid()) renderer->destroy_mesh(m_plane_mesh);
++    }
++
++private:
++    float m_time = 0.0f;
++    int   m_last_mode = -1;
++
++    // Render resources
++    engine::render::MeshHandle    m_sphere_mesh;
++    engine::render::MeshHandle    m_plane_mesh;
++    engine::render::ShaderHandle  m_shader;
++    engine::render::MaterialHandle m_sphere_materials[NUM_MODES];
++    engine::render::MaterialHandle m_ground_materials[NUM_MODES];
++
++    // Scene entities
++    Entity m_spheres[NUM_SPHERES];
++    Entity m_ground = NullEntity;
++    Entity m_camera = NullEntity;
++    Entity m_light = NullEntity;
++
++    // Default camera state (for mode 3 restore)
++    Vec3  m_default_cam_pos{0.0f};
++    Vec3  m_default_cam_target{0.0f};
++    float m_default_cam_fov = 60.0f;
++
++    // Screenshot capture flags
++    bool m_captured[NUM_MODES] = {};
++};
++
++#ifdef _WIN32
++#include <windows.h>
++int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
++    ShadowValidationSample app;
++    return app.run(__argc, __argv);
++}
++#else
++int main(int argc, char** argv) {
++    ShadowValidationSample app;
++    return app.run(argc, argv);
++}
++#endif
