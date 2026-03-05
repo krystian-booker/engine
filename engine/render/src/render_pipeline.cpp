@@ -1015,7 +1015,7 @@ void RenderPipeline::main_pass(const CameraData& camera,
                                      Vec4(m_config.shadow_config.shadow_bias,
                                           m_config.shadow_config.normal_bias,
                                           m_config.shadow_config.cascade_blend_distance,
-                                          1.0f));
+                                          1.0f / static_cast<float>(m_config.shadow_config.cascade_resolution)));
 
         {
             TextureHandle shadow_array_tex = m_shadow_system.get_shadow_array_texture();

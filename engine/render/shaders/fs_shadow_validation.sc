@@ -36,9 +36,7 @@ void main()
     // Main directional light direction (light 0)
     vec3 mainLightDir = normalize(-u_lights[1].xyz);
 
-    // 1. Coordinate-space audit:
-    //    - v_worldPos.w is linear view-space depth from vs_pbr.sc
-    //    - getShadowCoord() uses u_shadowMatrix[cascade] for the active sun light
+    // Shadow map depth for visualization (Mode 1)
     int cascade_index = selectCascade(viewSpaceDepth);
     vec3 cascadeShadowCoord = getShadowCoord(worldPos, cascade_index);
     float cascadeDepthInMap = texture2DArrayLod(
@@ -47,41 +45,30 @@ void main()
         0.0
     ).r;
 
-    // 2. MANUAL COMPARISON (The 'Auditor')
-    // Sample cascade 0 directly to isolate projection data from cascade selection logic.
-    const int manualCascade = 0;
-    vec3 shadowCoord = getShadowCoord(worldPos, manualCascade);
-    float depthInMap = texture2DArrayLod(s_shadowMap, vec3(shadowCoord.xy, 0.0), 0.0).r;
-
-    // Compare pixel's light-space depth vs map depth + manual bias
-    float ndotl = clamp(dot(N, mainLightDir), 0.0, 1.0);
-    float manualBias = max(0.005 * (1.0 - ndotl), 0.0005);
-    float inBounds = step(0.0, shadowCoord.x) * step(shadowCoord.x, 1.0)
-                   * step(0.0, shadowCoord.y) * step(shadowCoord.y, 1.0)
-                   * step(0.0, shadowCoord.z) * step(shadowCoord.z, 1.0);
-    float litTest = step(shadowCoord.z, depthInMap + manualBias);
-    float isLit = mix(1.0, litTest, inBounds);
-
-    // Compute real PBR shadow factor unconditionally to avoid HLSL compiler bug in divergent branches
+    // PBR shadow factor (computed unconditionally to avoid HLSL divergent branch issues)
     float shadowFactor = calculateShadow(worldPos, N, mainLightDir, viewSpaceDepth);
 
     vec3 color = vec3_splat(0.0);
 
     if (mode == 1)
     {
-        // Mode 1: Visualize the light's view of the world
-        // We use pow to boost the deep depth mapping so it looks cleanly grayscale
-        color = vec3_splat(pow(max(cascadeDepthInMap, 0.0), 80.0));
+        // Mode 1: Shadow map depth visualization — selected cascade
+        color = vec3_splat(cascadeDepthInMap);
     }
     else if (mode == 2)
     {
-        // Mode 2: If this is black/white and matches the spheres,
-        // your World-to-Light transform is fixed!
-        color = vec3_splat(isLit);
+        // Mode 2: Binary shadow test using actual calculateShadow path
+        color = vec3_splat(shadowFactor);
+    }
+    else if (mode == 3)
+    {
+        // Mode 3: PBR + shadows (close-up PCF softness test)
+        vec3 Lo = evaluateAllLightsWithShadow(worldPos, N, V, albedo, metallic, roughness, shadowFactor);
+        color = (vec3_splat(0.05) * albedo) + Lo;
     }
     else
     {
-        // Mode 0/3: Full PBR using the engine's built-in shadow factor
+        // Mode 0: Full PBR + Shadows
         vec3 Lo = evaluateAllLightsWithShadow(worldPos, N, V, albedo, metallic, roughness, shadowFactor);
         color = (vec3_splat(0.05) * albedo) + Lo;
     }

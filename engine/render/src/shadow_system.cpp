@@ -376,8 +376,10 @@ Mat4 create_stable_ortho_projection(const Vec3& min_bounds, const Vec3& max_boun
     snapped_max.y = std::floor(max_bounds.y / world_units_per_texel) * world_units_per_texel;
     snapped_max.z = max_bounds.z;
 
-    // Extend depth range to avoid near-plane clipping (kept small to preserve depth precision)
-    float z_mult = 0.5f;
+    // Extend depth range generously to include shadow receivers (e.g. ground plane)
+    // that lie outside the camera frustum's Z extent in light space.
+    // R32F shadow maps have plenty of precision even with large ranges.
+    float z_mult = 5.0f;
     float z_range = snapped_max.z - snapped_min.z;
 
     // glm::ortho (RH) expects positive near/far distances. Light-view-space z
