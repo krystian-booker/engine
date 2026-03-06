@@ -68,8 +68,12 @@ float calculateBias(vec3 normal, vec3 lightDir)
     vec3 L = normalize(lightDir);
     float nDotL = clamp(dot(N, L), 0.0, 1.0);
 
-    // Slope-scaled bias to reduce acne at grazing angles.
-    return max(0.005 * (1.0 - nDotL), 0.0005);
+    // Tan-based slope scale: bias grows as tan(theta) for curved surfaces.
+    // Much more aggressive at grazing angles than linear (1-NdotL).
+    float baseBias = max(u_shadowParams.x, 0.0005);
+    float sinTheta = sqrt(1.0 - nDotL * nDotL);
+    float tanTheta = sinTheta / max(nDotL, 0.1);
+    return baseBias + baseBias * clamp(tanTheta, 0.0, 10.0);
 }
 
 float calculateShadow(vec3 worldPos, vec3 normal, vec3 lightDir, float viewSpaceDepth)

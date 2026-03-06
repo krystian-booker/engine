@@ -29,8 +29,8 @@ struct ShadowConfig {
     uint32_t max_shadow_casting_lights = 4;
 
     // Quality settings
-    float shadow_bias = 0.001f;
-    float normal_bias = 0.01f;
+    float shadow_bias = 0.003f;
+    float normal_bias = 0.05f;
     float cascade_blend_distance = 0.1f;  // Blend between cascades
     bool pcf_enabled = true;
     uint32_t pcf_samples = 16;  // For PCF filtering
