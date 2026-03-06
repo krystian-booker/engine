@@ -178,6 +178,23 @@ if(EXISTS "${bgfx_cmake_SOURCE_DIR}/bgfx/3rdparty/stb/stb_truetype.h")
     message(STATUS "Patched bgfx dear-imgui imstb_truetype.h")
 endif()
 
+# Patch bgfx shader profiles: remove DX10 (ps_4_0) which doesn't support
+# Texture2DArray::SampleCmpLevelZero needed for hardware shadow PCF.
+# The engine only loads dx11 (ps_5_0) shaders at runtime, so dx10 is unused.
+set(_bgfx_shader_utils "${bgfx_cmake_SOURCE_DIR}/cmake/bgfxToolUtils.cmake")
+if(EXISTS "${_bgfx_shader_utils}")
+    file(READ "${_bgfx_shader_utils}" _shader_utils_content)
+    string(FIND "${_shader_utils_content}" "list(APPEND PROFILES s_4_0)" _found_pos)
+    if(NOT _found_pos EQUAL -1)
+        string(REPLACE
+            "list(APPEND PROFILES s_4_0)\n\t\t\tlist(APPEND PROFILES s_5_0)"
+            "list(APPEND PROFILES s_5_0)"
+            _shader_utils_content "${_shader_utils_content}")
+        file(WRITE "${_bgfx_shader_utils}" "${_shader_utils_content}")
+        message(STATUS "Patched bgfx shader profiles: removed DX10 (ps_4_0)")
+    endif()
+endif()
+
 # Create namespace aliases
 add_library(bgfx::bgfx ALIAS bgfx)
 add_library(bgfx::bx ALIAS bx)

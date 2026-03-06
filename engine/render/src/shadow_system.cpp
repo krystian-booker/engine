@@ -62,10 +62,9 @@ void ShadowSystem::create_cascade_render_targets() {
     for (uint32_t i = 0; i < m_config.cascade_count && i < 4; ++i) {
         ViewConfig view_config;
         view_config.render_target = m_cascade_render_targets[i];
-        view_config.clear_color_enabled = true;
-        view_config.clear_color = 0xFFFFFFFF;  // Clear to 1.0 (max depth = no shadow)
+        view_config.clear_color_enabled = false;
         view_config.clear_depth_enabled = true;
-        view_config.clear_depth = 1.0f;
+        view_config.clear_depth = 1.0f;  // Clear to 1.0 (max depth = no shadow)
 
         m_renderer->configure_view(get_cascade_view(i), view_config);
     }
@@ -378,7 +377,7 @@ Mat4 create_stable_ortho_projection(const Vec3& min_bounds, const Vec3& max_boun
 
     // Extend depth range generously to include shadow receivers (e.g. ground plane)
     // that lie outside the camera frustum's Z extent in light space.
-    // R32F shadow maps have plenty of precision even with large ranges.
+    // D32F shadow maps have plenty of precision even with large ranges.
     float z_mult = 5.0f;
     float z_range = snapped_max.z - snapped_min.z;
 

@@ -2,6 +2,7 @@
 
 void main()
 {
-    // Write gl_FragCoord.z as depth
-    gl_FragColor = vec4(gl_FragCoord.z, 0.0, 0.0, 1.0);
+    // Depth-only pass — hardware depth buffer is written automatically.
+    // Color output is required by bgfx but discarded (no color attachment).
+    gl_FragColor = vec4_splat(0.0);
 }

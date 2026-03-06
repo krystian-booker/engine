@@ -370,11 +370,13 @@ public:
             BGFX_TEXTURE_NONE | BGFX_SAMPLER_POINT,
             bgfx::copy(&normal_pixel, sizeof(normal_pixel)));
 
-        // Create 1x1 dummy shadow texture ARRAY (R32F, 4 layers, value 1.0 = no shadow)
-        float dummy_depth[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+        // Create 1x1 dummy shadow texture ARRAY (D16, 4 layers).
+        // D16 is the most widely-supported depth format for sampling.
+        // Value 0xFFFF = 1.0 (max depth) so comparison always passes (lit).
+        uint16_t dummy_depth[4] = { 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF };
         m_dummy_shadow_texture = bgfx::createTexture2D(
             1, 1, false, 4, // 4 = number of layers
-            bgfx::TextureFormat::R32F,
+            bgfx::TextureFormat::D16,
             BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP,
             bgfx::copy(dummy_depth, sizeof(dummy_depth))
         );
@@ -956,24 +958,18 @@ public:
     }
 
     void create_shadow_cascades(uint32_t resolution, uint32_t count, TextureHandle& out_array, std::array<RenderTargetHandle, 4>& out_rts) override {
-        // 1. Create the shared Texture2DArray for color
-        uint64_t color_flags = BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
-        bgfx::TextureHandle array_th = bgfx::createTexture2D(
+        // Create a shared Texture2DArray (D32F) for hardware depth comparison (PCF).
+        // This texture is both the render target and the sampled shadow map.
+        uint64_t depth_flags = BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+        bgfx::TextureHandle depth_array_th = bgfx::createTexture2D(
             uint16_t(resolution), uint16_t(resolution), false, uint16_t(count),
-            bgfx::TextureFormat::R32F, color_flags
+            bgfx::TextureFormat::D32F, depth_flags
         );
 
         out_array = TextureHandle{ m_next_texture_id++ };
-        m_textures[out_array.id] = array_th;
+        m_textures[out_array.id] = depth_array_th;
 
-        // 2. Create the shared Texture2DArray for DEPTH!
-        bgfx::TextureHandle depth_array_th = bgfx::createTexture2D(
-            uint16_t(resolution), uint16_t(resolution), false, uint16_t(count),
-            bgfx::TextureFormat::D32F,
-            BGFX_TEXTURE_RT | BGFX_TEXTURE_RT_WRITE_ONLY // Write-only since we don't sample the hardware depth
-        );
-
-        // 3. Create individual framebuffers tied to specific layers
+        // Create individual depth-only framebuffers tied to specific layers
         for (uint32_t i = 0; i < count && i < 4; ++i) {
             RenderTargetHandle rt_handle{ m_next_render_target_id++ };
             BGFXRenderTarget rt;
@@ -981,13 +977,10 @@ public:
             rt.desc.height = resolution;
             rt.desc.debug_name = "ShadowCascade";
 
-            // Attach BOTH color and depth to this framebuffer layer
-            bgfx::Attachment atts[2];
-            atts[0].init(array_th, bgfx::Access::Write, static_cast<uint16_t>(i));
-            atts[1].init(depth_array_th, bgfx::Access::Write, static_cast<uint16_t>(i));
+            bgfx::Attachment att[1];
+            att[0].init(depth_array_th, bgfx::Access::Write, static_cast<uint16_t>(i));
 
-            rt.fbh = bgfx::createFrameBuffer(2, atts, false);
-            rt.depth_attachment = depth_array_th; // Store safely for cleanup
+            rt.fbh = bgfx::createFrameBuffer(1, att, false);
 
             m_render_targets[rt_handle.id] = std::move(rt);
             out_rts[i] = rt_handle;
@@ -995,8 +988,6 @@ public:
     }
 
     void destroy_shadow_cascades(TextureHandle array_tex, std::array<RenderTargetHandle, 4>& rts) override {
-        bgfx::TextureHandle shared_depth = BGFX_INVALID_HANDLE;
-
         for (auto& h : rts) {
             if (h.valid()) {
                 auto it = m_render_targets.find(h.id);
@@ -1004,7 +995,6 @@ public:
                     if (bgfx::isValid(it->second.fbh)) {
                         bgfx::destroy(it->second.fbh);
                     }
-                    shared_depth = it->second.depth_attachment; // Capture the depth handle
                     m_render_targets.erase(it);
                 }
                 h = RenderTargetHandle{};
@@ -1012,9 +1002,6 @@ public:
         }
         if (array_tex.valid()) {
             destroy_texture(array_tex);
-        }
-        if (bgfx::isValid(shared_depth)) {
-            bgfx::destroy(shared_depth); // Clean up the shared depth
         }
     }
 
@@ -1290,7 +1277,7 @@ public:
             bgfx::setTexture(7, m_pbr_uniforms.s_brdfLUT, m_default_brdf_lut);
 
             // Bind dummy shadow map to slot 8 to prevent D3D11 warnings
-            bgfx::setTexture(8, m_pbr_uniforms.s_shadowMap, m_dummy_shadow_texture, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+            bgfx::setTexture(8, m_pbr_uniforms.s_shadowMap, m_dummy_shadow_texture, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP | BGFX_SAMPLER_COMPARE_LEQUAL);
 
 
         } else {
@@ -1647,9 +1634,8 @@ public:
         constexpr uint16_t kShadowCascade3 = static_cast<uint16_t>(RenderView::ShadowCascade3);
         if (view_id >= kShadowCascade0 && view_id <= kShadowCascade3 &&
             bgfx::isValid(m_shadow_program)) {
-            // Color-based shadow maps: write depth to both the depth buffer (for
-            // depth testing) and R32F color attachment (for sampling in PBR pass)
-            uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_Z |
+            // Depth-only shadow pass — hardware depth buffer is sampled via comparison sampler
+            uint64_t state = BGFX_STATE_WRITE_Z |
                              BGFX_STATE_DEPTH_TEST_LESS |
                              BGFX_STATE_CULL_CW | BGFX_STATE_MSAA;
             bgfx::setState(state);
@@ -1837,7 +1823,7 @@ public:
             ? m_shadow_array_texture
             : m_dummy_shadow_texture;
 
-        bgfx::setTexture(8, m_pbr_uniforms.s_shadowMap, shadow_tex, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
+        bgfx::setTexture(8, m_pbr_uniforms.s_shadowMap, shadow_tex, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP | BGFX_SAMPLER_COMPARE_LEQUAL);
 
     }
 
@@ -2135,7 +2121,7 @@ private:
     // Default textures for PBR
     bgfx::TextureHandle m_white_texture = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle m_default_normal = BGFX_INVALID_HANDLE;
-    bgfx::TextureHandle m_dummy_shadow_texture = BGFX_INVALID_HANDLE;  // D32F format for shadow sampler fallback
+    bgfx::TextureHandle m_dummy_shadow_texture = BGFX_INVALID_HANDLE;  // D16 depth format for shadow sampler fallback
 
     // Default IBL textures (fallback when no environment map is loaded)
     bgfx::TextureHandle m_default_irradiance = BGFX_INVALID_HANDLE;

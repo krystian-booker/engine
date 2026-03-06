@@ -66,12 +66,7 @@ void main()
         else
         {
             float bias = calculateBias(N, mainLightDir);
-            float storedDepth = texture2DArrayLod(
-                s_shadowMap,
-                vec3(shadowCoord.xy, float(cascade)),
-                0.0
-            ).r;
-            float shadow = step(shadowCoord.z - bias, storedDepth);
+            float shadow = shadow2DArray(s_shadowMap, vec4(shadowCoord.xy, float(cascade), shadowCoord.z - bias)).x;
             color = vec3_splat(shadow);
         }
     }
