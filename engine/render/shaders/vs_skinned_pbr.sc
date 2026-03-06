@@ -84,25 +84,18 @@ void main()
     // Transform skinned position to world space
     vec4 worldPos = mul(u_model[0], skinnedPosition);
 
-    // Calculate view-space position for depth (used for cascade selection)
+    // Linear view-space depth for cascade shadow selection.
+    // Negated because RH view space has -Z forward; cascade splits (u_cascadeSplits)
+    // are computed from camera near/far along the view axis on the C++ side.
+    // Do NOT use length(viewPos.xyz) — splits are calibrated for linear Z, not radial distance.
     vec4 viewPos = mul(u_view, worldPos);
     float viewSpaceDepth = -viewPos.z;
 
     v_worldPos = vec4(worldPos.xyz, viewSpaceDepth);
 
-    // Transform skinned normal and tangent to world space
-    // Use cofactor matrix (== inverse-transpose * det) to handle non-uniform scale.
-    // Since we normalize afterwards, skipping the determinant division is fine.
-    vec3 c0 = u_model[0][0].xyz;
-    vec3 c1 = u_model[0][1].xyz;
-    vec3 c2 = u_model[0][2].xyz;
-    mat3 normalMatrix = mat3(
-        cross(c1, c2),
-        cross(c2, c0),
-        cross(c0, c1)
-    );
-    v_normal = normalize(mul(normalMatrix, skinnedNormal));
-    v_tangent = normalize(mul(normalMatrix, skinnedTangent));
+    // Normal matrix (inverse-transpose of model) precomputed on CPU, stored in u_model[1]
+    v_normal = normalize(mul(u_model[1], vec4(skinnedNormal, 0.0)).xyz);
+    v_tangent = normalize(mul(u_model[1], vec4(skinnedTangent, 0.0)).xyz);
     v_bitangent = cross(v_normal, v_tangent);
 
     // Pass through UV and vertex color

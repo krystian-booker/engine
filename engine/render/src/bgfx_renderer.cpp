@@ -1242,8 +1242,15 @@ public:
 
         uint16_t view_id = static_cast<uint16_t>(view);
 
-        // Set transform
-        bgfx::setTransform(&transform);
+        // Set transform: [0] = model matrix, [1] = normal matrix (inverse-transpose)
+        Mat4 transforms[2];
+        transforms[0] = transform;
+        float det = glm::determinant(transform);
+        if (std::abs(det) > 1e-6f)
+            transforms[1] = glm::transpose(glm::inverse(transform));
+        else
+            transforms[1] = Mat4(1.0f);
+        bgfx::setTransform(glm::value_ptr(transforms[0]), 2);
 
         // Upload bone matrices (clamped to 128 bones max)
         uint32_t actual_bones = std::min(bone_count, 128u);
@@ -1617,8 +1624,15 @@ public:
 
         const auto& mesh = mesh_it->second;
 
-        // Set transform
-        bgfx::setTransform(glm::value_ptr(call.transform));
+        // Set transform: [0] = model matrix, [1] = normal matrix (inverse-transpose)
+        Mat4 transforms[2];
+        transforms[0] = call.transform;
+        float det = glm::determinant(call.transform);
+        if (std::abs(det) > 1e-6f)
+            transforms[1] = glm::transpose(glm::inverse(call.transform));
+        else
+            transforms[1] = Mat4(1.0f);
+        bgfx::setTransform(glm::value_ptr(transforms[0]), 2);
 
         // Set vertex buffer
         bgfx::setVertexBuffer(0, mesh.vbh);

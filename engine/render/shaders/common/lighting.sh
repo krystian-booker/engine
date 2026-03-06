@@ -2,50 +2,12 @@
 #ifndef LIGHTING_SH
 #define LIGHTING_SH
 
-#include "uniforms.sh"
+#include "light_data.sh"
 
 // Light types
 #define LIGHT_TYPE_DIRECTIONAL 0.0
 #define LIGHT_TYPE_POINT 1.0
 #define LIGHT_TYPE_SPOT 2.0
-
-// Light data structure (unpacked from uniforms)
-struct Light
-{
-    vec3 position;
-    float type;
-    vec3 direction;
-    float range;
-    vec3 color;
-    float intensity;
-    float innerAngle;
-    float outerAngle;
-    int shadowIndex;
-};
-
-// Unpack light from uniform array
-Light getLight(int index)
-{
-    Light light;
-    int base = index * 4;
-
-    vec4 data0 = u_lights[base + 0];
-    vec4 data1 = u_lights[base + 1];
-    vec4 data2 = u_lights[base + 2];
-    vec4 data3 = u_lights[base + 3];
-
-    light.position = data0.xyz;
-    light.type = data0.w;
-    light.direction = data1.xyz;
-    light.range = data1.w;
-    light.color = data2.xyz;
-    light.intensity = data2.w;
-    light.innerAngle = data3.x;
-    light.outerAngle = data3.y;
-    light.shadowIndex = int(data3.z);
-
-    return light;
-}
 
 // Calculate light direction and attenuation for a given light
 void calculateLightDirAndAttenuation(Light light, vec3 worldPos, out vec3 lightDir, out float attenuation)
@@ -64,10 +26,13 @@ void calculateLightDirAndAttenuation(Light light, vec3 worldPos, out vec3 lightD
         float distance = max(length(toLight), 0.0001);
         lightDir = toLight / distance;
 
-        // Distance attenuation (inverse square with range falloff)
-        float rangeAtten = 1.0 - saturate(distance / max(light.range, 0.0001));
-        rangeAtten = rangeAtten * rangeAtten;
-        attenuation = rangeAtten;
+        // UE4-style windowed inverse-square attenuation
+        float distanceSqr = distance * distance;
+        float rangeSqr = light.range * light.range;
+        float ratioSqr = distanceSqr / max(rangeSqr, 0.0001);
+        float windowing = saturate(1.0 - ratioSqr * ratioSqr);
+        windowing = windowing * windowing;
+        attenuation = windowing / (distanceSqr + 1.0);
 
         // Spot light cone attenuation
         if (light.type == LIGHT_TYPE_SPOT)

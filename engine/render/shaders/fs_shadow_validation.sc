@@ -34,7 +34,8 @@ void main()
     vec3 V = normalize(u_cameraPos.xyz - worldPos);
 
     // Main directional light direction (light 0)
-    vec3 mainLightDir = normalize(-u_lights[1].xyz);
+    Light mainLight = getLight(0);
+    vec3 mainLightDir = normalize(-mainLight.direction);
 
     // PBR shadow factor (computed unconditionally to avoid HLSL divergent branch issues)
     float shadowFactor = calculateShadow(worldPos, N, mainLightDir, viewSpaceDepth);

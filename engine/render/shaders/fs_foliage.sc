@@ -56,7 +56,8 @@ void main()
     vec3 V = normalize(u_cameraPos.xyz - worldPos);
 
     // Get main directional light direction for shadow calculation
-    vec3 mainLightDir = -u_lights[1].xyz;
+    Light mainLight = getLight(0);
+    vec3 mainLightDir = -mainLight.direction;
 
     // Calculate shadow factor
     float shadowFactor = 1.0;

@@ -10,4 +10,3 @@ vec3 v_bitangent    : BINORMAL;
 vec2 v_texcoord0    : TEXCOORD1;
 vec4 v_color0       : COLOR0;
 vec4 v_clipPos      : TEXCOORD2;
-vec4 v_prevClipPos  : TEXCOORD3;

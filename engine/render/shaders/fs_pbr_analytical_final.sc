@@ -2,6 +2,7 @@ $input v_worldPos, v_normal, v_tangent, v_bitangent, v_texcoord0, v_color0, v_cl
 
 #include <bgfx_shader.sh>
 #include "common/uniforms.sh"
+#include "common/light_data.sh"
 
 const float PI = 3.14159265359;
 
@@ -50,13 +51,14 @@ void main()
 
     vec3 N = normalize(v_normal);
     vec3 V = normalize(u_cameraPos.xyz - v_worldPos.xyz);
-    vec3 L = normalize(-u_lights[1].xyz); // Light 0 direction
+    Light mainLight = getLight(0);
+    vec3 L = normalize(-mainLight.direction);
     vec3 H = normalize(V + L);
 
-    vec3 F0 = vec3_splat(0.04); 
+    vec3 F0 = vec3_splat(0.04);
     F0 = mix(F0, albedo, metallic);
 
-    vec3 lightColor = u_lights[2].xyz * u_lights[2].w; // color * intensity
+    vec3 lightColor = mainLight.color * mainLight.intensity;
     
     // Cook-Torrance BRDF
     float NDF = DistributionGGX(N, H, roughness);   

@@ -24,6 +24,7 @@ $input v_worldPos, v_normal, v_tangent, v_bitangent, v_texcoord0, v_color0, v_cl
 
 #include <bgfx_shader.sh>
 #include "common/uniforms.sh"
+#include "common/light_data.sh"
 
 // Redefine constants (common/pbr.sh uses these but we inline the math for clarity)
 #define PI 3.14159265359
@@ -40,13 +41,10 @@ void main()
     float metallic  = u_pbrParams.x;
     float roughness = max(u_pbrParams.y, 0.04); // Prevent singularity at roughness=0
 
-    // --- Unpack directional light from u_lights[] ---
-    // Layout: [0]=pos.xyz+type, [1]=dir.xyz+range, [2]=color.xyz+intensity
-    vec3 lightDir   = u_lights[1].xyz;
-    vec3 L          = normalize(-lightDir);           // Direction surface -> light
-    vec3 lightColor = u_lights[2].xyz;
-    float lightInt  = u_lights[2].w;
-    vec3 radiance   = lightColor * lightInt;
+    // --- Unpack directional light via getLight() ---
+    Light mainLight = getLight(0);
+    vec3 L          = normalize(-mainLight.direction);
+    vec3 radiance   = mainLight.color * mainLight.intensity;
 
     // Half vector
     vec3 H = normalize(V + L);
