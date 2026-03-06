@@ -63,7 +63,7 @@ void main()
 
     // Get main directional light direction for shadow calculation
     // Light 0 is assumed to be the main directional light
-    vec3 mainLightDir = -u_lights[1].xyz;  // direction_range.xyz (negated for light direction)
+    vec3 mainLightDir = normalize(-u_lights[1].xyz);  // direction_range.xyz (negated for light direction)
 
     // Calculate shadow factor (1.0 = fully lit, 0.0 = fully shadowed)
     float shadowFactor = 1.0;
