@@ -8,6 +8,16 @@
 #include <cmath>
 namespace engine::render {
 
+// bgfx executes views by ascending ID — these must stay ordered for correct rendering
+static_assert(uint16_t(RenderView::ShadowCascade0) < uint16_t(RenderView::DepthPrepass));
+static_assert(uint16_t(RenderView::DepthPrepass) < uint16_t(RenderView::GBuffer));
+static_assert(uint16_t(RenderView::GBuffer) < uint16_t(RenderView::MotionVectors));
+static_assert(uint16_t(RenderView::Skybox) < uint16_t(RenderView::MainOpaque));
+static_assert(uint16_t(RenderView::MainOpaque) < uint16_t(RenderView::MainTransparent));
+static_assert(uint16_t(RenderView::MainTransparent) < uint16_t(RenderView::PostProcess0));
+static_assert(uint16_t(RenderView::ToneMap) < uint16_t(RenderView::Debug));
+static_assert(uint16_t(RenderView::Debug) < uint16_t(RenderView::Final));
+
 using namespace engine::core;
 
 RenderPipeline::~RenderPipeline() {
@@ -402,6 +412,9 @@ void RenderPipeline::render_to_target(RenderTargetHandle target,
     if (has_flag(passes, RenderPassFlags::Transparent)) {
         transparent_pass(camera, lights);
     }
+
+    // Flush queued draws while views still point at the custom target
+    m_renderer->flush();
 
     // Restore original config
     m_config.enabled_passes = original_passes;

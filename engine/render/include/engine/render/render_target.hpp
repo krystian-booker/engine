@@ -79,8 +79,8 @@ enum class RenderView : uint16_t {
     VolumetricScatter = 42,
 
     // Skybox rendering (must be before MainOpaque so it paints the background
-    // before opaque geometry is drawn on top; uses DEPTH_TEST_LEQUAL without
-    // writing depth, so it only fills where depth == 1.0)
+    // before opaque geometry is drawn on top; outputs z=0 with DEPTH_TEST_LEQUAL
+    // so the fullscreen triangle always passes — MainOpaque clears depth afterward)
     Skybox = 43,
 
     // Main rendering pass (forward)

@@ -566,6 +566,23 @@ public:
         }
         m_meshes.clear();
 
+        // Destroy render targets FIRST (removes their textures from m_textures to avoid double-free)
+        for (auto& [id, rt] : m_render_targets) {
+            if (bgfx::isValid(rt.fbh)) {
+                bgfx::destroy(rt.fbh);
+            }
+            for (size_t i = 0; i < rt.color_attachments.size(); ++i) {
+                bgfx::destroy(rt.color_attachments[i]);
+                m_textures.erase(rt.color_texture_handles[i].id);
+            }
+            if (bgfx::isValid(rt.depth_attachment)) {
+                bgfx::destroy(rt.depth_attachment);
+                m_textures.erase(rt.depth_texture_handle.id);
+            }
+        }
+        m_render_targets.clear();
+
+        // Then destroy remaining (non-RT) textures
         for (auto& [id, handle] : m_textures) {
             bgfx::destroy(handle);
         }
@@ -575,20 +592,6 @@ public:
             bgfx::destroy(handle);
         }
         m_shaders.clear();
-
-        // Destroy render targets
-        for (auto& [id, rt] : m_render_targets) {
-            if (bgfx::isValid(rt.fbh)) {
-                bgfx::destroy(rt.fbh);
-            }
-            for (auto th : rt.color_attachments) {
-                bgfx::destroy(th);
-            }
-            if (bgfx::isValid(rt.depth_attachment)) {
-                bgfx::destroy(rt.depth_attachment);
-            }
-        }
-        m_render_targets.clear();
 
         m_initialized = false;
     }
