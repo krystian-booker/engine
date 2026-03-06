@@ -134,16 +134,16 @@ static bgfx::ShaderHandle load_shader_from_file(const std::string& path) {
         return BGFX_INVALID_HANDLE;
     }
 
-    const bgfx::Memory* mem = bgfx::alloc(static_cast<uint32_t>(size) + 1);
-    file.read(reinterpret_cast<char*>(mem->data), size);
+    std::vector<uint8_t> buffer(static_cast<size_t>(size) + 1);
+    file.read(reinterpret_cast<char*>(buffer.data()), size);
 
     if (file.gcount() != size) {
         log(LogLevel::Error, ("Failed to read complete shader file: " + path).c_str());
-        // Note: bgfx::alloc memory is owned by bgfx and will be freed internally
         return BGFX_INVALID_HANDLE;
     }
 
-    mem->data[size] = '\0';
+    buffer[size] = '\0';
+    const bgfx::Memory* mem = bgfx::copy(buffer.data(), static_cast<uint32_t>(size) + 1);
     return bgfx::createShader(mem);
 }
 
@@ -203,6 +203,8 @@ public:
             m_default_program = bgfx::createProgram(vsh, fsh, true);
             log(LogLevel::Info, "Default shader program loaded successfully");
         } else {
+            if (bgfx::isValid(vsh)) bgfx::destroy(vsh);
+            if (bgfx::isValid(fsh)) bgfx::destroy(fsh);
             log(LogLevel::Warn, "Failed to load default shader program");
         }
 
@@ -214,6 +216,8 @@ public:
             m_pbr_program = bgfx::createProgram(pbr_vsh, pbr_fsh, true);
             log(LogLevel::Info, "PBR shader program loaded successfully");
         } else {
+            if (bgfx::isValid(pbr_vsh)) bgfx::destroy(pbr_vsh);
+            if (bgfx::isValid(pbr_fsh)) bgfx::destroy(pbr_fsh);
             log(LogLevel::Warn, "Failed to load PBR shader program - using default");
             m_pbr_program = m_default_program;
         }
@@ -226,6 +230,8 @@ public:
             m_shadow_program = bgfx::createProgram(shadow_vsh, shadow_fsh, true);
             log(LogLevel::Info, "Shadow shader program loaded successfully");
         } else {
+            if (bgfx::isValid(shadow_vsh)) bgfx::destroy(shadow_vsh);
+            if (bgfx::isValid(shadow_fsh)) bgfx::destroy(shadow_fsh);
             log(LogLevel::Warn, "Failed to load shadow shader program");
         }
 
@@ -237,6 +243,8 @@ public:
             m_debug_program = bgfx::createProgram(debug_vsh, debug_fsh, true);
             log(LogLevel::Info, "Debug shader program loaded successfully");
         } else {
+            if (bgfx::isValid(debug_vsh)) bgfx::destroy(debug_vsh);
+            if (bgfx::isValid(debug_fsh)) bgfx::destroy(debug_fsh);
             log(LogLevel::Warn, "Failed to load debug shader program");
         }
 
@@ -256,6 +264,8 @@ public:
             m_skinned_pbr_program = bgfx::createProgram(skinned_vsh, skinned_fsh, true);
             log(LogLevel::Info, "Skinned PBR shader program loaded successfully");
         } else {
+            if (bgfx::isValid(skinned_vsh)) bgfx::destroy(skinned_vsh);
+            if (bgfx::isValid(skinned_fsh)) bgfx::destroy(skinned_fsh);
             log(LogLevel::Warn, "Failed to load skinned PBR shader program");
         }
 
@@ -270,6 +280,8 @@ public:
             m_skybox_program = bgfx::createProgram(skybox_vsh, skybox_fsh, true);
             log(LogLevel::Info, "Skybox shader program loaded successfully");
         } else {
+            if (bgfx::isValid(skybox_vsh)) bgfx::destroy(skybox_vsh);
+            if (bgfx::isValid(skybox_fsh)) bgfx::destroy(skybox_fsh);
             log(LogLevel::Warn, "Failed to load skybox shader program");
         }
 
@@ -318,6 +330,8 @@ public:
             m_billboard_program = bgfx::createProgram(billboard_vsh, billboard_fsh, true);
             log(LogLevel::Info, "Billboard shader program loaded successfully");
         } else {
+            if (bgfx::isValid(billboard_vsh)) bgfx::destroy(billboard_vsh);
+            if (bgfx::isValid(billboard_fsh)) bgfx::destroy(billboard_fsh);
             log(LogLevel::Warn, "Failed to load billboard shader program");
         }
 
@@ -1159,15 +1173,6 @@ public:
     }
 
     void set_camera_position(const Vec3& position) override {
-        static Vec3 last_pos(1e9, 1e9, 1e9);
-        if (glm::distance(last_pos, position) > 0.01f) {
-            std::string msg = "RENDERER: Camera set to (" + 
-                             std::to_string(position.x) + ", " + 
-                             std::to_string(position.y) + ", " + 
-                             std::to_string(position.z) + ")";
-            log(LogLevel::Info, msg.c_str());
-            last_pos = position;
-        }
         m_camera_position = position;
     }
 
@@ -1291,12 +1296,20 @@ public:
             upload_pbr_uniforms(mat_data);
         }
 
-        // Set render state
-        uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
-                         BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
-                         BGFX_STATE_CULL_CW | BGFX_STATE_MSAA;
+        // Set render state — shadow pass uses depth-only writes
+        if (is_shadow_pass) {
+            uint64_t state = BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
+                             BGFX_STATE_CULL_CW | BGFX_STATE_MSAA;
+            bgfx::setState(state);
+        } else {
+            uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                             BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
+                             BGFX_STATE_CULL_CW | BGFX_STATE_MSAA;
+            bgfx::setState(state);
+        }
 
-        bgfx::setState(state);
+        // TODO: Create vs_skinned_shadow.sc for a proper depth-only skinned shader.
+        // For now, m_skinned_pbr_program is the only shader with bone matrix support.
         bgfx::submit(view_id, m_skinned_pbr_program);
     }
 
@@ -1657,6 +1670,16 @@ public:
             return;
         }
 
+        // Depth prepass uses depth-only program (same as shadow) to avoid running full PBR
+        constexpr uint16_t kDepthPrepass = static_cast<uint16_t>(RenderView::DepthPrepass);
+        if (view_id == kDepthPrepass && bgfx::isValid(m_shadow_program)) {
+            uint64_t state = BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
+                             BGFX_STATE_CULL_CW | BGFX_STATE_MSAA;
+            bgfx::setState(state);
+            bgfx::submit(view_id, m_shadow_program);
+            return;
+        }
+
         // GBuffer pass: output world-space normals using the dedicated normals program
         // instead of the full PBR shader (which would output lit color, not normals)
         constexpr uint16_t kGBufferView = static_cast<uint16_t>(RenderView::GBuffer);
@@ -1758,7 +1781,8 @@ public:
             }
         }
 
-        bgfx::setUniform(m_pbr_uniforms.u_lights, light_data.data(), 32);
+        uint16_t upload_count = active_light_count > 0 ? static_cast<uint16_t>(active_light_count * 4) : 1;
+        bgfx::setUniform(m_pbr_uniforms.u_lights, light_data.data(), upload_count);
         Vec4 light_count(static_cast<float>(active_light_count), 0.0f, 0.0f, 0.0f);
         bgfx::setUniform(m_pbr_uniforms.u_lightCount, glm::value_ptr(light_count));
 

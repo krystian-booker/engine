@@ -119,7 +119,7 @@ void MaterialInstanceManager::shutdown() {
         }
     }
     m_sampler_cache.clear();
-    m_next_texture_slot = 4;
+    m_next_texture_slot = 9;
 
     m_instances.clear();
     m_instance_count = 0;
@@ -265,9 +265,9 @@ MaterialInstanceManager::SamplerInfo MaterialInstanceManager::get_or_create_samp
     info.sampler_handle = handle.idx;
     info.slot = m_next_texture_slot++;
 
-    // Wrap texture slots to avoid overflow (8-15 are typically for material textures)
+    // Wrap texture slots to avoid overflow (9-15 are available for material textures)
     if (m_next_texture_slot > 15) {
-        m_next_texture_slot = 8;
+        m_next_texture_slot = 9;
     }
 
     m_sampler_cache[name] = info;

@@ -118,7 +118,7 @@ private:
 
     // Cached sampler handles (name -> SamplerInfo)
     std::unordered_map<std::string, SamplerInfo> m_sampler_cache;
-    uint8_t m_next_texture_slot = 4;  // Start at slot 4 to avoid conflicts with built-in slots
+    uint8_t m_next_texture_slot = 9;  // Start at slot 9 to avoid conflicts with PBR slots 0-8
 };
 
 // Global material instance manager

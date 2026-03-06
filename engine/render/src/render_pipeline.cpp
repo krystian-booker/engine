@@ -626,8 +626,8 @@ void RenderPipeline::create_render_targets() {
     {
         ViewConfig view_config;
         view_config.render_target = m_hdr_target;
-        // Don't clear color if skybox is enabled — the skybox pass (Skybox=42) already
-        // paints the background before MainOpaque (MainOpaque=43). Clearing here would
+        // Don't clear color if skybox is enabled — the skybox pass (Skybox=43) already
+        // paints the background before MainOpaque (MainOpaque=44). Clearing here would
         // destroy the skybox output.
         view_config.clear_color_enabled = !has_flag(m_config.enabled_passes, RenderPassFlags::Skybox);
         view_config.clear_color = m_config.clear_color;
@@ -748,12 +748,12 @@ static void extract_frustum_planes(const Mat4& vp, std::array<Vec4, 6>& planes) 
         vp[3][3] - vp[3][1]
     );
 
-    // Near plane
+    // Near plane (ZO depth range [0,1] — use row2 directly, not row3+row2)
     planes[4] = Vec4(
-        vp[0][3] + vp[0][2],
-        vp[1][3] + vp[1][2],
-        vp[2][3] + vp[2][2],
-        vp[3][3] + vp[3][2]
+        vp[0][2],
+        vp[1][2],
+        vp[2][2],
+        vp[3][2]
     );
 
     // Far plane
@@ -852,11 +852,9 @@ void RenderPipeline::sort_objects_front_to_back(const CameraData& camera,
 
     std::sort(objects.begin(), objects.end(),
         [&cam_pos](const RenderObject* a, const RenderObject* b) {
-            Vec3 pos_a = Vec3(a->transform[3]);
-            Vec3 pos_b = Vec3(b->transform[3]);
-            float dist_a = length(pos_a - cam_pos);
-            float dist_b = length(pos_b - cam_pos);
-            return dist_a < dist_b;
+            Vec3 diff_a = Vec3(a->transform[3]) - cam_pos;
+            Vec3 diff_b = Vec3(b->transform[3]) - cam_pos;
+            return glm::dot(diff_a, diff_a) < glm::dot(diff_b, diff_b);
         });
 }
 
@@ -866,11 +864,9 @@ void RenderPipeline::sort_objects_back_to_front(const CameraData& camera,
 
     std::sort(objects.begin(), objects.end(),
         [&cam_pos](const RenderObject* a, const RenderObject* b) {
-            Vec3 pos_a = Vec3(a->transform[3]);
-            Vec3 pos_b = Vec3(b->transform[3]);
-            float dist_a = length(pos_a - cam_pos);
-            float dist_b = length(pos_b - cam_pos);
-            return dist_a > dist_b;
+            Vec3 diff_a = Vec3(a->transform[3]) - cam_pos;
+            Vec3 diff_b = Vec3(b->transform[3]) - cam_pos;
+            return glm::dot(diff_a, diff_a) > glm::dot(diff_b, diff_b);
         });
 }
 
@@ -915,6 +911,9 @@ void RenderPipeline::shadow_pass(const CameraData& camera,
     for (uint32_t cascade = 0; cascade < m_config.shadow_config.cascade_count; ++cascade) {
         RenderView shadow_view = static_cast<RenderView>(
             static_cast<int>(RenderView::ShadowCascade0) + cascade);
+
+        // Ensure clear flags execute even if there are no shadow casters
+        bgfx::touch(static_cast<uint16_t>(shadow_view));
 
         for (const auto* obj : m_shadow_casters) {
             if (obj->skinned && obj->bone_matrices) {
@@ -993,7 +992,7 @@ void RenderPipeline::ssao_pass(const CameraData& camera) {
 void RenderPipeline::main_pass(const CameraData& camera,
                                 const std::vector<LightData>& lights) {
     // Reconfigure MainOpaque clear: skip color clear when skybox is active,
-    // since the skybox pass (Skybox=42) already painted the HDR background.
+    // since the skybox pass (Skybox=43) already painted the HDR background.
     bool skybox_active = has_flag(m_config.enabled_passes, RenderPassFlags::Skybox) && m_skybox_cubemap.valid();
     {
         ViewConfig view_config;

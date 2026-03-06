@@ -56,39 +56,39 @@ enum class RenderView : uint16_t {
 
     // Point light shadow cubemap faces (6 faces, up to 4 lights)
     ShadowPoint0Face0 = 9,
-    // ... faces 1-5 follow (9-14, 15-20, 21-26, 27-31)
+    // ... faces 1-5 follow (9-14, 15-20, 21-26, 27-32)
 
-    // Depth pre-pass
-    DepthPrepass = 32,
+    // Depth pre-pass (starts at 33 to avoid collision with point light shadow face views)
+    DepthPrepass = 33,
 
     // G-Buffer pass (for deferred rendering)
-    GBuffer = 33,
+    GBuffer = 34,
 
     // Motion vectors (for TAA)
-    MotionVectors = 34,
+    MotionVectors = 35,
 
     // Screen-space effects
-    SSAO = 35,
-    SSAOBlur0 = 36,
-    SSAOBlur1 = 37,
-    SSAOBlur2 = 38,
-    SSAOBlur3 = 39,
-    SSR = 40,
+    SSAO = 36,
+    SSAOBlur0 = 37,
+    SSAOBlur1 = 38,
+    SSAOBlur2 = 39,
+    SSAOBlur3 = 40,
+    SSR = 41,
 
     // Volumetric lighting
-    VolumetricScatter = 41,
+    VolumetricScatter = 42,
 
     // Skybox rendering (must be before MainOpaque so it paints the background
     // before opaque geometry is drawn on top; uses DEPTH_TEST_LEQUAL without
     // writing depth, so it only fills where depth == 1.0)
-    Skybox = 42,
+    Skybox = 43,
 
     // Main rendering pass (forward)
-    MainOpaque = 43,
-    MainTransparent = 44,
+    MainOpaque = 44,
+    MainTransparent = 45,
 
     // Volumetric integration (after main passes, before post-processing)
-    VolumetricIntegrate = 45,
+    VolumetricIntegrate = 46,
 
     // Post-processing chain
     PostProcess0 = 50,

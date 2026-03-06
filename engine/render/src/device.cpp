@@ -8,6 +8,12 @@ static uint32_t s_width = 0;
 static uint32_t s_height = 0;
 
 bool Device::init(const DeviceInit& config) {
+    // Guard against double-init (BGFXRenderer also calls bgfx::init)
+    static bool s_bgfx_initialized = false;
+    if (s_bgfx_initialized) {
+        return false;
+    }
+
     s_width = config.width;
     s_height = config.height;
 
@@ -24,6 +30,7 @@ bool Device::init(const DeviceInit& config) {
     if (!bgfx::init(init)) {
         return false;
     }
+    s_bgfx_initialized = true;
 
     bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x303030ff, 1.0f, 0);
     bgfx::setViewRect(0, 0, 0, uint16_t(config.width), uint16_t(config.height));
