@@ -88,7 +88,7 @@ TEST_CASE("make_camera_data view matrix matches glm::lookAt", "[render][camera]"
     }
 }
 
-TEST_CASE("make_camera_data projection matrix matches glm::perspective", "[render][camera]") {
+TEST_CASE("make_camera_data projection matrix matches glm::perspectiveRH_ZO", "[render][camera]") {
     Vec3 pos(0.0f, 0.0f, 5.0f);
     Vec3 target(0.0f, 0.0f, 0.0f);
     Vec3 up(0.0f, 1.0f, 0.0f);
@@ -98,7 +98,7 @@ TEST_CASE("make_camera_data projection matrix matches glm::perspective", "[rende
     float far_p = 500.0f;
     auto cam = make_camera_data(pos, target, up, fov, aspect, near_p, far_p);
 
-    Mat4 expected_proj = glm::perspective(glm::radians(fov), aspect, near_p, far_p);
+    Mat4 expected_proj = glm::perspectiveRH_ZO(glm::radians(fov), aspect, near_p, far_p);
     for (int c = 0; c < 4; ++c) {
         for (int r = 0; r < 4; ++r) {
             REQUIRE_THAT(cam.projection_matrix[c][r], WithinAbs(expected_proj[c][r], 0.001f));

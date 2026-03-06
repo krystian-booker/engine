@@ -576,7 +576,6 @@ public:
         }
         m_render_targets.clear();
 
-        bgfx::shutdown();
         m_initialized = false;
     }
 

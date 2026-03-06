@@ -342,8 +342,7 @@ void ThirdPersonCameraSystem::update_camera(scene::World& world, scene::Entity c
     Vec3 pivot = calculate_pivot(world, cam.target_entity, cam.active_preset, cam.shoulder_side);
 
     // Smooth pivot follow
-    static Vec3 pivot_velocity(0.0f);
-    cam.pivot_position = smooth_damp(cam.pivot_position, pivot, pivot_velocity,
+    cam.pivot_position = smooth_damp(cam.pivot_position, pivot, cam.pivot_velocity,
                                       cam.active_preset.position_smoothing, dt);
 
     // Handle lock-on camera
@@ -388,9 +387,8 @@ void ThirdPersonCameraSystem::update_camera(scene::World& world, scene::Entity c
     } else {
         cam.collision_active = false;
         // Recover distance smoothly
-        static float dist_velocity = 0.0f;
         cam.collision_distance = smooth_damp_float(cam.collision_distance, cam.active_preset.distance,
-                                                    dist_velocity,
+                                                    cam.collision_distance_velocity,
                                                     1.0f / cam.active_preset.collision_recovery_speed, dt);
     }
 

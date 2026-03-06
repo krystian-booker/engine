@@ -104,6 +104,10 @@ struct ThirdPersonCameraComponent {
     // Side offset (for over-shoulder, 1 = right, -1 = left)
     float shoulder_side = 1.0f;
 
+    // Smooth damp velocities (per-entity, not shared)
+    Vec3 pivot_velocity{0.0f};
+    float collision_distance_velocity = 0.0f;
+
     // ========================================================================
     // Helpers
     // ========================================================================

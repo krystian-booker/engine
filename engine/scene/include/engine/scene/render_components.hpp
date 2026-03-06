@@ -34,14 +34,14 @@ struct Camera {
     bool orthographic = false;
     float ortho_size = 10.0f;    // Half-size for orthographic
 
-    // Compute projection matrix
+    // Compute projection matrix (ZO = [0,1] depth range for D3D11/Vulkan/Metal)
     Mat4 projection() const {
         if (orthographic) {
             float w = ortho_size * aspect_ratio;
             float h = ortho_size;
-            return glm::ortho(-w, w, -h, h, near_plane, far_plane);
+            return glm::orthoRH_ZO(-w, w, -h, h, near_plane, far_plane);
         } else {
-            return glm::perspective(glm::radians(fov), aspect_ratio, near_plane, far_plane);
+            return glm::perspectiveRH_ZO(glm::radians(fov), aspect_ratio, near_plane, far_plane);
         }
     }
 };

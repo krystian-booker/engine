@@ -2,6 +2,7 @@
 #include <engine/render/renderer.hpp>
 #include <engine/render/particle_system.hpp>
 #include <engine/core/log.hpp>
+#include <bgfx/bgfx.h>
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -625,8 +626,8 @@ void RenderPipeline::create_render_targets() {
     {
         ViewConfig view_config;
         view_config.render_target = m_hdr_target;
-        // Don't clear color if skybox is enabled — the skybox pass (view 39) already
-        // paints the background before MainOpaque (view 40). Clearing here would
+        // Don't clear color if skybox is enabled — the skybox pass (Skybox=42) already
+        // paints the background before MainOpaque (MainOpaque=43). Clearing here would
         // destroy the skybox output.
         view_config.clear_color_enabled = !has_flag(m_config.enabled_passes, RenderPassFlags::Skybox);
         view_config.clear_color = m_config.clear_color;
@@ -929,6 +930,7 @@ void RenderPipeline::shadow_pass(const CameraData& camera,
 
 void RenderPipeline::depth_prepass(const CameraData& camera) {
     m_renderer->set_view_transform(RenderView::DepthPrepass, camera.view_matrix, camera.projection_matrix);
+    bgfx::touch(static_cast<uint16_t>(RenderView::DepthPrepass));
 
     for (const auto* obj : m_visible_opaque) {
         // Submit with depth-only material
@@ -940,6 +942,7 @@ void RenderPipeline::depth_prepass(const CameraData& camera) {
 void RenderPipeline::gbuffer_pass(const CameraData& camera) {
     // Set view transform for GBuffer pass
     m_renderer->set_view_transform(RenderView::GBuffer, camera.view_matrix, camera.projection_matrix);
+    bgfx::touch(static_cast<uint16_t>(RenderView::GBuffer));
 
     // Render all visible opaque objects to GBuffer
     // This outputs world-space normals to the GBuffer color attachment
@@ -957,6 +960,7 @@ void RenderPipeline::gbuffer_pass(const CameraData& camera) {
 void RenderPipeline::motion_vector_pass(const CameraData& camera) {
     // Set view transform for motion vector pass
     m_renderer->set_view_transform(RenderView::MotionVectors, camera.view_matrix, camera.projection_matrix);
+    bgfx::touch(static_cast<uint16_t>(RenderView::MotionVectors));
 
     // Render all visible opaque objects to calculate motion vectors
     // Motion is calculated in the shader using current and previous view-projection matrices
@@ -988,10 +992,8 @@ void RenderPipeline::ssao_pass(const CameraData& camera) {
 
 void RenderPipeline::main_pass(const CameraData& camera,
                                 const std::vector<LightData>& lights) {
-    if (m_visible_opaque.empty()) return;
-
     // Reconfigure MainOpaque clear: skip color clear when skybox is active,
-    // since the skybox pass (view 39) already painted the HDR background.
+    // since the skybox pass (Skybox=42) already painted the HDR background.
     bool skybox_active = has_flag(m_config.enabled_passes, RenderPassFlags::Skybox) && m_skybox_cubemap.valid();
     {
         ViewConfig view_config;
@@ -1002,6 +1004,9 @@ void RenderPipeline::main_pass(const CameraData& camera,
         view_config.clear_depth = 1.0f;
         m_renderer->configure_view(RenderView::MainOpaque, view_config);
     }
+    bgfx::touch(static_cast<uint16_t>(RenderView::MainOpaque));
+
+    if (m_visible_opaque.empty()) return;
 
     // Update light uniforms
     update_light_uniforms(lights);
@@ -1240,7 +1245,7 @@ CameraData make_camera_data(
     camera.inverse_view = inverse(camera.view_matrix);
 
     // Calculate projection matrix
-    camera.projection_matrix = glm::perspective(
+    camera.projection_matrix = glm::perspectiveRH_ZO(
         fov_y * glm::pi<float>() / 180.0f,
         aspect_ratio,
         near_plane,
