@@ -1,6 +1,7 @@
 #include <engine/localization/localization.hpp>
 #include <engine/core/log.hpp>
 #include <fstream>
+#include <mutex>
 #include <sstream>
 #include <cctype>
 #include <nlohmann/json.hpp>

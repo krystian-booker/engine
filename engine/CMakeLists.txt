@@ -39,37 +39,78 @@ add_subdirectory(companion)
 add_library(engine INTERFACE)
 add_library(engine::engine ALIAS engine)
 
-target_link_libraries(engine INTERFACE
-    engine::core
-    engine::reflect
-    engine::scene
-    engine::stats
-    engine::effects
-    engine::inventory
-    engine::combat
-    engine::script
-    engine::render
-    engine::asset
-    engine::physics
-    engine::audio
-    engine::navigation
-    engine::ai
-    engine::quest
-    engine::dialogue
-    engine::ui
-    engine::debug-gui
-    engine::save
-    engine::localization
-    engine::streaming
-    engine::terrain
-    engine::vegetation
-    engine::cinematic
-    engine::spline
-    engine::plugin
-    engine::data
-    engine::settings
-    engine::achievements
-    engine::environment
-    engine::gameplay
-    engine::companion
-)
+# On GCC/Clang with static libraries, circular dependencies between engine
+# modules require a linker group so the linker resolves all symbols.
+if(UNIX)
+    target_link_libraries(engine INTERFACE
+        -Wl,--start-group
+        engine::core
+        engine::reflect
+        engine::scene
+        engine::stats
+        engine::effects
+        engine::inventory
+        engine::combat
+        engine::script
+        engine::render
+        engine::asset
+        engine::physics
+        engine::audio
+        engine::navigation
+        engine::ai
+        engine::quest
+        engine::dialogue
+        engine::ui
+        engine::debug-gui
+        engine::save
+        engine::localization
+        engine::streaming
+        engine::terrain
+        engine::vegetation
+        engine::cinematic
+        engine::spline
+        engine::plugin
+        engine::data
+        engine::settings
+        engine::achievements
+        engine::environment
+        engine::gameplay
+        engine::companion
+        -Wl,--end-group
+    )
+else()
+    target_link_libraries(engine INTERFACE
+        engine::core
+        engine::reflect
+        engine::scene
+        engine::stats
+        engine::effects
+        engine::inventory
+        engine::combat
+        engine::script
+        engine::render
+        engine::asset
+        engine::physics
+        engine::audio
+        engine::navigation
+        engine::ai
+        engine::quest
+        engine::dialogue
+        engine::ui
+        engine::debug-gui
+        engine::save
+        engine::localization
+        engine::streaming
+        engine::terrain
+        engine::vegetation
+        engine::cinematic
+        engine::spline
+        engine::plugin
+        engine::data
+        engine::settings
+        engine::achievements
+        engine::environment
+        engine::gameplay
+        engine::companion
+    )
+endif()

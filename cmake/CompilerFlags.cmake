@@ -22,7 +22,9 @@ if(MSVC)
 else()
     target_compile_options(engine_compiler_flags INTERFACE
         -Wall -Wextra -Wpedantic
+        -pthread
         $<$<CONFIG:Release>:-O3 -DNDEBUG>
         $<$<CONFIG:Debug>:-O0 -g>
     )
+    target_link_options(engine_compiler_flags INTERFACE -pthread)
 endif()

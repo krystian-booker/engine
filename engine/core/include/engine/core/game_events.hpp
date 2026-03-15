@@ -1,6 +1,7 @@
 #pragma once
 
 #include <engine/core/event_dispatcher.hpp>
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <mutex>

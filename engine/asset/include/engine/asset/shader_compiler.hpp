@@ -39,20 +39,40 @@ public:
         const std::string& source_path,
         const std::string& output_path,
         ShaderStage stage,
-        const CompileOptions& options = {});
+        const CompileOptions& options);
 
     // Compile shader source to binary in memory
     // Returns empty vector on failure
     static std::vector<uint8_t> compile_to_memory(
         const std::string& source,
         ShaderStage stage,
-        const CompileOptions& options = {});
+        const CompileOptions& options);
 
     // Compile from source file to memory
     static std::vector<uint8_t> compile_file_to_memory(
         const std::string& source_path,
         ShaderStage stage,
-        const CompileOptions& options = {});
+        const CompileOptions& options);
+
+    // Convenience overloads with default options
+    static bool compile(
+        const std::string& source_path,
+        const std::string& output_path,
+        ShaderStage stage) {
+        return compile(source_path, output_path, stage, CompileOptions{});
+    }
+
+    static std::vector<uint8_t> compile_to_memory(
+        const std::string& source,
+        ShaderStage stage) {
+        return compile_to_memory(source, stage, CompileOptions{});
+    }
+
+    static std::vector<uint8_t> compile_file_to_memory(
+        const std::string& source_path,
+        ShaderStage stage) {
+        return compile_file_to_memory(source_path, stage, CompileOptions{});
+    }
 
     // Get the last error message
     static const std::string& get_last_error();

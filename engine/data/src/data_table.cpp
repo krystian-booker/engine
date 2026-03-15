@@ -52,7 +52,7 @@ DataValue DataValue::parse(const std::string& str, Type hint) {
         }
         case Type::Int: {
             try {
-                return DataValue(std::stoll(str));
+                return DataValue(static_cast<int64_t>(std::stoll(str)));
             } catch (...) {
                 return DataValue(int64_t(0));
             }

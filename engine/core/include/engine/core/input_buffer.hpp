@@ -17,7 +17,8 @@ public:
         bool allow_duplicates = false;          // Allow same action multiple times
     };
 
-    explicit InputBuffer(Config config = {});
+    explicit InputBuffer(Config config);
+    InputBuffer();
     ~InputBuffer() = default;
 
     // Non-copyable but movable
@@ -75,7 +76,7 @@ private:
 InputBuffer& input_buffer();
 
 // Initialize global input buffer with custom config
-void init_input_buffer(InputBuffer::Config config = {});
+void init_input_buffer(InputBuffer::Config config = InputBuffer::Config{});
 
 // Shutdown global input buffer
 void shutdown_input_buffer();

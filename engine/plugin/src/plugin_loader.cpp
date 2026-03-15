@@ -83,7 +83,11 @@ LoadResult PluginLoader::load(const std::filesystem::path& dll_path, bool copy_b
     // Copy to temp file if requested (for hot reload)
     if (copy_before_load) {
         m_loaded_path = dll_path;
+#ifdef _WIN32
         m_loaded_path.replace_extension(".loaded.dll");
+#else
+        m_loaded_path.replace_extension(".loaded.so");
+#endif
 
         try {
             std::filesystem::copy_file(dll_path, m_loaded_path,

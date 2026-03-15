@@ -155,13 +155,26 @@ public:
         }
     }
 
-    bool init(void* native_window_handle, uint32_t width, uint32_t height) override {
+    bool init(void* native_window_handle, uint32_t width, uint32_t height,
+              void* native_display_handle = nullptr, bool wayland = false) override {
         m_width = width;
         m_height = height;
 
         bgfx::Init init;
         init.platformData.nwh = native_window_handle;
-        init.type = bgfx::RendererType::Count;  // Auto-select
+#if defined(__linux__)
+        init.platformData.ndt = native_display_handle;
+        if (wayland) {
+            init.platformData.type = bgfx::NativeWindowHandleType::Wayland;
+        }
+        if (!init.platformData.ndt) {
+            log(LogLevel::Error, "Native display handle (ndt) is null — Vulkan will fail");
+        }
+#else
+        (void)native_display_handle;
+        (void)wayland;
+#endif
+        init.type = bgfx::RendererType::Count;  // Auto-select (Vulkan preferred on Linux)
         init.resolution.width = width;
         init.resolution.height = height;
         init.resolution.reset = m_vsync ? BGFX_RESET_VSYNC : BGFX_RESET_NONE;

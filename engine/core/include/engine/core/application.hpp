@@ -1,6 +1,7 @@
 #pragma once
 
 #include <engine/core/project_settings.hpp>
+#include <engine/core/platform_window.hpp>
 #include <engine/core/game_clock.hpp>
 #include <string>
 #include <cstdint>
@@ -88,6 +89,7 @@ protected:
     void destroy_window();
     bool poll_events();  // Returns false if quit requested
     void* get_native_window_handle() { return m_native_window; }
+    void* get_native_display_handle() { return m_native_display; }
 
     // Get window dimensions
     uint32_t window_width() const { return m_window_width; }
@@ -109,6 +111,9 @@ private:
     uint32_t m_window_width = 1280;
     uint32_t m_window_height = 720;
     void* m_native_window = nullptr;
+    void* m_native_display = nullptr;
+    WindowBackend m_window_backend = WindowBackend::X11;
+    std::unique_ptr<PlatformWindow> m_platform_window;
 
     // Engine systems
     std::unique_ptr<scene::World> m_world;

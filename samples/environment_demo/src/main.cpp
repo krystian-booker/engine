@@ -12,6 +12,7 @@
 #endif
 
 #include <engine/core/application.hpp>
+#include <engine/core/input.hpp>
 #include <engine/core/log.hpp>
 #include <engine/core/time.hpp>
 #include <engine/scene/scene.hpp>
@@ -267,6 +268,41 @@ private:
         if (GetAsyncKeyState('6') & 0x0001) { tod.set_time(20.0f); log(LogLevel::Info, "[Time] Set to Evening"); }
         if (GetAsyncKeyState('7') & 0x0001) { tod.set_time(23.0f); log(LogLevel::Info, "[Time] Set to Night"); }
         if (GetAsyncKeyState('8') & 0x0001) { tod.set_time(3.0f);  log(LogLevel::Info, "[Time] Set to Midnight"); }
+        #else
+        // Cross-platform input using engine Input system
+        using engine::core::Input;
+        using engine::core::Key;
+
+        if (Input::key_pressed(Key::Space)) {
+            if (tod.is_paused()) {
+                tod.resume();
+                log(LogLevel::Info, "[Time] Resumed");
+            } else {
+                tod.pause();
+                log(LogLevel::Info, "[Time] Paused");
+            }
+        }
+
+        if (Input::key_pressed(Key::Equals)) {
+            float scale = tod.get_time_scale();
+            tod.set_time_scale(std::min(scale * 2.0f, 32.0f));
+            log(LogLevel::Info, "[Time] Speed: {:.1f}x", tod.get_time_scale());
+        }
+
+        if (Input::key_pressed(Key::Minus)) {
+            float scale = tod.get_time_scale();
+            tod.set_time_scale(std::max(scale * 0.5f, 0.125f));
+            log(LogLevel::Info, "[Time] Speed: {:.1f}x", tod.get_time_scale());
+        }
+
+        if (Input::key_pressed(Key::Num1)) { tod.set_time(6.0f);  log(LogLevel::Info, "[Time] Set to Dawn"); }
+        if (Input::key_pressed(Key::Num2)) { tod.set_time(9.0f);  log(LogLevel::Info, "[Time] Set to Morning"); }
+        if (Input::key_pressed(Key::Num3)) { tod.set_time(12.0f); log(LogLevel::Info, "[Time] Set to Noon"); }
+        if (Input::key_pressed(Key::Num4)) { tod.set_time(15.0f); log(LogLevel::Info, "[Time] Set to Afternoon"); }
+        if (Input::key_pressed(Key::Num5)) { tod.set_time(18.0f); log(LogLevel::Info, "[Time] Set to Dusk"); }
+        if (Input::key_pressed(Key::Num6)) { tod.set_time(20.0f); log(LogLevel::Info, "[Time] Set to Evening"); }
+        if (Input::key_pressed(Key::Num7)) { tod.set_time(23.0f); log(LogLevel::Info, "[Time] Set to Night"); }
+        if (Input::key_pressed(Key::Num8)) { tod.set_time(3.0f);  log(LogLevel::Info, "[Time] Set to Midnight"); }
         #endif
     }
 

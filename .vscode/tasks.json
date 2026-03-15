@@ -1,0 +1,210 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Build: Debug",
+			"type": "shell",
+			"command": "cmake",
+			"args": ["--build", "${workspaceFolder}/out/build/Linux-Debug"],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"problemMatcher": "$gcc",
+			"detail": "Build all targets (Debug)"
+		},
+		{
+			"label": "Build: Release",
+			"type": "shell",
+			"command": "cmake",
+			"args": ["--build", "${workspaceFolder}/out/build/Linux-Release"],
+			"group": "build",
+			"problemMatcher": "$gcc",
+			"detail": "Build all targets (Release)"
+		},
+		{
+			"label": "Clean",
+			"type": "shell",
+			"command": "cmake",
+			"args": ["--build", "${workspaceFolder}/out/build/Linux-Debug", "--target", "clean"],
+			"problemMatcher": [],
+			"detail": "Clean build artifacts"
+		},
+		{
+			"label": "Clean Rebuild",
+			"type": "shell",
+			"command": "cmake",
+			"args": ["--build", "${workspaceFolder}/out/build/Linux-Debug", "--clean-first"],
+			"group": "build",
+			"problemMatcher": "$gcc",
+			"detail": "Clean and rebuild all targets (Debug)"
+		},
+		{
+			"label": "Configure",
+			"type": "shell",
+			"command": "cmake",
+			"args": ["--preset", "Linux-Debug"],
+			"options": { "cwd": "${workspaceFolder}" },
+			"problemMatcher": [],
+			"detail": "Run CMake configure (Linux-Debug)"
+		},
+		{
+			"label": "Run: Editor",
+			"type": "shell",
+			"command": "./editor",
+			"options": { "cwd": "${workspaceFolder}/out/build/Linux-Debug/bin" },
+			"dependsOn": "Build: Debug",
+			"problemMatcher": [],
+			"detail": "Launch the engine editor",
+			"presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+		},
+		{
+			"label": "Run: Editor (X11)",
+			"type": "shell",
+			"command": "./editor",
+			"options": {
+				"cwd": "${workspaceFolder}/out/build/Linux-Debug/bin",
+				"env": { "ENGINE_WINDOWING_BACKEND": "x11", "QT_QPA_PLATFORM": "xcb" }
+			},
+			"dependsOn": "Build: Debug",
+			"problemMatcher": [],
+			"detail": "Launch editor forced to X11/XCB",
+			"presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+		},
+		{
+			"label": "Run: environment_demo",
+			"type": "shell",
+			"command": "./environment_demo",
+			"options": { "cwd": "${workspaceFolder}/out/build/Linux-Debug/bin" },
+			"dependsOn": "Build: Debug",
+			"problemMatcher": [],
+			"presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+		},
+		{
+			"label": "Run: spinning_cube",
+			"type": "shell",
+			"command": "./spinning_cube",
+			"options": { "cwd": "${workspaceFolder}/out/build/Linux-Debug/bin" },
+			"dependsOn": "Build: Debug",
+			"problemMatcher": [],
+			"presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+		},
+		{
+			"label": "Run: ai_demo",
+			"type": "shell",
+			"command": "./ai_demo",
+			"options": { "cwd": "${workspaceFolder}/out/build/Linux-Debug/bin" },
+			"dependsOn": "Build: Debug",
+			"problemMatcher": [],
+			"presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+		},
+		{
+			"label": "Run: audio_test",
+			"type": "shell",
+			"command": "./audio_test",
+			"options": { "cwd": "${workspaceFolder}/out/build/Linux-Debug/bin" },
+			"dependsOn": "Build: Debug",
+			"problemMatcher": [],
+			"presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+		},
+		{
+			"label": "Run: audio_3d_test",
+			"type": "shell",
+			"command": "./audio_3d_test",
+			"options": { "cwd": "${workspaceFolder}/out/build/Linux-Debug/bin" },
+			"dependsOn": "Build: Debug",
+			"problemMatcher": [],
+			"presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+		},
+		{
+			"label": "Run: bouncing_balls_test",
+			"type": "shell",
+			"command": "./bouncing_balls_test",
+			"options": { "cwd": "${workspaceFolder}/out/build/Linux-Debug/bin" },
+			"dependsOn": "Build: Debug",
+			"problemMatcher": [],
+			"presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+		},
+		{
+			"label": "Run: color_pipeline_sample",
+			"type": "shell",
+			"command": "./color_pipeline_sample",
+			"options": { "cwd": "${workspaceFolder}/out/build/Linux-Debug/bin" },
+			"dependsOn": "Build: Debug",
+			"problemMatcher": [],
+			"presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+		},
+		{
+			"label": "Run: engine",
+			"type": "shell",
+			"command": "./engine",
+			"options": { "cwd": "${workspaceFolder}/out/build/Linux-Debug/bin" },
+			"dependsOn": "Build: Debug",
+			"problemMatcher": [],
+			"presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+		},
+		{
+			"label": "Run: ibl_validation",
+			"type": "shell",
+			"command": "./ibl_validation",
+			"options": { "cwd": "${workspaceFolder}/out/build/Linux-Debug/bin" },
+			"dependsOn": "Build: Debug",
+			"problemMatcher": [],
+			"presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+		},
+		{
+			"label": "Run: pbr_analytical_final",
+			"type": "shell",
+			"command": "./pbr_analytical_final",
+			"options": { "cwd": "${workspaceFolder}/out/build/Linux-Debug/bin" },
+			"dependsOn": "Build: Debug",
+			"problemMatcher": [],
+			"presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+		},
+		{
+			"label": "Run: pbr_data_validation",
+			"type": "shell",
+			"command": "./pbr_data_validation",
+			"options": { "cwd": "${workspaceFolder}/out/build/Linux-Debug/bin" },
+			"dependsOn": "Build: Debug",
+			"problemMatcher": [],
+			"presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+		},
+		{
+			"label": "Run: render_test",
+			"type": "shell",
+			"command": "./render_test",
+			"options": { "cwd": "${workspaceFolder}/out/build/Linux-Debug/bin" },
+			"dependsOn": "Build: Debug",
+			"problemMatcher": [],
+			"presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+		},
+		{
+			"label": "Run: shadow_validation",
+			"type": "shell",
+			"command": "./shadow_validation",
+			"options": { "cwd": "${workspaceFolder}/out/build/Linux-Debug/bin" },
+			"dependsOn": "Build: Debug",
+			"problemMatcher": [],
+			"presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+		},
+		{
+			"label": "Run: tonemapping_validation",
+			"type": "shell",
+			"command": "./tonemapping_validation",
+			"options": { "cwd": "${workspaceFolder}/out/build/Linux-Debug/bin" },
+			"dependsOn": "Build: Debug",
+			"problemMatcher": [],
+			"presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+		},
+		{
+			"label": "Run: transform_sample",
+			"type": "shell",
+			"command": "./transform_sample",
+			"options": { "cwd": "${workspaceFolder}/out/build/Linux-Debug/bin" },
+			"dependsOn": "Build: Debug",
+			"problemMatcher": [],
+			"presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+		}
+	]
+}

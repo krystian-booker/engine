@@ -103,7 +103,7 @@ private:
     uint32_t m_height = 0;
 
     // Bloom mip chain
-    static const int MAX_BLOOM_MIPS = 4;
+    static constexpr int MAX_BLOOM_MIPS = 4;
     std::array<RenderTargetHandle, MAX_BLOOM_MIPS> m_bloom_downsample;
     std::array<RenderTargetHandle, MAX_BLOOM_MIPS> m_bloom_upsample;
     int m_bloom_mip_count = 0;

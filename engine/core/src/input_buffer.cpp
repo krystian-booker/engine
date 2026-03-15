@@ -9,6 +9,10 @@ InputBuffer::InputBuffer(Config config)
     m_buffer.reserve(m_config.max_buffered_inputs);
 }
 
+InputBuffer::InputBuffer()
+    : InputBuffer(Config{}) {
+}
+
 void InputBuffer::buffer(const std::string& action, float duration) {
     // Use default duration if not specified
     float actual_duration = (duration < 0.0f) ? m_config.default_buffer_duration : duration;

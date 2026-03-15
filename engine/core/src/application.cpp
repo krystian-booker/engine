@@ -1,4 +1,5 @@
 #include <engine/core/application.hpp>
+#include <engine/core/platform_window.hpp>
 #include <engine/core/time.hpp>
 #include <engine/core/job_system.hpp>
 #include <engine/core/log.hpp>
@@ -24,10 +25,10 @@
 #include <cstring>
 
 #ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
+#include <climits>
+#elif defined(__linux__)
+#include <climits>
+#include <unistd.h>
 #endif
 
 
@@ -85,6 +86,13 @@ int Application::run(int argc, char** argv) {
         if (GetModuleFileNameA(nullptr, exe_path, MAX_PATH) > 0) {
             exe_dir = std::filesystem::path(exe_path).parent_path();
         }
+#elif defined(__linux__)
+        char exe_path[PATH_MAX];
+        ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+        if (len > 0) {
+            exe_path[len] = '\0';
+            exe_dir = std::filesystem::path(exe_path).parent_path();
+        }
 #else
         if (argc > 0 && argv && argv[0]) {
             exe_dir = std::filesystem::path(argv[0]).parent_path();
@@ -139,7 +147,8 @@ int Application::run(int argc, char** argv) {
     // Initialize renderer
     m_renderer = render::create_bgfx_renderer();
     if (m_renderer) {
-        if (!m_renderer->init(m_native_window, m_window_width, m_window_height)) {
+        bool use_wayland = (m_window_backend == WindowBackend::Wayland);
+        if (!m_renderer->init(m_native_window, m_window_width, m_window_height, m_native_display, use_wayland)) {
             log(LogLevel::Error, "Failed to initialize renderer");
             m_renderer.reset();
         } else {
@@ -461,240 +470,98 @@ void Application::parse_args(int argc, char** argv) {
     }
 }
 
-// Platform-specific window implementation
-#ifdef _WIN32
-
-static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    Application* app = reinterpret_cast<Application*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
-
-    switch (msg) {
-        case WM_CLOSE:
-            events().dispatch(WindowCloseEvent{});
-            if (app) app->quit();
-            return 0;
-
-        case WM_DESTROY:
-            PostQuitMessage(0);
-            return 0;
-
-        case WM_SIZE:
-            if (app && wParam != SIZE_MINIMIZED) {
-                uint32_t width = LOWORD(lParam);
-                uint32_t height = HIWORD(lParam);
-                if (width > 0 && height > 0) {
-                    events().dispatch(WindowResizeEvent{width, height});
-                    // Update UI screen size
-                    if (app->get_ui_context()) {
-                        app->get_ui_context()->set_screen_size(width, height);
-                    }
-                }
-            }
-            return 0;
-
-        case WM_SETFOCUS:
-            events().dispatch(WindowFocusEvent{true});
-            return 0;
-
-        case WM_KILLFOCUS:
-            events().dispatch(WindowFocusEvent{false});
-            return 0;
-
-        // UI input handling
-        case WM_MOUSEMOVE:
-            if (app && app->get_ui_context()) {
-                auto* state = app->get_ui_input_state();
-                if (state) {
-                    float x = static_cast<float>(LOWORD(lParam));
-                    float y = static_cast<float>(HIWORD(lParam));
-                    state->mouse_delta.x = x - state->mouse_position.x;
-                    state->mouse_delta.y = y - state->mouse_position.y;
-                    state->mouse_position.x = x;
-                    state->mouse_position.y = y;
-                }
-            }
-            return 0;
-
-        case WM_LBUTTONDOWN:
-            if (app && app->get_ui_input_state()) {
-                app->get_ui_input_state()->mouse_buttons[0] = true;
-            }
-            return 0;
-
-        case WM_LBUTTONUP:
-            if (app && app->get_ui_input_state()) {
-                app->get_ui_input_state()->mouse_buttons[0] = false;
-            }
-            return 0;
-
-        case WM_RBUTTONDOWN:
-            if (app && app->get_ui_input_state()) {
-                app->get_ui_input_state()->mouse_buttons[1] = true;
-            }
-            return 0;
-
-        case WM_RBUTTONUP:
-            if (app && app->get_ui_input_state()) {
-                app->get_ui_input_state()->mouse_buttons[1] = false;
-            }
-            return 0;
-
-        case WM_MBUTTONDOWN:
-            if (app && app->get_ui_input_state()) {
-                app->get_ui_input_state()->mouse_buttons[2] = true;
-            }
-            return 0;
-
-        case WM_MBUTTONUP:
-            if (app && app->get_ui_input_state()) {
-                app->get_ui_input_state()->mouse_buttons[2] = false;
-            }
-            return 0;
-
-        case WM_MOUSEWHEEL:
-            if (app && app->get_ui_input_state()) {
-                float delta = static_cast<float>(GET_WHEEL_DELTA_WPARAM(wParam)) / WHEEL_DELTA;
-                app->get_ui_input_state()->scroll_delta.y = delta;
-            }
-            return 0;
-
-        case WM_CHAR:
-            if (app && app->get_ui_input_state() && wParam >= 32) {
-                // Append character to text input (UTF-8)
-                char utf8[5] = {};
-                if (wParam < 0x80) {
-                    utf8[0] = static_cast<char>(wParam);
-                } else if (wParam < 0x800) {
-                    utf8[0] = static_cast<char>(0xC0 | (wParam >> 6));
-                    utf8[1] = static_cast<char>(0x80 | (wParam & 0x3F));
-                }
-                app->get_ui_input_state()->text_input += utf8;
-            }
-            return 0;
-
-        case WM_KEYDOWN:
-            if (app && app->get_ui_input_state()) {
-                switch (wParam) {
-                    case VK_BACK: app->get_ui_input_state()->key_backspace = true; break;
-                    case VK_DELETE: app->get_ui_input_state()->key_delete = true; break;
-                    case VK_LEFT: app->get_ui_input_state()->key_left = true; break;
-                    case VK_RIGHT: app->get_ui_input_state()->key_right = true; break;
-                    case VK_HOME: app->get_ui_input_state()->key_home = true; break;
-                    case VK_END: app->get_ui_input_state()->key_end = true; break;
-                    case VK_RETURN: app->get_ui_input_state()->key_enter = true; break;
-                    case VK_TAB: app->get_ui_input_state()->key_tab = true; break;
-                    case VK_ESCAPE: app->get_ui_input_state()->key_escape = true; break;
-                    case VK_UP: app->get_ui_input_state()->nav_up = true; break;
-                    case VK_DOWN: app->get_ui_input_state()->nav_down = true; break;
-                    case VK_SPACE: app->get_ui_input_state()->nav_confirm = true; break;
-                }
-            }
-            return 0;
-
-        case WM_KEYUP:
-            if (app && app->get_ui_input_state()) {
-                switch (wParam) {
-                    case VK_UP: app->get_ui_input_state()->nav_up = false; break;
-                    case VK_DOWN: app->get_ui_input_state()->nav_down = false; break;
-                    case VK_SPACE: app->get_ui_input_state()->nav_confirm = false; break;
-                }
-            }
-            return 0;
-    }
-
-    return DefWindowProc(hwnd, msg, wParam, lParam);
-}
-
+// Platform window creation with callback wiring
 bool Application::create_window(const WindowSettings& ws) {
-    HINSTANCE hInstance = GetModuleHandle(nullptr);
-
-    // Register window class
-    WNDCLASSEX wc = {};
-    wc.cbSize = sizeof(WNDCLASSEX);
-    wc.style = CS_HREDRAW | CS_VREDRAW;
-    wc.lpfnWndProc = WindowProc;
-    wc.hInstance = hInstance;
-    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wc.lpszClassName = "EngineWindowClass";
-
-    if (!RegisterClassEx(&wc)) {
-        log(LogLevel::Error, "Failed to register window class");
+    m_platform_window = create_platform_window();
+    if (!m_platform_window) {
+        log(LogLevel::Error, "No windowing backend available");
         return false;
     }
 
-    // Calculate window size for desired client area
-    RECT rect = {0, 0, static_cast<LONG>(ws.width), static_cast<LONG>(ws.height)};
-    DWORD style = WS_OVERLAPPEDWINDOW;
-    if (ws.borderless) {
-        style = WS_POPUP;
-    }
-    AdjustWindowRect(&rect, style, FALSE);
+    WindowCallbacks callbacks;
+    callbacks.on_close = []() {
+        events().dispatch(WindowCloseEvent{});
+    };
+    callbacks.on_resize = [this](uint32_t w, uint32_t h) {
+        m_window_width = w;
+        m_window_height = h;
+        events().dispatch(WindowResizeEvent{w, h});
+        if (get_ui_context()) {
+            get_ui_context()->set_screen_size(w, h);
+        }
+    };
+    callbacks.on_focus = [](bool focused) {
+        events().dispatch(WindowFocusEvent{focused});
+    };
+    callbacks.on_mouse_move = [this](float x, float y) {
+        if (auto* s = get_ui_input_state()) {
+            s->mouse_delta.x = x - s->mouse_position.x;
+            s->mouse_delta.y = y - s->mouse_position.y;
+            s->mouse_position.x = x;
+            s->mouse_position.y = y;
+        }
+    };
+    callbacks.on_mouse_button = [this](int button, bool pressed) {
+        if (auto* s = get_ui_input_state()) {
+            if (button >= 0 && button < 3)
+                s->mouse_buttons[button] = pressed;
+        }
+    };
+    callbacks.on_scroll = [this](float dx, float dy) {
+        if (auto* s = get_ui_input_state()) {
+            s->scroll_delta.x += dx;
+            s->scroll_delta.y += dy;
+        }
+    };
+    callbacks.on_key = [this](KeyAction action, bool pressed) {
+        auto* s = get_ui_input_state();
+        if (!s) return;
+        switch (action) {
+            case KeyAction::Backspace: s->key_backspace = pressed; break;
+            case KeyAction::Delete:    s->key_delete    = pressed; break;
+            case KeyAction::Left:      s->key_left      = pressed; break;
+            case KeyAction::Right:     s->key_right     = pressed; break;
+            case KeyAction::Home:      s->key_home      = pressed; break;
+            case KeyAction::End:       s->key_end       = pressed; break;
+            case KeyAction::Enter:     s->key_enter     = pressed; break;
+            case KeyAction::Tab:       s->key_tab       = pressed; break;
+            case KeyAction::Escape:    s->key_escape    = pressed; break;
+            case KeyAction::Up:        s->nav_up        = pressed; break;
+            case KeyAction::Down:      s->nav_down      = pressed; break;
+            case KeyAction::Space:     s->nav_confirm   = pressed; break;
+        }
+    };
+    callbacks.on_text_input = [this](const char* text) {
+        if (auto* s = get_ui_input_state()) {
+            s->text_input += text;
+        }
+    };
 
-    // Create window
-    HWND hwnd = CreateWindowEx(
-        0,
-        "EngineWindowClass",
-        ws.title.c_str(),
-        style,
-        CW_USEDEFAULT, CW_USEDEFAULT,
-        rect.right - rect.left, rect.bottom - rect.top,
-        nullptr,
-        nullptr,
-        hInstance,
-        nullptr
-    );
-
-    if (!hwnd) {
-        log(LogLevel::Error, "Failed to create window");
+    if (!m_platform_window->create(ws, callbacks))
         return false;
-    }
 
-    // Store this pointer for window proc
-    SetWindowLongPtr(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
-
-    // Show window
-    ShowWindow(hwnd, ws.fullscreen ? SW_MAXIMIZE : SW_SHOW);
-    UpdateWindow(hwnd);
-
-    m_native_window = hwnd;
-    m_window_width = ws.width;
-    m_window_height = ws.height;
-
+    auto h = m_platform_window->native_handles();
+    m_native_window = h.window;
+    m_native_display = h.display;
+    m_window_backend = h.backend;
+    m_window_width = m_platform_window->width();
+    m_window_height = m_platform_window->height();
     return true;
 }
 
 void Application::destroy_window() {
-    if (m_native_window) {
-        DestroyWindow(static_cast<HWND>(m_native_window));
-        m_native_window = nullptr;
+    if (m_platform_window) {
+        m_platform_window->destroy();
+        m_platform_window.reset();
     }
-    UnregisterClass("EngineWindowClass", GetModuleHandle(nullptr));
+    m_native_window = nullptr;
+    m_native_display = nullptr;
 }
 
 bool Application::poll_events() {
-    MSG msg;
-    while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
-        if (msg.message == WM_QUIT) {
-            return false;
-        }
-        TranslateMessage(&msg);
-        DispatchMessage(&msg);
-    }
-    return true;
+    if (!m_platform_window) return false;
+    return m_platform_window->poll_events();
 }
-
-#else
-// Stub implementations for non-Windows platforms
-bool Application::create_window(const WindowSettings&) {
-    log(LogLevel::Error, "Window creation not implemented for this platform");
-    return false;
-}
-
-void Application::destroy_window() {}
-
-bool Application::poll_events() {
-    return false;
-}
-#endif
 
 void Application::register_engine_systems() {
     if (!m_engine_scheduler) return;

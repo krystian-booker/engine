@@ -1,6 +1,7 @@
 #include <engine/plugin/system_registry.hpp>
 #include <engine/core/log.hpp>
 #include <algorithm>
+#include <mutex>
 
 namespace engine::plugin {
 

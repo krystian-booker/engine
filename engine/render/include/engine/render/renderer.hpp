@@ -23,7 +23,8 @@ public:
     virtual ~IRenderer() = default;
 
     // Initialization and shutdown
-    virtual bool init(void* native_window_handle, uint32_t width, uint32_t height) = 0;
+    virtual bool init(void* native_window_handle, uint32_t width, uint32_t height,
+                      void* native_display_handle = nullptr, bool wayland = false) = 0;
     virtual void shutdown() = 0;
 
     // Frame management

@@ -39,6 +39,33 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "Linux",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "Linux-Debug",
+      "displayName": "Linux Debug",
+      "inherits": "Linux",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "Linux-Release",
+      "displayName": "Linux Release",
+      "inherits": "Linux",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
     }
   ],
   "buildPresets": [
@@ -49,6 +76,14 @@
     {
       "name": "Qt-Release",
       "configurePreset": "Qt-Release"
+    },
+    {
+      "name": "Linux-Debug",
+      "configurePreset": "Linux-Debug"
+    },
+    {
+      "name": "Linux-Release",
+      "configurePreset": "Linux-Release"
     }
   ],
   "testPresets": [
@@ -66,6 +101,28 @@
     {
       "name": "Qt-Release",
       "configurePreset": "Qt-Release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      }
+    },
+    {
+      "name": "Linux-Debug",
+      "configurePreset": "Linux-Debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      }
+    },
+    {
+      "name": "Linux-Release",
+      "configurePreset": "Linux-Release",
       "output": {
         "outputOnFailure": true
       },

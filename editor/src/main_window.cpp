@@ -22,6 +22,10 @@
 #include <QKeyEvent>
 #include <QApplication>
 #include <QDir>
+#if defined(__linux__)
+#include <QGuiApplication>
+#include <X11/Xlib.h>
+#endif
 
 namespace editor {
 
@@ -346,7 +350,44 @@ void MainWindow::init_engine() {
         const uint32_t w = static_cast<uint32_t>(m_viewport->width() * dpr);
         const uint32_t h = static_cast<uint32_t>(m_viewport->height() * dpr);
 
-        if (m_renderer->init(m_viewport->native_handle(), w, h)) {
+        void* native_display = nullptr;
+        bool using_wayland = false;
+#if defined(__linux__)
+        if (QGuiApplication::platformName() == QLatin1String("wayland")) {
+            if (auto* wlApp = qApp->nativeInterface<QNativeInterface::QWaylandApplication>()) {
+                native_display = wlApp->display();
+                using_wayland = true;
+                if (m_console) {
+                    m_console->log(engine::core::LogLevel::Info,
+                                  "Using Wayland display for renderer", "Editor");
+                }
+            } else {
+                if (m_console) {
+                    m_console->log(engine::core::LogLevel::Error,
+                                  "Wayland platform detected but QWaylandApplication unavailable", "Editor");
+                }
+            }
+        } else if (QGuiApplication::platformName() == QLatin1String("xcb")) {
+            if (auto* x11app = qApp->nativeInterface<QNativeInterface::QX11Application>()) {
+                native_display = x11app->display();
+            }
+            if (!native_display) {
+                // X11 platform but no display from Qt — open our own connection
+                native_display = XOpenDisplay(nullptr);
+                m_x11_fallback_display = static_cast<Display*>(native_display);
+                if (m_console && native_display) {
+                    m_console->log(engine::core::LogLevel::Info,
+                                  "Using fallback X11 display for renderer", "Editor");
+                }
+            }
+        } else {
+            if (m_console) {
+                m_console->log(engine::core::LogLevel::Warn,
+                              "Unknown Qt platform plugin — renderer may not initialize", "Editor");
+            }
+        }
+#endif
+        if (m_renderer->init(m_viewport->native_handle(), w, h, native_display, using_wayland)) {
             m_state->set_renderer(m_renderer.get());
             m_engine_initialized = true;
 
@@ -396,6 +437,13 @@ void MainWindow::shutdown_engine() {
         m_renderer->shutdown();
         m_renderer.reset();
     }
+
+#if defined(__linux__)
+    if (m_x11_fallback_display) {
+        XCloseDisplay(m_x11_fallback_display);
+        m_x11_fallback_display = nullptr;
+    }
+#endif
 
     m_engine_initialized = false;
 }

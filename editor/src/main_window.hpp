@@ -111,6 +111,12 @@ private:
 
     QString m_current_project_path;
     bool m_engine_initialized = false;
+
+#if defined(__linux__)
+    // Fallback X11 display opened when Qt can't provide one natively
+    struct _XDisplay* m_x11_fallback_display = nullptr;
+    bool m_using_wayland = false;
+#endif
 };
 
 } // namespace editor

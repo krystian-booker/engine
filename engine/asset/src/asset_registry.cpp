@@ -1,8 +1,9 @@
 #include <engine/asset/asset_registry.hpp>
 #include <engine/core/log.hpp>
 #include <nlohmann/json.hpp>
-#include <fstream>
 #include <algorithm>
+#include <fstream>
+#include <mutex>
 
 namespace engine::asset {
 

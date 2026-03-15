@@ -1,8 +1,9 @@
 #include <engine/asset/audio_loader.hpp>
 #include <algorithm>
 #include <cctype>
-#include <cstdio>
 #include <climits>
+#include <cstdio>
+#include <cstring>
 
 // dr_libs implementations
 #define DR_WAV_IMPLEMENTATION
