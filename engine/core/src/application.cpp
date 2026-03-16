@@ -118,10 +118,23 @@ int Application::run(int argc, char** argv) {
     JobSystem::init();
     Time::init();
 
-    // Create window
-    if (!create_window(settings().window)) {
-        log(LogLevel::Error, "Failed to create window");
-        return 1;
+    // Create window unless running headless.
+    if (!m_headless_mode) {
+        if (!create_window(settings().window)) {
+            if (!m_screenshot_path.empty()) {
+                log(LogLevel::Error,
+                    "Screenshot automation requires a working window/display backend; "
+                    "window creation failed before rendering could start");
+            }
+            log(LogLevel::Error, "Failed to create window");
+            return 1;
+        }
+    } else {
+        m_window_width = settings().window.width;
+        m_window_height = settings().window.height;
+        m_native_window = nullptr;
+        m_native_display = nullptr;
+        log(LogLevel::Info, "Running in headless mode ({}x{})", m_window_width, m_window_height);
     }
 
     // Initialize engine systems
@@ -147,7 +160,7 @@ int Application::run(int argc, char** argv) {
     // Initialize renderer
     m_renderer = render::create_bgfx_renderer();
     if (m_renderer) {
-        bool use_wayland = (m_window_backend == WindowBackend::Wayland);
+        bool use_wayland = !m_headless_mode && (m_window_backend == WindowBackend::Wayland);
         if (!m_renderer->init(m_native_window, m_window_width, m_window_height, m_native_display, use_wayland)) {
             log(LogLevel::Error, "Failed to initialize renderer");
             m_renderer.reset();
@@ -172,12 +185,15 @@ int Application::run(int argc, char** argv) {
             // Initialize UI system
             m_ui_context = std::make_unique<ui::UIContext>();
             m_ui_input_state = std::make_unique<ui::UIInputState>();
-            if (m_ui_context->init(m_renderer.get())) {
+            if (!m_headless_mode && m_ui_context->init(m_renderer.get())) {
                 m_ui_context->set_screen_size(m_window_width, m_window_height);
                 ui::set_ui_context(m_ui_context.get());
                 log(LogLevel::Info, "UI system initialized");
-            } else {
+            } else if (!m_headless_mode) {
                 log(LogLevel::Error, "Failed to initialize UI system");
+                m_ui_context.reset();
+                m_ui_input_state.reset();
+            } else {
                 m_ui_context.reset();
                 m_ui_input_state.reset();
             }
@@ -205,9 +221,11 @@ int Application::run(int argc, char** argv) {
         }
 
         // Poll window events
-        if (!poll_events()) {
-            m_quit_requested = true;
-            break;
+        if (!m_headless_mode) {
+            if (!poll_events()) {
+                m_quit_requested = true;
+                break;
+            }
         }
 
         // Poll for hot reload
@@ -277,7 +295,7 @@ int Application::run(int argc, char** argv) {
         }
 
         // Render UI (after 3D scene, before PostRender)
-        if (m_ui_context && m_renderer) {
+        if (!m_headless_mode && m_ui_context && m_renderer) {
             // Use specific view ID for UI rendering to ensure it draws on top
             m_ui_context->render(static_cast<render::RenderView>(200));
         }
@@ -296,7 +314,10 @@ int Application::run(int argc, char** argv) {
         ++m_frame_counter;
         if (!m_screenshot_path.empty()) {
             if (m_frame_counter == static_cast<uint32_t>(m_screenshot_frame)) {
-                save_screenshot(m_screenshot_path);
+                if (!save_screenshot(m_screenshot_path)) {
+                    log(LogLevel::Error, "Screenshot request failed: {}", m_screenshot_path);
+                    m_quit_requested = true;
+                }
             }
             // Quit a few frames after the screenshot to let the async read complete
             if (m_frame_counter >= static_cast<uint32_t>(m_screenshot_frame) + 5) {
@@ -413,9 +434,17 @@ bool Application::has_game_plugin() const {
 }
 
 bool Application::save_screenshot(const std::string& path) {
-    if (!m_renderer || !m_render_pipeline) return false;
+    if (!m_renderer || !m_render_pipeline) {
+        log(LogLevel::Error, "Screenshot failed: renderer or render pipeline is unavailable");
+        return false;
+    }
+
     auto tex = m_render_pipeline->get_final_texture();
-    if (tex.id == 0) return false;
+    if (!tex.valid()) {
+        log(LogLevel::Error, "Screenshot failed: final render texture is invalid");
+        return false;
+    }
+
     return m_renderer->save_screenshot(path, tex);
 }
 
@@ -452,6 +481,9 @@ void Application::parse_args(int argc, char** argv) {
         else if (std::strcmp(arg, "--no-hot-reload") == 0) {
             m_hot_reload_enabled = false;
             m_hot_reload_override = true;
+        }
+        else if (std::strcmp(arg, "--headless") == 0) {
+            m_headless_mode = true;
         }
         // --screenshot=<path>
         else if (std::strncmp(arg, "--screenshot=", 13) == 0) {

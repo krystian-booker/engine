@@ -116,6 +116,16 @@ enum class MaterialPropertyType : uint8_t {
     Texture
 };
 
+// Material blend modes for forward rendering.
+enum class MaterialBlendMode : uint8_t {
+    Opaque = 0,
+    AlphaTest = 1,
+    AlphaBlend = 2,
+    Additive = 3,
+    Multiply = 4,
+    Transmission = 5
+};
+
 // Material property
 struct MaterialProperty {
     MaterialPropertyType type = MaterialPropertyType::Float;
@@ -159,9 +169,11 @@ struct MaterialData {
     // Refraction
     float ior = 1.5f;
     float transmission = 0.0f;
+    float thickness = 0.05f;
 
+    MaterialBlendMode blend_mode = MaterialBlendMode::Opaque;
     bool double_sided = false;
-    bool transparent = false;
+    bool transparent = false;  // Legacy flag; normalized to blend_mode on creation.
 };
 
 // Draw call structure

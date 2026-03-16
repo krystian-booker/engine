@@ -65,6 +65,7 @@ public:
     void queue_draw(const DrawCall&, RenderView) override {}
 
     void set_camera(const Mat4&, const Mat4&) override {}
+    void set_camera_position(const Vec3&) override {}
     void set_light(uint32_t, const LightData&) override {}
     void clear_lights() override {}
 
@@ -82,6 +83,10 @@ public:
     void submit_billboard(RenderView, MeshHandle, TextureHandle, const Mat4&,
                           const Vec4&, const Vec2&, const Vec2&, bool, bool) override {}
     void set_ao_texture(TextureHandle) override {}
+    void set_hemisphere_ambient(const Vec3&, float, const Vec3&) override {}
+    void set_oit_data(const Vec4&) override {}
+    void enable_oit(bool) override {}
+    void set_opaque_copy_texture(TextureHandle) override {}
     void flush() override {}
     void clear(uint32_t, float) override {}
 
@@ -107,8 +112,11 @@ public:
     void set_ibl_textures(TextureHandle, TextureHandle, TextureHandle, uint32_t) override {}
     void set_motion_blur_enabled(bool) override {}
     bool get_motion_blur_enabled() const override { return false; }
+    std::string get_shader_path() const override { return {}; }
     uint16_t get_native_texture_handle(TextureHandle) const override { return 0; }
     uint16_t get_dummy_shadow_array() const override { return 0; }
+    const MaterialData* get_material_data(MaterialHandle) const override { return nullptr; }
+    bool is_headless() const override { return false; }
     MeshBufferInfo get_mesh_buffer_info(MeshHandle) const override { return {}; }
 };
 
@@ -237,14 +245,14 @@ TEST_CASE("Blend mode correctly splits opaque and transparent", "[render][pipeli
 
     // Create objects with different blend modes at the origin (visible to camera)
     std::vector<RenderObject> objects;
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < 6; ++i) {
         RenderObject obj;
         obj.mesh = MeshHandle{0};
         obj.material = MaterialHandle{0};
         obj.transform = glm::translate(Mat4(1.0f), Vec3(0.0f, 0.0f, static_cast<float>(i) * -1.0f));
         obj.bounds.min = Vec3(-0.5f);
         obj.bounds.max = Vec3(0.5f);
-        obj.blend_mode = static_cast<uint8_t>(i);  // 0=Opaque, 1=AlphaTest, 2=AlphaBlend, 3=Additive, 4=Multiply
+        obj.blend_mode = static_cast<uint8_t>(i);  // 0=Opaque, 1=AlphaTest, 2=AlphaBlend, 3=Additive, 4=Multiply, 5=Transmission
         objects.push_back(obj);
     }
 
@@ -254,8 +262,8 @@ TEST_CASE("Blend mode correctly splits opaque and transparent", "[render][pipeli
     pipeline.end_frame();
 
     auto stats = pipeline.get_stats();
-    // All 5 objects should be rendered (2 opaque + 3 transparent)
-    REQUIRE(stats.objects_rendered == 5);
+    // All 6 objects should be rendered (2 opaque + 4 transparent)
+    REQUIRE(stats.objects_rendered == 6);
 
     pipeline.shutdown();
 }

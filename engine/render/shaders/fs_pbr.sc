@@ -26,6 +26,17 @@ SAMPLER2D(s_ssao, 12);
 // Opaque scene copy for screen-space refraction (slot 13)
 SAMPLER2D(s_opaqueColor, 13);
 
+uniform vec4 u_oitParams;      // x=weight_power, y=max_distance, z=near_plane, w=far_plane
+
+// Calculate depth-based weight for OIT
+float calculateWeight(float z, float alpha)
+{
+    float power = u_oitParams.x;
+    float maxDist = u_oitParams.y;
+    z = clamp(z, 0.001, maxDist);
+    return pow(max(alpha, 0.0), power) * clamp(0.03 / (1e-5 + pow(z / maxDist, 4.0)), 1e-2, 3e3);
+}
+
 void main()
 {
     // Sample textures
@@ -149,13 +160,21 @@ void main()
         float fresnel = pow(1.0 - max(dot(N, V), 0.0), 5.0);
         float transmissionFactor = transmission * (1.0 - fresnel);
 
-        // Blend refracted background with surface lighting
+        // Blend refracted background with surface lighting once in shader space.
         color = mix(background, color, 1.0 - transmissionFactor);
 
-        // Output full opacity — refraction replaces alpha blending
+        // Transmission materials are already composed against the scene copy.
+        // Output full coverage here so framebuffer alpha blending does not
+        // attenuate the refracted result a second time.
         gl_FragColor = vec4(color, 1.0);
         return;
     }
 
+#if defined(OIT_ENABLED)
+    float weight = calculateWeight(gl_FragCoord.z, albedo.a);
+    gl_FragData[0] = vec4(color.rgb * albedo.a * weight, albedo.a * weight);
+    gl_FragData[1] = vec4(albedo.a, 0.0, 0.0, 1.0);
+#else
     gl_FragColor = vec4(color, albedo.a);
+#endif
 }

@@ -134,6 +134,7 @@ private:
     std::filesystem::path m_game_dll_path;
     bool m_hot_reload_enabled = true;
     bool m_hot_reload_override = false;  // True if set via command line
+    bool m_headless_mode = false;
 
     // Screenshot automation (--screenshot=<path> --screenshot-frame=<N>)
     std::string m_screenshot_path;

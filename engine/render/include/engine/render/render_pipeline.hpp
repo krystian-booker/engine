@@ -6,6 +6,7 @@
 #include <engine/render/ssao.hpp>
 #include <engine/render/post_process.hpp>
 #include <engine/render/volumetric.hpp>
+#include <engine/render/oit.hpp>
 #include <engine/core/math.hpp>
 #include <vector>
 #include <functional>
@@ -141,7 +142,7 @@ struct RenderObject {
     Mat4 prev_transform{1.0f};  // For motion vectors
     AABB bounds;
     uint32_t layer_mask = 0xFFFFFFFF;
-    uint8_t blend_mode = 0;  // 0=Opaque, 1=AlphaTest, 2=AlphaBlend, 3=Additive, 4=Multiply
+    uint8_t blend_mode = 0;  // 0=Opaque, 1=AlphaTest, 2=AlphaBlend, 3=Additive, 4=Multiply, 5=Transmission
     bool visible = true;
     bool casts_shadows = true;
     bool receives_shadows = true;
@@ -238,6 +239,7 @@ public:
     PostProcessSystem* get_post_process_system() { return &m_post_process_system; }
     TAASystem* get_taa_system() { return &m_taa_system; }
     VolumetricSystem* get_volumetric_system() { return &m_volumetric_system; }
+    OITSystem* get_oit_system() { return &m_oit_system; }
     ParticleSystem* get_particle_system() { return m_particle_system.get(); }
 
     // Skybox settings
@@ -302,6 +304,7 @@ private:
     PostProcessSystem m_post_process_system;
     TAASystem m_taa_system;
     VolumetricSystem m_volumetric_system;
+    OITSystem m_oit_system;
     std::unique_ptr<ParticleSystem> m_particle_system;
 
     // Frame data

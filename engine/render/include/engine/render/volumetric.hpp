@@ -94,6 +94,9 @@ public:
     // Get froxel volume texture (for debug visualization)
     TextureHandle get_froxel_texture() const;
 
+    // Composite volumetric fog into a destination render target
+    void composite(RenderTargetHandle destination);
+
     // Resize volumetric render targets
     void resize(uint32_t width, uint32_t height);
 

@@ -13,6 +13,7 @@ using namespace engine::core;
 // Volumetric shader resources
 struct VolumetricShaders {
     bgfx::ProgramHandle volumetric = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle composite = BGFX_INVALID_HANDLE;
 
     bgfx::UniformHandle u_volumetricParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_fogColor = BGFX_INVALID_HANDLE;
@@ -72,13 +73,19 @@ void VolumetricShaders::create() {
 
     bgfx::ShaderHandle vs = load_vol_shader(path + "vs_fullscreen.sc.bin");
     bgfx::ShaderHandle fs = load_vol_shader(path + "fs_volumetric.sc.bin");
+    bgfx::ShaderHandle fs_comp = load_vol_shader(path + "fs_blit.sc.bin");
 
     if (bgfx::isValid(vs) && bgfx::isValid(fs)) {
         volumetric = bgfx::createProgram(vs, fs, false);
     }
 
+    if (bgfx::isValid(vs) && bgfx::isValid(fs_comp)) {
+        composite = bgfx::createProgram(vs, fs_comp, false);
+    }
+
     if (bgfx::isValid(vs)) bgfx::destroy(vs);
     if (bgfx::isValid(fs)) bgfx::destroy(fs);
+    if (bgfx::isValid(fs_comp)) bgfx::destroy(fs_comp);
 
     // Create uniforms
     u_volumetricParams = bgfx::createUniform("u_volumetricParams", bgfx::UniformType::Vec4);
@@ -118,6 +125,7 @@ void VolumetricShaders::create() {
 
 void VolumetricShaders::destroy() {
     if (bgfx::isValid(volumetric)) bgfx::destroy(volumetric);
+    if (bgfx::isValid(composite)) bgfx::destroy(composite);
 
     if (bgfx::isValid(u_volumetricParams)) bgfx::destroy(u_volumetricParams);
     if (bgfx::isValid(u_fogColor)) bgfx::destroy(u_fogColor);
@@ -368,6 +376,36 @@ TextureHandle VolumetricSystem::get_froxel_texture() const {
         return m_renderer->get_render_target_texture(m_density_volume, 0);
     }
     return TextureHandle{};
+}
+
+void VolumetricSystem::composite(RenderTargetHandle destination) {
+    if (!m_initialized || !destination.valid() || !bgfx::isValid(s_vol_shaders.composite)) return;
+
+    uint16_t view_id = static_cast<uint16_t>(RenderView::VolumetricIntegrate);
+    TextureHandle vol_tex = get_volumetric_texture();
+    if (!vol_tex.valid()) return;
+
+    // Configure view to render into destination (HDR buffer)
+    ViewConfig view_config;
+    view_config.render_target = destination;
+    view_config.clear_color_enabled = false;
+    view_config.clear_depth_enabled = false;
+    m_renderer->configure_view(static_cast<RenderView>(view_id), view_config);
+
+    // Get native texture handle for volumetric result
+    uint16_t vol_idx = m_renderer->get_native_texture_handle(vol_tex);
+    if (vol_idx == bgfx::kInvalidHandle) return;
+
+    bgfx::TextureHandle vol_handle = { vol_idx };
+    bgfx::setTexture(0, s_vol_shaders.s_depth, vol_handle);
+
+    // Use fog-appropriate blend mode: final = scattered_light + scene_color * transmittance
+    // Since alpha = 1.0 - transmittance, we use: final = src * 1 + dst * (1 - alpha)
+    bgfx::setVertexBuffer(0, s_vol_shaders.fullscreen_vb);
+    bgfx::setIndexBuffer(s_vol_shaders.fullscreen_ib);
+    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | 
+                   BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE, BGFX_STATE_BLEND_INV_SRC_ALPHA));
+    bgfx::submit(view_id, s_vol_shaders.composite);
 }
 
 void VolumetricSystem::resize(uint32_t width, uint32_t height) {

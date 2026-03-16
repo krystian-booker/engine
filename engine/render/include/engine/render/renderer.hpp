@@ -122,6 +122,10 @@ public:
     // Hemisphere ambient
     virtual void set_hemisphere_ambient(const Vec3& ground, float shadow_min, const Vec3& sky) = 0;
 
+    // OIT settings
+    virtual void set_oit_data(const Vec4& oit_params) = 0;
+    virtual void enable_oit(bool enabled) = 0;
+
     // Opaque copy texture for screen-space refraction
     virtual void set_opaque_copy_texture(TextureHandle tex) = 0;
 
@@ -172,6 +176,12 @@ public:
     // Native handle access (for post-process effects that need direct GPU access)
     // Returns the native texture handle as uint16_t (bgfx::TextureHandle::idx)
     virtual uint16_t get_native_texture_handle(TextureHandle h) const = 0;
+
+    // Get material data for a handle
+    virtual const MaterialData* get_material_data(MaterialHandle h) const = 0;
+
+    // True when the renderer was initialized without a native window/backbuffer.
+    virtual bool is_headless() const = 0;
 
     // Get native mesh buffer handles (for instanced rendering in vegetation/particle systems)
     virtual MeshBufferInfo get_mesh_buffer_info(MeshHandle mesh) const = 0;

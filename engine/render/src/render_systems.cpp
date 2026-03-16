@@ -25,6 +25,22 @@ static ParticleSystem s_particle_system;
 // Map from entity to particle runtime (for lifecycle management)
 static std::unordered_map<uint32_t, ParticleEmitterRuntime*> s_entity_particle_runtimes;
 
+namespace {
+
+uint8_t resolve_blend_mode(IRenderer* renderer,
+                           const scene::MeshRenderer& mesh_renderer,
+                           MaterialHandle material_handle) {
+    if (renderer && material_handle.valid()) {
+        if (const MaterialData* material = renderer->get_material_data(material_handle)) {
+            return static_cast<uint8_t>(material->blend_mode);
+        }
+    }
+
+    return mesh_renderer.blend_mode;
+}
+
+} // namespace
+
 RenderContext& get_render_context() {
     return s_render_context;
 }
@@ -497,7 +513,10 @@ void render_gather_system(scene::World& world, double dt) {
             obj.layer_mask = 1u << mesh_renderer.render_layer;
             obj.casts_shadows = mesh_renderer.cast_shadows;
             obj.receives_shadows = mesh_renderer.receive_shadows;
-            obj.blend_mode = mesh_renderer.blend_mode;
+            obj.blend_mode = resolve_blend_mode(
+                s_render_context.renderer,
+                mesh_renderer,
+                obj.material);
 
             // Check for previous transform for motion vectors
             auto* prev_tf = world.try_get<PreviousTransform>(entity);

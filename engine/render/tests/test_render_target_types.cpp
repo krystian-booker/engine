@@ -68,36 +68,37 @@ TEST_CASE("RenderView shadow cascade values", "[render][rt_types]") {
 }
 
 TEST_CASE("RenderView main pass values", "[render][rt_types]") {
-    REQUIRE(static_cast<uint16_t>(RenderView::MainOpaque) == 40);
-    REQUIRE(static_cast<uint16_t>(RenderView::MainTransparent) == 41);
+    REQUIRE(static_cast<uint16_t>(RenderView::MainOpaque) == 43);
+    REQUIRE(static_cast<uint16_t>(RenderView::MainTransparent) == 46);
 }
 
 TEST_CASE("RenderView final output value", "[render][rt_types]") {
-    REQUIRE(static_cast<uint16_t>(RenderView::Final) == 64);
+    REQUIRE(static_cast<uint16_t>(RenderView::Final) == 81);
 }
 
 TEST_CASE("RenderView count", "[render][rt_types]") {
-    REQUIRE(static_cast<uint16_t>(RenderView::Count) == 80);
+    REQUIRE(static_cast<uint16_t>(RenderView::Count) == 84);
 }
 
 TEST_CASE("RenderView ToneMap alias", "[render][rt_types]") {
     REQUIRE(RenderView::ToneMap == RenderView::Tonemapping);
-    REQUIRE(static_cast<uint16_t>(RenderView::ToneMap) == 61);
+    REQUIRE(static_cast<uint16_t>(RenderView::ToneMap) == 78);
 }
 
 TEST_CASE("RenderView screen-space effect views", "[render][rt_types]") {
     REQUIRE(static_cast<uint16_t>(RenderView::SSAO) == 35);
-    REQUIRE(static_cast<uint16_t>(RenderView::SSAOBlur) == 36);
-    REQUIRE(static_cast<uint16_t>(RenderView::SSR) == 37);
+    REQUIRE(static_cast<uint16_t>(RenderView::SSAOBlur0) == 36);
+    REQUIRE(static_cast<uint16_t>(RenderView::SSAOBlur3) == 39);
+    REQUIRE(static_cast<uint16_t>(RenderView::SSR) == 40);
 }
 
 TEST_CASE("RenderView special views", "[render][rt_types]") {
     REQUIRE(static_cast<uint16_t>(RenderView::DepthPrepass) == 32);
     REQUIRE(static_cast<uint16_t>(RenderView::GBuffer) == 33);
     REQUIRE(static_cast<uint16_t>(RenderView::MotionVectors) == 34);
-    REQUIRE(static_cast<uint16_t>(RenderView::Debug) == 62);
-    REQUIRE(static_cast<uint16_t>(RenderView::UI) == 63);
-    REQUIRE(static_cast<uint16_t>(RenderView::Skybox) == 39);
+    REQUIRE(static_cast<uint16_t>(RenderView::Debug) == 79);
+    REQUIRE(static_cast<uint16_t>(RenderView::UI) == 80);
+    REQUIRE(static_cast<uint16_t>(RenderView::Skybox) == 42);
 }
 
 // --- ShadowConfig defaults ---

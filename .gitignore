@@ -441,9 +441,8 @@ CMakeUserPresets.json
 /.claude
 /.deps
 /out
+/vcpkg
 /vcpkg_installed
-CLAUDE.md
-TESTING.md
 notes/
-GEMINI.md
 nul
+build/

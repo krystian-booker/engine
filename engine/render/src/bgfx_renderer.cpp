@@ -59,6 +59,9 @@ struct PBRUniforms {
     bgfx::UniformHandle u_refractionParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_opaqueColor = BGFX_INVALID_HANDLE;
 
+    // OIT uniforms
+    bgfx::UniformHandle u_oitParams = BGFX_INVALID_HANDLE;
+
     // Blit sampler (for blit_to_screen)
     bgfx::UniformHandle s_blit_texture = BGFX_INVALID_HANDLE;
 
@@ -86,6 +89,9 @@ struct PBRUniforms {
         // Refraction
         u_refractionParams = bgfx::createUniform("u_refractionParams", bgfx::UniformType::Vec4);
         s_opaqueColor = bgfx::createUniform("s_opaqueColor", bgfx::UniformType::Sampler);
+
+        // OIT
+        u_oitParams = bgfx::createUniform("u_oitParams", bgfx::UniformType::Vec4);
 
         s_albedo = bgfx::createUniform("s_albedo", bgfx::UniformType::Sampler);
         s_normal = bgfx::createUniform("s_normal", bgfx::UniformType::Sampler);
@@ -124,6 +130,9 @@ struct PBRUniforms {
         // Refraction
         if (bgfx::isValid(u_refractionParams)) bgfx::destroy(u_refractionParams);
         if (bgfx::isValid(s_opaqueColor)) bgfx::destroy(s_opaqueColor);
+
+        // OIT
+        if (bgfx::isValid(u_oitParams)) bgfx::destroy(u_oitParams);
 
         if (bgfx::isValid(s_albedo)) bgfx::destroy(s_albedo);
         if (bgfx::isValid(s_normal)) bgfx::destroy(s_normal);
@@ -188,6 +197,7 @@ public:
               void* native_display_handle = nullptr, bool wayland = false) override {
         m_width = width;
         m_height = height;
+        m_headless = (native_window_handle == nullptr);
 
         bgfx::Init init;
         init.platformData.nwh = native_window_handle;
@@ -196,7 +206,7 @@ public:
         if (wayland) {
             init.platformData.type = bgfx::NativeWindowHandleType::Wayland;
         }
-        if (!init.platformData.ndt) {
+        if (!m_headless && !init.platformData.ndt) {
             log(LogLevel::Error, "Native display handle (ndt) is null — Vulkan will fail");
         }
 #else
@@ -204,8 +214,8 @@ public:
         (void)wayland;
 #endif
         init.type = bgfx::RendererType::Count;  // Auto-select (Vulkan preferred on Linux)
-        init.resolution.width = width;
-        init.resolution.height = height;
+        init.resolution.width = m_headless ? 0 : width;
+        init.resolution.height = m_headless ? 0 : height;
         init.resolution.reset = m_vsync ? BGFX_RESET_VSYNC : BGFX_RESET_NONE;
 
         if (!bgfx::init(init)) {
@@ -225,7 +235,7 @@ public:
 
         // Set view 0 as default
         bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x303030ff, 1.0f, 0);
-        bgfx::setViewRect(0, 0, 0, uint16_t(width), uint16_t(height));
+        bgfx::setViewRect(0, 0, 0, uint16_t(m_headless ? 0 : width), uint16_t(m_headless ? 0 : height));
 
         // Load default shader based on renderer type
         auto renderer_type = bgfx::getRendererType();
@@ -625,7 +635,9 @@ public:
         if (m_frame_active) return;
         m_frame_active = true;
 
-        bgfx::touch(0);
+        if (!m_headless) {
+            bgfx::touch(0);
+        }
 
         auto now = std::chrono::steady_clock::now();
         if (m_last_frame_time.time_since_epoch().count() != 0) {
@@ -676,8 +688,8 @@ public:
         m_width = width;
         m_height = height;
         uint32_t flags = m_vsync ? BGFX_RESET_VSYNC : BGFX_RESET_NONE;
-        bgfx::reset(width, height, flags);
-        bgfx::setViewRect(0, 0, 0, uint16_t(width), uint16_t(height));
+        bgfx::reset(m_headless ? 0 : width, m_headless ? 0 : height, flags);
+        bgfx::setViewRect(0, 0, 0, uint16_t(m_headless ? 0 : width), uint16_t(m_headless ? 0 : height));
     }
 
     MeshHandle create_mesh(const MeshData& data) override {
@@ -804,8 +816,17 @@ public:
     }
 
     MaterialHandle create_material(const MaterialData& data) override {
+        MaterialData normalized = data;
+        if (normalized.transmission > 0.0f &&
+            (normalized.blend_mode == MaterialBlendMode::Opaque ||
+             normalized.blend_mode == MaterialBlendMode::AlphaBlend)) {
+            normalized.blend_mode = MaterialBlendMode::Transmission;
+        } else if (normalized.transparent && normalized.blend_mode == MaterialBlendMode::Opaque) {
+            normalized.blend_mode = MaterialBlendMode::AlphaBlend;
+        }
+
         MaterialHandle handle{m_next_material_id++};
-        m_materials[handle.id] = data;
+        m_materials[handle.id] = normalized;
         return handle;
     }
 
@@ -1621,6 +1642,14 @@ public:
         m_hemisphere_sky = Vec4(sky, 0.0f);
     }
 
+    void set_oit_data(const Vec4& oit_params) override {
+        m_oit_params = oit_params;
+    }
+
+    void enable_oit(bool enabled) override {
+        m_oit_enabled = enabled;
+    }
+
     void set_opaque_copy_texture(TextureHandle tex) override {
         auto it = m_textures.find(tex.id);
         if (it != m_textures.end()) {
@@ -1727,21 +1756,39 @@ public:
             return;
         }
 
-        // Check material for transparency
+        // Check material state. Blend mode is material-driven; the legacy
+        // MaterialData::transparent flag is normalized in create_material().
         auto mat_it = m_materials.find(call.material.id);
-        bool is_transparent = (mat_it != m_materials.end()) && mat_it->second.transparent;
+        MaterialBlendMode blend_mode = MaterialBlendMode::Opaque;
+        bool double_sided = false;
+        if (mat_it != m_materials.end()) {
+            blend_mode = mat_it->second.blend_mode;
+            double_sided = mat_it->second.double_sided;
+        }
 
-        // Set state — transparent objects use alpha blending and don't write depth
-        uint64_t state;
-        if (is_transparent) {
-            state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
-                    BGFX_STATE_DEPTH_TEST_LESS |
-                    BGFX_STATE_CULL_CW | BGFX_STATE_MSAA |
-                    BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_INV_SRC_ALPHA);
-        } else {
-            state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
-                    BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
-                    BGFX_STATE_CULL_CW | BGFX_STATE_MSAA;
+        uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
+                         BGFX_STATE_DEPTH_TEST_LESS | BGFX_STATE_MSAA;
+
+        if (!double_sided) {
+            state |= BGFX_STATE_CULL_CW;
+        }
+
+        switch (blend_mode) {
+            case MaterialBlendMode::Opaque:
+            case MaterialBlendMode::AlphaTest:
+                state |= BGFX_STATE_WRITE_Z;
+                break;
+            case MaterialBlendMode::AlphaBlend:
+                state |= BGFX_STATE_BLEND_ALPHA;
+                break;
+            case MaterialBlendMode::Additive:
+                state |= BGFX_STATE_BLEND_ADD;
+                break;
+            case MaterialBlendMode::Multiply:
+                state |= BGFX_STATE_BLEND_MULTIPLY;
+                break;
+            case MaterialBlendMode::Transmission:
+                break;
         }
 
         bgfx::setState(state);
@@ -1902,9 +1949,12 @@ public:
 
         // Refraction uniforms
         Vec4 refraction_params = mat_data
-            ? Vec4(mat_data->ior, mat_data->transmission, 0.8f, 0.0f)
+            ? Vec4(mat_data->ior, mat_data->transmission, mat_data->thickness, 0.0f)
             : Vec4(1.5f, 0.0f, 0.0f, 0.0f);
         bgfx::setUniform(m_pbr_uniforms.u_refractionParams, glm::value_ptr(refraction_params));
+
+        // OIT uniforms
+        bgfx::setUniform(m_pbr_uniforms.u_oitParams, glm::value_ptr(m_oit_params));
 
         // Bind opaque scene copy for refraction (slot 13)
         bgfx::TextureHandle opaque_tex = bgfx::isValid(m_opaque_copy_texture) ? m_opaque_copy_texture : m_white_texture;
@@ -1982,6 +2032,13 @@ public:
         }
         return bgfx::kInvalidHandle;
     }
+
+    const MaterialData* get_material_data(MaterialHandle h) const override {
+        auto it = m_materials.find(h.id);
+        return it != m_materials.end() ? &it->second : nullptr;
+    }
+
+    bool is_headless() const override { return m_headless; }
 
     MeshBufferInfo get_mesh_buffer_info(MeshHandle mesh) const override {
         MeshBufferInfo info{0, 0, 0, false};
@@ -2234,6 +2291,12 @@ private:
 
     // Opaque copy texture for screen-space refraction
     bgfx::TextureHandle m_opaque_copy_texture = BGFX_INVALID_HANDLE;
+
+    // OIT state
+    bool m_oit_enabled = false;
+    Vec4 m_oit_params{3.0f, 500.0f, 0.0f, 0.0f};  // weight_power, max_distance, near, far
+    bool m_headless = false;
+
     std::array<Mat4, 4> m_shadow_matrices{Mat4(1.0f), Mat4(1.0f), Mat4(1.0f), Mat4(1.0f)};
     Vec4 m_cascade_splits{10.0f, 30.0f, 100.0f, 500.0f};
     Vec4 m_shadow_params{0.001f, 0.01f, 0.1f, 1.0f};  // bias, normalBias, cascadeBlend, pcfRadius

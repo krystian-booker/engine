@@ -7,48 +7,6 @@ C++20 game engine. Rendering (bgfx), physics (Jolt), audio (miniaudio), scriptin
 - Visual Studio 2026 with C++ desktop workload
 - Qt6 for the editor (auto-detected from `C:\Qt\`)
 
-## Setup
-
-Ensure vcpkg is installed:
-
-```
-git clone https://github.com/Microsoft/vcpkg.git
-cd vcpkg
-.\bootstrap-vcpkg.bat
-.\vcpkg integrate install
-cd ..
-```
-
-CMake picks up vcpkg automatically from `vcpkg integrate install`. No env vars needed.
-
-If you already have vcpkg elsewhere, set `VCPKG_ROOT` or pass `-DCMAKE_TOOLCHAIN_FILE=...` manually.
-
-## Build
-
-```
-build.bat              # Debug
-build.bat release      # Release
-build.bat clean        # Clean rebuild
-build.bat tests        # Build + run tests
-```
-
-Or directly:
-
-```
-cmake --preset Qt-Debug
-cmake --build out/build/Qt-Debug
-```
-
-First configure is slow (vcpkg installs packages + bgfx clones from git). After that it's fast.
-
-Output: `out/build/Qt-Debug/bin/` and `lib/`.
-
-## Tests
-
-```
-build.bat tests
-```
-
 ## Project layout
 
 Modules live under `engine/`, each with `include/`, `src/`, `tests/`. CMake targets are `engine::{module}`.

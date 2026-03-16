@@ -127,6 +127,9 @@ std::shared_ptr<MaterialAsset> MaterialLoader::load_from_json(
     }
     if (mat_json.contains("transparent") && mat_json["transparent"].is_boolean()) {
         mat_data.transparent = mat_json["transparent"].get<bool>();
+        if (mat_data.transparent) {
+            mat_data.blend_mode = MaterialBlendMode::AlphaBlend;
+        }
     }
 
     // Create GPU material
@@ -372,6 +375,11 @@ std::shared_ptr<MaterialAsset> MaterialLoader::load_from_gltf(
     // Material flags
     mat_data.double_sided = gltf_mat.double_sided;
     mat_data.transparent = (gltf_mat.alpha_mode == cgltf_alpha_mode_blend);
+    if (gltf_mat.alpha_mode == cgltf_alpha_mode_mask) {
+        mat_data.blend_mode = MaterialBlendMode::AlphaTest;
+    } else if (gltf_mat.alpha_mode == cgltf_alpha_mode_blend) {
+        mat_data.blend_mode = MaterialBlendMode::AlphaBlend;
+    }
 
     cgltf_free(data);
 

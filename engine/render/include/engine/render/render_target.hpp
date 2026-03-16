@@ -86,10 +86,9 @@ enum class RenderView : uint16_t {
     // Main rendering pass (forward)
     MainOpaque = 43,
     OpaqueCopy = 44,           // Blit opaque scene for refraction sampling
-    MainTransparent = 45,
-
-    // Volumetric integration (after main passes, before post-processing)
-    VolumetricIntegrate = 46,
+    VolumetricIntegrate = 45,  // Composite fog over opaque scene BEFORE transparency
+    MainTransparent = 46,
+    TransparentRefractive = 47, // Refractive objects bypass OIT and draw to HDR buffer
 
     // Post-processing chain
     PostProcess0 = 50,

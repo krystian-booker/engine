@@ -256,9 +256,21 @@ TEST_CASE("MaterialData defaults", "[render][types]") {
     REQUIRE_THAT(data.roughness, WithinAbs(0.5f, 0.001f));
     REQUIRE_THAT(data.ao, WithinAbs(1.0f, 0.001f));
     REQUIRE_THAT(data.alpha_cutoff, WithinAbs(0.5f, 0.001f));
+    REQUIRE_THAT(data.transmission, WithinAbs(0.0f, 0.001f));
+    REQUIRE_THAT(data.thickness, WithinAbs(0.05f, 0.001f));
 
+    REQUIRE(data.blend_mode == MaterialBlendMode::Opaque);
     REQUIRE(data.double_sided == false);
     REQUIRE(data.transparent == false);
+}
+
+TEST_CASE("MaterialBlendMode enum", "[render][types]") {
+    REQUIRE(static_cast<uint8_t>(MaterialBlendMode::Opaque) == 0);
+    REQUIRE(static_cast<uint8_t>(MaterialBlendMode::AlphaTest) == 1);
+    REQUIRE(static_cast<uint8_t>(MaterialBlendMode::AlphaBlend) == 2);
+    REQUIRE(static_cast<uint8_t>(MaterialBlendMode::Additive) == 3);
+    REQUIRE(static_cast<uint8_t>(MaterialBlendMode::Multiply) == 4);
+    REQUIRE(static_cast<uint8_t>(MaterialBlendMode::Transmission) == 5);
 }
 
 TEST_CASE("MaterialData PBR values", "[render][types]") {

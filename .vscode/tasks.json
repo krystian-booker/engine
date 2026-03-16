@@ -205,6 +205,15 @@
 			"dependsOn": "Build: Debug",
 			"problemMatcher": [],
 			"presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+		},
+				{
+			"label": "Run: transparency_demo",
+			"type": "shell",
+			"command": "./transparency_demo",
+			"options": { "cwd": "${workspaceFolder}/out/build/Linux-Debug/bin" },
+			"dependsOn": "Build: Debug",
+			"problemMatcher": [],
+			"presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
 		}
 	]
 }

@@ -175,8 +175,11 @@ TEST_CASE("Opaque/transparent partitioning by blend_mode", "[render][sorting]") 
     RenderObject transparent3;
     transparent3.blend_mode = 4;  // Multiply
 
+    RenderObject transparent4;
+    transparent4.blend_mode = 5;  // Transmission
+
     std::vector<const RenderObject*> all = {
-        &transparent1, &opaque1, &transparent2, &alpha_test, &transparent3
+        &transparent1, &opaque1, &transparent2, &alpha_test, &transparent3, &transparent4
     };
 
     // Partition: blend_mode <= 1 is opaque, >= 2 is transparent
@@ -187,7 +190,7 @@ TEST_CASE("Opaque/transparent partitioning by blend_mode", "[render][sorting]") 
     std::vector<const RenderObject*> transparent(it, all.end());
 
     REQUIRE(opaque.size() == 2);
-    REQUIRE(transparent.size() == 3);
+    REQUIRE(transparent.size() == 4);
 
     // All opaque items have blend_mode <= 1
     for (const auto* obj : opaque) {

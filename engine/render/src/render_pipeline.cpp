@@ -10,6 +10,55 @@ namespace engine::render {
 
 using namespace engine::core;
 
+namespace {
+
+constexpr uint16_t kOrderedTransparentViewBase = 120;
+constexpr uint16_t kOrderedTransparentObjectBudget = 32;
+constexpr uint16_t kOrderedTransparentLastView =
+    kOrderedTransparentViewBase + kOrderedTransparentObjectBudget * 2 - 1;
+constexpr uint16_t kOrderedTransparentViewLimit = 200;
+constexpr uint16_t kOrderedViewOrderBase = static_cast<uint16_t>(RenderView::Skybox);
+constexpr uint16_t kOrderedViewOrderCount =
+    kOrderedTransparentLastView - kOrderedViewOrderBase + 1;
+
+RenderView ordered_transparent_view(uint16_t view_id) {
+    return static_cast<RenderView>(view_id);
+}
+
+bool is_refractive_material(const MaterialData* material) {
+    return material && material->transmission > 0.0f;
+}
+
+void configure_ordered_transparent_view_order() {
+    static const auto order = []() {
+        std::array<bgfx::ViewId, kOrderedViewOrderCount> order{};
+        size_t cursor = 0;
+
+        auto append_range = [&order, &cursor](uint16_t first, uint16_t last) {
+            for (uint16_t id = first; id <= last; ++id) {
+                order[cursor++] = static_cast<bgfx::ViewId>(id);
+            }
+        };
+
+        append_range(
+            kOrderedViewOrderBase,
+            static_cast<uint16_t>(RenderView::TransparentRefractive));
+        append_range(kOrderedTransparentViewBase, kOrderedTransparentLastView);
+        append_range(
+            static_cast<uint16_t>(RenderView::TransparentRefractive) + 1,
+            kOrderedTransparentViewBase - 1);
+
+        return order;
+    }();
+
+    bgfx::setViewOrder(
+        static_cast<bgfx::ViewId>(kOrderedViewOrderBase),
+        kOrderedViewOrderCount,
+        order.data());
+}
+
+} // namespace
+
 RenderPipeline::~RenderPipeline() {
     if (m_initialized) {
         shutdown();
@@ -31,6 +80,7 @@ void RenderPipeline::init(IRenderer* renderer, const RenderPipelineConfig& confi
 
     // Create render targets
     create_render_targets();
+    configure_ordered_transparent_view_order();
 
     // Initialize subsystems
     if (has_flag(config.enabled_passes, RenderPassFlags::Shadows)) {
@@ -56,6 +106,9 @@ void RenderPipeline::init(IRenderer* renderer, const RenderPipelineConfig& confi
         m_volumetric_system.init(renderer, config.volumetric_config);
     }
 
+    m_oit_system.init(renderer, m_internal_width, m_internal_height);
+    m_oit_system.set_config({ config.order_independent_transparency, 3.0f, 500.0f });
+
     // Initialize particle system
     // TODO: Add particle_pass() that calls m_particle_system->render() after transparent pass
     if (has_flag(config.enabled_passes, RenderPassFlags::Particles)) {
@@ -77,6 +130,7 @@ void RenderPipeline::shutdown() {
         m_particle_system.reset();
     }
     m_volumetric_system.shutdown();
+    m_oit_system.shutdown();
     m_taa_system.shutdown();
     m_post_process_system.shutdown();
     m_ssao_system.shutdown();
@@ -322,8 +376,10 @@ void RenderPipeline::render(const CameraData& camera,
         m_renderer->set_opaque_copy_texture(opaque_copy_tex);
     }
 
+    // Run volumetric update and composite into the scene BEFORE transparency
     if (has_flag(m_config.enabled_passes, RenderPassFlags::Volumetric)) {
         volumetric_pass(jittered_camera, lights);
+        m_volumetric_system.composite(m_hdr_target);
     }
 
     if (has_flag(m_config.enabled_passes, RenderPassFlags::Transparent)) {
@@ -341,7 +397,7 @@ void RenderPipeline::render(const CameraData& camera,
         debug_pass(jittered_camera);
     }
 
-    if (has_flag(m_config.enabled_passes, RenderPassFlags::Final)) {
+    if (has_flag(m_config.enabled_passes, RenderPassFlags::Final) && !m_renderer->is_headless()) {
         final_pass();
     }
 
@@ -448,12 +504,14 @@ void RenderPipeline::resize(uint32_t width, uint32_t height) {
     // Recreate render targets
     destroy_render_targets();
     create_render_targets();
+    configure_ordered_transparent_view_order();
 
     // Resize subsystems
     m_ssao_system.resize(m_internal_width, m_internal_height);
     m_post_process_system.resize(m_internal_width, m_internal_height);
     m_taa_system.resize(m_internal_width, m_internal_height);
     m_volumetric_system.resize(m_internal_width, m_internal_height);
+    m_oit_system.resize(m_internal_width, m_internal_height);
     // Note: Shadow system is not resized here because shadow map resolution
     // is independent of viewport size (configured via ShadowConfig::cascade_resolution).
 
@@ -676,6 +734,14 @@ void RenderPipeline::create_render_targets() {
     }
 
     {
+        ViewConfig view_config;
+        view_config.render_target = m_hdr_target;
+        view_config.clear_color_enabled = false;
+        view_config.clear_depth_enabled = false;
+        m_renderer->configure_view(RenderView::TransparentRefractive, view_config);
+    }
+
+    {
         // Final view renders to the backbuffer (no render target)
         // blit_to_screen reads from m_ldr_target and writes to the screen
         ViewConfig view_config;
@@ -683,6 +749,14 @@ void RenderPipeline::create_render_targets() {
         view_config.clear_color = 0x000000FF;
         view_config.clear_depth_enabled = false;
         m_renderer->configure_view(RenderView::Final, view_config);
+    }
+
+    if (m_renderer->is_headless()) {
+        ViewConfig debug_overlay_view_config;
+        debug_overlay_view_config.render_target = m_ldr_target;
+        debug_overlay_view_config.clear_color_enabled = false;
+        debug_overlay_view_config.clear_depth_enabled = false;
+        m_renderer->configure_view(RenderView::DebugOverlay, debug_overlay_view_config);
     }
 }
 
@@ -721,6 +795,7 @@ void RenderPipeline::destroy_render_targets() {
 void RenderPipeline::update_camera_uniforms(const CameraData& camera) {
     m_renderer->set_view_transform(RenderView::MainOpaque, camera.view_matrix, camera.projection_matrix);
     m_renderer->set_view_transform(RenderView::MainTransparent, camera.view_matrix, camera.projection_matrix);
+    m_renderer->set_view_transform(RenderView::TransparentRefractive, camera.view_matrix, camera.projection_matrix);
     m_renderer->set_camera_position(camera.position);
 }
 
@@ -1131,12 +1206,66 @@ void RenderPipeline::volumetric_pass(const CameraData& camera,
 
 void RenderPipeline::transparent_pass(const CameraData& camera,
                                        const std::vector<LightData>& lights) {
+    (void)lights;
+    m_renderer->enable_oit(false);
+
+    TextureHandle hdr_color = m_renderer->get_render_target_texture(m_hdr_target, 0);
+    TextureHandle opaque_copy_tex = m_renderer->get_render_target_texture(m_opaque_copy, 0);
+
+    ViewConfig transparent_view_config;
+    transparent_view_config.render_target = m_hdr_target;
+    transparent_view_config.clear_color_enabled = false;
+    transparent_view_config.clear_depth_enabled = false;
+
+    ViewConfig opaque_copy_view_config;
+    opaque_copy_view_config.render_target = m_opaque_copy;
+    opaque_copy_view_config.clear_color_enabled = false;
+    opaque_copy_view_config.clear_depth_enabled = false;
+
+    bool warned_about_budget = false;
+    uint16_t ordered_object_index = 0;
+
     for (const auto* obj : m_visible_transparent) {
+        const MaterialData* material = m_renderer->get_material_data(obj->material);
+        const bool is_refractive = is_refractive_material(material);
+
+        RenderView draw_view = RenderView::MainTransparent;
+        if (ordered_object_index < kOrderedTransparentObjectBudget &&
+            kOrderedTransparentLastView < kOrderedTransparentViewLimit) {
+            const uint16_t copy_view_id = kOrderedTransparentViewBase + ordered_object_index * 2;
+            const uint16_t draw_view_id = copy_view_id + 1;
+
+            if (is_refractive && hdr_color.valid() && opaque_copy_tex.valid()) {
+                RenderView copy_view = ordered_transparent_view(copy_view_id);
+                m_renderer->configure_view(copy_view, opaque_copy_view_config);
+                m_renderer->blit_to_screen(copy_view, hdr_color);
+                m_renderer->set_opaque_copy_texture(opaque_copy_tex);
+            }
+
+            draw_view = ordered_transparent_view(draw_view_id);
+            m_renderer->configure_view(draw_view, transparent_view_config);
+            m_renderer->set_view_transform(draw_view, camera.view_matrix, camera.projection_matrix);
+            ordered_object_index++;
+        } else {
+            if (!warned_about_budget) {
+                warned_about_budget = true;
+                log(LogLevel::Warn,
+                    "Transparent object count exceeded ordered transparency budget ({}); "
+                    "remaining objects fall back to shared transparent views",
+                    kOrderedTransparentObjectBudget);
+            }
+
+            if (is_refractive && opaque_copy_tex.valid()) {
+                m_renderer->set_opaque_copy_texture(opaque_copy_tex);
+                draw_view = RenderView::TransparentRefractive;
+            }
+        }
+
         if (obj->skinned && obj->bone_matrices) {
-            m_renderer->submit_skinned_mesh(RenderView::MainTransparent, obj->mesh, obj->material,
+            m_renderer->submit_skinned_mesh(draw_view, obj->mesh, obj->material,
                                              obj->transform, obj->bone_matrices, obj->bone_count);
         } else {
-            m_renderer->submit_mesh(RenderView::MainTransparent, obj->mesh, obj->material, obj->transform);
+            m_renderer->submit_mesh(draw_view, obj->mesh, obj->material, obj->transform);
         }
         m_stats.draw_calls++;
     }
@@ -1146,21 +1275,9 @@ void RenderPipeline::post_process_pass(const CameraData& camera) {
     TextureHandle hdr_tex = m_renderer->get_render_target_texture(m_hdr_target, 0);
     if (!hdr_tex.valid()) return;
 
-    // Apply volumetric fog compositing
-    // The volumetric texture contains: RGB = in-scattered light, A = transmission
-    // Compositing formula: final = scene * transmission + in_scatter
-    if (has_flag(m_config.enabled_passes, RenderPassFlags::Volumetric)) {
-        TextureHandle vol_tex = m_volumetric_system.get_volumetric_texture();
-        if (vol_tex.valid()) {
-            // Set the volumetric texture for the post-process system to composite
-            // The tone mapping shader will blend: hdr * vol.a + vol.rgb
-            m_post_process_system.set_volumetric_texture(vol_tex);
-        }
-    } else {
-        // Clear stale volumetric texture when the effect is disabled, otherwise
-        // the post-process system would keep compositing the last active frame.
-        m_post_process_system.set_volumetric_texture(TextureHandle{});
-    }
+    // Volumetric fog is now composited earlier in the frame (before transparency)
+    // to ensure transparent objects are correctly drawn on top of fog.
+    m_post_process_system.set_volumetric_texture(TextureHandle{});
 
     // Apply TAA
     if (has_flag(m_config.enabled_passes, RenderPassFlags::TAA) && m_config.taa_config.enabled) {

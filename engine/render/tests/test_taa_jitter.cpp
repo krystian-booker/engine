@@ -57,6 +57,7 @@ public:
     void queue_draw(const DrawCall&, RenderView) override {}
 
     void set_camera(const Mat4&, const Mat4&) override {}
+    void set_camera_position(const Vec3&) override {}
     void set_light(uint32_t, const LightData&) override {}
     void clear_lights() override {}
 
@@ -74,6 +75,10 @@ public:
     void submit_billboard(RenderView, MeshHandle, TextureHandle, const Mat4&,
                           const Vec4&, const Vec2&, const Vec2&, bool, bool) override {}
     void set_ao_texture(TextureHandle) override {}
+    void set_hemisphere_ambient(const Vec3&, float, const Vec3&) override {}
+    void set_oit_data(const Vec4&) override {}
+    void enable_oit(bool) override {}
+    void set_opaque_copy_texture(TextureHandle) override {}
     void flush() override {}
     void clear(uint32_t, float) override {}
 
@@ -99,8 +104,11 @@ public:
     void set_ibl_textures(TextureHandle, TextureHandle, TextureHandle, uint32_t) override {}
     void set_motion_blur_enabled(bool) override {}
     bool get_motion_blur_enabled() const override { return false; }
+    std::string get_shader_path() const override { return {}; }
     uint16_t get_native_texture_handle(TextureHandle) const override { return 0; }
     uint16_t get_dummy_shadow_array() const override { return 0; }
+    const MaterialData* get_material_data(MaterialHandle) const override { return nullptr; }
+    bool is_headless() const override { return false; }
     MeshBufferInfo get_mesh_buffer_info(MeshHandle) const override { return {}; }
 };
 
