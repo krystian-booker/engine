@@ -119,6 +119,12 @@ public:
     // SSAO texture
     virtual void set_ao_texture(TextureHandle texture) = 0;
 
+    // Hemisphere ambient
+    virtual void set_hemisphere_ambient(const Vec3& ground, float shadow_min, const Vec3& sky) = 0;
+
+    // Opaque copy texture for screen-space refraction
+    virtual void set_opaque_copy_texture(TextureHandle tex) = 0;
+
     // Sorts queued draws by material/mesh and submits to GPU
     virtual void flush() = 0;
 

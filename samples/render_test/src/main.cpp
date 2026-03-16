@@ -61,14 +61,14 @@ protected:
                                   | render::RenderPassFlags::PostProcess
                                   | render::RenderPassFlags::Final;
 
-            // Tone mapping
-            config.tonemap_config.op = render::ToneMappingOperator::ACES;
-            config.tonemap_config.exposure = 0.6f;
+            // Tone mapping — AgX matches Blender's view transform
+            config.tonemap_config.op = render::ToneMappingOperator::AgX;
+            config.tonemap_config.exposure = 0.32f;
 
-            // Bloom
+            // Bloom — matches Blender compositor Glare node
             config.bloom_config.enabled = true;
             config.bloom_config.threshold = 1.5f;
-            config.bloom_config.intensity = 0.15f;
+            config.bloom_config.intensity = 0.12f;
 
             // SSAO
             config.ssao_config.radius = 0.5f;
@@ -77,17 +77,25 @@ protected:
             // Shadows
             config.shadow_config.cascade_resolution = 2048;
             config.shadow_config.cascade_count = 4;
-            config.shadow_config.shadow_bias = 0.005f;
-            config.shadow_config.normal_bias = 0.1f;
+            config.shadow_config.shadow_bias = 0.002f;
+            config.shadow_config.normal_bias = 0.02f;
 
-            // Clear color goes through ACES tonemapping + gamma in the HDR pipeline,
-            // so use a darker linear value that produces ~sRGB(26,26,46) after processing.
-            config.clear_color = 0x050509FF;
+            // Clear color tuned for AgX pipeline
+            config.clear_color = 0x080A1CFF;
 
             pipeline->set_config(config);
         }
 
-        renderer->set_ibl_intensity(1.2f);
+        renderer->set_ibl_intensity(2.0f);
+        renderer->set_hemisphere_ambient(
+            Vec3{5.00f, 4.00f, 3.20f}, 0.0f,  // ground RGB (strong fill for sphere undersides)
+            Vec3{0.01f, 0.01f, 0.01f}          // sky RGB (near-zero to avoid brightening ground)
+        );
+
+        // Create scene-appropriate dark IBL cubemaps matching the golden's
+        // dark navy environment (sRGB ~26,26,46). The engine's fallback cubemaps
+        // are much brighter (sRGB ~119,110,97), creating phantom metallic reflections.
+        create_scene_ibl(renderer);
 
         create_camera(world);
         create_lights(world, renderer);
@@ -108,6 +116,9 @@ protected:
             renderer->destroy_mesh(m_sphere_mesh);
             renderer->destroy_mesh(m_cube_mesh);
             renderer->destroy_mesh(m_plane_mesh);
+            if (m_ibl_irradiance.valid()) renderer->destroy_texture(m_ibl_irradiance);
+            if (m_ibl_prefilter.valid()) renderer->destroy_texture(m_ibl_prefilter);
+            if (m_ibl_brdf_lut.valid()) renderer->destroy_texture(m_ibl_brdf_lut);
             for (auto& mat : m_materials) {
                 renderer->destroy_material(mat);
             }
@@ -148,7 +159,7 @@ private:
             Light light;
             light.type = LightType::Directional;
             light.color = Vec3{1.0f, 0.95f, 0.9f};
-            light.intensity = 2.0f;
+            light.intensity = 1.7f;
             light.cast_shadows = true;
             light.enabled = true;
             world->emplace<Light>(entity, light);
@@ -165,8 +176,26 @@ private:
 
             Light light;
             light.type = LightType::Directional;
-            light.color = Vec3{0.6f, 0.7f, 1.0f};
-            light.intensity = 0.3f;
+            light.color = Vec3{0.80f, 0.75f, 0.70f};
+            light.intensity = 0.4f;
+            light.cast_shadows = false;
+            light.enabled = true;
+            world->emplace<Light>(entity, light);
+        }
+
+        // Ground bounce light — approximates GI from ground plane
+        {
+            auto entity = world->create("Bounce");
+            Vec3 dir = glm::normalize(Vec3{0.0f, 1.0f, 0.0f});
+            Vec3 up = Vec3(0.0f, 0.0f, 1.0f);
+            Quat rot = glm::quatLookAt(dir, up);
+            world->emplace<LocalTransform>(entity, Vec3{0.0f}, rot);
+            world->emplace<WorldTransform>(entity);
+
+            Light light;
+            light.type = LightType::Directional;
+            light.color = Vec3{0.5f, 0.48f, 0.45f};
+            light.intensity = 0.5f;
             light.cast_shadows = false;
             light.enabled = true;
             world->emplace<Light>(entity, light);
@@ -242,11 +271,11 @@ private:
         auto left_mat = renderer->create_material(left_mat_data);
         m_materials.push_back(left_mat);
 
-        // Right cube — copper/rose-gold metallic
+        // Right cube — neutral gray (matching left cube / golden reference)
         render::MaterialData right_mat_data;
-        right_mat_data.albedo = Vec4{0.95f, 0.64f, 0.54f, 1.0f};
-        right_mat_data.roughness = 0.35f;
-        right_mat_data.metallic = 0.9f;
+        right_mat_data.albedo = Vec4{0.3f, 0.3f, 0.35f, 1.0f};
+        right_mat_data.roughness = 0.6f;
+        right_mat_data.metallic = 0.0f;
         auto right_mat = renderer->create_material(right_mat_data);
         m_materials.push_back(right_mat);
 
@@ -273,7 +302,7 @@ private:
         mat_data.albedo = Vec4{1.0f, 0.3f, 0.1f, 1.0f};
         mat_data.roughness = 0.3f;
         mat_data.metallic = 0.0f;
-        mat_data.emissive = Vec3{8.0f, 2.0f, 0.5f};
+        mat_data.emissive = Vec3{3.0f, 0.75f, 0.18f};
         auto mat = renderer->create_material(mat_data);
         m_materials.push_back(mat);
 
@@ -285,6 +314,39 @@ private:
         world->emplace<MeshRenderer>(entity, MeshRenderer{
             MeshHandle{m_sphere_mesh.id}, MaterialHandle{mat.id}, 0, true, true, true
         });
+
+        // Point light co-located with emissive sphere to approximate its
+        // light emission onto nearby surfaces
+        {
+            auto light_entity = world->create("EmissiveLight");
+            world->emplace<LocalTransform>(light_entity, Vec3{6.0f, 1.5f, 2.0f});
+            world->emplace<WorldTransform>(light_entity);
+
+            Light light;
+            light.type = LightType::Point;
+            light.color = Vec3{1.0f, 0.35f, 0.1f};
+            light.intensity = 15.0f;
+            light.range = 20.0f;
+            light.cast_shadows = false;
+            light.enabled = true;
+            world->emplace<Light>(light_entity, light);
+        }
+
+        // Secondary fill light behind the right cube to simulate GI bounce
+        {
+            auto light_entity = world->create("EmissiveGIBounce");
+            world->emplace<LocalTransform>(light_entity, Vec3{5.0f, 2.5f, -3.5f});
+            world->emplace<WorldTransform>(light_entity);
+
+            Light light;
+            light.type = LightType::Point;
+            light.color = Vec3{1.0f, 0.4f, 0.15f};
+            light.intensity = 8.0f;
+            light.range = 10.0f;
+            light.cast_shadows = false;
+            light.enabled = true;
+            world->emplace<Light>(light_entity, light);
+        }
     }
 
     // ---- SSAO Corner (concave crevice) ----
@@ -326,6 +388,8 @@ private:
         mat_data.albedo = Vec4{0.6f, 0.8f, 1.0f, 0.35f};
         mat_data.roughness = 0.1f;
         mat_data.metallic = 0.0f;
+        mat_data.ior = 1.45f;
+        mat_data.transmission = 0.65f;
         mat_data.transparent = true;
         mat_data.alpha_cutoff = 0.0f; // Disable alpha test to prevent discard
         auto mat = renderer->create_material(mat_data);
@@ -341,9 +405,74 @@ private:
         });
     }
 
+    // ---- Scene IBL (dark cubemaps matching golden environment) ----
+    void create_scene_ibl(render::IRenderer* renderer) {
+        // Golden scene has dark navy background (sRGB ~26,26,46).
+        // Create 1x1 cubemaps with matching environment colors.
+        // Face order: +X, -X, +Y, -Y, +Z, -Z. Pixel format: RGBA8.
+
+        // Irradiance (diffuse ambient) — very dark, matching background
+        {
+            render::TextureData td;
+            td.width = 1;
+            td.height = 1;
+            td.format = render::TextureFormat::RGBA8;
+            td.is_cubemap = true;
+            td.mip_levels = 1;
+            // 6 faces × 1×1 × 4 bytes (RGBA)
+            uint8_t faces[] = {
+                24, 23, 35, 255,   // +X horizon (dark blue-gray)
+                24, 23, 35, 255,   // -X
+                26, 26, 46, 255,   // +Y sky (dark navy — matches golden background)
+                20, 18, 15, 255,   // -Y ground (warm dark)
+                24, 23, 35, 255,   // +Z
+                24, 23, 35, 255,   // -Z
+            };
+            td.pixels.assign(faces, faces + sizeof(faces));
+            m_ibl_irradiance = renderer->create_texture(td);
+        }
+
+        // Prefilter (specular reflections) — moderate brightness for metallic reflections
+        {
+            render::TextureData td;
+            td.width = 1;
+            td.height = 1;
+            td.format = render::TextureFormat::RGBA8;
+            td.is_cubemap = true;
+            td.mip_levels = 1;
+            uint8_t faces[] = {
+                30, 28, 40, 255,   // +X horizon
+                30, 28, 40, 255,   // -X
+                35, 33, 50, 255,   // +Y sky
+                25, 22, 18, 255,   // -Y ground
+                30, 28, 40, 255,   // +Z
+                30, 28, 40, 255,   // -Z
+            };
+            td.pixels.assign(faces, faces + sizeof(faces));
+            m_ibl_prefilter = renderer->create_texture(td);
+        }
+
+        // BRDF LUT — standard approximation (same as default)
+        {
+            render::TextureData td;
+            td.width = 1;
+            td.height = 1;
+            td.format = render::TextureFormat::RGBA8;
+            td.mip_levels = 1;
+            uint8_t pixel[] = { 128, 16, 0, 0 }; // R=0.5 (scale), G=0.06 (bias)
+            td.pixels.assign(pixel, pixel + sizeof(pixel));
+            m_ibl_brdf_lut = renderer->create_texture(td);
+        }
+
+        renderer->set_ibl_textures(m_ibl_irradiance, m_ibl_prefilter, m_ibl_brdf_lut, 0);
+    }
+
     render::MeshHandle m_sphere_mesh;
     render::MeshHandle m_cube_mesh;
     render::MeshHandle m_plane_mesh;
+    render::TextureHandle m_ibl_irradiance;
+    render::TextureHandle m_ibl_prefilter;
+    render::TextureHandle m_ibl_brdf_lut;
     std::vector<render::MaterialHandle> m_materials;
 };
 

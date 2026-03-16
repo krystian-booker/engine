@@ -48,6 +48,17 @@ struct PBRUniforms {
     // Shadow map samplers
     bgfx::UniformHandle s_shadowMap = BGFX_INVALID_HANDLE;
 
+    // Screen-space SSAO sampler
+    bgfx::UniformHandle s_ssao = BGFX_INVALID_HANDLE;
+
+    // Hemisphere ambient uniforms
+    bgfx::UniformHandle u_hemisphereGround = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_hemisphereSky = BGFX_INVALID_HANDLE;
+
+    // Refraction uniforms
+    bgfx::UniformHandle u_refractionParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_opaqueColor = BGFX_INVALID_HANDLE;
+
     // Blit sampler (for blit_to_screen)
     bgfx::UniformHandle s_blit_texture = BGFX_INVALID_HANDLE;
 
@@ -66,6 +77,15 @@ struct PBRUniforms {
         u_cascadeSplits = bgfx::createUniform("u_cascadeSplits", bgfx::UniformType::Vec4);
         u_shadowMatrix = bgfx::createUniform("u_shadowMatrix", bgfx::UniformType::Mat4, 4);
         s_shadowMap = bgfx::createUniform("s_shadowMap", bgfx::UniformType::Sampler);
+        s_ssao = bgfx::createUniform("s_ssao", bgfx::UniformType::Sampler);
+
+        // Hemisphere ambient
+        u_hemisphereGround = bgfx::createUniform("u_hemisphereGround", bgfx::UniformType::Vec4);
+        u_hemisphereSky = bgfx::createUniform("u_hemisphereSky", bgfx::UniformType::Vec4);
+
+        // Refraction
+        u_refractionParams = bgfx::createUniform("u_refractionParams", bgfx::UniformType::Vec4);
+        s_opaqueColor = bgfx::createUniform("s_opaqueColor", bgfx::UniformType::Sampler);
 
         s_albedo = bgfx::createUniform("s_albedo", bgfx::UniformType::Sampler);
         s_normal = bgfx::createUniform("s_normal", bgfx::UniformType::Sampler);
@@ -95,6 +115,15 @@ struct PBRUniforms {
         if (bgfx::isValid(u_cascadeSplits)) bgfx::destroy(u_cascadeSplits);
         if (bgfx::isValid(u_shadowMatrix)) bgfx::destroy(u_shadowMatrix);
         if (bgfx::isValid(s_shadowMap)) bgfx::destroy(s_shadowMap);
+        if (bgfx::isValid(s_ssao)) bgfx::destroy(s_ssao);
+
+        // Hemisphere ambient
+        if (bgfx::isValid(u_hemisphereGround)) bgfx::destroy(u_hemisphereGround);
+        if (bgfx::isValid(u_hemisphereSky)) bgfx::destroy(u_hemisphereSky);
+
+        // Refraction
+        if (bgfx::isValid(u_refractionParams)) bgfx::destroy(u_refractionParams);
+        if (bgfx::isValid(s_opaqueColor)) bgfx::destroy(s_opaqueColor);
 
         if (bgfx::isValid(s_albedo)) bgfx::destroy(s_albedo);
         if (bgfx::isValid(s_normal)) bgfx::destroy(s_normal);
@@ -1587,6 +1616,18 @@ public:
         }
     }
 
+    void set_hemisphere_ambient(const Vec3& ground, float shadow_min, const Vec3& sky) override {
+        m_hemisphere_ground = Vec4(ground, shadow_min);
+        m_hemisphere_sky = Vec4(sky, 0.0f);
+    }
+
+    void set_opaque_copy_texture(TextureHandle tex) override {
+        auto it = m_textures.find(tex.id);
+        if (it != m_textures.end()) {
+            m_opaque_copy_texture = it->second;
+        }
+    }
+
     void flush() override {
         // Process legacy draw queue (view 0)
         if (!m_draw_queue.empty()) {
@@ -1850,6 +1891,24 @@ public:
             : m_dummy_shadow_texture;
 
         bgfx::setTexture(8, m_pbr_uniforms.s_shadowMap, shadow_tex, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP | BGFX_SAMPLER_COMPARE_LEQUAL);
+
+        // Bind screen-space SSAO texture (slot 12)
+        bgfx::TextureHandle ssao_tex = bgfx::isValid(m_ao_texture) ? m_ao_texture : m_white_texture;
+        bgfx::setTexture(12, m_pbr_uniforms.s_ssao, ssao_tex);
+
+        // Hemisphere ambient uniforms
+        bgfx::setUniform(m_pbr_uniforms.u_hemisphereGround, glm::value_ptr(m_hemisphere_ground));
+        bgfx::setUniform(m_pbr_uniforms.u_hemisphereSky, glm::value_ptr(m_hemisphere_sky));
+
+        // Refraction uniforms
+        Vec4 refraction_params = mat_data
+            ? Vec4(mat_data->ior, mat_data->transmission, 0.8f, 0.0f)
+            : Vec4(1.5f, 0.0f, 0.0f, 0.0f);
+        bgfx::setUniform(m_pbr_uniforms.u_refractionParams, glm::value_ptr(refraction_params));
+
+        // Bind opaque scene copy for refraction (slot 13)
+        bgfx::TextureHandle opaque_tex = bgfx::isValid(m_opaque_copy_texture) ? m_opaque_copy_texture : m_white_texture;
+        bgfx::setTexture(13, m_pbr_uniforms.s_opaqueColor, opaque_tex);
 
     }
 
@@ -2168,6 +2227,13 @@ private:
 
     // SSAO texture
     bgfx::TextureHandle m_ao_texture = BGFX_INVALID_HANDLE;
+
+    // Hemisphere ambient parameters
+    Vec4 m_hemisphere_ground{0.0f, 0.0f, 0.0f, 0.5f};  // rgb=ground color, w=shadow ambient min
+    Vec4 m_hemisphere_sky{0.0f, 0.0f, 0.0f, 0.0f};     // rgb=sky color, w=unused
+
+    // Opaque copy texture for screen-space refraction
+    bgfx::TextureHandle m_opaque_copy_texture = BGFX_INVALID_HANDLE;
     std::array<Mat4, 4> m_shadow_matrices{Mat4(1.0f), Mat4(1.0f), Mat4(1.0f), Mat4(1.0f)};
     Vec4 m_cascade_splits{10.0f, 30.0f, 100.0f, 500.0f};
     Vec4 m_shadow_params{0.001f, 0.01f, 0.1f, 1.0f};  // bias, normalBias, cascadeBlend, pcfRadius

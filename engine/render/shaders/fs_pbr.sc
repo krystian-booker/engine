@@ -20,6 +20,12 @@ SAMPLER2D(s_brdfLUT,          7);  // BRDF integration LUT
 
 // Shadow maps are defined in shadow.sh (slots 8-11)
 
+// Screen-space SSAO (slot 12) — sampled with screen UVs, not mesh UVs
+SAMPLER2D(s_ssao, 12);
+
+// Opaque scene copy for screen-space refraction (slot 13)
+SAMPLER2D(s_opaqueColor, 13);
+
 void main()
 {
     // Sample textures
@@ -101,14 +107,55 @@ void main()
     vec2 brdf = texture2D(s_brdfLUT, vec2(max(dot(N, V), 0.0), roughness)).rg;
     vec3 specularIBL = prefilteredColor * (F0 * brdf.x + brdf.y);
 
+    // Sample screen-space SSAO using clip-space position
+    vec2 screenUV = v_clipPos.xy / v_clipPos.w * 0.5 + 0.5;
+#if BGFX_SHADER_LANGUAGE_HLSL || BGFX_SHADER_LANGUAGE_PSSL || BGFX_SHADER_LANGUAGE_METAL
+    screenUV.y = 1.0 - screenUV.y;
+#endif
+    float ssao = texture2D(s_ssao, screenUV).r;
+
     // Combine ambient with shadow attenuation.
-    // Partially darken ambient in shadow areas to approximate indirect shadow/AO.
-    // Without this, the IBL ambient overwhelms the direct-light shadow contrast.
-    float ambientShadow = mix(0.3, 1.0, shadowFactor);
-    vec3 ambient = (kD * diffuseIBL + specularIBL) * ao * u_iblParams.x * ambientShadow;
+    // Split ambient shadow: diffuse IBL dims more in shadow, specular (metallic reflections) less so.
+    float diffuseAmbientShadow = mix(u_hemisphereGround.w, 1.0, shadowFactor);
+    float specularAmbientShadow = mix(0.7, 1.0, shadowFactor);
+
+    // Hemisphere ambient — lightweight GI approximation
+    // Uses vertex AO but NOT screen-space AO: hemisphere irradiance comes from
+    // the far-field sky/ground, not affected by local screen-space occlusion.
+    vec3 hemisphereAmbient = evaluateHemisphereAmbient(N, albedo.rgb, ao,
+        u_hemisphereGround.rgb, u_hemisphereSky.rgb);
+
+    vec3 ambient = kD * diffuseIBL * ao * ssao * u_iblParams.x * diffuseAmbientShadow
+                 + specularIBL * ao * ssao * u_iblParams.x * specularAmbientShadow
+                 + hemisphereAmbient;
 
     // Final color (linear HDR — tonemapping + gamma applied by post-processing pipeline)
     vec3 color = ambient + Lo + emissive;
+
+    // Screen-space refraction for transmissive materials
+    float transmission = u_refractionParams.y;
+    if (transmission > 0.0)
+    {
+        float ior = u_refractionParams.x;
+        float thickness = u_refractionParams.z;
+        vec3 viewN = normalize(mul(u_view, vec4(N, 0.0)).xyz);
+        vec2 refractionOffset = viewN.xy * thickness * (1.0 / ior - 1.0);
+        vec2 refractedUV = clamp(screenUV + refractionOffset, vec2(0.0, 0.0), vec2(1.0, 1.0));
+
+        // Sample the opaque scene behind this surface
+        vec3 background = texture2D(s_opaqueColor, refractedUV).rgb;
+
+        // Fresnel-based blend: more reflection at glancing angles, more transmission head-on
+        float fresnel = pow(1.0 - max(dot(N, V), 0.0), 5.0);
+        float transmissionFactor = transmission * (1.0 - fresnel);
+
+        // Blend refracted background with surface lighting
+        color = mix(background, color, 1.0 - transmissionFactor);
+
+        // Output full opacity — refraction replaces alpha blending
+        gl_FragColor = vec4(color, 1.0);
+        return;
+    }
 
     gl_FragColor = vec4(color, albedo.a);
 }

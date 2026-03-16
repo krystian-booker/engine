@@ -147,4 +147,15 @@ vec3 evaluateAmbient(vec3 albedo, float ao)
     return ambient;
 }
 
+// Hemisphere ambient — lightweight GI approximation.
+// Blends between a warm ground color and a cool sky color based on the
+// surface normal's Y component, simulating hemisphere irradiance.
+vec3 evaluateHemisphereAmbient(vec3 N, vec3 albedo, float ao,
+                                vec3 groundColor, vec3 skyColor)
+{
+    float blend = N.y * 0.5 + 0.5; // 0=down-facing, 1=up-facing
+    vec3 hemisphere = mix(groundColor, skyColor, blend);
+    return hemisphere * albedo * INV_PI * ao;
+}
+
 #endif // LIGHTING_SH

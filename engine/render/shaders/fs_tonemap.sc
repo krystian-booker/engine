@@ -138,8 +138,13 @@ vec3 tonemapAgX(vec3 color)
         dot(vec3(-0.0529716355144438, -0.0980434501171241,  1.15107367264116), v)
     );
 
-    // 5. Strip the baked-in sRGB curve to output Linear
-    return pow(saturate(finalColor), vec3_splat(2.2));
+    // 5. AgX "Punchy" look — boost saturation slightly for richer colors
+    vec3 agxLuma = vec3_splat(dot(finalColor, vec3(0.2126, 0.7152, 0.0722)));
+    finalColor = mix(agxLuma, finalColor, 1.0);
+    finalColor = saturate(finalColor);
+
+    // 6. Strip the baked-in sRGB curve to output Linear
+    return pow(finalColor, vec3_splat(2.2));
 }
 
 // Apply selected tone mapping

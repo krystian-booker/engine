@@ -293,6 +293,7 @@ private:
     RenderTargetHandle m_gbuffer;         // GBuffer with normals for SSAO
     RenderTargetHandle m_motion_vectors;  // Motion vectors for TAA
     RenderTargetHandle m_hdr_target;
+    RenderTargetHandle m_opaque_copy;     // Copy of opaque scene for refraction
     RenderTargetHandle m_ldr_target;
 
     // Subsystems

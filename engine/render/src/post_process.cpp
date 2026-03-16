@@ -35,6 +35,9 @@ namespace engine::render {
         bgfx::UniformHandle s_velocity = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle s_volumetric = BGFX_INVALID_HANDLE;
 
+        // 1x1 neutral volumetric fallback: no fog (rgb=0, a=1)
+        bgfx::TextureHandle vol_fallback = BGFX_INVALID_HANDLE;
+
         // Fullscreen quad vertex buffer
         bgfx::VertexBufferHandle fullscreen_vb = BGFX_INVALID_HANDLE;
         bgfx::IndexBufferHandle fullscreen_ib = BGFX_INVALID_HANDLE;
@@ -129,6 +132,12 @@ namespace engine::render {
         s_velocity = bgfx::createUniform("s_velocity", bgfx::UniformType::Sampler);
         s_volumetric = bgfx::createUniform("s_volumetric", bgfx::UniformType::Sampler);
 
+        // Neutral volumetric fallback: RGBA(0,0,0,255) = no fog, full transmittance
+        uint32_t vol_black = 0xFF000000; // A=255, B=0, G=0, R=0
+        vol_fallback = bgfx::createTexture2D(1, 1, false, 1, bgfx::TextureFormat::RGBA8,
+            BGFX_TEXTURE_NONE | BGFX_SAMPLER_POINT,
+            bgfx::copy(&vol_black, sizeof(vol_black)));
+
         // Create fullscreen quad vertex layout
         fullscreen_layout
             .begin()
@@ -179,6 +188,7 @@ namespace engine::render {
         if (bgfx::isValid(s_depth)) bgfx::destroy(s_depth);
         if (bgfx::isValid(s_velocity)) bgfx::destroy(s_velocity);
         if (bgfx::isValid(s_volumetric)) bgfx::destroy(s_volumetric);
+        if (bgfx::isValid(vol_fallback)) bgfx::destroy(vol_fallback);
 
         if (bgfx::isValid(fullscreen_vb)) bgfx::destroy(fullscreen_vb);
         if (bgfx::isValid(fullscreen_ib)) bgfx::destroy(fullscreen_ib);
@@ -471,8 +481,9 @@ namespace engine::render {
             bgfx::setTexture(1, s_pp_shaders.s_bloom, scene_handle);
         }
 
-        // Bind volumetric fog texture if available, otherwise fallback
+        // Bind volumetric fog texture if available, otherwise neutral fallback.
         // The shader composites: final = scene * vol.a + vol.rgb
+        // Fallback must be (0,0,0,1) = no fog, NOT the scene texture (which would double it).
         if (m_volumetric_texture.valid()) {
             uint16_t vol_idx = m_renderer->get_native_texture_handle(m_volumetric_texture);
             if (vol_idx != bgfx::kInvalidHandle) {
@@ -480,11 +491,11 @@ namespace engine::render {
                 bgfx::setTexture(2, s_pp_shaders.s_volumetric, vol_handle);
             }
             else {
-                bgfx::setTexture(2, s_pp_shaders.s_volumetric, scene_handle); // Fallback
+                bgfx::setTexture(2, s_pp_shaders.s_volumetric, s_pp_shaders.vol_fallback);
             }
         }
         else {
-            bgfx::setTexture(2, s_pp_shaders.s_volumetric, scene_handle); // Fallback
+            bgfx::setTexture(2, s_pp_shaders.s_volumetric, s_pp_shaders.vol_fallback);
         }
 
         // Set uniforms after we've validated the parameters

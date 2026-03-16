@@ -24,6 +24,13 @@ uniform vec4 u_lightCount;     // x = active light count
 // IBL uniforms
 uniform vec4 u_iblParams;      // x = intensity, y = rotation, z = max mip level, w = unused
 
+// Hemisphere ambient uniforms
+uniform vec4 u_hemisphereGround;  // rgb = ground bounce color, w = shadow ambient min
+uniform vec4 u_hemisphereSky;     // rgb = sky fill color, w = unused
+
+// Refraction uniforms
+uniform vec4 u_refractionParams;  // x = ior, y = transmission, z = thickness, w = unused
+
 // Time and misc uniforms
 uniform vec4 u_time;           // x = total time, y = delta time, z = sin(time), w = cos(time)
 

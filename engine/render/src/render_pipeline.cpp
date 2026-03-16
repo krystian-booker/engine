@@ -314,6 +314,14 @@ void RenderPipeline::render(const CameraData& camera,
         main_pass(jittered_camera, lights);
     }
 
+    // Copy opaque HDR scene for screen-space refraction before transparent pass
+    if (has_flag(m_config.enabled_passes, RenderPassFlags::Transparent) && m_opaque_copy.valid()) {
+        TextureHandle hdr_color = m_renderer->get_render_target_texture(m_hdr_target, 0);
+        m_renderer->blit_to_screen(RenderView::OpaqueCopy, hdr_color);
+        TextureHandle opaque_copy_tex = m_renderer->get_render_target_texture(m_opaque_copy, 0);
+        m_renderer->set_opaque_copy_texture(opaque_copy_tex);
+    }
+
     if (has_flag(m_config.enabled_passes, RenderPassFlags::Volumetric)) {
         volumetric_pass(jittered_camera, lights);
     }
@@ -599,6 +607,20 @@ void RenderPipeline::create_render_targets() {
         m_hdr_target = m_renderer->create_render_target(desc);
     }
 
+    // Opaque copy target (for screen-space refraction)
+    {
+        RenderTargetDesc desc;
+        desc.width = m_internal_width;
+        desc.height = m_internal_height;
+        desc.color_attachment_count = 1;
+        desc.color_format = TextureFormat::RGBA16F;
+        desc.has_depth = false;
+        desc.samplable = true;
+        desc.debug_name = "Pipeline_OpaqueCopy";
+
+        m_opaque_copy = m_renderer->create_render_target(desc);
+    }
+
     // LDR output target
     {
         RenderTargetDesc desc;
@@ -634,6 +656,15 @@ void RenderPipeline::create_render_targets() {
         view_config.clear_depth_enabled = true;
         view_config.clear_depth = 1.0f;
         m_renderer->configure_view(RenderView::MainOpaque, view_config);
+    }
+
+    // OpaqueCopy view — blits opaque HDR scene to a separate texture for refraction
+    {
+        ViewConfig view_config;
+        view_config.render_target = m_opaque_copy;
+        view_config.clear_color_enabled = false;
+        view_config.clear_depth_enabled = false;
+        m_renderer->configure_view(RenderView::OpaqueCopy, view_config);
     }
 
     {
@@ -674,6 +705,11 @@ void RenderPipeline::destroy_render_targets() {
     if (m_hdr_target.valid()) {
         m_renderer->destroy_render_target(m_hdr_target);
         m_hdr_target = RenderTargetHandle{};
+    }
+
+    if (m_opaque_copy.valid()) {
+        m_renderer->destroy_render_target(m_opaque_copy);
+        m_opaque_copy = RenderTargetHandle{};
     }
 
     if (m_ldr_target.valid()) {

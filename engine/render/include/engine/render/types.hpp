@@ -156,6 +156,10 @@ struct MaterialData {
     TextureHandle ao_map;
     TextureHandle emissive_map;
     
+    // Refraction
+    float ior = 1.5f;
+    float transmission = 0.0f;
+
     bool double_sided = false;
     bool transparent = false;
 };
