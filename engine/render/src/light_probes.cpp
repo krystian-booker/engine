@@ -163,6 +163,8 @@ void LightProbeSystem::shutdown() {
         bgfx::destroy(m_probe_texture);
         m_probe_texture = BGFX_INVALID_HANDLE;
     }
+    m_probe_texture_width = 0;
+    m_probe_texture_height = 0;
 
     if (bgfx::isValid(u_probe_params)) bgfx::destroy(u_probe_params);
     if (bgfx::isValid(s_probes)) bgfx::destroy(s_probes);
@@ -381,6 +383,10 @@ std::vector<LightProbeVolumeHandle> LightProbeSystem::get_volumes_at(const Vec3&
 }
 
 void LightProbeSystem::upload_to_gpu() {
+    if (!m_initialized) {
+        return;
+    }
+
     // Calculate total probe count
     uint32_t total_probes = 0;
     for (uint32_t i = 0; i < m_config.max_volumes; ++i) {
@@ -389,13 +395,17 @@ void LightProbeSystem::upload_to_gpu() {
         }
     }
 
-    if (total_probes == 0) return;
+    if (total_probes == 0) {
+        if (bgfx::isValid(m_probe_texture)) {
+            bgfx::destroy(m_probe_texture);
+            m_probe_texture = BGFX_INVALID_HANDLE;
+        }
+        m_probe_texture_width = 0;
+        m_probe_texture_height = 0;
+        return;
+    }
 
-    // Create texture to store SH coefficients
-    // Each probe needs 9 RGB coefficients = 27 floats
-    // Pack as 7 RGBA16F pixels per probe
-
-    uint32_t pixels_per_probe = 7;  // Ceil(27/4) = 7
+    const uint32_t pixels_per_probe = LIGHT_PROBE_TEXTURE_PIXELS_PER_PROBE;
     uint32_t texture_width = 128;
     uint32_t texture_height = (total_probes * pixels_per_probe + texture_width - 1) / texture_width;
 
@@ -404,51 +414,32 @@ void LightProbeSystem::upload_to_gpu() {
         bgfx::destroy(m_probe_texture);
     }
 
-    m_probe_texture = bgfx::createTexture2D(
-        texture_width, texture_height, false, 1,
-        bgfx::TextureFormat::RGBA16F,
-        BGFX_TEXTURE_NONE | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP
-    );
+    m_probe_texture_width = texture_width;
+    m_probe_texture_height = texture_height;
 
     // Pack probe data
-    std::vector<uint16_t> data(texture_width * texture_height * 4, 0);
+    std::vector<float> data(texture_width * texture_height * 4, 0.0f);
 
     uint32_t probe_offset = 0;
     for (uint32_t v = 0; v < m_config.max_volumes; ++v) {
         if (!m_volume_used[v]) continue;
 
-        const LightProbeVolume& volume = m_volumes[v];
+        LightProbeVolume& volume = m_volumes[v];
+        volume.gpu_base_probe_index = probe_offset;
 
         for (const auto& probe : volume.probes) {
-            if (!probe.valid) {
-                probe_offset++;
-                continue;
-            }
+            const uint32_t pixel_offset = probe_offset * pixels_per_probe;
+            for (uint32_t coeff_idx = 0; coeff_idx < SH_COEFFICIENT_COUNT; ++coeff_idx) {
+                const uint32_t tex_idx = (pixel_offset + coeff_idx) * 4;
+                if (tex_idx + 3 >= data.size()) {
+                    break;
+                }
 
-            // Pack SH coefficients
-            uint32_t pixel_offset = probe_offset * pixels_per_probe;
-
-            // 9 RGB coefficients = 27 values
-            // Pack as: R0,R1,R2,R3 | R4,R5,R6,R7 | R8,G0,G1,G2 | G3,G4,G5,G6 | G7,G8,B0,B1 | B2,B3,B4,B5 | B6,B7,B8,0
-
-            const float* coeffs[3] = {
-                probe.sh_coefficients.r.data(),
-                probe.sh_coefficients.g.data(),
-                probe.sh_coefficients.b.data()
-            };
-
-            uint32_t coeff_idx = 0;
-            for (uint32_t p = 0; p < pixels_per_probe; ++p) {
-                uint32_t tex_idx = (pixel_offset + p) * 4;
-                if (tex_idx + 3 >= data.size()) break;
-
-                for (uint32_t c = 0; c < 4 && coeff_idx < 27; ++c, ++coeff_idx) {
-                    uint32_t channel = coeff_idx / 9;
-                    uint32_t sh_idx = coeff_idx % 9;
-
-                    float val = coeffs[channel][sh_idx];
-                    // Convert to half float (simple approximation)
-                    data[tex_idx + c] = static_cast<uint16_t>(val * 1000.0f + 32768.0f);
+                if (probe.valid) {
+                    data[tex_idx + 0] = probe.sh_coefficients.r[coeff_idx];
+                    data[tex_idx + 1] = probe.sh_coefficients.g[coeff_idx];
+                    data[tex_idx + 2] = probe.sh_coefficients.b[coeff_idx];
+                    data[tex_idx + 3] = 1.0f;
                 }
             }
 
@@ -456,9 +447,62 @@ void LightProbeSystem::upload_to_gpu() {
         }
     }
 
-    // Update texture
-    bgfx::updateTexture2D(m_probe_texture, 0, 0, 0, 0, texture_width, texture_height,
-                          bgfx::makeRef(data.data(), data.size() * sizeof(uint16_t)));
+    const bgfx::Memory* mem = bgfx::copy(data.data(), static_cast<uint32_t>(data.size() * sizeof(float)));
+    m_probe_texture = bgfx::createTexture2D(
+        texture_width,
+        texture_height,
+        false,
+        1,
+        bgfx::TextureFormat::RGBA32F,
+        BGFX_TEXTURE_NONE | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP,
+        mem
+    );
+}
+
+bool LightProbeSystem::volume_has_gpu_data(const LightProbeVolume& volume) const {
+    if (!volume.enabled || volume.probes.empty()) {
+        return false;
+    }
+
+    return std::any_of(volume.probes.begin(), volume.probes.end(),
+        [](const LightProbe& probe) {
+            return probe.valid;
+        });
+}
+
+bool LightProbeSystem::get_primary_volume_shader_data(LightProbeVolumeShaderData& out) const {
+    out = LightProbeVolumeShaderData{};
+
+    if (!m_initialized || !bgfx::isValid(m_probe_texture)) {
+        return false;
+    }
+
+    const LightProbeVolume* best_volume = nullptr;
+    for (uint32_t i = 0; i < m_config.max_volumes; ++i) {
+        if (!m_volume_used[i]) {
+            continue;
+        }
+
+        const LightProbeVolume& volume = m_volumes[i];
+        if (!volume_has_gpu_data(volume)) {
+            continue;
+        }
+
+        if (!best_volume || volume.priority > best_volume->priority) {
+            best_volume = &volume;
+        }
+    }
+
+    if (!best_volume) {
+        return false;
+    }
+
+    out.min_bounds = best_volume->min_bounds;
+    out.max_bounds = best_volume->max_bounds;
+    out.resolution = UVec3(best_volume->resolution_x, best_volume->resolution_y, best_volume->resolution_z);
+    out.base_probe_index = best_volume->gpu_base_probe_index;
+    out.valid = true;
+    return true;
 }
 
 void LightProbeSystem::debug_draw_probes(const Mat4& /*view_proj*/) {

@@ -1,0 +1,771 @@
+home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1846): BGFX        Min image: 1 x 1 x 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1842): BGFX Queue family property 2:
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1843): BGFX      Queue flags: 0x0000000e
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1844): BGFX      Queue count: 8
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1845): BGFX    TS valid bits: 0x00000040
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1846): BGFX        Min image: 1 x 1 x 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1842): BGFX Queue family property 3:
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1843): BGFX      Queue flags: 0x0000002c
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1844): BGFX      Queue count: 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1845): BGFX    TS valid bits: 0x00000020
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1846): BGFX        Min image: 1 x 1 x 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1842): BGFX Queue family property 4:
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1843): BGFX      Queue flags: 0x0000004c
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1844): BGFX      Queue count: 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1845): BGFX    TS valid bits: 0x00000020
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1846): BGFX        Min image: 1 x 1 x 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1874): BGFX Enabled device layers:
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1920): BGFX Enabled device extensions:
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1924): BGFX    VK_KHR_maintenance1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1924): BGFX    VK_KHR_swapchain
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1924): BGFX    VK_EXT_conservative_rasterization
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1924): BGFX    VK_EXT_custom_border_color
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1924): BGFX    VK_EXT_line_rasterization
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1924): BGFX    VK_EXT_memory_budget
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1924): BGFX    VK_EXT_shader_viewport_index_layer
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1924): BGFX    VK_KHR_draw_indirect_count
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1964): BGFX Device functions:
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xfcb2a6d0 vkGetDeviceQueue
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f50d30 vkCreateFence
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f540f0 vkDestroyFence
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f54060 vkCreateSemaphore
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f54150 vkDestroySemaphore
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f55600 vkResetFences
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f35850 vkCreateCommandPool
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f540b0 vkDestroyCommandPool
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f48180 vkResetCommandPool
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xfcb324a0 vkAllocateCommandBuffers
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f544d0 vkFreeCommandBuffers
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f47ed0 vkGetBufferMemoryRequirements
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f54af0 vkGetImageMemoryRequirements
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f54b40 vkGetImageSubresourceLayout
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f2f970 vkAllocateMemory
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f54580 vkFreeMemory
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f50e80 vkCreateImage
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f54110 vkDestroyImage
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f64f30 vkCreateImageView
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f65b30 vkDestroyImageView
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f34250 vkCreateBuffer
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f54090 vkDestroyBuffer
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f4d5f0 vkCreateFramebuffer
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f4dd50 vkDestroyFramebuffer
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f527f0 vkCreateRenderPass
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f4df30 vkDestroyRenderPass
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f54080 vkCreateShaderModule
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f4dfd0 vkDestroyShaderModule
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f51aa0 vkCreatePipelineCache
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f54130 vkDestroyPipelineCache
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f480d0 vkGetPipelineCacheData
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f48100 vkMergePipelineCaches
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f50d40 vkCreateGraphicsPipelines
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f35860 vkCreateComputePipelines
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f47e20 vkDestroyPipeline
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f51ab0 vkCreatePipelineLayout
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f4ddf0 vkDestroyPipelineLayout
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f532f0 vkCreateSampler
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f531f0 vkDestroySampler
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f36270 vkCreateDescriptorSetLayout
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f51b00 vkDestroyDescriptorSetLayout
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f35990 vkCreateDescriptorPool
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f540d0 vkDestroyDescriptorPool
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f555e0 vkResetDescriptorPool
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f2ec10 vkAllocateDescriptorSets
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f54520 vkFreeDescriptorSets
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f557d0 vkUpdateDescriptorSets
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f51ba0 vkCreateQueryPool
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f4de90 vkDestroyQueryPool
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f55520 vkQueueSubmit
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f48160 vkQueueWaitIdle
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f54170 vkDeviceWaitIdle
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f56f20 vkWaitForFences
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f2f990 vkBeginCommandBuffer
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f54180 vkEndCommandBuffer
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f30a60 vkCmdPipelineBarrier
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f2faf0 vkCmdBeginRenderPass
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f32610 vkCmdEndRenderPass
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f33e00 vkCmdSetViewport
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f2aa40 vkCmdDraw
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f2aa60 vkCmdDrawIndexed
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f2aab0 vkCmdDrawIndirect
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f2aa80 vkCmdDrawIndexedIndirect
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f2a9f0 vkCmdDispatch
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f2aa10 vkCmdDispatchIndirect
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f2a7d0 vkCmdBindPipeline
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f33b70 vkCmdSetStencilReference
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f30090 vkCmdSetBlendConstants
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f337c0 vkCmdSetScissor
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f2fb10 vkCmdBindDescriptorSets
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f2fb60 vkCmdBindIndexBuffer
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f2fbb0 vkCmdBindVertexBuffers
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f2a860 vkCmdClearColorImage
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f309c0 vkCmdClearDepthStencilImage
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f2fc20 vkCmdClearAttachments
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f335b0 vkCmdResolveImage
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f2a8a0 vkCmdCopyBuffer
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f2a8f0 vkCmdCopyBufferToImage
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f2a940 vkCmdCopyImage
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f2a9a0 vkCmdCopyImageToBuffer
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f2a800 vkCmdBlitImage
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f32e90 vkCmdResetQueryPool
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f341d0 vkCmdWriteTimestamp
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f2fa60 vkCmdBeginQuery
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f32590 vkCmdEndQuery
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f30a80 vkCmdCopyQueryPoolResults
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f554f0 vkMapMemory
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f556b0 vkUnmapMemory
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f54490 vkFlushMappedMemoryRanges
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f544b0 vkInvalidateMappedMemoryRanges
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f2f9a0 vkBindBufferMemory
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f2fa00 vkBindImageMemory
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xfcb36520 vkCreateSwapchainKHR
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f676f0 vkDestroySwapchainKHR
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f66320 vkGetSwapchainImagesKHR
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f676a0 vkAcquireNextImageKHR
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f663a0 vkQueuePresentKHR
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xfcb06c60 vkSetDebugUtilsObjectNameEXT
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xfcb07370 vkCmdBeginDebugUtilsLabelEXT
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xfcb073a0 vkCmdEndDebugUtilsLabelEXT
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xfcb073d0 vkCmdInsertDebugUtilsLabelEXT
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f49800 vkCmdDrawIndirectCountKHR
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0xe7f497c0 vkCmdDrawIndexedIndirectCountKHR
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (1969): BGFX    0x0 vkCmdSetFragmentShadingRateKHR
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (7430): BGFX Attempting Wayland surface creation.
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (7711): BGFX Create swapchain numSwapChainImages 2, minImageCount 2, BX_COUNTOF(m_backBufferColorImage) 10
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (7780): BGFX Successfully created swapchain (1280x720) with 2 images.
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (2095): BGFX Create scratch staging buffer 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (2095): BGFX Create scratch staging buffer 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (2095): BGFX Create scratch staging buffer 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1645): BGFX 
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1649): BGFX Detected GPUs (3):
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1650): BGFX    +----------------   Index
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1651): BGFX    |  +-------------   Device ID
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1652): BGFX    |  |    +--------   Vendor ID
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1658): BGFX    0: 3e9b 8086
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1658): BGFX    1: 1c8c 10de
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1658): BGFX    2: 0000 0001
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1665): BGFX 
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1668): BGFX GPU device, Device ID: 1c8c, Vendor ID: 10de
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1669): BGFX 
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1674): BGFX Supported renderer backends (5):
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1677): BGFX    - Noop
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1677): BGFX    - Direct3D 11
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1677): BGFX    - Direct3D 12
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1677): BGFX    - OpenGL 2.1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1677): BGFX    - Vulkan
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1680): BGFX 
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1681): BGFX Sort key masks:
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1682): BGFX      View     ff00000000000000
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1683): BGFX      Draw bit 0080000000000000
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1685): BGFX 
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1686): BGFX   D  Type     0060000000000000
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1688): BGFX 
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1689): BGFX   D0 Blend    0018000000000000
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1690): BGFX   D0 Program  0007fc0000000000
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1691): BGFX   D0 Depth    000003fffffffc00
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1693): BGFX 
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1694): BGFX   D1 Depth    001fffffffe00000
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1695): BGFX   D1 Blend    0000000000180000
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1696): BGFX   D1 Program  000000000007fc00
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1698): BGFX 
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1699): BGFX   D2 Seq      001ffffe00000000
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1700): BGFX   D2 Blend    0000000180000000
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1701): BGFX   D2 Program  000000007fc00000
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1703): BGFX 
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1704): BGFX    C Seq      007ffff800000000
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1705): BGFX    C Program  00000007fc000000
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1707): BGFX 
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1708): BGFX Blit key masks:
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1709): BGFX   View   ff000000
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1710): BGFX   Item   0000ffff
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1712): BGFX 
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1713): BGFX Uniform cache key masks:
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1714): BGFX   View   ffff000000000000
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1715): BGFX   Handle 0000ffff00000000
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1716): BGFX   Offset 00000000fffff000
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1717): BGFX   Size   0000000000000fff
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1719): BGFX 
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1720): BGFX Capabilities (renderer Vulkan, vendor 0x10de, device 0x1c8c):
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [x] BGFX_CAPS_ALPHA_TO_COVERAGE
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [x] BGFX_CAPS_BLEND_INDEPENDENT
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [x] BGFX_CAPS_COMPUTE
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [x] BGFX_CAPS_CONSERVATIVE_RASTER
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [x] BGFX_CAPS_DRAW_INDIRECT
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [x] BGFX_CAPS_FRAGMENT_DEPTH
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [ ] BGFX_CAPS_FRAGMENT_ORDERING
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [ ] BGFX_CAPS_GRAPHICS_DEBUGGER
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [ ] BGFX_CAPS_HDR10
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [ ] BGFX_CAPS_HIDPI
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [x] BGFX_CAPS_IMAGE_RW
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [x] BGFX_CAPS_INDEX32
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [x] BGFX_CAPS_INSTANCING
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [x] BGFX_CAPS_OCCLUSION_QUERY
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [x] BGFX_CAPS_PRIMITIVE_ID
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [x] BGFX_CAPS_RENDERER_MULTITHREADED
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [x] BGFX_CAPS_SWAP_CHAIN
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [x] BGFX_CAPS_TEXTURE_2D_ARRAY
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [x] BGFX_CAPS_TEXTURE_3D
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [x] BGFX_CAPS_TEXTURE_BLIT
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [x] BGFX_CAPS_TEXTURE_COMPARE_ALL
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [x] BGFX_CAPS_TEXTURE_COMPARE_LEQUAL
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [x] BGFX_CAPS_TEXTURE_CUBE_ARRAY
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [ ] BGFX_CAPS_TEXTURE_DIRECT_ACCESS
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [x] BGFX_CAPS_TEXTURE_READ_BACK
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [ ] BGFX_CAPS_TRANSPARENT_BACKBUFFER
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [ ] BGFX_CAPS_VARIABLE_RATE_SHADING
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [x] BGFX_CAPS_VERTEX_ATTRIB_HALF
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [x] BGFX_CAPS_VERTEX_ATTRIB_UINT10
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [x] BGFX_CAPS_VERTEX_ID
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1727): BGFX   [x] BGFX_CAPS_VIEWPORT_LAYER_ARRAY
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1734): BGFX 
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1735): BGFX Limits:
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1737): BGFX   maxDrawCalls                 65535
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1738): BGFX   maxBlits                      1024
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1739): BGFX   maxTextureSize               32768
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1740): BGFX   maxTextureLayers              2048
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1741): BGFX   maxViews                       256
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1742): BGFX   maxFrameBuffers                128
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1743): BGFX   maxFBAttachments                 8
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1744): BGFX   maxPrograms                    512
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1745): BGFX   maxShaders                     512
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1746): BGFX   maxTextures                   4096
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1747): BGFX   maxTextureSamplers              16
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1748): BGFX   maxComputeBindings              16
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1749): BGFX   maxVertexLayouts                64
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1750): BGFX   maxVertexStreams                 4
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1751): BGFX   maxIndexBuffers               4096
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1752): BGFX   maxVertexBuffers              4096
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1753): BGFX   maxDynamicIndexBuffers        4096
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1754): BGFX   maxDynamicVertexBuffers       4096
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1755): BGFX   maxUniforms                    512
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1756): BGFX   maxOcclusionQueries            256
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1757): BGFX   maxEncoders                      8
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1758): BGFX   minResourceCbSize            65536
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1759): BGFX   maxTransientVbSize         6291456
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1760): BGFX   maxTransientIbSize         2097152
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1761): BGFX   minUniformBufferSize       1048576
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1764): BGFX 
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1765): BGFX Supported texture formats:
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1766): BGFX    +----------------   2D: x = supported / * = emulated
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1767): BGFX    |+---------------   2D: sRGB format
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1768): BGFX    ||+--------------   3D: x = supported / * = emulated
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1769): BGFX    |||+-------------   3D: sRGB format
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1770): BGFX    ||||+------------ Cube: x = supported / * = emulated
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1771): BGFX    |||||+----------- Cube: sRGB format
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1772): BGFX    ||||||+---------- vertex format
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1773): BGFX    |||||||+--------- image: i = read-write / r = read / w = write
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1774): BGFX    ||||||||+-------- framebuffer
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1775): BGFX    |||||||||+------- MSAA framebuffer
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1776): BGFX    ||||||||||+------ MSAA texture
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1777): BGFX    |||||||||||+----- Auto-generated mips
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1778): BGFX    ||||||||||||  +-- name
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [xlxlxlv     ] BC1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [xlxlxlv     ] BC2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [xlxlxlv     ] BC3
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x v     ] BC4
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x v     ] BC5
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x v     ] BC6H
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [xlxlxlv     ] BC7
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] ETC1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] ETC2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] ETC2A
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] ETC2A1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [            ] EACR11
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [            ] EACR11S
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [            ] EACRG11
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [            ] EACRG11S
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] PTC12
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] PTC14
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] PTC12A
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] PTC14A
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] PTC22
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] PTC24
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] ATC
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] ATCE
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] ATCI
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] ASTC4x4
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] ASTC5x4
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] ASTC5x5
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] ASTC6x5
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] ASTC6x6
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] ASTC8x5
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] ASTC8x6
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] ASTC8x8
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] ASTC10x5
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] ASTC10x6
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] ASTC10x8
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] ASTC10x10
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] ASTC12x10
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] ASTC12x12
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [            ] R1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] A8
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [xlxlxlvif+mM] R8
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] R8I
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] R8U
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] R8S
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] R16
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] R16I
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] R16U
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] R16F
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] R16S
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] R32I
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] R32U
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] R32F
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] RG8
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] RG8I
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] RG8U
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] RG8S
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] RG16
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] RG16I
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] RG16U
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] RG16F
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] RG16S
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] RG32I
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] RG32U
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] RG32F
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] RGB8
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] RGB8I
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] RGB8U
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [* * *       ] RGB8S
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x v     ] RGB9E5
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [xlxlxlvif+mM] BGRA8
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [xlxlxlvif+mM] RGBA8
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [xlxlxlvif+mM] RGBA8I
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [xlxlxlvif+mM] RGBA8U
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] RGBA8S
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] RGBA16
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] RGBA16I
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] RGBA16U
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] RGBA16F
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] RGBA16S
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] RGBA32I
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] RGBA32U
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] RGBA32F
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x v f+mM] B5G6R5
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x v     ] R5G6B5
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x v     ] BGRA4
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x v     ] RGBA4
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x v f+mM] BGR5A1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x v f+mM] RGB5A1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] RGB10A2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] RG11B10F
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] D16
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x v f+mM] D24
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x v f+mM] D24S8
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x v f+mM] D32
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] D16F
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] D24F
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x vif+mM] D32F
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1785): BGFX   [x x x v f+mM] D0S8
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1805): BGFX 
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1806): BGFX NDC depth [0, 1], origin top left.
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (1811): BGFX 
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle   0) `s_texColor`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle   1) `bgfx_clear_depth`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle   2) `bgfx_clear_color`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5411): BGFX   Resize uniform (handle   2) `bgfx_clear_color`, num 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5411): BGFX   Resize uniform (handle   2) `bgfx_clear_color`, num 3
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5411): BGFX   Resize uniform (handle   2) `bgfx_clear_color`, num 4
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5411): BGFX   Resize uniform (handle   2) `bgfx_clear_color`, num 5
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5411): BGFX   Resize uniform (handle   2) `bgfx_clear_color`, num 6
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5411): BGFX   Resize uniform (handle   2) `bgfx_clear_color`, num 7
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5411): BGFX   Resize uniform (handle   2) `bgfx_clear_color`, num 8
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture   0: R8 (requested: R8), 2048x24x1 RT[ ], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Vertex Shader consts 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    predefined: u_modelViewProj (mat4), r.index   0, r.count  4, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_texColor (sampler1), r.index   2, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (599): BGFX VertexLayout 74c34f26 (d443ed7f), stride 28
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (615): BGFX    attr  0: Attrib::Position     num 3, type 4, norm [ ], asint [ ], offset  0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (615): BGFX    attr  4: Attrib::Color0       num 4, type 0, norm [x], asint [ ], offset 12
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (615): BGFX    attr  5: Attrib::Color1       num 4, type 0, norm [x], asint [ ], offset 16
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (615): BGFX    attr 10: Attrib::TexCoord0    num 2, type 4, norm [ ], asint [ ], offset 20
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Vertex Shader consts 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: bgfx_clear_depth (vec4), r.index   0, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: bgfx_clear_color (vec4), r.index   0, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: bgfx_clear_color (vec4), r.index   0, r.count  2, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: bgfx_clear_color (vec4), r.index   0, r.count  3, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: bgfx_clear_color (vec4), r.index   0, r.count  4, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: bgfx_clear_color (vec4), r.index   0, r.count  5, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: bgfx_clear_color (vec4), r.index   0, r.count  6, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: bgfx_clear_color (vec4), r.index   0, r.count  7, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: bgfx_clear_color (vec4), r.index   0, r.count  8, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (599): BGFX VertexLayout aaaa40da (e0896034), stride 8
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (615): BGFX    attr  0: Attrib::Position     num 2, type 4, norm [ ], asint [ ], offset  0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (3750): BGFX Init complete.
+Default shader program loaded successfully
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle   3) `u_probeVolumeMin`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle   4) `u_probeVolumeMax`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle   5) `u_probeTextureInfo`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle   6) `u_probeVolumeResolution`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle   7) `u_probeState`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle   8) `u_lights`, num 32
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle   9) `u_lightCount`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  10) `u_shadowParams`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  11) `u_cascadeSplits`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  12) `u_shadowMatrix`, num 4
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  13) `u_albedoColor`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  14) `u_pbrParams`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  15) `u_emissiveColor`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  16) `u_cameraPos`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  17) `u_iblParams`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  18) `u_hemisphereGround`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  19) `u_hemisphereSky`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  20) `u_refractionParams`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  21) `s_probeTexture`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  22) `s_shadowMap`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  23) `s_albedo`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  24) `s_normal`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  25) `s_metallicRoughness`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  26) `s_ao`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  27) `s_emissive`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  28) `s_irradiance`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  29) `s_prefilter`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  30) `s_brdfLUT`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  31) `s_ssao`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  32) `s_opaqueColor`, num 1
+PBR shader program loaded successfully
+Shadow shader program loaded successfully
+Debug shader program loaded successfully
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  33) `u_boneMatrices`, num 1
+Skinned PBR shader program loaded successfully
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5411): BGFX   Resize uniform (handle  33) `u_boneMatrices`, num 512
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  34) `u_customInvViewProj`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  35) `u_skyboxParams`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  36) `s_skybox`, num 1
+Skybox shader program loaded successfully
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  37) `s_texture`, num 1
+Blit shader program loaded successfully
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  38) `u_billboardUV`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  39) `u_billboardColor`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  40) `s_billboard`, num 1
+Billboard shader program loaded successfully
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  41) `u_debugMode`, num 1
+Debug view shader program loaded successfully
+GBuffer normals shader program loaded successfully
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  42) `u_billboardParams`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  43) `u_time`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  44) `u_oitParams`, num 1
+Shadow atlas created: 4096x4096 with 64 slots of 512x512
+Shadow system initialized
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  45) `u_projParams`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  46) `u_noiseScale`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  47) `u_ssaoParams`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  48) `u_samples`, num 16
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  49) `s_depth`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  50) `s_noise`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  51) `u_blurParams`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5411): BGFX   Resize uniform (handle  48) `u_samples`, num 64
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  52) `s_aoInput`, num 1
+SSAO shaders initialized
+SSAO system initialized
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  53) `u_texelSize`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  54) `u_invProjMatrix`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  55) `u_projMatrix`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  56) `u_ssrParams2`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  57) `u_viewMatrix`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  58) `u_ssrParams`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  59) `s_color`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  60) `s_roughness`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  61) `s_reflection`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  62) `s_history`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  63) `s_velocity`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  64) `s_hit`, num 1
+SSR shaders initialized
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  65) `u_invViewMatrix`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  66) `u_prevViewProj`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  67) `u_hizLevel`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  68) `s_hiz`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  69) `u_bloomParams`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  70) `s_source`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  71) `s_highRes`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  72) `u_tonemapParams`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  73) `u_vignetteParams`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  74) `s_scene`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  75) `s_bloom`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  76) `s_volumetric`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  77) `u_taaParams`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  78) `s_current`, num 1
+Post-process shaders initialized
+Post-processing system initialized
+TAA system initialized
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  79) `u_volumetricParams`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  80) `u_fogColor`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  81) `u_fogHeight`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  82) `u_lightDir`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  83) `u_lightColor`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  84) `s_shadowMap0`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  85) `s_shadowMap1`, num 1
+Volumetric shaders initialized
+Volumetric system initialized
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  86) `s_accum`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  87) `s_reveal`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  88) `s_opaque`, num 1
+OIT composite shader loaded
+OIT system initialized (1280x720)
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  89) `u_probeParams`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  90) `s_probes`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  91) `u_particleParams`, num 4
+Failed to load particle shaders, particles will not render
+Particle system initialized
+Render pipeline initialized (1280x720 @ 1x internal)
+Failed to load particle shaders, particles will not render
+Particle system initialized
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  92) `u_decalParams`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  93) `u_decalColor`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  94) `u_decalSize`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  95) `s_gbufferNormal`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  96) `s_decalAlbedo`, num 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  97) `s_decalNormal`, num 1
+Initializing terrain systems
+Registered terrain ECS systems
+Initializing vegetation systems
+Registered vegetation ECS systems
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h (5434): BGFX Creating uniform (handle  98) `u_params`, num 1
+UIRenderer: Shader program loaded
+UIRenderer initialized
+UIContext initialized
+UI system initialized
+[RenderTest] Initializing deterministic test scene...
+[RenderTest] Scene initialized.
+RENDERER: Camera set to (0.000000, 6.000000, 14.000000)
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Vertex Shader consts 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    predefined: u_modelViewProj (mat4), r.index   0, r.count  4, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Vertex Shader consts 3
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    predefined: u_model (mat4), r.index 128, r.count  8, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    predefined: u_view (mat4), r.index   0, r.count  4, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    predefined: u_viewProj (mat4), r.index  64, r.count  4, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 31
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_probeVolumeMin (vec4), r.index 704, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_probeVolumeMax (vec4), r.index 720, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_probeTextureInfo (vec4), r.index 752, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_probeVolumeResolution (vec4), r.index 736, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_probeState (vec4), r.index 768, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_lights (vec4), r.index 128, r.count 32, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_lightCount (vec4), r.index 640, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_shadowParams (vec4), r.index 800, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_cascadeSplits (vec4), r.index 816, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_shadowMatrix (mat4), r.index 832, r.count 16, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_albedoColor (vec4), r.index  80, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_pbrParams (vec4), r.index  96, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_emissiveColor (vec4), r.index 112, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_cameraPos (vec4), r.index  64, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_iblParams (vec4), r.index 656, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_hemisphereGround (vec4), r.index 672, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_hemisphereSky (vec4), r.index 688, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_refractionParams (vec4), r.index 784, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    predefined: u_view (mat4), r.index   0, r.count  4, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_probeTexture (sampler1), r.index  16, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_shadowMap (sampler1), r.index  10, r.count  0, r.texComponent 0, r.texDimension 3
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_albedo (sampler1), r.index   2, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_normal (sampler1), r.index   3, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_metallicRoughness (sampler1), r.index   4, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_ao (sampler1), r.index   5, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_emissive (sampler1), r.index   6, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_irradiance (sampler1), r.index   7, r.count  0, r.texComponent 0, r.texDimension 4
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_prefilter (sampler1), r.index   8, r.count  0, r.texComponent 0, r.texDimension 4
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_brdfLUT (sampler1), r.index   9, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_ssao (sampler1), r.index  14, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_opaqueColor (sampler1), r.index  15, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Vertex Shader consts 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    predefined: u_modelViewProj (mat4), r.index   0, r.count  4, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Vertex Shader consts 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    predefined: u_model (mat4), r.index  64, r.count  4, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    predefined: u_viewProj (mat4), r.index   0, r.count  4, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Vertex Shader consts 4
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_boneMatrices (vec4), r.index 217, r.count  0, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    predefined: u_model (mat4), r.index 128, r.count  8, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    predefined: u_view (mat4), r.index   0, r.count  4, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    predefined: u_viewProj (mat4), r.index  64, r.count  4, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Vertex Shader consts 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_customInvViewProj (mat4), r.index   0, r.count  4, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_skyboxParams (vec4), r.index   0, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_skybox (sampler1), r.index   2, r.count  0, r.texComponent 0, r.texDimension 4
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (599): BGFX VertexLayout 5593a40b (43cff366), stride 12
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (615): BGFX    attr  0: Attrib::Position     num 3, type 4, norm [ ], asint [ ], offset  0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Vertex Shader consts 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_texture (sampler1), r.index   2, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Vertex Shader consts 3
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    predefined: u_modelViewProj (mat4), r.index   0, r.count  4, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_billboardUV (vec4), r.index  80, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_billboardColor (vec4), r.index  64, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_billboard (sampler1), r.index   2, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Vertex Shader consts 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_debugMode (vec4), r.index   0, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_texture (sampler1), r.index   2, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Vertex Shader consts 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    predefined: u_model (mat4), r.index  64, r.count  4, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    predefined: u_viewProj (mat4), r.index   0, r.count  4, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_pbrParams (vec4), r.index   0, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_metallicRoughness (sampler1), r.index   4, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture   1: RGBA8 (requested: RGBA8), 1x1x1 RT[ ], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture   2: RGBA8 (requested: RGBA8), 1x1x1 RT[ ], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture   3: D16 (requested: D16), 1x1x1 RT[ ], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture   4: RGBA8 (requested: RGBA8), 1x1x1x6 RT[ ], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture   5: RGBA8 (requested: RGBA8), 1x1x1x6 RT[ ], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture   6: RGBA16F (requested: RGBA16F), 128x128x1 RT[ ], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture   7: D32F (requested: D32F), 1280x720x1 RT[x], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture   8: RGBA16F (requested: RGBA16F), 1280x720x1 RT[x], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture   9: D32F (requested: D32F), 1280x720x1 RT[x], BO[x], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  10: RGBA16F (requested: RGBA16F), 1280x720x1 RT[x], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  11: RGBA16F (requested: RGBA16F), 1280x720x1 RT[x], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  12: D32F (requested: D32F), 1280x720x1 RT[x], BO[x], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  13: RGBA16F (requested: RGBA16F), 1280x720x1 RT[x], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  14: RGBA8 (requested: RGBA8), 1280x720x1 RT[x], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  15: D32F (requested: D32F), 2048x2048x1 RT[x], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  16: D32F (requested: D32F), 4096x4096x1 RT[x], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Vertex Shader consts 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 7
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_projParams (vec4), r.index  16, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_noiseScale (vec4), r.index  32, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_ssaoParams (vec4), r.index   0, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_samples (vec4), r.index  48, r.count 16, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_depth (sampler1), r.index   2, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_normal (sampler1), r.index   3, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_noise (sampler1), r.index   4, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 3
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_blurParams (vec4), r.index   0, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_ssao (sampler1), r.index   2, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_depth (sampler1), r.index   3, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (599): BGFX VertexLayout b2738412 (ce13ff9c), stride 20
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (615): BGFX    attr  0: Attrib::Position     num 3, type 4, norm [ ], asint [ ], offset  0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (615): BGFX    attr 10: Attrib::TexCoord0    num 2, type 4, norm [ ], asint [ ], offset 12
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  17: RGBA8 (requested: RGBA8), 4x4x1 RT[ ], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  18: R8 (requested: R8), 640x360x1 RT[x], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  19: R8 (requested: R8), 640x360x1 RT[x], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  20: RGBA16F (requested: RGBA16F), 1280x720x1 RT[x], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  21: RGBA16F (requested: RGBA16F), 1280x720x1 RT[x], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  22: RGBA16F (requested: RGBA16F), 1280x720x1 RT[x], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_texelSize (vec4), r.index   0, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_depth (sampler1), r.index   2, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 10
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_invProjMatrix (mat4), r.index 128, r.count  4, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_projMatrix (mat4), r.index  64, r.count  4, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_ssrParams2 (vec4), r.index 208, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_viewMatrix (mat4), r.index   0, r.count  4, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_ssrParams (vec4), r.index 192, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_texelSize (vec4), r.index 224, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_color (sampler1), r.index   2, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_depth (sampler1), r.index   3, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_normal (sampler1), r.index   4, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_roughness (sampler1), r.index   5, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 6
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_texelSize (vec4), r.index  16, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_ssrParams (vec4), r.index   0, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_reflection (sampler1), r.index   2, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_history (sampler1), r.index   3, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_velocity (sampler1), r.index   4, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_hit (sampler1), r.index   5, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 6
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_ssrParams (vec4), r.index   0, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_ssrParams2 (vec4), r.index  16, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_color (sampler1), r.index   2, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_reflection (sampler1), r.index   3, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_roughness (sampler1), r.index   4, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_hit (sampler1), r.index   5, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 3
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_bloomParams (vec4), r.index   0, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_texelSize (vec4), r.index  16, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_source (sampler1), r.index   2, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 4
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_bloomParams (vec4), r.index   0, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_texelSize (vec4), r.index  16, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_source (sampler1), r.index   2, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_highRes (sampler1), r.index   3, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 6
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_bloomParams (vec4), r.index  16, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_tonemapParams (vec4), r.index   0, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_vignetteParams (vec4), r.index  32, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_scene (sampler1), r.index   2, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_bloom (sampler1), r.index   3, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_volumetric (sampler1), r.index   4, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  23: RGBA8 (requested: RGBA8), 1x1x1 RT[ ], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  24: RGBA16F (requested: RGBA16F), 640x360x1 RT[x], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  25: RGBA16F (requested: RGBA16F), 640x360x1 RT[x], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  26: RGBA16F (requested: RGBA16F), 320x180x1 RT[x], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  27: RGBA16F (requested: RGBA16F), 320x180x1 RT[x], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  28: RGBA16F (requested: RGBA16F), 160x90x1 RT[x], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  29: RGBA16F (requested: RGBA16F), 160x90x1 RT[x], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  30: RGBA16F (requested: RGBA16F), 80x45x1 RT[x], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  31: RGBA16F (requested: RGBA16F), 80x45x1 RT[x], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  32: RGBA16F (requested: RGBA16F), 1280x720x1 RT[x], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  33: RGBA16F (requested: RGBA16F), 1280x720x1 RT[x], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 11
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    predefined: u_invViewProj (mat4), r.index   0, r.count  4, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_volumetricParams (vec4), r.index  64, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_fogColor (vec4), r.index  80, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_fogHeight (vec4), r.index  96, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_shadowMatrix (mat4), r.index 160, r.count  4, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_cameraPos (vec4), r.index 144, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_lightDir (vec4), r.index 112, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    user: u_lightColor (vec4), r.index 128, r.count  1, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_depth (sampler1), r.index   2, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_shadowMap0 (sampler1), r.index   3, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_noise (sampler1), r.index   5, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  34: RGBA8 (requested: RGBA8), 64x64x64 RT[ ], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  35: RGBA8 (requested: RGBA8), 64x64x1 RT[ ], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  36: RGBA16F (requested: RGBA16F), 640x360x1 RT[x], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  37: RGBA16F (requested: RGBA16F), 640x360x1 RT[x], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  38: RGBA16F (requested: RGBA16F), 640x360x1 RT[x], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  39: RGBA16F (requested: RGBA16F), 1280x720x1 RT[x], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  40: RGBA16F (requested: RGBA16F), 1280x720x1 RT[x], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 3
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_accum (sampler1), r.index   2, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_reveal (sampler1), r.index   3, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_opaque (sampler1), r.index   4, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (599): BGFX VertexLayout 93597fa9 (21d0cb5a), stride 20
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (615): BGFX    attr  0: Attrib::Position     num 2, type 4, norm [ ], asint [ ], offset  0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (615): BGFX    attr  4: Attrib::Color0       num 4, type 0, norm [x], asint [ ], offset 16
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (615): BGFX    attr 10: Attrib::TexCoord0    num 2, type 4, norm [ ], asint [ ], offset  8
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  41: RGBA8 (requested: RGBA8), 1x1x1 RT[ ], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Vertex Shader consts 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    predefined: u_viewProj (mat4), r.index   0, r.count  4, r.texComponent 0, r.texDimension 0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5380): BGFX Fragment Shader consts 1
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (5549): BGFX    sampler: s_texColor (sampler1), r.index   2, r.count  0, r.texComponent 0, r.texDimension 2
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (599): BGFX VertexLayout 9f29763d (6fab1fc7), stride 64
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (615): BGFX    attr  0: Attrib::Position     num 3, type 4, norm [ ], asint [ ], offset  0
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (615): BGFX    attr  1: Attrib::Normal       num 3, type 4, norm [ ], asint [ ], offset 12
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (615): BGFX    attr  2: Attrib::Tangent      num 4, type 4, norm [ ], asint [ ], offset 48
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (615): BGFX    attr  4: Attrib::Color0       num 4, type 4, norm [ ], asint [ ], offset 32
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp (615): BGFX    attr 10: Attrib::TexCoord0    num 2, type 4, norm [ ], asint [ ], offset 24
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  42: RGBA8 (requested: RGBA8), 1x1x1x6 RT[ ], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  43: RGBA8 (requested: RGBA8), 1x1x1x6 RT[ ], BO[ ], CW[ ].
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (6528): BGFX Texture  44: RGBA32F (requested: RGBA32F), 128x6x1 RT[ ], BO[ ], CW[ ].
+
+--- ASSERT ---
+
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp(4057): ASSERT texture.m_currentImageLayout == texture.m_sampledLayout -> Mismatching image layout. Texture currently used as a framebuffer attachment?
+
+Callstack (8):
+         #: File ---                                                                          Line  PC ---            Function ---
+         0: repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp  9746        0x55f5d0ab  bgfx::vk::RendererContextVK::submit(bgfx::Frame*, bgfx::ClearQuad&, bgfx::TextVideoMemBlitter&)
+         1: ystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp  2560        0x55e990d2  bgfx::Context::renderFrame(int)
+         2: ystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx.cpp  1549        0x55e949a2  bgfx::renderFrame(int)
+         3: ystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/bgfx_p.h  3636        0x55ebfb5f  bgfx::Context::renderThread(bx::Thread*, void*)
+         4: ystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bx/src/thread.cpp   313        0x56055a63  bx::Thread::entry()
+         5: ystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bx/src/thread.cpp    76        0x560553e9  bx::ThreadInternal::threadFunc(void*)
+         6: <Unknown?>                                                                          -1         0xdca3d64  <Unknown?>
+         7: <Unknown?>                                                                          -1         0xdd373fc  <Unknown?>
+
+Build info:
+        Compiler: GCC 15.2.0, CPU: x86, Arch: 64-bit, OS: Linux, CRT: GNU C Library, C++: C++20, Date: Mar 16 2026, Time: 15:05:56
+
+--- END ---
+
+/home/krystian/repos/engine/out/build/Linux-Debug/_deps/bgfx_cmake-src/bgfx/src/renderer_vk.cpp (4057): BGFX FATAL 0x00000000: Mismatching image layout. Texture currently used as a framebuffer attachment?

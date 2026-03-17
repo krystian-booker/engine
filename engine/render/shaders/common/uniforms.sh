@@ -28,6 +28,13 @@ uniform vec4 u_iblParams;      // x = intensity, y = rotation, z = max mip level
 uniform vec4 u_hemisphereGround;  // rgb = ground bounce color, w = shadow ambient min
 uniform vec4 u_hemisphereSky;     // rgb = sky fill color, w = unused
 
+// Diffuse light probes
+uniform vec4 u_probeVolumeMin;        // xyz = world-space minimum bounds
+uniform vec4 u_probeVolumeMax;        // xyz = world-space maximum bounds
+uniform vec4 u_probeVolumeResolution; // xyz = grid resolution, w = base probe index
+uniform vec4 u_probeTextureInfo;      // xy = texture size, zw = inverse texture size
+uniform vec4 u_probeState;            // x = enabled, y = hemisphere floor when probes are active
+
 // Refraction uniforms
 uniform vec4 u_refractionParams;  // x = ior, y = transmission, z = thickness, w = unused
 

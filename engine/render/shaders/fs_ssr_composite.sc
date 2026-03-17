@@ -34,7 +34,7 @@ void main()
     float hitConfidence = hitInfo.z;
 
     // Sample roughness
-    float roughness = texture2D(s_roughness, uv).r;
+    float roughness = texture2D(s_roughness, uv).a;
 
     // Parameters
     float intensity = u_ssrParams.x;

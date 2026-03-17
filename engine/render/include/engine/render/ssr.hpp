@@ -26,16 +26,16 @@ struct SSRConfig {
     float stride_cutoff = 100.0f;         // Distance to start using max stride
 
     // Hi-Z acceleration
-    bool use_hiz = true;                  // Use hierarchical-Z for acceleration
+    bool use_hiz = false;                 // Use hierarchical-Z for acceleration
     uint32_t hiz_levels = 6;              // Number of hi-z mip levels
 
     // Temporal filtering
-    bool temporal_enabled = true;         // Enable temporal reprojection
+    bool temporal_enabled = false;        // Enable temporal reprojection
     float temporal_weight = 0.95f;        // Weight of previous frame (0-1)
 
     // Quality settings
     float resolution_scale = 1.0f;        // Resolution scale (0.5 = half res)
-    bool jitter_enabled = true;           // Jitter ray origin for AA
+    bool jitter_enabled = false;          // Jitter ray origin for AA
     float roughness_threshold = 0.5f;     // Max roughness to apply SSR
 
     // Fallback and blending
@@ -159,6 +159,9 @@ private:
     void destroy_textures();
     void create_programs();
     void destroy_programs();
+    void create_fullscreen_geometry();
+    void destroy_fullscreen_geometry();
+    void draw_fullscreen(bgfx::ViewId view_id, bgfx::ProgramHandle program, uint64_t state);
 
     SSRConfig m_config;
     bool m_initialized = false;
@@ -205,6 +208,11 @@ private:
     bgfx::UniformHandle s_history = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_velocity = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_hit = BGFX_INVALID_HANDLE;
+
+    // Fullscreen quad resources
+    bgfx::VertexBufferHandle m_fullscreen_vb = BGFX_INVALID_HANDLE;
+    bgfx::IndexBufferHandle m_fullscreen_ib = BGFX_INVALID_HANDLE;
+    bgfx::VertexLayout m_fullscreen_layout;
 
     // Frame counter for temporal jitter
     uint32_t m_frame_count = 0;

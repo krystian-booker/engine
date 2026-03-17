@@ -1,4 +1,5 @@
 #include <engine/render/oit.hpp>
+#include <engine/render/fullscreen_utils.hpp>
 #include <engine/render/renderer.hpp>
 #include <engine/core/log.hpp>
 #include <bgfx/bgfx.h>
@@ -77,14 +78,8 @@ void OITSystem::init(IRenderer* renderer, uint32_t width, uint32_t height) {
     u_opaque = opaque.idx;
 
     // Create fullscreen quad geometry
-    struct FSVertex { float x, y, z, u, v; };
-    static const FSVertex vertices[] = {
-        { -1.0f,  1.0f, 0.0f, 0.0f, 0.0f },
-        {  1.0f,  1.0f, 0.0f, 1.0f, 0.0f },
-        {  1.0f, -1.0f, 0.0f, 1.0f, 1.0f },
-        { -1.0f, -1.0f, 0.0f, 0.0f, 1.0f },
-    };
-    static const uint16_t indices[] = { 0, 1, 2, 0, 2, 3 };
+    const auto vertices = make_fullscreen_quad_vertices(bgfx::getCaps()->originBottomLeft);
+    const auto indices = make_fullscreen_quad_indices();
 
     bgfx::VertexLayout layout;
     layout.begin()
@@ -93,9 +88,9 @@ void OITSystem::init(IRenderer* renderer, uint32_t width, uint32_t height) {
         .end();
 
     bgfx::VertexBufferHandle vb = bgfx::createVertexBuffer(
-        bgfx::makeRef(vertices, sizeof(vertices)), layout);
+        bgfx::copy(vertices.data(), static_cast<uint32_t>(sizeof(vertices))), layout);
     bgfx::IndexBufferHandle ib = bgfx::createIndexBuffer(
-        bgfx::makeRef(indices, sizeof(indices)));
+        bgfx::copy(indices.data(), static_cast<uint32_t>(sizeof(indices))));
 
     m_fullscreen_vb = vb.idx;
     m_fullscreen_ib = ib.idx;

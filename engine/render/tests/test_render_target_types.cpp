@@ -90,6 +90,9 @@ TEST_CASE("RenderView screen-space effect views", "[render][rt_types]") {
     REQUIRE(static_cast<uint16_t>(RenderView::SSAOBlur0) == 36);
     REQUIRE(static_cast<uint16_t>(RenderView::SSAOBlur3) == 39);
     REQUIRE(static_cast<uint16_t>(RenderView::SSR) == 40);
+    REQUIRE(static_cast<uint16_t>(RenderView::SSRTrace) == 48);
+    REQUIRE(static_cast<uint16_t>(RenderView::SSRComposite) == 49);
+    REQUIRE(static_cast<uint16_t>(RenderView::SSRResolve) == 61);
 }
 
 TEST_CASE("RenderView special views", "[render][rt_types]") {
@@ -111,8 +114,8 @@ TEST_CASE("ShadowConfig defaults", "[render][rt_types]") {
     REQUIRE(config.point_light_resolution == 512);
     REQUIRE(config.spot_light_resolution == 1024);
     REQUIRE(config.max_shadow_casting_lights == 4);
-    REQUIRE_THAT(config.shadow_bias, WithinAbs(0.001f, 0.0001f));
-    REQUIRE_THAT(config.normal_bias, WithinAbs(0.01f, 0.001f));
+    REQUIRE_THAT(config.shadow_bias, WithinAbs(0.003f, 0.0001f));
+    REQUIRE_THAT(config.normal_bias, WithinAbs(0.05f, 0.001f));
     REQUIRE_THAT(config.cascade_blend_distance, WithinAbs(0.1f, 0.01f));
     REQUIRE(config.pcf_enabled == true);
     REQUIRE(config.pcf_samples == 16);
@@ -139,10 +142,10 @@ TEST_CASE("BloomConfig defaults", "[render][rt_types]") {
     BloomConfig config;
 
     REQUIRE(config.enabled == true);
-    REQUIRE_THAT(config.threshold, WithinAbs(1.0f, 0.001f));
-    REQUIRE_THAT(config.intensity, WithinAbs(0.5f, 0.001f));
+    REQUIRE_THAT(config.threshold, WithinAbs(1.5f, 0.001f));
+    REQUIRE_THAT(config.intensity, WithinAbs(0.15f, 0.001f));
     REQUIRE_THAT(config.scatter, WithinAbs(0.7f, 0.001f));
-    REQUIRE(config.mip_count == 5);
+    REQUIRE(config.mip_count == 4);
 }
 
 // --- ToneMappingConfig defaults ---

@@ -55,6 +55,7 @@ target_sources(engine_render
             include/engine/render/render.hpp
             include/engine/render/renderer.hpp
             include/engine/render/render_target.hpp
+            include/engine/render/fullscreen_utils.hpp
             include/engine/render/pbr_material.hpp
             include/engine/render/shadow_system.hpp
             include/engine/render/ssao.hpp
@@ -351,7 +352,7 @@ if(TARGET bgfx::shaderc AND ENGINE_COMPILE_SHADERS)
         VARYING_DEF ${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying_debug_geom.def.sc
         OUTPUT_DIR ${SHADER_OUTPUT_DIR}
         OUT_FILES_VAR FS_DEBUG_GEOM_OUTPUTS
-        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH}
+        INCLUDE_DIRS ${BGFX_SHADER_INCLUDE_PATH} ${SHADER_COMMON_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/shaders
     )
 
     # Blit (fullscreen texture copy) shaders

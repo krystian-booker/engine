@@ -1,4 +1,5 @@
 #include <engine/render/ssr.hpp>
+#include <engine/render/fullscreen_utils.hpp>
 #include <engine/core/log.hpp>
 #include <cmath>
 #include <algorithm>
@@ -71,6 +72,7 @@ void SSRSystem::init(uint32_t width, uint32_t height, const SSRConfig& config) {
 
     // Create programs (would load compiled shaders)
     create_programs();
+    create_fullscreen_geometry();
 
     // Create uniforms
     u_ssr_params = bgfx::createUniform("u_ssrParams", bgfx::UniformType::Vec4);
@@ -105,6 +107,7 @@ void SSRSystem::shutdown() {
 
     destroy_textures();
     destroy_programs();
+    destroy_fullscreen_geometry();
 
     // Destroy uniforms
     if (bgfx::isValid(u_ssr_params)) bgfx::destroy(u_ssr_params);
@@ -131,6 +134,7 @@ void SSRSystem::shutdown() {
 }
 
 void SSRSystem::resize(uint32_t width, uint32_t height) {
+    if (!m_initialized) return;
     if (m_width == width && m_height == height) return;
 
     m_width = width;
@@ -316,6 +320,45 @@ void SSRSystem::destroy_programs() {
     }
 }
 
+void SSRSystem::create_fullscreen_geometry() {
+    m_fullscreen_layout
+        .begin()
+        .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+        .add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
+        .end();
+
+    const auto vertices = make_fullscreen_quad_vertices(bgfx::getCaps()->originBottomLeft);
+    const auto indices = make_fullscreen_quad_indices();
+
+    m_fullscreen_vb = bgfx::createVertexBuffer(
+        bgfx::copy(vertices.data(), static_cast<uint32_t>(sizeof(vertices))),
+        m_fullscreen_layout);
+    m_fullscreen_ib = bgfx::createIndexBuffer(
+        bgfx::copy(indices.data(), static_cast<uint32_t>(sizeof(indices))));
+}
+
+void SSRSystem::destroy_fullscreen_geometry() {
+    if (bgfx::isValid(m_fullscreen_vb)) {
+        bgfx::destroy(m_fullscreen_vb);
+        m_fullscreen_vb = BGFX_INVALID_HANDLE;
+    }
+    if (bgfx::isValid(m_fullscreen_ib)) {
+        bgfx::destroy(m_fullscreen_ib);
+        m_fullscreen_ib = BGFX_INVALID_HANDLE;
+    }
+}
+
+void SSRSystem::draw_fullscreen(bgfx::ViewId view_id, bgfx::ProgramHandle program, uint64_t state) {
+    if (!bgfx::isValid(program) || !bgfx::isValid(m_fullscreen_vb) || !bgfx::isValid(m_fullscreen_ib)) {
+        return;
+    }
+
+    bgfx::setVertexBuffer(0, m_fullscreen_vb);
+    bgfx::setIndexBuffer(m_fullscreen_ib);
+    bgfx::setState(state);
+    bgfx::submit(view_id, program);
+}
+
 void SSRSystem::generate_hiz(bgfx::ViewId view_id, bgfx::TextureHandle depth_texture) {
     if (!m_config.use_hiz || !bgfx::isValid(m_hiz_program)) return;
 
@@ -347,8 +390,7 @@ void SSRSystem::generate_hiz(bgfx::ViewId view_id, bgfx::TextureHandle depth_tex
             bgfx::setTexture(0, s_hiz, m_hiz_texture, i - 1);
         }
 
-        bgfx::setState(BGFX_STATE_WRITE_R);
-        bgfx::submit(vid, m_hiz_program);
+        draw_fullscreen(vid, m_hiz_program, BGFX_STATE_WRITE_R);
 
         mip_width = std::max(1u, mip_width / 2);
         mip_height = std::max(1u, mip_height / 2);
@@ -413,8 +455,7 @@ void SSRSystem::trace(bgfx::ViewId view_id,
         bgfx::setTexture(4, s_hiz, m_hiz_texture);
     }
 
-    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
-    bgfx::submit(view_id, m_trace_program);
+    draw_fullscreen(view_id, m_trace_program, BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
 
     m_frame_count++;
 }
@@ -452,8 +493,7 @@ void SSRSystem::temporal_resolve(bgfx::ViewId view_id,
     bgfx::setTexture(2, s_velocity, velocity_texture);
     bgfx::setTexture(3, s_hit, m_hit_texture);
 
-    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
-    bgfx::submit(view_id, m_resolve_program);
+    draw_fullscreen(view_id, m_resolve_program, BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
 
     // Flip ping-pong index (pre-created framebuffers already reference the correct textures)
     m_history_index = 1 - m_history_index;
@@ -487,8 +527,7 @@ void SSRSystem::composite(bgfx::ViewId view_id,
     bgfx::setTexture(2, s_roughness, roughness_texture);
     bgfx::setTexture(3, s_hit, m_hit_texture);
 
-    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
-    bgfx::submit(view_id, m_composite_program);
+    draw_fullscreen(view_id, m_composite_program, BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
 }
 
 void SSRSystem::render(bgfx::ViewId trace_view,
@@ -523,8 +562,7 @@ void SSRSystem::render(bgfx::ViewId trace_view,
         temporal_resolve(resolve_view, velocity_texture, prev_view_proj);
     }
 
-    // Composite is typically done by the render pipeline
-    // composite(composite_view, color_texture, roughness_texture);
+    composite(composite_view, color_texture, roughness_texture);
 }
 
 } // namespace engine::render

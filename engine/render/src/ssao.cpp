@@ -1,4 +1,5 @@
 #include <engine/render/ssao.hpp>
+#include <engine/render/fullscreen_utils.hpp>
 #include <engine/render/renderer.hpp>
 #include <engine/core/log.hpp>
 #include <bgfx/bgfx.h>
@@ -108,18 +109,14 @@ void SSAOShaders::create() {
         .add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
         .end();
 
-    struct FSVertex { float x, y, z, u, v; };
-    static const FSVertex vertices[] = {
-        { -1.0f,  1.0f, 0.0f, 0.0f, 0.0f },
-        {  1.0f,  1.0f, 0.0f, 1.0f, 0.0f },
-        {  1.0f, -1.0f, 0.0f, 1.0f, 1.0f },
-        { -1.0f, -1.0f, 0.0f, 0.0f, 1.0f },
-    };
+    const auto vertices = make_fullscreen_quad_vertices(bgfx::getCaps()->originBottomLeft);
+    const auto indices = make_fullscreen_quad_indices();
 
-    static const uint16_t indices[] = { 0, 1, 2, 0, 2, 3 };
-
-    fullscreen_vb = bgfx::createVertexBuffer(bgfx::makeRef(vertices, sizeof(vertices)), fullscreen_layout);
-    fullscreen_ib = bgfx::createIndexBuffer(bgfx::makeRef(indices, sizeof(indices)));
+    fullscreen_vb = bgfx::createVertexBuffer(
+        bgfx::copy(vertices.data(), static_cast<uint32_t>(sizeof(vertices))),
+        fullscreen_layout);
+    fullscreen_ib = bgfx::createIndexBuffer(
+        bgfx::copy(indices.data(), static_cast<uint32_t>(sizeof(indices))));
 
     log(LogLevel::Info, "SSAO shaders initialized");
 }

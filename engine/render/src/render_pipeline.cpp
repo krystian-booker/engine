@@ -1,4 +1,5 @@
 #include <engine/render/render_pipeline.hpp>
+#include <engine/render/light_probes.hpp>
 #include <engine/render/renderer.hpp>
 #include <engine/render/particle_system.hpp>
 #include <engine/core/log.hpp>
@@ -20,6 +21,10 @@ constexpr uint16_t kOrderedTransparentViewLimit = 200;
 constexpr uint16_t kOrderedViewOrderBase = static_cast<uint16_t>(RenderView::Skybox);
 constexpr uint16_t kOrderedViewOrderCount =
     kOrderedTransparentLastView - kOrderedViewOrderBase + 1;
+constexpr uint16_t kSSRTraceView = static_cast<uint16_t>(RenderView::SSRTrace);
+constexpr uint16_t kSSRCompositeView = static_cast<uint16_t>(RenderView::SSRComposite);
+constexpr uint16_t kSSRResolveView = static_cast<uint16_t>(RenderView::SSRResolve);
+constexpr uint16_t kSSRApplyView = static_cast<uint16_t>(RenderView::SSRApply);
 
 RenderView ordered_transparent_view(uint16_t view_id) {
     return static_cast<RenderView>(view_id);
@@ -29,10 +34,27 @@ bool is_refractive_material(const MaterialData* material) {
     return material && material->transmission > 0.0f;
 }
 
+bgfx::TextureHandle to_bgfx_texture(IRenderer* renderer, TextureHandle texture) {
+    if (!renderer || !texture.valid()) {
+        return BGFX_INVALID_HANDLE;
+    }
+
+    const uint16_t native_handle = renderer->get_native_texture_handle(texture);
+    if (native_handle == bgfx::kInvalidHandle) {
+        return BGFX_INVALID_HANDLE;
+    }
+
+    return bgfx::TextureHandle{native_handle};
+}
+
 void configure_ordered_transparent_view_order() {
     static const auto order = []() {
         std::array<bgfx::ViewId, kOrderedViewOrderCount> order{};
         size_t cursor = 0;
+
+        auto append_view = [&order, &cursor](RenderView view) {
+            order[cursor++] = static_cast<bgfx::ViewId>(static_cast<uint16_t>(view));
+        };
 
         auto append_range = [&order, &cursor](uint16_t first, uint16_t last) {
             for (uint16_t id = first; id <= last; ++id) {
@@ -40,13 +62,26 @@ void configure_ordered_transparent_view_order() {
             }
         };
 
-        append_range(
-            kOrderedViewOrderBase,
-            static_cast<uint16_t>(RenderView::TransparentRefractive));
+        append_view(RenderView::Skybox);
+        append_view(RenderView::MainOpaque);
+        append_view(RenderView::SSRApply);
+        append_view(RenderView::SSRTrace);
+        append_view(RenderView::SSRComposite);
+        append_view(RenderView::SSRResolve);
+        append_view(RenderView::OpaqueCopy);
+        append_view(RenderView::VolumetricIntegrate);
+        append_view(RenderView::MainTransparent);
+        append_view(RenderView::TransparentRefractive);
         append_range(kOrderedTransparentViewBase, kOrderedTransparentLastView);
-        append_range(
-            static_cast<uint16_t>(RenderView::TransparentRefractive) + 1,
-            kOrderedTransparentViewBase - 1);
+        for (uint16_t id = static_cast<uint16_t>(RenderView::TransparentRefractive) + 1;
+             id < kOrderedTransparentViewBase;
+             ++id) {
+            if (id == kSSRTraceView || id == kSSRCompositeView || id == kSSRResolveView ||
+                id == kSSRApplyView) {
+                continue;
+            }
+            order[cursor++] = static_cast<bgfx::ViewId>(id);
+        }
 
         return order;
     }();
@@ -91,6 +126,10 @@ void RenderPipeline::init(IRenderer* renderer, const RenderPipelineConfig& confi
         m_ssao_system.init(renderer, config.ssao_config);
     }
 
+    if (has_flag(config.enabled_passes, RenderPassFlags::SSR)) {
+        m_ssr_system.init(m_internal_width, m_internal_height, config.ssr_config);
+    }
+
     if (has_flag(config.enabled_passes, RenderPassFlags::PostProcess)) {
         PostProcessConfig pp_config;
         pp_config.bloom = config.bloom_config;
@@ -108,6 +147,10 @@ void RenderPipeline::init(IRenderer* renderer, const RenderPipelineConfig& confi
 
     m_oit_system.init(renderer, m_internal_width, m_internal_height);
     m_oit_system.set_config({ config.order_independent_transparency, 3.0f, 500.0f });
+
+    if (!get_light_probe_system().is_initialized()) {
+        get_light_probe_system().init();
+    }
 
     // Initialize particle system
     // TODO: Add particle_pass() that calls m_particle_system->render() after transparent pass
@@ -133,8 +176,12 @@ void RenderPipeline::shutdown() {
     m_oit_system.shutdown();
     m_taa_system.shutdown();
     m_post_process_system.shutdown();
+    m_ssr_system.shutdown();
     m_ssao_system.shutdown();
     m_shadow_system.shutdown();
+    if (get_light_probe_system().is_initialized()) {
+        get_light_probe_system().shutdown();
+    }
 
     // Clear custom passes
     m_custom_passes.clear();
@@ -175,6 +222,16 @@ void RenderPipeline::set_config(const RenderPipelineConfig& config) {
         } else {
             m_ssao_system.set_config(validated_config.ssao_config);
         }
+    }
+
+    if (has_flag(validated_config.enabled_passes, RenderPassFlags::SSR)) {
+        if (!has_flag(old_passes, RenderPassFlags::SSR)) {
+            m_ssr_system.init(m_internal_width, m_internal_height, validated_config.ssr_config);
+        } else {
+            m_ssr_system.set_config(validated_config.ssr_config);
+        }
+    } else if (has_flag(old_passes, RenderPassFlags::SSR)) {
+        m_ssr_system.shutdown();
     }
 
     if (has_flag(validated_config.enabled_passes, RenderPassFlags::PostProcess)) {
@@ -221,6 +278,7 @@ RenderPipelineConfig apply_quality_preset_to_config(
             config.shadow_config.cascade_count = 2;
             config.ssao_config.sample_count = 8;
             config.ssao_config.half_resolution = true;
+            config.ssr_config.apply_preset(SSRQuality::Low);
             config.bloom_config.enabled = false;
             config.bloom_config.mip_count = 0;
             config.taa_config.enabled = false;
@@ -237,6 +295,7 @@ RenderPipelineConfig apply_quality_preset_to_config(
             config.shadow_config.cascade_count = 3;
             config.ssao_config.sample_count = 16;
             config.ssao_config.half_resolution = true;
+            config.ssr_config.apply_preset(SSRQuality::Medium);
             config.bloom_config.enabled = true;
             config.bloom_config.mip_count = 4;
             config.taa_config.enabled = true;
@@ -256,6 +315,7 @@ RenderPipelineConfig apply_quality_preset_to_config(
             config.shadow_config.cascade_count = 4;
             config.ssao_config.sample_count = 32;
             config.ssao_config.half_resolution = false;
+            config.ssr_config.apply_preset(SSRQuality::High);
             config.bloom_config.enabled = true;
             config.bloom_config.mip_count = 4;
             config.taa_config.enabled = true;
@@ -270,6 +330,7 @@ RenderPipelineConfig apply_quality_preset_to_config(
             config.shadow_config.pcf_samples = 49;  // 7x7
             config.ssao_config.sample_count = 64;
             config.ssao_config.half_resolution = false;
+            config.ssr_config.apply_preset(SSRQuality::Ultra);
             config.bloom_config.enabled = true;
             config.bloom_config.mip_count = 4;
             config.taa_config.enabled = true;
@@ -368,6 +429,10 @@ void RenderPipeline::render(const CameraData& camera,
         main_pass(jittered_camera, lights);
     }
 
+    if (has_flag(m_config.enabled_passes, RenderPassFlags::SSR)) {
+        ssr_pass(jittered_camera);
+    }
+
     // Copy opaque HDR scene for screen-space refraction before transparent pass
     if (has_flag(m_config.enabled_passes, RenderPassFlags::Transparent) && m_opaque_copy.valid()) {
         TextureHandle hdr_color = m_renderer->get_render_target_texture(m_hdr_target, 0);
@@ -444,6 +509,12 @@ void RenderPipeline::render_to_target(RenderTargetHandle target,
     transparent_view_config.clear_depth_enabled = false;
     m_renderer->configure_view(RenderView::MainTransparent, transparent_view_config);
 
+    ViewConfig ssr_view_config;
+    ssr_view_config.render_target = target;
+    ssr_view_config.clear_color_enabled = false;
+    ssr_view_config.clear_depth_enabled = false;
+    m_renderer->configure_view(RenderView::SSRComposite, ssr_view_config);
+
     // Use the target as our HDR target temporarily
     m_hdr_target = target;
 
@@ -461,6 +532,10 @@ void RenderPipeline::render_to_target(RenderTargetHandle target,
 
     if (has_flag(passes, RenderPassFlags::MainOpaque)) {
         main_pass(camera, lights);
+    }
+
+    if (has_flag(passes, RenderPassFlags::SSR)) {
+        ssr_pass(camera);
     }
 
     if (has_flag(passes, RenderPassFlags::Transparent)) {
@@ -485,6 +560,12 @@ void RenderPipeline::render_to_target(RenderTargetHandle target,
     restore_transparent.clear_color_enabled = false;
     restore_transparent.clear_depth_enabled = false;
     m_renderer->configure_view(RenderView::MainTransparent, restore_transparent);
+
+    ViewConfig restore_ssr;
+    restore_ssr.render_target = m_hdr_target;
+    restore_ssr.clear_color_enabled = false;
+    restore_ssr.clear_depth_enabled = false;
+    m_renderer->configure_view(RenderView::SSRComposite, restore_ssr);
 }
 
 // TODO: Implement streaming submission API for incremental scene building
@@ -508,6 +589,7 @@ void RenderPipeline::resize(uint32_t width, uint32_t height) {
 
     // Resize subsystems
     m_ssao_system.resize(m_internal_width, m_internal_height);
+    m_ssr_system.resize(m_internal_width, m_internal_height);
     m_post_process_system.resize(m_internal_width, m_internal_height);
     m_taa_system.resize(m_internal_width, m_internal_height);
     m_volumetric_system.resize(m_internal_width, m_internal_height);
@@ -679,6 +761,21 @@ void RenderPipeline::create_render_targets() {
         m_opaque_copy = m_renderer->create_render_target(desc);
     }
 
+    // Scratch copy of the opaque HDR scene used as the SSR source.
+    {
+        RenderTargetDesc desc;
+        desc.width = m_internal_width;
+        desc.height = m_internal_height;
+        desc.color_attachment_count = 1;
+        desc.color_format = TextureFormat::RGBA16F;
+        desc.has_depth = false;
+        desc.samplable = true;
+        desc.blit_dst = true;
+        desc.debug_name = "Pipeline_SSRSource";
+
+        m_ssr_target = m_renderer->create_render_target(desc);
+    }
+
     // LDR output target
     {
         RenderTargetDesc desc;
@@ -714,6 +811,15 @@ void RenderPipeline::create_render_targets() {
         view_config.clear_depth_enabled = true;
         view_config.clear_depth = 1.0f;
         m_renderer->configure_view(RenderView::MainOpaque, view_config);
+    }
+
+    // SSR composite view — writes the composited result back into HDR.
+    {
+        ViewConfig view_config;
+        view_config.render_target = m_hdr_target;
+        view_config.clear_color_enabled = false;
+        view_config.clear_depth_enabled = false;
+        m_renderer->configure_view(RenderView::SSRComposite, view_config);
     }
 
     // OpaqueCopy view — blits opaque HDR scene to a separate texture for refraction
@@ -779,6 +885,11 @@ void RenderPipeline::destroy_render_targets() {
     if (m_hdr_target.valid()) {
         m_renderer->destroy_render_target(m_hdr_target);
         m_hdr_target = RenderTargetHandle{};
+    }
+
+    if (m_ssr_target.valid()) {
+        m_renderer->destroy_render_target(m_ssr_target);
+        m_ssr_target = RenderTargetHandle{};
     }
 
     if (m_opaque_copy.valid()) {
@@ -1099,6 +1210,58 @@ void RenderPipeline::ssao_pass(const CameraData& camera) {
     }
 
     m_ssao_system.render(depth_tex, normal_tex, camera.projection_matrix, camera.view_matrix);
+}
+
+void RenderPipeline::ssr_pass(const CameraData& camera) {
+    if (!m_ssr_system.is_initialized() || !m_hdr_target.valid() || !m_gbuffer.valid() ||
+        !m_ssr_target.valid()) {
+        return;
+    }
+
+    TextureHandle hdr_tex = m_renderer->get_render_target_texture(m_hdr_target, 0);
+    TextureHandle depth_tex = get_depth_texture();
+    TextureHandle gbuffer_tex = m_renderer->get_render_target_texture(m_gbuffer, 0);
+    TextureHandle ssr_source_tex = m_renderer->get_render_target_texture(m_ssr_target, 0);
+    TextureHandle motion_tex;
+    if (m_motion_vectors.valid()) {
+        motion_tex = m_renderer->get_render_target_texture(m_motion_vectors, 0);
+    }
+
+    bgfx::TextureHandle hdr_color = to_bgfx_texture(m_renderer, hdr_tex);
+    bgfx::TextureHandle depth = to_bgfx_texture(m_renderer, depth_tex);
+    bgfx::TextureHandle gbuffer = to_bgfx_texture(m_renderer, gbuffer_tex);
+    bgfx::TextureHandle ssr_source = to_bgfx_texture(m_renderer, ssr_source_tex);
+    bgfx::TextureHandle motion = to_bgfx_texture(m_renderer, motion_tex);
+    if (!bgfx::isValid(hdr_color) || !bgfx::isValid(depth) || !bgfx::isValid(gbuffer) ||
+        !bgfx::isValid(ssr_source)) {
+        return;
+    }
+
+    bgfx::blit(
+        static_cast<bgfx::ViewId>(static_cast<uint16_t>(RenderView::SSRApply)),
+        ssr_source,
+        0,
+        0,
+        hdr_color,
+        0,
+        0,
+        static_cast<uint16_t>(m_internal_width),
+        static_cast<uint16_t>(m_internal_height));
+
+    m_ssr_system.render(
+        static_cast<bgfx::ViewId>(static_cast<uint16_t>(RenderView::SSRTrace)),
+        static_cast<bgfx::ViewId>(static_cast<uint16_t>(RenderView::SSRResolve)),
+        static_cast<bgfx::ViewId>(static_cast<uint16_t>(RenderView::SSRComposite)),
+        ssr_source,
+        depth,
+        gbuffer,
+        gbuffer,
+        motion,
+        camera.view_matrix,
+        camera.projection_matrix,
+        camera.inverse_projection,
+        camera.inverse_view,
+        camera.prev_view_projection);
 }
 
 void RenderPipeline::main_pass(const CameraData& camera,

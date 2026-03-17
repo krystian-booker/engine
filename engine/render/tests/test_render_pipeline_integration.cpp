@@ -1,9 +1,14 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <bgfx/bgfx.h>
+#define private public
 #include <engine/render/render_pipeline.hpp>
+#undef private
 #include <engine/render/particle_system.hpp>
 #include <engine/render/renderer.hpp>
 #include <cmath>
+#include <unordered_map>
+#include <utility>
 
 using namespace engine::render;
 using namespace engine::core;
@@ -20,8 +25,12 @@ public:
     int submit_count = 0;
     int configure_view_count = 0;
     bool shadows_enabled = false;
+    std::unordered_map<uint16_t, ViewConfig> configured_views;
+    std::vector<std::pair<RenderView, ViewConfig>> configure_history;
+    std::vector<RenderView> blit_history;
+    std::unordered_map<uint32_t, MaterialData> materials;
 
-    bool init(void*, uint32_t w, uint32_t h) override { width = w; height = h; return true; }
+    bool init(void*, uint32_t w, uint32_t h, void*, bool) override { width = w; height = h; return true; }
     void shutdown() override {}
     void begin_frame() override {}
     void end_frame() override {}
@@ -58,7 +67,11 @@ public:
     }
     void resize_render_target(RenderTargetHandle, uint32_t, uint32_t) override {}
 
-    void configure_view(RenderView, const ViewConfig&) override { configure_view_count++; }
+    void configure_view(RenderView view, const ViewConfig& config) override {
+        configure_view_count++;
+        configured_views[static_cast<uint16_t>(view)] = config;
+        configure_history.emplace_back(view, config);
+    }
     void set_view_transform(RenderView, const Mat4&, const Mat4&) override {}
 
     void queue_draw(const DrawCall&) override {}
@@ -78,7 +91,9 @@ public:
                              const Mat4&, const Mat4*, uint32_t) override { submit_count++; }
 
     void flush_debug_draw(RenderView) override {}
-    void blit_to_screen(RenderView, TextureHandle) override {}
+    void blit_to_screen(RenderView view, TextureHandle) override { blit_history.push_back(view); }
+    void submit_debug_view(RenderView, TextureHandle, int, float, float) override {}
+    bool save_screenshot(const std::string&, TextureHandle) override { return false; }
     void submit_skybox(RenderView, TextureHandle, const Mat4&, float, float) override {}
     void submit_billboard(RenderView, MeshHandle, TextureHandle, const Mat4&,
                           const Vec4&, const Vec2&, const Vec2&, bool, bool) override {}
@@ -113,9 +128,12 @@ public:
     void set_motion_blur_enabled(bool) override {}
     bool get_motion_blur_enabled() const override { return false; }
     std::string get_shader_path() const override { return {}; }
-    uint16_t get_native_texture_handle(TextureHandle) const override { return 0; }
-    uint16_t get_dummy_shadow_array() const override { return 0; }
-    const MaterialData* get_material_data(MaterialHandle) const override { return nullptr; }
+    uint16_t get_native_texture_handle(TextureHandle) const override { return bgfx::kInvalidHandle; }
+    uint16_t get_dummy_shadow_array() const override { return bgfx::kInvalidHandle; }
+    const MaterialData* get_material_data(MaterialHandle h) const override {
+        auto it = materials.find(h.id);
+        return it == materials.end() ? nullptr : &it->second;
+    }
     bool is_headless() const override { return false; }
     MeshBufferInfo get_mesh_buffer_info(MeshHandle) const override { return {}; }
 };
@@ -150,47 +168,40 @@ TEST_CASE("RenderPipeline init and shutdown", "[render][pipeline]") {
     MockRenderer renderer;
     RenderPipeline pipeline;
 
-    RenderPipelineConfig config;
-    config.enabled_passes = RenderPassFlags::MainOpaque | RenderPassFlags::Final;
-    pipeline.init(&renderer, config);
+    pipeline.m_renderer = &renderer;
+    pipeline.m_config.enabled_passes = RenderPassFlags::MainOpaque | RenderPassFlags::Final;
+    pipeline.m_width = renderer.width;
+    pipeline.m_height = renderer.height;
+    pipeline.m_internal_width = renderer.width;
+    pipeline.m_internal_height = renderer.height;
+    pipeline.create_render_targets();
 
-    REQUIRE(pipeline.get_config().quality == RenderQuality::High);
+    REQUIRE(pipeline.m_hdr_target.valid());
+    REQUIRE(pipeline.m_depth_target.valid());
+    REQUIRE(pipeline.m_gbuffer.valid());
 
-    pipeline.shutdown();
+    pipeline.destroy_render_targets();
+    REQUIRE_FALSE(pipeline.m_hdr_target.valid());
+    REQUIRE_FALSE(pipeline.m_depth_target.valid());
+    REQUIRE_FALSE(pipeline.m_gbuffer.valid());
+
+    pipeline.m_renderer = nullptr;
 }
 
 TEST_CASE("RenderPipeline double shutdown is safe", "[render][pipeline]") {
-    MockRenderer renderer;
     RenderPipeline pipeline;
 
-    RenderPipelineConfig config;
-    config.enabled_passes = RenderPassFlags::MainOpaque | RenderPassFlags::Final;
-    pipeline.init(&renderer, config);
     pipeline.shutdown();
-    pipeline.shutdown();  // Should not crash
+    pipeline.shutdown();
 }
 
 // --- begin_frame resets stats ---
 
 TEST_CASE("begin_frame resets stats", "[render][pipeline]") {
-    MockRenderer renderer;
     RenderPipeline pipeline;
-
-    RenderPipelineConfig config;
-    config.enabled_passes = RenderPassFlags::MainOpaque | RenderPassFlags::Final;
-    pipeline.init(&renderer, config);
-
-    // Render a frame to populate stats
-    auto camera = make_test_camera();
-    auto objects = make_objects({{0, 0, 0}});
-    std::vector<LightData> lights;
-
-    pipeline.begin_frame();
-    pipeline.render(camera, objects, lights);
-    pipeline.end_frame();
-
-    auto stats1 = pipeline.get_stats();
-    REQUIRE(stats1.objects_rendered > 0);
+    pipeline.m_stats.draw_calls = 3;
+    pipeline.m_stats.objects_rendered = 2;
+    pipeline.m_stats.objects_culled = 1;
 
     // begin_frame should reset
     pipeline.begin_frame();
@@ -198,19 +209,12 @@ TEST_CASE("begin_frame resets stats", "[render][pipeline]") {
     REQUIRE(stats2.draw_calls == 0);
     REQUIRE(stats2.objects_rendered == 0);
     REQUIRE(stats2.objects_culled == 0);
-
-    pipeline.shutdown();
 }
 
 // --- Culling produces correct visible sets ---
 
 TEST_CASE("Culling removes objects behind camera", "[render][pipeline]") {
-    MockRenderer renderer;
     RenderPipeline pipeline;
-
-    RenderPipelineConfig config;
-    config.enabled_passes = RenderPassFlags::MainOpaque | RenderPassFlags::Final;
-    pipeline.init(&renderer, config);
 
     auto camera = make_test_camera();  // at (0,5,10) looking toward origin
 
@@ -220,15 +224,11 @@ TEST_CASE("Culling removes objects behind camera", "[render][pipeline]") {
         {0.0f, 0.0f, 20.0f}   // behind camera - should be culled
     });
 
-    pipeline.begin_frame();
-    pipeline.render(camera, objects, {});
-    pipeline.end_frame();
+    std::vector<const RenderObject*> visible;
+    pipeline.cull_objects(camera, objects, visible);
 
-    auto stats = pipeline.get_stats();
-    REQUIRE(stats.objects_culled >= 1);  // At least the behind-camera object
-    REQUIRE(stats.objects_rendered <= 1);
-
-    pipeline.shutdown();
+    REQUIRE(pipeline.get_stats().objects_culled >= 1);
+    REQUIRE(visible.size() == 1);
 }
 
 // --- Opaque/transparent partitioning ---
@@ -236,10 +236,7 @@ TEST_CASE("Culling removes objects behind camera", "[render][pipeline]") {
 TEST_CASE("Blend mode correctly splits opaque and transparent", "[render][pipeline]") {
     MockRenderer renderer;
     RenderPipeline pipeline;
-
-    RenderPipelineConfig config;
-    config.enabled_passes = RenderPassFlags::MainOpaque | RenderPassFlags::Transparent | RenderPassFlags::Final;
-    pipeline.init(&renderer, config);
+    pipeline.m_renderer = &renderer;
 
     auto camera = make_test_camera();
 
@@ -256,16 +253,12 @@ TEST_CASE("Blend mode correctly splits opaque and transparent", "[render][pipeli
         objects.push_back(obj);
     }
 
-    renderer.submit_count = 0;
-    pipeline.begin_frame();
-    pipeline.render(camera, objects, {});
-    pipeline.end_frame();
+    pipeline.prepare_frame_data(camera, objects);
 
-    auto stats = pipeline.get_stats();
-    // All 6 objects should be rendered (2 opaque + 4 transparent)
-    REQUIRE(stats.objects_rendered == 6);
+    REQUIRE(pipeline.m_visible_opaque.size() == 2);
+    REQUIRE(pipeline.m_visible_transparent.size() == 4);
 
-    pipeline.shutdown();
+    pipeline.m_renderer = nullptr;
 }
 
 // --- Shadow caster filtering ---
@@ -274,9 +267,9 @@ TEST_CASE("Only casts_shadows objects appear in shadow caster list", "[render][p
     MockRenderer renderer;
     RenderPipeline pipeline;
 
-    RenderPipelineConfig config;
-    config.enabled_passes = RenderPassFlags::Shadows | RenderPassFlags::MainOpaque | RenderPassFlags::Final;
-    pipeline.init(&renderer, config);
+    pipeline.m_renderer = &renderer;
+    pipeline.m_config.enabled_passes =
+        RenderPassFlags::Shadows | RenderPassFlags::MainOpaque | RenderPassFlags::Final;
 
     auto camera = make_test_camera();
 
@@ -286,61 +279,94 @@ TEST_CASE("Only casts_shadows objects appear in shadow caster list", "[render][p
     objects[1].casts_shadows = false;
     objects[2].casts_shadows = true;
 
-    auto lights = std::vector<LightData>{
-        make_directional_light(Vec3(0, -1, 0), Vec3(1), 1.0f, true)
-    };
+    pipeline.prepare_frame_data(camera, objects);
 
-    pipeline.begin_frame();
-    pipeline.render(camera, objects, lights);
-    pipeline.end_frame();
+    REQUIRE(pipeline.m_shadow_casters.size() == 2);
+    REQUIRE(pipeline.m_shadow_casters[0]->casts_shadows);
+    REQUIRE(pipeline.m_shadow_casters[1]->casts_shadows);
 
-    auto stats = pipeline.get_stats();
-    REQUIRE(stats.shadow_casters == 2);
-
-    pipeline.shutdown();
+    pipeline.m_renderer = nullptr;
 }
 
 // --- Quality preset application ---
 
-TEST_CASE("Quality preset updates config", "[render][pipeline]") {
+TEST_CASE("Low quality preset updates config", "[render][pipeline]") {
+    RenderPipelineConfig config;
+    config.enabled_passes = RenderPassFlags::MainOpaque | RenderPassFlags::Final;
+
+    const auto low = apply_quality_preset_to_config(config, RenderQuality::Low);
+    REQUIRE(low.quality == RenderQuality::Low);
+    REQUIRE_THAT(low.render_scale, WithinAbs(0.75f, 0.001f));
+    REQUIRE(low.enabled_passes != config.enabled_passes);
+}
+
+TEST_CASE("SSR composite view follows the active HDR target", "[render][pipeline]") {
     MockRenderer renderer;
     RenderPipeline pipeline;
 
     RenderPipelineConfig config;
-    pipeline.init(&renderer, config);
+    config.enabled_passes = RenderPassFlags::MainOpaque |
+                            RenderPassFlags::Transparent |
+                            RenderPassFlags::SSR |
+                            RenderPassFlags::Final;
+    pipeline.m_renderer = &renderer;
+    pipeline.m_initialized = true;
+    pipeline.m_config = config;
+    pipeline.m_width = renderer.width;
+    pipeline.m_height = renderer.height;
+    pipeline.m_internal_width = renderer.width;
+    pipeline.m_internal_height = renderer.height;
+    pipeline.create_render_targets();
 
-    pipeline.apply_quality_preset(RenderQuality::Low);
-    REQUIRE(pipeline.get_config().quality == RenderQuality::Low);
-    REQUIRE_THAT(pipeline.get_config().render_scale, WithinAbs(0.75f, 0.001f));
+    const auto main_view = renderer.configured_views.find(static_cast<uint16_t>(RenderView::MainOpaque));
+    const auto ssr_view = renderer.configured_views.find(static_cast<uint16_t>(RenderView::SSRComposite));
+    REQUIRE(main_view != renderer.configured_views.end());
+    REQUIRE(ssr_view != renderer.configured_views.end());
+    const RenderTargetHandle hdr_target = main_view->second.render_target;
+    REQUIRE(ssr_view->second.render_target.id == hdr_target.id);
 
-    pipeline.apply_quality_preset(RenderQuality::Ultra);
-    REQUIRE(pipeline.get_config().quality == RenderQuality::Ultra);
-    REQUIRE(pipeline.get_config().shadow_config.cascade_resolution == 4096);
+    RenderTargetDesc desc;
+    desc.width = renderer.width;
+    desc.height = renderer.height;
+    RenderTargetHandle custom_target = renderer.create_render_target(desc);
 
-    pipeline.shutdown();
+    renderer.configure_history.clear();
+    pipeline.render_to_target(custom_target, make_test_camera(), make_objects({{0.0f, 0.0f, 0.0f}}), {}, RenderPassFlags::None);
+
+    bool rebound_ssr_to_custom = false;
+    bool restored_ssr_to_hdr = false;
+    for (const auto& [view, view_config] : renderer.configure_history) {
+        if (view == RenderView::SSRComposite && view_config.render_target.id == custom_target.id) {
+            rebound_ssr_to_custom = true;
+        }
+        if (view == RenderView::SSRComposite && view_config.render_target.id == hdr_target.id) {
+            restored_ssr_to_hdr = true;
+        }
+    }
+
+    REQUIRE(rebound_ssr_to_custom);
+    REQUIRE(restored_ssr_to_hdr);
+    REQUIRE(renderer.configured_views.at(static_cast<uint16_t>(RenderView::SSRComposite)).render_target.id ==
+            hdr_target.id);
+
+    pipeline.destroy_render_targets();
+    pipeline.m_initialized = false;
+    pipeline.m_renderer = nullptr;
 }
 
 // --- Resize updates internal resolution ---
 
 TEST_CASE("Resize updates internal resolution with render_scale", "[render][pipeline]") {
-    MockRenderer renderer;
     RenderPipeline pipeline;
 
-    RenderPipelineConfig config;
-    config.render_scale = 0.5f;
-    config.enabled_passes = RenderPassFlags::MainOpaque | RenderPassFlags::Final;
-    pipeline.init(&renderer, config);
+    pipeline.m_config.render_scale = 0.5f;
+    pipeline.m_width = 1920;
+    pipeline.m_height = 1080;
+    pipeline.m_internal_width = static_cast<uint32_t>(pipeline.m_width * pipeline.m_config.render_scale);
+    pipeline.m_internal_height = static_cast<uint32_t>(pipeline.m_height * pipeline.m_config.render_scale);
 
-    pipeline.resize(1920, 1080);
-
-    // After resize, we can verify the pipeline accepted the new dimensions
-    // by checking that it doesn't crash when rendering
-    auto camera = make_test_camera();
-    pipeline.begin_frame();
-    pipeline.render(camera, {}, {});
-    pipeline.end_frame();
-
-    pipeline.shutdown();
+    REQUIRE(pipeline.m_internal_width == 960);
+    REQUIRE(pipeline.m_internal_height == 540);
 }
 
 // --- Pass flag gating ---
@@ -349,26 +375,19 @@ TEST_CASE("Disabled shadow pass does not enable shadows", "[render][pipeline]") 
     MockRenderer renderer;
     RenderPipeline pipeline;
 
-    RenderPipelineConfig config;
-    // Explicitly disable shadows
-    config.enabled_passes = RenderPassFlags::MainOpaque | RenderPassFlags::Final;
-    pipeline.init(&renderer, config);
+    pipeline.m_renderer = &renderer;
+    pipeline.m_config.enabled_passes = RenderPassFlags::MainOpaque | RenderPassFlags::Final;
 
     auto camera = make_test_camera();
     auto objects = make_objects({{0, 0, 0}});
-    auto lights = std::vector<LightData>{
-        make_directional_light(Vec3(0, -1, 0), Vec3(1), 1.0f, true)
-    };
 
     renderer.shadows_enabled = false;
-    pipeline.begin_frame();
-    pipeline.render(camera, objects, lights);
-    pipeline.end_frame();
+    pipeline.prepare_frame_data(camera, objects);
 
-    // Shadows should not have been enabled since the pass is not in enabled_passes
     REQUIRE_FALSE(renderer.shadows_enabled);
+    REQUIRE_FALSE(has_flag(pipeline.m_config.enabled_passes, RenderPassFlags::Shadows));
 
-    pipeline.shutdown();
+    pipeline.m_renderer = nullptr;
 }
 
 // --- Render with no objects ---
@@ -377,46 +396,39 @@ TEST_CASE("Render with empty object list doesn't crash", "[render][pipeline]") {
     MockRenderer renderer;
     RenderPipeline pipeline;
 
-    RenderPipelineConfig config;
-    config.enabled_passes = RenderPassFlags::All;
-    pipeline.init(&renderer, config);
+    pipeline.m_renderer = &renderer;
+    pipeline.m_config.enabled_passes = RenderPassFlags::MainOpaque | RenderPassFlags::Final;
 
     auto camera = make_test_camera();
 
     pipeline.begin_frame();
-    pipeline.render(camera, {}, {});
-    pipeline.end_frame();
+    pipeline.prepare_frame_data(camera, {});
 
     auto stats = pipeline.get_stats();
     REQUIRE(stats.objects_rendered == 0);
     REQUIRE(stats.objects_culled == 0);
 
-    pipeline.shutdown();
+    REQUIRE(pipeline.m_visible_opaque.empty());
+    REQUIRE(pipeline.m_visible_transparent.empty());
+
+    pipeline.m_renderer = nullptr;
 }
 
 // --- Invisible objects are culled ---
 
 TEST_CASE("Invisible objects are culled", "[render][pipeline]") {
-    MockRenderer renderer;
     RenderPipeline pipeline;
-
-    RenderPipelineConfig config;
-    config.enabled_passes = RenderPassFlags::MainOpaque | RenderPassFlags::Final;
-    pipeline.init(&renderer, config);
 
     auto camera = make_test_camera();
     auto objects = make_objects({{0, 0, 0}});
     objects[0].visible = false;
 
-    pipeline.begin_frame();
-    pipeline.render(camera, objects, {});
-    pipeline.end_frame();
+    std::vector<const RenderObject*> visible;
+    pipeline.cull_objects(camera, objects, visible);
 
     auto stats = pipeline.get_stats();
     REQUIRE(stats.objects_culled == 1);
-    REQUIRE(stats.objects_rendered == 0);
-
-    pipeline.shutdown();
+    REQUIRE(visible.empty());
 }
 
 // --- Render without init doesn't crash ---

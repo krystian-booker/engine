@@ -3,6 +3,7 @@ $input v_worldPos, v_normal, v_tangent, v_bitangent, v_texcoord0, v_color0, v_cl
 #include <bgfx_shader.sh>
 #include "common/uniforms.sh"
 #include "common/pbr.sh"
+#include "common/light_probes.sh"
 #include "common/lighting.sh"
 #include "common/shadow.sh"
 
@@ -128,17 +129,22 @@ void main()
     // Combine ambient with shadow attenuation.
     // Split ambient shadow: diffuse IBL dims more in shadow, specular (metallic reflections) less so.
     float diffuseAmbientShadow = mix(u_hemisphereGround.w, 1.0, shadowFactor);
-    float specularAmbientShadow = mix(0.7, 1.0, shadowFactor);
+    float specularShadowMin = mix(0.7, 0.92, metallic);
+    float specularAmbientShadow = mix(specularShadowMin, 1.0, shadowFactor);
 
     // Hemisphere ambient — lightweight GI approximation
     // Uses vertex AO but NOT screen-space AO: hemisphere irradiance comes from
     // the far-field sky/ground, not affected by local screen-space occlusion.
     vec3 hemisphereAmbient = evaluateHemisphereAmbient(N, albedo.rgb, ao,
         u_hemisphereGround.rgb, u_hemisphereSky.rgb);
+    float probeInfluence = probeVolumeContains(worldPos);
+    vec3 probeDiffuse = sampleProbeIrradiance(worldPos, N) * albedo.rgb;
+    vec3 hemisphereFloor = hemisphereAmbient * mix(1.0, u_probeState.y, probeInfluence);
 
     vec3 ambient = kD * diffuseIBL * ao * ssao * u_iblParams.x * diffuseAmbientShadow
                  + specularIBL * ao * ssao * u_iblParams.x * specularAmbientShadow
-                 + hemisphereAmbient;
+                 + kD * probeDiffuse * ao
+                 + hemisphereFloor;
 
     // Final color (linear HDR — tonemapping + gamma applied by post-processing pipeline)
     vec3 color = ambient + Lo + emissive;

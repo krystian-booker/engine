@@ -119,12 +119,23 @@ TEST_CASE("RenderPipelineConfig SSAO defaults", "[render][pipeline_config]") {
     REQUIRE(config.ssao_config.blur_enabled == true);
 }
 
+TEST_CASE("RenderPipelineConfig SSR defaults", "[render][pipeline_config]") {
+    RenderPipelineConfig config;
+
+    REQUIRE(config.ssr_config.max_steps == 64);
+    REQUIRE_FALSE(config.ssr_config.use_hiz);
+    REQUIRE_FALSE(config.ssr_config.temporal_enabled);
+    REQUIRE_FALSE(config.ssr_config.jitter_enabled);
+    REQUIRE_THAT(config.ssr_config.resolution_scale, WithinAbs(1.0f, 0.001f));
+    REQUIRE_THAT(config.ssr_config.intensity, WithinAbs(1.0f, 0.001f));
+}
+
 TEST_CASE("RenderPipelineConfig bloom defaults", "[render][pipeline_config]") {
     RenderPipelineConfig config;
 
     REQUIRE(config.bloom_config.enabled == true);
-    REQUIRE(config.bloom_config.mip_count == 5);
-    REQUIRE_THAT(config.bloom_config.threshold, WithinAbs(1.0f, 0.001f));
+    REQUIRE(config.bloom_config.mip_count == 4);
+    REQUIRE_THAT(config.bloom_config.threshold, WithinAbs(1.5f, 0.001f));
 }
 
 TEST_CASE("RenderPipelineConfig TAA defaults", "[render][pipeline_config]") {

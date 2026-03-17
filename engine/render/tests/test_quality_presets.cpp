@@ -90,9 +90,9 @@ TEST_CASE("Quality preset High", "[render][quality]") {
     REQUIRE(config.ssao_config.sample_count == 32);
     REQUIRE(config.ssao_config.half_resolution == false);
 
-    // Bloom: 5 mips
+    // Bloom: 4 mips
     REQUIRE(config.bloom_config.enabled == true);
-    REQUIRE(config.bloom_config.mip_count == 5);
+    REQUIRE(config.bloom_config.mip_count == 4);
 
     // TAA enabled
     REQUIRE(config.taa_config.enabled == true);
@@ -120,9 +120,9 @@ TEST_CASE("Quality preset Ultra", "[render][quality]") {
     REQUIRE(config.ssao_config.sample_count == 64);
     REQUIRE(config.ssao_config.half_resolution == false);
 
-    // Bloom: 6 mips
+    // Bloom: 4 mips
     REQUIRE(config.bloom_config.enabled == true);
-    REQUIRE(config.bloom_config.mip_count == 6);
+    REQUIRE(config.bloom_config.mip_count == 4);
 
     // TAA enabled
     REQUIRE(config.taa_config.enabled == true);
@@ -191,7 +191,7 @@ TEST_CASE("Quality presets override each other correctly", "[render][quality]") 
 
     auto high_from_low = apply_quality_preset_to_config(low, RenderQuality::High);
     REQUIRE(high_from_low.bloom_config.enabled == true);
-    REQUIRE(high_from_low.bloom_config.mip_count == 5);
+    REQUIRE(high_from_low.bloom_config.mip_count == 4);
 }
 
 // --- Test all presets set the quality field ---

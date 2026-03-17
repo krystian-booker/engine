@@ -305,24 +305,29 @@ int Application::run(int argc, char** argv) {
             m_system_registry->run(*m_world, dt, scene::Phase::PostRender);
         }
 
-        // End renderer frame
-        if (m_renderer) {
-            m_renderer->end_frame();
-        }
-
-        // Screenshot automation: capture at target frame, quit a few frames later
-        ++m_frame_counter;
+        // Queue screenshot capture before end_frame so the readback blit runs in
+        // the same bgfx frame as the rendered scene, after all render views.
         if (!m_screenshot_path.empty()) {
-            if (m_frame_counter == static_cast<uint32_t>(m_screenshot_frame)) {
+            const uint32_t rendered_frame = m_frame_counter + 1;
+            if (rendered_frame == static_cast<uint32_t>(m_screenshot_frame)) {
                 if (!save_screenshot(m_screenshot_path)) {
                     log(LogLevel::Error, "Screenshot request failed: {}", m_screenshot_path);
                     m_quit_requested = true;
                 }
             }
-            // Quit a few frames after the screenshot to let the async read complete
-            if (m_frame_counter >= static_cast<uint32_t>(m_screenshot_frame) + 5) {
-                m_quit_requested = true;
-            }
+        }
+
+        // End renderer frame
+        if (m_renderer) {
+            m_renderer->end_frame();
+        }
+
+        // Screenshot automation: quit a few frames after the capture request to
+        // let the async readback complete.
+        ++m_frame_counter;
+        if (!m_screenshot_path.empty() &&
+            m_frame_counter >= static_cast<uint32_t>(m_screenshot_frame) + 5) {
+            m_quit_requested = true;
         }
     }
 

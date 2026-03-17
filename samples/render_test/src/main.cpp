@@ -17,8 +17,12 @@
 #include <engine/core/application.hpp>
 #include <engine/core/log.hpp>
 #include <engine/scene/scene.hpp>
+#include <engine/render/light_probes.hpp>
 #include <engine/render/renderer.hpp>
 #include <engine/render/render_pipeline.hpp>
+#include <algorithm>
+#include <cmath>
+#include <limits>
 
 using namespace engine::core;
 using namespace engine::scene;
@@ -47,6 +51,8 @@ protected:
         m_sphere_mesh = renderer->create_primitive(render::PrimitiveMesh::Sphere, 1.0f);
         m_cube_mesh = renderer->create_primitive(render::PrimitiveMesh::Cube, 1.0f);
         m_plane_mesh = renderer->create_primitive(render::PrimitiveMesh::Plane, 1.0f);
+        m_probe_primitives.clear();
+        m_probe_lights.clear();
 
         // Configure the render pipeline
         auto* pipeline = get_render_pipeline();
@@ -57,22 +63,35 @@ protected:
                                   | render::RenderPassFlags::GBuffer
                                   | render::RenderPassFlags::SSAO
                                   | render::RenderPassFlags::MainOpaque
+                                  | render::RenderPassFlags::SSR
                                   | render::RenderPassFlags::Transparent
                                   | render::RenderPassFlags::PostProcess
                                   | render::RenderPassFlags::Final;
 
-            // Tone mapping — AgX matches Blender's view transform
+            // Tone mapping — AgX matches Blender's view transform.
+            // The engine exposure parameter is a linear multiplier, so 1.0f is neutral
+            // exposure (equivalent to Blender's 0 EV).
             config.tonemap_config.op = render::ToneMappingOperator::AgX;
-            config.tonemap_config.exposure = 0.32f;
+            config.tonemap_config.exposure = 1.0f;
 
             // Bloom — matches Blender compositor Glare node
             config.bloom_config.enabled = true;
             config.bloom_config.threshold = 1.5f;
-            config.bloom_config.intensity = 0.12f;
+            config.bloom_config.intensity = 0.15f;
 
             // SSAO
             config.ssao_config.radius = 0.5f;
             config.ssao_config.intensity = 1.5f;
+
+            // SSR
+            config.ssr_config.use_hiz = false;
+            config.ssr_config.temporal_enabled = false;
+            config.ssr_config.jitter_enabled = false;
+            config.ssr_config.resolution_scale = 1.0f;
+            config.ssr_config.intensity = 1.0f;
+            config.ssr_config.roughness_threshold = 0.75f;
+            config.ssr_config.edge_fade_start = 0.85f;
+            config.ssr_config.edge_fade_end = 0.98f;
 
             // Shadows
             config.shadow_config.cascade_resolution = 2048;
@@ -80,16 +99,16 @@ protected:
             config.shadow_config.shadow_bias = 0.002f;
             config.shadow_config.normal_bias = 0.02f;
 
-            // Clear color tuned for AgX pipeline
-            config.clear_color = 0x080A1CFF;
+            // Canonical dark navy background from the Blender reference scene.
+            config.clear_color = 0x1A1A2EFF;
 
             pipeline->set_config(config);
         }
 
-        renderer->set_ibl_intensity(2.0f);
+        renderer->set_ibl_intensity(1.0f);
         renderer->set_hemisphere_ambient(
-            Vec3{5.00f, 4.00f, 3.20f}, 0.0f,  // ground RGB (strong fill for sphere undersides)
-            Vec3{0.01f, 0.01f, 0.01f}          // sky RGB (near-zero to avoid brightening ground)
+            Vec3{0.10f, 0.08f, 0.06f}, 0.0f,
+            Vec3{0.02f, 0.02f, 0.03f}
         );
 
         // Create scene-appropriate dark IBL cubemaps matching the golden's
@@ -105,12 +124,21 @@ protected:
         create_emissive_sphere(world, renderer);
         create_ssao_corner(world, renderer);
         create_glass_sphere(world, renderer);
+        setup_light_probes();
 
         log(LogLevel::Info, "[RenderTest] Scene initialized.");
     }
 
     void on_shutdown() override {
         log(LogLevel::Info, "[RenderTest] Shutting down...");
+
+        if (m_probe_volume != render::INVALID_PROBE_VOLUME) {
+            auto& probe_system = render::get_light_probe_system();
+            if (probe_system.is_initialized()) {
+                probe_system.destroy_volume(m_probe_volume);
+            }
+            m_probe_volume = render::INVALID_PROBE_VOLUME;
+        }
 
         if (auto* renderer = get_renderer()) {
             renderer->destroy_mesh(m_sphere_mesh);
@@ -126,6 +154,32 @@ protected:
     }
 
 private:
+    enum class ProbeShape {
+        Sphere,
+        Box,
+    };
+
+    struct ProbeBakeMaterial {
+        Vec3 albedo{1.0f};
+        Vec3 emissive{0.0f};
+        float metallic = 0.0f;
+        float transmission = 0.0f;
+    };
+
+    struct ProbePrimitive {
+        ProbeShape shape = ProbeShape::Sphere;
+        Vec3 position{0.0f};
+        Vec3 extents{1.0f};
+        ProbeBakeMaterial material;
+    };
+
+    struct ProbeDirectionalLight {
+        Vec3 direction{0.0f, -1.0f, 0.0f};
+        Vec3 color{1.0f};
+        float intensity = 1.0f;
+        bool casts_shadows = false;
+    };
+
     // ---- Camera ----
     void create_camera(World* world) {
         auto cam_entity = world->create("Camera");
@@ -159,10 +213,11 @@ private:
             Light light;
             light.type = LightType::Directional;
             light.color = Vec3{1.0f, 0.95f, 0.9f};
-            light.intensity = 1.7f;
+            light.intensity = 2.0f;
             light.cast_shadows = true;
             light.enabled = true;
             world->emplace<Light>(entity, light);
+            m_probe_lights.push_back({dir, light.color, light.intensity, light.cast_shadows});
         }
 
         // Fill light — cool blue, no shadows
@@ -176,30 +231,236 @@ private:
 
             Light light;
             light.type = LightType::Directional;
-            light.color = Vec3{0.80f, 0.75f, 0.70f};
-            light.intensity = 0.4f;
+            light.color = Vec3{0.6f, 0.7f, 1.0f};
+            light.intensity = 0.3f;
             light.cast_shadows = false;
             light.enabled = true;
             world->emplace<Light>(entity, light);
+            m_probe_lights.push_back({dir, light.color, light.intensity, light.cast_shadows});
+        }
+    }
+
+    void add_probe_box(const Vec3& position, const Vec3& scale, const render::MaterialData& material) {
+        ProbePrimitive primitive;
+        primitive.shape = ProbeShape::Box;
+        primitive.position = position;
+        primitive.extents = scale * 0.5f;
+        primitive.material.albedo = Vec3(material.albedo);
+        primitive.material.emissive = material.emissive;
+        primitive.material.metallic = material.metallic;
+        primitive.material.transmission = material.transmission;
+        m_probe_primitives.push_back(primitive);
+    }
+
+    void add_probe_sphere(const Vec3& position, float radius, const render::MaterialData& material) {
+        ProbePrimitive primitive;
+        primitive.shape = ProbeShape::Sphere;
+        primitive.position = position;
+        primitive.extents = Vec3(radius);
+        primitive.material.albedo = Vec3(material.albedo);
+        primitive.material.emissive = material.emissive;
+        primitive.material.metallic = material.metallic;
+        primitive.material.transmission = material.transmission;
+        m_probe_primitives.push_back(primitive);
+    }
+
+    bool intersect_sphere(const Ray& ray, const ProbePrimitive& primitive, float max_distance,
+                          float& out_distance, Vec3& out_normal) const {
+        Vec3 offset = ray.origin - primitive.position;
+        float radius = primitive.extents.x;
+        float a = dot(ray.direction, ray.direction);
+        float b = 2.0f * dot(offset, ray.direction);
+        float c = dot(offset, offset) - radius * radius;
+        float discriminant = b * b - 4.0f * a * c;
+        if (discriminant < 0.0f) {
+            return false;
         }
 
-        // Ground bounce light — approximates GI from ground plane
-        {
-            auto entity = world->create("Bounce");
-            Vec3 dir = glm::normalize(Vec3{0.0f, 1.0f, 0.0f});
-            Vec3 up = Vec3(0.0f, 0.0f, 1.0f);
-            Quat rot = glm::quatLookAt(dir, up);
-            world->emplace<LocalTransform>(entity, Vec3{0.0f}, rot);
-            world->emplace<WorldTransform>(entity);
-
-            Light light;
-            light.type = LightType::Directional;
-            light.color = Vec3{0.5f, 0.48f, 0.45f};
-            light.intensity = 0.5f;
-            light.cast_shadows = false;
-            light.enabled = true;
-            world->emplace<Light>(entity, light);
+        float sqrt_discriminant = std::sqrt(discriminant);
+        float t0 = (-b - sqrt_discriminant) / (2.0f * a);
+        float t1 = (-b + sqrt_discriminant) / (2.0f * a);
+        float distance = (t0 > 0.001f) ? t0 : t1;
+        if (distance <= 0.001f || distance >= max_distance) {
+            return false;
         }
+
+        Vec3 hit_position = ray.origin + ray.direction * distance;
+        out_distance = distance;
+        out_normal = glm::normalize(hit_position - primitive.position);
+        return true;
+    }
+
+    bool intersect_box(const Ray& ray, const ProbePrimitive& primitive, float max_distance,
+                       float& out_distance, Vec3& out_normal) const {
+        Vec3 box_min = primitive.position - primitive.extents;
+        Vec3 box_max = primitive.position + primitive.extents;
+
+        float t_min = 0.001f;
+        float t_max = max_distance;
+        int hit_axis = -1;
+        float hit_sign = 1.0f;
+
+        for (int axis = 0; axis < 3; ++axis) {
+            float origin = ray.origin[axis];
+            float direction = ray.direction[axis];
+
+            if (std::abs(direction) < 1e-5f) {
+                if (origin < box_min[axis] || origin > box_max[axis]) {
+                    return false;
+                }
+                continue;
+            }
+
+            float inv_dir = 1.0f / direction;
+            float t0 = (box_min[axis] - origin) * inv_dir;
+            float t1 = (box_max[axis] - origin) * inv_dir;
+            float axis_sign = -1.0f;
+            if (t0 > t1) {
+                std::swap(t0, t1);
+                axis_sign = 1.0f;
+            }
+
+            if (t0 > t_min) {
+                t_min = t0;
+                hit_axis = axis;
+                hit_sign = axis_sign;
+            }
+            t_max = std::min(t_max, t1);
+            if (t_min > t_max) {
+                return false;
+            }
+        }
+
+        if (hit_axis < 0 || t_min >= max_distance) {
+            return false;
+        }
+
+        out_distance = t_min;
+        out_normal = Vec3(0.0f);
+        out_normal[hit_axis] = hit_sign;
+        return true;
+    }
+
+    const ProbePrimitive* trace_probe_scene(const Ray& ray, float max_distance,
+                                            Vec3& out_position, Vec3& out_normal,
+                                            float& out_distance) const {
+        const ProbePrimitive* hit_primitive = nullptr;
+        float closest_distance = max_distance;
+        Vec3 hit_normal{0.0f};
+
+        for (const ProbePrimitive& primitive : m_probe_primitives) {
+            float candidate_distance = max_distance;
+            Vec3 candidate_normal{0.0f};
+            bool hit = false;
+
+            if (primitive.shape == ProbeShape::Sphere) {
+                hit = intersect_sphere(ray, primitive, closest_distance, candidate_distance, candidate_normal);
+            } else {
+                hit = intersect_box(ray, primitive, closest_distance, candidate_distance, candidate_normal);
+            }
+
+            if (!hit) {
+                continue;
+            }
+
+            closest_distance = candidate_distance;
+            hit_normal = candidate_normal;
+            hit_primitive = &primitive;
+        }
+
+        if (!hit_primitive) {
+            return nullptr;
+        }
+
+        out_distance = closest_distance;
+        out_position = ray.origin + ray.direction * closest_distance;
+        out_normal = hit_normal;
+        return hit_primitive;
+    }
+
+    bool is_occluded(const Vec3& origin, const Vec3& direction, float max_distance) const {
+        Vec3 hit_position{0.0f};
+        Vec3 hit_normal{0.0f};
+        float hit_distance = max_distance;
+        return trace_probe_scene(Ray{origin, direction}, max_distance, hit_position, hit_normal, hit_distance) != nullptr;
+    }
+
+    Vec3 shade_probe_surface(const ProbePrimitive& primitive, const Vec3& position, const Vec3& normal) const {
+        Vec3 radiance = primitive.material.emissive;
+        Vec3 diffuse_albedo = primitive.material.albedo *
+            (1.0f - primitive.material.metallic) *
+            (1.0f - primitive.material.transmission);
+
+        for (const ProbeDirectionalLight& light : m_probe_lights) {
+            Vec3 to_light = glm::normalize(-light.direction);
+            float n_dot_l = glm::max(dot(normal, to_light), 0.0f);
+            if (n_dot_l <= 0.0f) {
+                continue;
+            }
+
+            if (light.casts_shadows) {
+                Vec3 shadow_origin = position + normal * 0.02f;
+                if (is_occluded(shadow_origin, to_light, 1000.0f)) {
+                    continue;
+                }
+            }
+
+            radiance += diffuse_albedo * light.color * light.intensity * n_dot_l * (1.0f / glm::pi<float>());
+        }
+
+        return radiance;
+    }
+
+    render::ProbeRayHit bake_probe_ray(const Vec3& origin, const Vec3& direction) const {
+        render::ProbeRayHit hit{};
+        Vec3 hit_position{0.0f};
+        Vec3 hit_normal{0.0f};
+        float hit_distance = std::numeric_limits<float>::max();
+        const ProbePrimitive* primitive = trace_probe_scene(
+            Ray{origin, direction}, 1000.0f, hit_position, hit_normal, hit_distance);
+
+        if (!primitive) {
+            return hit;
+        }
+
+        hit.position = hit_position;
+        hit.normal = hit_normal;
+        hit.color = shade_probe_surface(*primitive, hit_position, hit_normal);
+        hit.distance = hit_distance;
+        hit.hit = true;
+        return hit;
+    }
+
+    void setup_light_probes() {
+        auto& probe_system = render::get_light_probe_system();
+        if (!probe_system.is_initialized()) {
+            probe_system.init();
+        }
+
+        const Vec3 sky_color = Vec3{0.0203f, 0.0203f, 0.0410f};
+        probe_system.set_sky_color(sky_color);
+        probe_system.set_sky_sh(render::LightProbeUtils::create_ambient_sh(sky_color));
+
+        m_probe_volume = probe_system.create_volume(
+            Vec3{-8.5f, 0.0f, -6.5f},
+            Vec3{8.5f, 4.5f, 6.5f},
+            5, 3, 5);
+        if (m_probe_volume == render::INVALID_PROBE_VOLUME) {
+            log(LogLevel::Warn, "[RenderTest] Failed to allocate light probe volume");
+            return;
+        }
+
+        render::LightProbeBakeSettings bake_settings;
+        bake_settings.samples_per_probe = 128;
+        bake_settings.include_sky = true;
+        bake_settings.include_emissives = true;
+        bake_settings.intensity_multiplier = 1.0f;
+
+        probe_system.bake_volume(m_probe_volume, bake_settings,
+            [this](const Vec3& origin, const Vec3& direction) {
+                return bake_probe_ray(origin, direction);
+            });
+        probe_system.upload_to_gpu();
     }
 
     // ---- Ground Plane ----
@@ -219,6 +480,7 @@ private:
         world->emplace<MeshRenderer>(entity, MeshRenderer{
             MeshHandle{m_cube_mesh.id}, MaterialHandle{mat.id}, 0, true, false, true
         });
+        add_probe_box(Vec3{0.0f, 0.0f, 0.0f}, Vec3{20.0f, 0.1f, 20.0f}, mat_data);
     }
 
     // ---- 5x5 PBR Sphere Grid ----
@@ -257,6 +519,7 @@ private:
                 world->emplace<MeshRenderer>(entity, MeshRenderer{
                     MeshHandle{m_sphere_mesh.id}, MaterialHandle{mat.id}, 0, true, true, true
                 });
+                add_probe_sphere(Vec3{x, 1.0f, z}, 0.8f, mat_data);
             }
         }
     }
@@ -293,6 +556,8 @@ private:
             world->emplace<MeshRenderer>(entity, MeshRenderer{
                 MeshHandle{m_cube_mesh.id}, MaterialHandle{cubes[i].mat.id}, 0, true, true, true
             });
+            add_probe_box(cubes[i].pos, Vec3{1.0f, 4.0f, 1.0f},
+                i == 0 ? left_mat_data : right_mat_data);
         }
     }
 
@@ -302,7 +567,7 @@ private:
         mat_data.albedo = Vec4{1.0f, 0.3f, 0.1f, 1.0f};
         mat_data.roughness = 0.3f;
         mat_data.metallic = 0.0f;
-        mat_data.emissive = Vec3{3.0f, 0.75f, 0.18f};
+        mat_data.emissive = Vec3{8.0f, 2.0f, 0.5f};
         auto mat = renderer->create_material(mat_data);
         m_materials.push_back(mat);
 
@@ -314,39 +579,7 @@ private:
         world->emplace<MeshRenderer>(entity, MeshRenderer{
             MeshHandle{m_sphere_mesh.id}, MaterialHandle{mat.id}, 0, true, true, true
         });
-
-        // Point light co-located with emissive sphere to approximate its
-        // light emission onto nearby surfaces
-        {
-            auto light_entity = world->create("EmissiveLight");
-            world->emplace<LocalTransform>(light_entity, Vec3{6.0f, 1.5f, 2.0f});
-            world->emplace<WorldTransform>(light_entity);
-
-            Light light;
-            light.type = LightType::Point;
-            light.color = Vec3{1.0f, 0.35f, 0.1f};
-            light.intensity = 15.0f;
-            light.range = 20.0f;
-            light.cast_shadows = false;
-            light.enabled = true;
-            world->emplace<Light>(light_entity, light);
-        }
-
-        // Secondary fill light behind the right cube to simulate GI bounce
-        {
-            auto light_entity = world->create("EmissiveGIBounce");
-            world->emplace<LocalTransform>(light_entity, Vec3{5.0f, 2.5f, -3.5f});
-            world->emplace<WorldTransform>(light_entity);
-
-            Light light;
-            light.type = LightType::Point;
-            light.color = Vec3{1.0f, 0.4f, 0.15f};
-            light.intensity = 8.0f;
-            light.range = 10.0f;
-            light.cast_shadows = false;
-            light.enabled = true;
-            world->emplace<Light>(light_entity, light);
-        }
+        add_probe_sphere(Vec3{6.0f, 1.5f, 2.0f}, 1.0f, mat_data);
     }
 
     // ---- SSAO Corner (concave crevice) ----
@@ -368,6 +601,7 @@ private:
             world->emplace<MeshRenderer>(entity, MeshRenderer{
                 MeshHandle{m_cube_mesh.id}, MaterialHandle{mat.id}, 0, true, true, true
             });
+            add_probe_box(Vec3{-6.0f, 1.5f, -3.0f}, Vec3{3.0f, 3.0f, 3.0f}, mat_data);
         }
         // Small nested cube tucked in the corner
         {
@@ -379,6 +613,7 @@ private:
             world->emplace<MeshRenderer>(entity, MeshRenderer{
                 MeshHandle{m_cube_mesh.id}, MaterialHandle{mat.id}, 0, true, true, true
             });
+            add_probe_box(Vec3{-4.8f, 0.4f, -1.8f}, Vec3{0.8f, 0.8f, 0.8f}, mat_data);
         }
     }
 
@@ -403,6 +638,7 @@ private:
         world->emplace<MeshRenderer>(entity, MeshRenderer{
             MeshHandle{m_sphere_mesh.id}, MaterialHandle{mat.id}, 0, true, false, true, 2
         });
+        add_probe_sphere(Vec3{3.0f, 1.2f, 5.0f}, 1.2f, mat_data);
     }
 
     // ---- Scene IBL (dark cubemaps matching golden environment) ----
@@ -452,19 +688,9 @@ private:
             m_ibl_prefilter = renderer->create_texture(td);
         }
 
-        // BRDF LUT — standard approximation (same as default)
-        {
-            render::TextureData td;
-            td.width = 1;
-            td.height = 1;
-            td.format = render::TextureFormat::RGBA8;
-            td.mip_levels = 1;
-            uint8_t pixel[] = { 128, 16, 0, 0 }; // R=0.5 (scale), G=0.06 (bias)
-            td.pixels.assign(pixel, pixel + sizeof(pixel));
-            m_ibl_brdf_lut = renderer->create_texture(td);
-        }
-
-        renderer->set_ibl_textures(m_ibl_irradiance, m_ibl_prefilter, m_ibl_brdf_lut, 0);
+        // Use the renderer's default BRDF LUT. The old 1x1 placeholder flattened
+        // view/roughness-dependent specular response and muted the metallic row.
+        renderer->set_ibl_textures(m_ibl_irradiance, m_ibl_prefilter, {}, 0);
     }
 
     render::MeshHandle m_sphere_mesh;
@@ -473,7 +699,10 @@ private:
     render::TextureHandle m_ibl_irradiance;
     render::TextureHandle m_ibl_prefilter;
     render::TextureHandle m_ibl_brdf_lut;
+    render::LightProbeVolumeHandle m_probe_volume = render::INVALID_PROBE_VOLUME;
     std::vector<render::MaterialHandle> m_materials;
+    std::vector<ProbePrimitive> m_probe_primitives;
+    std::vector<ProbeDirectionalLight> m_probe_lights;
 };
 
 #ifdef _WIN32

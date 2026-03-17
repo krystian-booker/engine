@@ -100,43 +100,12 @@ print(f'Overall mean: {img.mean():.2f}')
 - RMSE regressed from prior iteration → **revert last change**, try next fix
 - Iteration count > 50 → **STOP, report best RMSE**
 
-### Step 6: Apply next parameter change, rebuild, loop to Step 1
-
-## Parameter Sweep (Autonomous Calibration)
-
-All architectural fixes are in place. The remaining work is parameter tuning. Change **one parameter per iteration** to enable attribution and clean reverts.
-
-### Tunable Parameters
-
-| Parameter | File | Current (Optimized) | Swept Range | Notes |
-|-----------|------|---------------------|-------------|-------|
-| exposure | `main.cpp` tonemap_config | **0.27** | 0.24 – 0.32 | Sweet spot, insensitive to small changes |
-| IBL intensity | `main.cpp` set_ibl_intensity | **2.0** | 0.5 – 2.5 | 2.0 optimal; lower hurts ambient fill |
-| hemisphere ground | `main.cpp` set_hemisphere_ambient | **{5.0, 4.0, 3.2}** | 0.45 – 8.0 | High HDR values needed for fill; biggest lever |
-| hemisphere sky | `main.cpp` set_hemisphere_ambient | **{0.01, 0.01, 0.01}** | 0.01 – 0.30 | Near-zero to avoid brightening ground |
-| hemisphere shadow min | `main.cpp` set_hemisphere_ambient | **0.0** | 0.0 – 0.5 | 0.0 optimal: IBL tracks shadows, hemisphere unconditional |
-| bloom threshold | `main.cpp` bloom_config | **1.5** | 1.0 – 2.0 | Insensitive in this range |
-| bloom intensity | `main.cpp` bloom_config | **0.12** | 0.08 – 0.16 | 0.12 optimal |
-| specular ambient shadow | `fs_pbr.sc` | **0.7** | 0.5 – 0.7 | Insensitive |
-| emissive material | `main.cpp` create_emissive_sphere | **{3.0, 0.75, 0.18}** | 1.0 – 8.0 | Reduced from 8.0 to match golden brightness |
-| emissive point light | `main.cpp` create_emissive_sphere | **15.0 / range 20.0** | 5.0 – 30.0 | Increased to spread warm light |
-| bounce light intensity | `main.cpp` create_lights | **0.5** | 0.3 – 0.5 | 0.5 optimal |
-| refraction distortion | `bgfx_renderer.cpp` | **0.15** | 0.05 – 0.30 | Not swept (minor impact) |
-
-### Sweep Strategy
-1. Start with **exposure** — biggest single-parameter lever
-2. Then **IBL intensity** — affects global ambient balance
-3. Then **hemisphere ground/sky** — affects shadow fill
-4. Then **bloom** and **specular ambient shadow** — fine tuning
-5. After each pass through all parameters, do a second pass at finer steps if RMSE is close to target
+### Step 6: Diagnose Architecture issues in our render pipeline or with the parameters in the render_test, rebuild, loop to Step 1
 
 ## Decision Rules
 
-1. **One logical change per iteration** — enables attribution and clean reverts
-2. **Revert on regression** — if RMSE increases, undo before trying next fix
-3. **Golden is truth** — only modify engine/render_test code, never the golden
-4. **Diminishing returns** — if 3 consecutive iterations improve by < 0.003, skip to next parameter
-5. **Fix architecture, don't fake** — when there's an architectural gap, implement proper support
+1. **Golden is truth**
+2. **Fix architecture, don't fake** — when there's an architectural gap, implement proper support
 
 ## Critical Files
 
@@ -152,16 +121,6 @@ All architectural fixes are in place. The remaining work is parameter tuning. Ch
 | `engine/render/shaders/common/lighting.sh` | evaluateHemisphereAmbient function |
 
 ## Next Steps to Reach 0.10
-
-Parameter tuning has converged at RMSE 0.2139. The remaining 0.114 gap requires architectural work:
-
-1. **Proper IBL cubemap** — Replace the bright fallback cubemap with one matching the golden's dark environment (sRGB ~26, 26, 46). This eliminates phantom metallic reflections and reduces ground brightness. Expected impact: ~0.02 RMSE.
-
-2. **Screen-space GI (SSGI)** — Add a screen-space global illumination pass that bounces light from bright surfaces to nearby dark surfaces. This would illuminate cube faces near the emissive sphere and fill in GI-occluded ground areas. Expected impact: ~0.03-0.05 RMSE.
-
-3. **Multi-bounce AO** — Enhance SSAO with color-bleeding / multi-bounce approximation (like Jimenez 2016). This adds warm colored fill in occluded areas rather than just darkening. Expected impact: ~0.01 RMSE.
-
-4. **Proper environment map for the scene** — Generate a low-res environment cubemap from the scene itself (either offline or at runtime) to provide correct indirect specular/diffuse. This replaces both the fallback IBL and the hemisphere approximation with a physically-based solution. Expected impact: ~0.03-0.05 RMSE.
 
 ## Verification
 

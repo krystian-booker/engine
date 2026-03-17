@@ -54,12 +54,13 @@ void main()
     vec2 uv = v_texcoord0;
 
     // Sample roughness - skip highly rough surfaces
-    float roughness = texture2D(s_roughness, uv).r;
+    float roughness = texture2D(s_roughness, uv).a;
     float roughnessThreshold = u_ssrParams2.y;
 
     if (roughness > roughnessThreshold)
     {
-        gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
+        gl_FragData[0] = vec4(0.0, 0.0, 0.0, 0.0);
+        gl_FragData[1] = vec4(0.0, 0.0, 0.0, 0.0);
         return;
     }
 
@@ -69,7 +70,8 @@ void main()
     // Skip sky (depth ~= 1.0)
     if (depth > 0.9999)
     {
-        gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
+        gl_FragData[0] = vec4(0.0, 0.0, 0.0, 0.0);
+        gl_FragData[1] = vec4(0.0, 0.0, 0.0, 0.0);
         return;
     }
 
@@ -194,6 +196,12 @@ void main()
         t += stepSize * adaptiveStride;
     }
 
-    // Output: xy = hit UV, z = confidence, w = unused
-    gl_FragColor = vec4(hitUV.xy, hitConfidence, 1.0);
+    vec3 reflectionColor = vec3_splat(0.0);
+    if (hitConfidence > 0.0)
+    {
+        reflectionColor = texture2D(s_color, hitUV.xy).rgb;
+    }
+
+    gl_FragData[0] = vec4(reflectionColor, hitConfidence);
+    gl_FragData[1] = vec4(hitUV.xy, hitConfidence, 1.0);
 }

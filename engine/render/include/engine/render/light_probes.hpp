@@ -14,6 +14,7 @@ using namespace engine::core;
 // Spherical Harmonics order for light probes
 // L2 = 9 coefficients per channel (RGB = 27 total)
 constexpr uint32_t SH_COEFFICIENT_COUNT = 9;
+constexpr uint32_t LIGHT_PROBE_TEXTURE_PIXELS_PER_PROBE = SH_COEFFICIENT_COUNT;
 
 // SH coefficients for a single color channel
 using SHCoefficients = std::array<float, SH_COEFFICIENT_COUNT>;
@@ -79,6 +80,7 @@ struct LightProbeVolume {
 
     // Probes
     std::vector<LightProbe> probes;
+    uint32_t gpu_base_probe_index = 0;
 
     // Volume properties
     bool enabled = true;
@@ -158,6 +160,14 @@ struct ProbeRayHit {
 };
 using ProbeRayCallback = std::function<ProbeRayHit(const Vec3& origin, const Vec3& direction)>;
 
+struct LightProbeVolumeShaderData {
+    Vec3 min_bounds = Vec3(0.0f);
+    Vec3 max_bounds = Vec3(0.0f);
+    UVec3 resolution = UVec3(0u);
+    uint32_t base_probe_index = 0;
+    bool valid = false;
+};
+
 // Light probe system
 class LightProbeSystem {
 public:
@@ -198,9 +208,13 @@ public:
 
     // Upload probe data to GPU
     void upload_to_gpu();
+    bool get_primary_volume_shader_data(LightProbeVolumeShaderData& out) const;
 
     // Get GPU texture for shader sampling
     bgfx::TextureHandle get_probe_texture() const { return m_probe_texture; }
+    uint32_t get_probe_texture_width() const { return m_probe_texture_width; }
+    uint32_t get_probe_texture_height() const { return m_probe_texture_height; }
+    uint32_t get_probe_texture_pixels_per_probe() const { return LIGHT_PROBE_TEXTURE_PIXELS_PER_PROBE; }
 
     // Set sky color for fallback
     void set_sky_color(const Vec3& color) { m_sky_color = color; }
@@ -225,6 +239,7 @@ private:
                     ProbeRayCallback ray_callback);
     void project_to_sh(const std::vector<std::pair<Vec3, Vec3>>& samples,
                         SHCoefficientsRGB& out_sh);
+    bool volume_has_gpu_data(const LightProbeVolume& volume) const;
 
     LightProbeSystemConfig m_config;
     bool m_initialized = false;
@@ -235,6 +250,8 @@ private:
 
     // GPU resources
     bgfx::TextureHandle m_probe_texture = BGFX_INVALID_HANDLE;
+    uint32_t m_probe_texture_width = 0;
+    uint32_t m_probe_texture_height = 0;
     bgfx::UniformHandle u_probe_params = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_probes = BGFX_INVALID_HANDLE;
 

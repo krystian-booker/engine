@@ -33,6 +33,9 @@ struct RenderTargetDesc {
     // Use this render target as a texture (samplable)
     bool samplable = true;
 
+    // Allow the color attachment to be used as a bgfx::blit destination.
+    bool blit_dst = false;
+
     // Debug name
     const char* debug_name = nullptr;
 };
@@ -73,7 +76,7 @@ enum class RenderView : uint16_t {
     SSAOBlur1 = 37,
     SSAOBlur2 = 38,
     SSAOBlur3 = 39,
-    SSR = 40,
+    SSR = 40,                 // Reserved legacy SSR view
 
     // Volumetric lighting
     VolumetricScatter = 41,
@@ -89,6 +92,8 @@ enum class RenderView : uint16_t {
     VolumetricIntegrate = 45,  // Composite fog over opaque scene BEFORE transparency
     MainTransparent = 46,
     TransparentRefractive = 47, // Refractive objects bypass OIT and draw to HDR buffer
+    SSRTrace = 48,
+    SSRComposite = 49,
 
     // Post-processing chain
     PostProcess0 = 50,
@@ -104,6 +109,8 @@ enum class RenderView : uint16_t {
     // TAA
     TAA = 59,
     TAAResolve = 60,
+    SSRResolve = 61,
+    SSRApply = 62,
 
     // Bloom downsample/upsample passes
     BloomDownsample0 = 70,

@@ -4,6 +4,7 @@
 #include <engine/render/render_target.hpp>
 #include <engine/render/shadow_system.hpp>
 #include <engine/render/ssao.hpp>
+#include <engine/render/ssr.hpp>
 #include <engine/render/post_process.hpp>
 #include <engine/render/volumetric.hpp>
 #include <engine/render/oit.hpp>
@@ -87,6 +88,7 @@ struct RenderPipelineConfig {
 
     // SSAO settings
     SSAOConfig ssao_config;
+    SSRConfig ssr_config;
 
     // Post-processing settings
     BloomConfig bloom_config;
@@ -236,6 +238,7 @@ public:
     // Subsystem access (for advanced usage)
     ShadowSystem* get_shadow_system() { return &m_shadow_system; }
     SSAOSystem* get_ssao_system() { return &m_ssao_system; }
+    SSRSystem* get_ssr_system() { return &m_ssr_system; }
     PostProcessSystem* get_post_process_system() { return &m_post_process_system; }
     TAASystem* get_taa_system() { return &m_taa_system; }
     VolumetricSystem* get_volumetric_system() { return &m_volumetric_system; }
@@ -256,6 +259,7 @@ private:
     void gbuffer_pass(const CameraData& camera);
     void motion_vector_pass(const CameraData& camera);
     void ssao_pass(const CameraData& camera);
+    void ssr_pass(const CameraData& camera);
     void main_pass(const CameraData& camera,
                    const std::vector<LightData>& lights);
     void volumetric_pass(const CameraData& camera,
@@ -295,12 +299,14 @@ private:
     RenderTargetHandle m_gbuffer;         // GBuffer with normals for SSAO
     RenderTargetHandle m_motion_vectors;  // Motion vectors for TAA
     RenderTargetHandle m_hdr_target;
+    RenderTargetHandle m_ssr_target;      // SSR composite target before copying back into HDR
     RenderTargetHandle m_opaque_copy;     // Copy of opaque scene for refraction
     RenderTargetHandle m_ldr_target;
 
     // Subsystems
     ShadowSystem m_shadow_system;
     SSAOSystem m_ssao_system;
+    SSRSystem m_ssr_system;
     PostProcessSystem m_post_process_system;
     TAASystem m_taa_system;
     VolumetricSystem m_volumetric_system;

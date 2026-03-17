@@ -1,4 +1,6 @@
 #include <engine/render/renderer.hpp>
+#include <engine/render/fullscreen_utils.hpp>
+#include <engine/render/light_probes.hpp>
 #include <engine/render/pbr_material.hpp>
 #include <engine/render/debug_draw.hpp>
 #include <engine/core/log.hpp>
@@ -8,6 +10,7 @@
 #include <algorithm>
 #include <unordered_map>
 #include <cmath>
+#include <cstring>
 #include <fstream>
 #include <array>
 #include <chrono>
@@ -18,6 +21,129 @@ using namespace engine::core;
 
 // Vertex layout for our Vertex struct
 static bgfx::VertexLayout s_vertex_layout;
+
+static uint16_t float_to_half_bits(float value) {
+    uint32_t bits = 0;
+    std::memcpy(&bits, &value, sizeof(bits));
+
+    const uint32_t sign = (bits >> 16) & 0x8000u;
+    int32_t exponent = static_cast<int32_t>((bits >> 23) & 0xffu) - 127;
+    uint32_t mantissa = bits & 0x7fffffu;
+
+    if (exponent > 15) {
+        return static_cast<uint16_t>(sign | 0x7c00u);
+    }
+
+    if (exponent < -14) {
+        if (exponent < -24) {
+            return static_cast<uint16_t>(sign);
+        }
+
+        mantissa |= 0x800000u;
+        mantissa >>= static_cast<uint32_t>(-1 - exponent);
+        return static_cast<uint16_t>(sign | (mantissa >> 13));
+    }
+
+    return static_cast<uint16_t>(sign | ((exponent + 15) << 10) | (mantissa >> 13));
+}
+
+static void write_half4(std::vector<uint8_t>& buffer, size_t offset, const Vec3& color, float alpha = 1.0f) {
+    const uint16_t pixel[4] = {
+        float_to_half_bits(color.x),
+        float_to_half_bits(color.y),
+        float_to_half_bits(color.z),
+        float_to_half_bits(alpha),
+    };
+    std::memcpy(buffer.data() + offset, pixel, sizeof(pixel));
+}
+
+static float radical_inverse_vdc(uint32_t bits) {
+    bits = (bits << 16u) | (bits >> 16u);
+    bits = ((bits & 0x55555555u) << 1u) | ((bits & 0xAAAAAAAAu) >> 1u);
+    bits = ((bits & 0x33333333u) << 2u) | ((bits & 0xCCCCCCCCu) >> 2u);
+    bits = ((bits & 0x0F0F0F0Fu) << 4u) | ((bits & 0xF0F0F0F0u) >> 4u);
+    bits = ((bits & 0x00FF00FFu) << 8u) | ((bits & 0xFF00FF00u) >> 8u);
+    return static_cast<float>(bits) * 2.3283064365386963e-10f;
+}
+
+static Vec2 hammersley(uint32_t i, uint32_t count) {
+    return Vec2(static_cast<float>(i) / static_cast<float>(count), radical_inverse_vdc(i));
+}
+
+static Vec3 importance_sample_ggx(Vec2 xi, Vec3 normal, float roughness) {
+    const float a = roughness * roughness;
+    const float phi = 2.0f * glm::pi<float>() * xi.x;
+    const float cos_theta = std::sqrt((1.0f - xi.y) / (1.0f + (a * a - 1.0f) * xi.y));
+    const float sin_theta = std::sqrt(std::max(0.0f, 1.0f - cos_theta * cos_theta));
+
+    const Vec3 halfway(std::cos(phi) * sin_theta, std::sin(phi) * sin_theta, cos_theta);
+    const Vec3 up = std::abs(normal.z) < 0.999f ? Vec3(0.0f, 0.0f, 1.0f) : Vec3(1.0f, 0.0f, 0.0f);
+    const Vec3 tangent = glm::normalize(glm::cross(up, normal));
+    const Vec3 bitangent = glm::cross(normal, tangent);
+    return glm::normalize(tangent * halfway.x + bitangent * halfway.y + normal * halfway.z);
+}
+
+static bgfx::TextureHandle create_default_brdf_lut() {
+    static constexpr uint16_t kBrdfLutSize = 128;
+    static constexpr uint32_t kSampleCount = 256;
+
+    std::vector<uint8_t> brdf_data(static_cast<size_t>(kBrdfLutSize) * kBrdfLutSize * 8);
+
+    for (uint16_t y = 0; y < kBrdfLutSize; ++y) {
+        for (uint16_t x = 0; x < kBrdfLutSize; ++x) {
+            float ndotv = (static_cast<float>(x) + 0.5f) / static_cast<float>(kBrdfLutSize);
+            const float roughness = (static_cast<float>(y) + 0.5f) / static_cast<float>(kBrdfLutSize);
+            ndotv = std::max(ndotv, 0.001f);
+
+            const Vec3 view(std::sqrt(std::max(0.0f, 1.0f - ndotv * ndotv)), 0.0f, ndotv);
+            const Vec3 normal(0.0f, 0.0f, 1.0f);
+
+            float scale = 0.0f;
+            float bias = 0.0f;
+            for (uint32_t sample = 0; sample < kSampleCount; ++sample) {
+                const Vec2 xi = hammersley(sample, kSampleCount);
+                const Vec3 halfway = importance_sample_ggx(xi, normal, roughness);
+                const Vec3 light = glm::normalize(2.0f * glm::dot(view, halfway) * halfway - view);
+
+                const float ndotl = std::max(light.z, 0.0f);
+                const float ndoth = std::max(halfway.z, 0.0f);
+                const float vdoth = std::max(glm::dot(view, halfway), 0.0f);
+
+                if (ndotl <= 0.0f) {
+                    continue;
+                }
+
+                const float alpha = roughness * roughness;
+                const float k = alpha / 2.0f;
+                const auto g_schlick = [k](float ndotx) {
+                    return ndotx / (ndotx * (1.0f - k) + k);
+                };
+                const float geometry = g_schlick(ndotv) * g_schlick(ndotl);
+                const float visibility = (geometry * vdoth) / std::max(ndoth * ndotv, 0.0001f);
+                const float fresnel = std::pow(1.0f - vdoth, 5.0f);
+
+                scale += (1.0f - fresnel) * visibility;
+                bias += fresnel * visibility;
+            }
+
+            scale /= static_cast<float>(kSampleCount);
+            bias /= static_cast<float>(kSampleCount);
+
+            const size_t offset = (static_cast<size_t>(y) * kBrdfLutSize + x) * 8;
+            write_half4(brdf_data, offset, Vec3(scale, bias, 0.0f), 1.0f);
+        }
+    }
+
+    const bgfx::Memory* mem = bgfx::copy(brdf_data.data(), static_cast<uint32_t>(brdf_data.size()));
+    return bgfx::createTexture2D(
+        kBrdfLutSize,
+        kBrdfLutSize,
+        false,
+        1,
+        bgfx::TextureFormat::RGBA16F,
+        BGFX_TEXTURE_NONE | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP,
+        mem);
+}
 
 // PBR Uniform handles (created once, reused)
 struct PBRUniforms {
@@ -55,6 +181,14 @@ struct PBRUniforms {
     bgfx::UniformHandle u_hemisphereGround = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_hemisphereSky = BGFX_INVALID_HANDLE;
 
+    // Diffuse light probes
+    bgfx::UniformHandle u_probeVolumeMin = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_probeVolumeMax = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_probeVolumeResolution = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_probeTextureInfo = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_probeState = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_probeTexture = BGFX_INVALID_HANDLE;
+
     // Refraction uniforms
     bgfx::UniformHandle u_refractionParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_opaqueColor = BGFX_INVALID_HANDLE;
@@ -85,6 +219,14 @@ struct PBRUniforms {
         // Hemisphere ambient
         u_hemisphereGround = bgfx::createUniform("u_hemisphereGround", bgfx::UniformType::Vec4);
         u_hemisphereSky = bgfx::createUniform("u_hemisphereSky", bgfx::UniformType::Vec4);
+
+        // Diffuse light probes
+        u_probeVolumeMin = bgfx::createUniform("u_probeVolumeMin", bgfx::UniformType::Vec4);
+        u_probeVolumeMax = bgfx::createUniform("u_probeVolumeMax", bgfx::UniformType::Vec4);
+        u_probeVolumeResolution = bgfx::createUniform("u_probeVolumeResolution", bgfx::UniformType::Vec4);
+        u_probeTextureInfo = bgfx::createUniform("u_probeTextureInfo", bgfx::UniformType::Vec4);
+        u_probeState = bgfx::createUniform("u_probeState", bgfx::UniformType::Vec4);
+        s_probeTexture = bgfx::createUniform("s_probeTexture", bgfx::UniformType::Sampler);
 
         // Refraction
         u_refractionParams = bgfx::createUniform("u_refractionParams", bgfx::UniformType::Vec4);
@@ -126,6 +268,14 @@ struct PBRUniforms {
         // Hemisphere ambient
         if (bgfx::isValid(u_hemisphereGround)) bgfx::destroy(u_hemisphereGround);
         if (bgfx::isValid(u_hemisphereSky)) bgfx::destroy(u_hemisphereSky);
+
+        // Diffuse light probes
+        if (bgfx::isValid(u_probeVolumeMin)) bgfx::destroy(u_probeVolumeMin);
+        if (bgfx::isValid(u_probeVolumeMax)) bgfx::destroy(u_probeVolumeMax);
+        if (bgfx::isValid(u_probeVolumeResolution)) bgfx::destroy(u_probeVolumeResolution);
+        if (bgfx::isValid(u_probeTextureInfo)) bgfx::destroy(u_probeTextureInfo);
+        if (bgfx::isValid(u_probeState)) bgfx::destroy(u_probeState);
+        if (bgfx::isValid(s_probeTexture)) bgfx::destroy(s_probeTexture);
 
         // Refraction
         if (bgfx::isValid(u_refractionParams)) bgfx::destroy(u_refractionParams);
@@ -348,6 +498,23 @@ public:
             m_skybox_vertex_layout
         );
 
+        // Shared fullscreen quad for texture-based screen-space passes.
+        m_fullscreen_quad_layout
+            .begin()
+            .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+            .add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
+            .end();
+
+        const auto fullscreen_quad_vertices = make_fullscreen_quad_vertices(bgfx::getCaps()->originBottomLeft);
+        const auto fullscreen_quad_indices = make_fullscreen_quad_indices();
+        m_fullscreen_quad_vb = bgfx::createVertexBuffer(
+            bgfx::copy(fullscreen_quad_vertices.data(), static_cast<uint32_t>(sizeof(fullscreen_quad_vertices))),
+            m_fullscreen_quad_layout
+        );
+        m_fullscreen_quad_ib = bgfx::createIndexBuffer(
+            bgfx::copy(fullscreen_quad_indices.data(), static_cast<uint32_t>(sizeof(fullscreen_quad_indices)))
+        );
+
         // Load blit (fullscreen passthrough) shader
         bgfx::ShaderHandle blit_vsh = load_shader_from_file(shader_path + "vs_blit.sc.bin");
         bgfx::ShaderHandle blit_fsh = load_shader_from_file(shader_path + "fs_blit.sc.bin");
@@ -465,10 +632,9 @@ public:
         m_default_prefilter = bgfx::createTextureCube(1, false, 1, bgfx::TextureFormat::RGBA8,
             BGFX_TEXTURE_NONE | BGFX_SAMPLER_POINT, bgfx::copy(pf_faces, sizeof(pf_faces)));
 
-        // BRDF LUT: 1x1 with R≈0.5, G≈0.06 — moderate scale + small bias
-        uint32_t brdf_pixel = 0x00001080; // R=128 (0.5), G=16 (0.06) in RGBA8
-        m_default_brdf_lut = bgfx::createTexture2D(1, 1, false, 1, bgfx::TextureFormat::RGBA8,
-            BGFX_TEXTURE_NONE | BGFX_SAMPLER_POINT, bgfx::copy(&brdf_pixel, sizeof(brdf_pixel)));
+        // Use a preintegrated GGX BRDF LUT so metallic IBL and transmission
+        // behave consistently across roughness and view angle.
+        m_default_brdf_lut = create_default_brdf_lut();
 
         m_initialized = true;
         return true;
@@ -536,6 +702,14 @@ public:
         if (bgfx::isValid(m_fullscreen_triangle_vb)) {
             bgfx::destroy(m_fullscreen_triangle_vb);
             m_fullscreen_triangle_vb = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_fullscreen_quad_vb)) {
+            bgfx::destroy(m_fullscreen_quad_vb);
+            m_fullscreen_quad_vb = BGFX_INVALID_HANDLE;
+        }
+        if (bgfx::isValid(m_fullscreen_quad_ib)) {
+            bgfx::destroy(m_fullscreen_quad_ib);
+            m_fullscreen_quad_ib = BGFX_INVALID_HANDLE;
         }
         if (bgfx::isValid(m_u_skyboxParams)) {
             bgfx::destroy(m_u_skyboxParams);
@@ -895,6 +1069,9 @@ public:
         if (desc.samplable) {
             flags |= BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
         }
+        if (desc.blit_dst) {
+            flags |= BGFX_TEXTURE_BLIT_DST;
+        }
 
         // Create color attachments
         std::vector<bgfx::Attachment> attachments;
@@ -1103,6 +1280,9 @@ public:
         uint64_t flags = BGFX_TEXTURE_RT;
         if (rt.desc.samplable) {
             flags |= BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+        }
+        if (rt.desc.blit_dst) {
+            flags |= BGFX_TEXTURE_BLIT_DST;
         }
 
         // Recreate color attachment GPU textures in-place
@@ -1452,7 +1632,13 @@ public:
         Vec4 debug_mode_vec(static_cast<float>(debug_mode), near_plane, far_plane, 0.0f);
         bgfx::setUniform(m_u_debugMode, glm::value_ptr(debug_mode_vec));
 
-        bgfx::setVertexBuffer(0, m_fullscreen_triangle_vb);
+        if (!bgfx::isValid(m_fullscreen_quad_vb) || !bgfx::isValid(m_fullscreen_quad_ib)) {
+            log(LogLevel::Error, "Fullscreen quad resources unavailable for debug view");
+            return;
+        }
+
+        bgfx::setVertexBuffer(0, m_fullscreen_quad_vb);
+        bgfx::setIndexBuffer(m_fullscreen_quad_ib);
         bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
         bgfx::submit(static_cast<uint16_t>(view), m_debug_view_program);
     }
@@ -1472,7 +1658,13 @@ public:
         bgfx::ProgramHandle program = m_blit_program;
 
         bgfx::setTexture(0, m_pbr_uniforms.s_blit_texture, it->second);
-        bgfx::setVertexBuffer(0, m_fullscreen_triangle_vb);
+        if (!bgfx::isValid(m_fullscreen_quad_vb) || !bgfx::isValid(m_fullscreen_quad_ib)) {
+            log(LogLevel::Error, "Fullscreen quad resources unavailable for blit_to_screen");
+            return;
+        }
+
+        bgfx::setVertexBuffer(0, m_fullscreen_quad_vb);
+        bgfx::setIndexBuffer(m_fullscreen_quad_ib);
         bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
         bgfx::submit(static_cast<uint16_t>(view), program);
     }
@@ -1724,6 +1916,8 @@ public:
             bgfx::setIndexBuffer(mesh.ibh);
         }
 
+        auto mat_it = m_materials.find(call.material.id);
+
         // Shadow cascade views use depth-only shadow program to avoid
         // read-write hazard (shadow maps bound as both render target and texture input)
         constexpr uint16_t kShadowCascade0 = static_cast<uint16_t>(RenderView::ShadowCascade0);
@@ -1744,9 +1938,11 @@ public:
         // instead of the full PBR shader (which would output lit color, not normals)
         constexpr uint16_t kGBufferView = static_cast<uint16_t>(RenderView::GBuffer);
         if (view_id == kGBufferView && bgfx::isValid(m_gbuffer_program)) {
-            // Set albedoColor.x = 0 for normals mode in debug_geom shader
-            Vec4 albedoColor(0.0f, 0.0f, 0.0f, 0.0f);
-            bgfx::setUniform(m_pbr_uniforms.u_albedoColor, glm::value_ptr(albedoColor));
+            if (mat_it != m_materials.end()) {
+                upload_pbr_uniforms(&mat_it->second);
+            } else {
+                upload_pbr_uniforms(nullptr);
+            }
 
             uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
                              BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
@@ -1758,7 +1954,6 @@ public:
 
         // Check material state. Blend mode is material-driven; the legacy
         // MaterialData::transparent flag is normalized in create_material().
-        auto mat_it = m_materials.find(call.material.id);
         MaterialBlendMode blend_mode = MaterialBlendMode::Opaque;
         bool double_sided = false;
         if (mat_it != m_materials.end()) {
@@ -1946,6 +2141,47 @@ public:
         // Hemisphere ambient uniforms
         bgfx::setUniform(m_pbr_uniforms.u_hemisphereGround, glm::value_ptr(m_hemisphere_ground));
         bgfx::setUniform(m_pbr_uniforms.u_hemisphereSky, glm::value_ptr(m_hemisphere_sky));
+
+        // Diffuse light probes
+        constexpr float kProbeHemisphereFloor = 0.15f;
+        Vec4 probe_volume_min(0.0f);
+        Vec4 probe_volume_max(0.0f);
+        Vec4 probe_volume_resolution(0.0f);
+        Vec4 probe_texture_info(1.0f, 1.0f, 1.0f, 1.0f);
+        Vec4 probe_state(0.0f, kProbeHemisphereFloor, 0.0f, 0.0f);
+
+        bgfx::TextureHandle probe_texture = m_white_texture;
+        const LightProbeSystem& light_probe_system = get_light_probe_system();
+        LightProbeVolumeShaderData probe_volume{};
+        if (light_probe_system.get_primary_volume_shader_data(probe_volume)) {
+            bgfx::TextureHandle gpu_probe_texture = light_probe_system.get_probe_texture();
+            if (bgfx::isValid(gpu_probe_texture)) {
+                probe_volume_min = Vec4(probe_volume.min_bounds, 0.0f);
+                probe_volume_max = Vec4(probe_volume.max_bounds, 0.0f);
+                probe_volume_resolution = Vec4(
+                    static_cast<float>(probe_volume.resolution.x),
+                    static_cast<float>(probe_volume.resolution.y),
+                    static_cast<float>(probe_volume.resolution.z),
+                    static_cast<float>(probe_volume.base_probe_index));
+
+                const float probe_texture_width = std::max(1u, light_probe_system.get_probe_texture_width());
+                const float probe_texture_height = std::max(1u, light_probe_system.get_probe_texture_height());
+                probe_texture_info = Vec4(
+                    probe_texture_width,
+                    probe_texture_height,
+                    1.0f / probe_texture_width,
+                    1.0f / probe_texture_height);
+                probe_state.x = 1.0f;
+                probe_texture = gpu_probe_texture;
+            }
+        }
+
+        bgfx::setUniform(m_pbr_uniforms.u_probeVolumeMin, glm::value_ptr(probe_volume_min));
+        bgfx::setUniform(m_pbr_uniforms.u_probeVolumeMax, glm::value_ptr(probe_volume_max));
+        bgfx::setUniform(m_pbr_uniforms.u_probeVolumeResolution, glm::value_ptr(probe_volume_resolution));
+        bgfx::setUniform(m_pbr_uniforms.u_probeTextureInfo, glm::value_ptr(probe_texture_info));
+        bgfx::setUniform(m_pbr_uniforms.u_probeState, glm::value_ptr(probe_state));
+        bgfx::setTexture(14, m_pbr_uniforms.s_probeTexture, probe_texture);
 
         // Refraction uniforms
         Vec4 refraction_params = mat_data
@@ -2238,6 +2474,9 @@ private:
     // Skybox resources
     bgfx::VertexBufferHandle m_fullscreen_triangle_vb = BGFX_INVALID_HANDLE;
     bgfx::VertexLayout m_skybox_vertex_layout;
+    bgfx::VertexBufferHandle m_fullscreen_quad_vb = BGFX_INVALID_HANDLE;
+    bgfx::IndexBufferHandle m_fullscreen_quad_ib = BGFX_INVALID_HANDLE;
+    bgfx::VertexLayout m_fullscreen_quad_layout;
     bgfx::UniformHandle m_u_skyboxParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle m_u_customInvViewProj = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle m_s_skybox = BGFX_INVALID_HANDLE;

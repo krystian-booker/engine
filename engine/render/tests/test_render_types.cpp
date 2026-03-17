@@ -92,7 +92,7 @@ TEST_CASE("Vertex custom values", "[render][types]") {
     v.normal = Vec3{0.0f, 1.0f, 0.0f};
     v.texcoord = Vec2{0.5f, 0.5f};
     v.color = Vec4{1.0f, 0.0f, 0.0f, 1.0f};
-    v.tangent = Vec3{1.0f, 0.0f, 0.0f};
+    v.tangent = Vec4{1.0f, 0.0f, 0.0f, 1.0f};
 
     REQUIRE_THAT(v.position.x, WithinAbs(1.0f, 0.001f));
     REQUIRE_THAT(v.position.y, WithinAbs(2.0f, 0.001f));
@@ -101,6 +101,7 @@ TEST_CASE("Vertex custom values", "[render][types]") {
     REQUIRE_THAT(v.texcoord.x, WithinAbs(0.5f, 0.001f));
     REQUIRE_THAT(v.color.r, WithinAbs(1.0f, 0.001f));
     REQUIRE_THAT(v.tangent.x, WithinAbs(1.0f, 0.001f));
+    REQUIRE_THAT(v.tangent.w, WithinAbs(1.0f, 0.001f));
 }
 
 TEST_CASE("SkinnedVertex defaults", "[render][types]") {
@@ -170,12 +171,14 @@ TEST_CASE("TextureFormat enum", "[render][types]") {
     REQUIRE(static_cast<uint8_t>(TextureFormat::RGBA16F) == 1);
     REQUIRE(static_cast<uint8_t>(TextureFormat::RGBA32F) == 2);
     REQUIRE(static_cast<uint8_t>(TextureFormat::R8) == 3);
-    REQUIRE(static_cast<uint8_t>(TextureFormat::RG8) == 4);
-    REQUIRE(static_cast<uint8_t>(TextureFormat::Depth24) == 5);
-    REQUIRE(static_cast<uint8_t>(TextureFormat::Depth32F) == 6);
-    REQUIRE(static_cast<uint8_t>(TextureFormat::BC1) == 7);
-    REQUIRE(static_cast<uint8_t>(TextureFormat::BC3) == 8);
-    REQUIRE(static_cast<uint8_t>(TextureFormat::BC7) == 9);
+    REQUIRE(static_cast<uint8_t>(TextureFormat::R32F) == 4);
+    REQUIRE(static_cast<uint8_t>(TextureFormat::RG8) == 5);
+    REQUIRE(static_cast<uint8_t>(TextureFormat::Depth16) == 6);
+    REQUIRE(static_cast<uint8_t>(TextureFormat::Depth24) == 7);
+    REQUIRE(static_cast<uint8_t>(TextureFormat::Depth32F) == 8);
+    REQUIRE(static_cast<uint8_t>(TextureFormat::BC1) == 9);
+    REQUIRE(static_cast<uint8_t>(TextureFormat::BC3) == 10);
+    REQUIRE(static_cast<uint8_t>(TextureFormat::BC7) == 11);
 }
 
 TEST_CASE("TextureData defaults", "[render][types]") {
