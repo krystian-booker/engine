@@ -301,6 +301,7 @@ private:
     RenderTargetHandle m_hdr_target;
     RenderTargetHandle m_ssr_target;      // SSR composite target before copying back into HDR
     RenderTargetHandle m_opaque_copy;     // Copy of opaque scene for refraction
+    RenderTargetHandle m_opaque_depth_copy; // Color copy of opaque depth for refraction sampling
     RenderTargetHandle m_ldr_target;
 
     // Subsystems

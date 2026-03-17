@@ -29,6 +29,8 @@ public:
     std::vector<std::pair<RenderView, ViewConfig>> configure_history;
     std::vector<RenderView> blit_history;
     std::unordered_map<uint32_t, MaterialData> materials;
+    TextureHandle last_opaque_copy_texture;
+    TextureHandle last_opaque_depth_texture;
 
     bool init(void*, uint32_t w, uint32_t h, void*, bool) override { width = w; height = h; return true; }
     void shutdown() override {}
@@ -101,7 +103,8 @@ public:
     void set_hemisphere_ambient(const Vec3&, float, const Vec3&) override {}
     void set_oit_data(const Vec4&) override {}
     void enable_oit(bool) override {}
-    void set_opaque_copy_texture(TextureHandle) override {}
+    void set_opaque_copy_texture(TextureHandle texture) override { last_opaque_copy_texture = texture; }
+    void set_opaque_depth_texture(TextureHandle texture) override { last_opaque_depth_texture = texture; }
     void flush() override {}
     void clear(uint32_t, float) override {}
 
@@ -350,6 +353,39 @@ TEST_CASE("SSR composite view follows the active HDR target", "[render][pipeline
             hdr_target.id);
 
     pipeline.destroy_render_targets();
+    pipeline.m_initialized = false;
+    pipeline.m_renderer = nullptr;
+}
+
+TEST_CASE("Transparent refractive objects bind opaque color and depth", "[render][pipeline]") {
+    MockRenderer renderer;
+    RenderPipeline pipeline;
+
+    pipeline.m_renderer = &renderer;
+    pipeline.m_initialized = true;
+    pipeline.m_hdr_target = RenderTargetHandle{1};
+    pipeline.m_opaque_copy = RenderTargetHandle{2};
+    pipeline.m_depth_target = RenderTargetHandle{3};
+    pipeline.m_opaque_depth_copy = RenderTargetHandle{4};
+
+    MaterialData glass;
+    glass.transmission = 0.65f;
+    glass.blend_mode = MaterialBlendMode::Transmission;
+    renderer.materials[1] = glass;
+
+    RenderObject object;
+    object.material = MaterialHandle{1};
+    object.transform = glm::translate(Mat4(1.0f), Vec3(3.0f, 1.2f, 5.0f));
+    object.bounds.min = Vec3(-0.5f);
+    object.bounds.max = Vec3(0.5f);
+    pipeline.m_visible_transparent = {&object};
+
+    pipeline.transparent_pass(make_test_camera(), {});
+
+    REQUIRE(renderer.last_opaque_copy_texture.valid());
+    REQUIRE(renderer.last_opaque_depth_texture.valid());
+    REQUIRE_FALSE(renderer.blit_history.empty());
+
     pipeline.m_initialized = false;
     pipeline.m_renderer = nullptr;
 }

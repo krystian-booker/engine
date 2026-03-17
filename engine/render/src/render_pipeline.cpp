@@ -25,6 +25,7 @@ constexpr uint16_t kSSRTraceView = static_cast<uint16_t>(RenderView::SSRTrace);
 constexpr uint16_t kSSRCompositeView = static_cast<uint16_t>(RenderView::SSRComposite);
 constexpr uint16_t kSSRResolveView = static_cast<uint16_t>(RenderView::SSRResolve);
 constexpr uint16_t kSSRApplyView = static_cast<uint16_t>(RenderView::SSRApply);
+constexpr uint16_t kOpaqueDepthCopyView = static_cast<uint16_t>(RenderView::OpaqueDepthCopy);
 
 RenderView ordered_transparent_view(uint16_t view_id) {
     return static_cast<RenderView>(view_id);
@@ -69,15 +70,16 @@ void configure_ordered_transparent_view_order() {
         append_view(RenderView::SSRComposite);
         append_view(RenderView::SSRResolve);
         append_view(RenderView::OpaqueCopy);
+        append_view(RenderView::OpaqueDepthCopy);
         append_view(RenderView::VolumetricIntegrate);
         append_view(RenderView::MainTransparent);
         append_view(RenderView::TransparentRefractive);
         append_range(kOrderedTransparentViewBase, kOrderedTransparentLastView);
         for (uint16_t id = static_cast<uint16_t>(RenderView::TransparentRefractive) + 1;
-             id < kOrderedTransparentViewBase;
+            id < kOrderedTransparentViewBase;
              ++id) {
             if (id == kSSRTraceView || id == kSSRCompositeView || id == kSSRResolveView ||
-                id == kSSRApplyView) {
+                id == kSSRApplyView || id == kOpaqueDepthCopyView) {
                 continue;
             }
             order[cursor++] = static_cast<bgfx::ViewId>(id);
@@ -436,9 +438,18 @@ void RenderPipeline::render(const CameraData& camera,
     // Copy opaque HDR scene for screen-space refraction before transparent pass
     if (has_flag(m_config.enabled_passes, RenderPassFlags::Transparent) && m_opaque_copy.valid()) {
         TextureHandle hdr_color = m_renderer->get_render_target_texture(m_hdr_target, 0);
+        TextureHandle depth_tex = get_depth_texture();
         m_renderer->blit_to_screen(RenderView::OpaqueCopy, hdr_color);
+        if (depth_tex.valid() && m_opaque_depth_copy.valid()) {
+            m_renderer->submit_debug_view(RenderView::OpaqueDepthCopy, depth_tex, 3, 0.0f, 0.0f);
+        }
         TextureHandle opaque_copy_tex = m_renderer->get_render_target_texture(m_opaque_copy, 0);
+        TextureHandle opaque_depth_tex;
+        if (m_opaque_depth_copy.valid()) {
+            opaque_depth_tex = m_renderer->get_render_target_texture(m_opaque_depth_copy, 0);
+        }
         m_renderer->set_opaque_copy_texture(opaque_copy_tex);
+        m_renderer->set_opaque_depth_texture(opaque_depth_tex);
     }
 
     // Run volumetric update and composite into the scene BEFORE transparency
@@ -761,6 +772,20 @@ void RenderPipeline::create_render_targets() {
         m_opaque_copy = m_renderer->create_render_target(desc);
     }
 
+    // Opaque depth copy target (sampleable color copy of the opaque depth buffer).
+    {
+        RenderTargetDesc desc;
+        desc.width = m_internal_width;
+        desc.height = m_internal_height;
+        desc.color_attachment_count = 1;
+        desc.color_format = TextureFormat::R32F;
+        desc.has_depth = false;
+        desc.samplable = true;
+        desc.debug_name = "Pipeline_OpaqueDepthCopy";
+
+        m_opaque_depth_copy = m_renderer->create_render_target(desc);
+    }
+
     // Scratch copy of the opaque HDR scene used as the SSR source.
     {
         RenderTargetDesc desc;
@@ -831,6 +856,15 @@ void RenderPipeline::create_render_targets() {
         m_renderer->configure_view(RenderView::OpaqueCopy, view_config);
     }
 
+    // OpaqueDepthCopy view — copies raw opaque depth into a sampleable color texture.
+    {
+        ViewConfig view_config;
+        view_config.render_target = m_opaque_depth_copy;
+        view_config.clear_color_enabled = false;
+        view_config.clear_depth_enabled = false;
+        m_renderer->configure_view(RenderView::OpaqueDepthCopy, view_config);
+    }
+
     {
         ViewConfig view_config;
         view_config.render_target = m_hdr_target;
@@ -895,6 +929,11 @@ void RenderPipeline::destroy_render_targets() {
     if (m_opaque_copy.valid()) {
         m_renderer->destroy_render_target(m_opaque_copy);
         m_opaque_copy = RenderTargetHandle{};
+    }
+
+    if (m_opaque_depth_copy.valid()) {
+        m_renderer->destroy_render_target(m_opaque_depth_copy);
+        m_opaque_depth_copy = RenderTargetHandle{};
     }
 
     if (m_ldr_target.valid()) {
@@ -1374,6 +1413,10 @@ void RenderPipeline::transparent_pass(const CameraData& camera,
 
     TextureHandle hdr_color = m_renderer->get_render_target_texture(m_hdr_target, 0);
     TextureHandle opaque_copy_tex = m_renderer->get_render_target_texture(m_opaque_copy, 0);
+    TextureHandle opaque_depth_tex;
+    if (m_opaque_depth_copy.valid()) {
+        opaque_depth_tex = m_renderer->get_render_target_texture(m_opaque_depth_copy, 0);
+    }
 
     ViewConfig transparent_view_config;
     transparent_view_config.render_target = m_hdr_target;
@@ -1403,6 +1446,7 @@ void RenderPipeline::transparent_pass(const CameraData& camera,
                 m_renderer->configure_view(copy_view, opaque_copy_view_config);
                 m_renderer->blit_to_screen(copy_view, hdr_color);
                 m_renderer->set_opaque_copy_texture(opaque_copy_tex);
+                m_renderer->set_opaque_depth_texture(opaque_depth_tex);
             }
 
             draw_view = ordered_transparent_view(draw_view_id);
@@ -1420,6 +1464,7 @@ void RenderPipeline::transparent_pass(const CameraData& camera,
 
             if (is_refractive && opaque_copy_tex.valid()) {
                 m_renderer->set_opaque_copy_texture(opaque_copy_tex);
+                m_renderer->set_opaque_depth_texture(opaque_depth_tex);
                 draw_view = RenderView::TransparentRefractive;
             }
         }

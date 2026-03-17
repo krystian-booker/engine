@@ -26,6 +26,7 @@ SAMPLER2D(s_ssao, 12);
 
 // Opaque scene copy for screen-space refraction (slot 13)
 SAMPLER2D(s_opaqueColor, 13);
+SAMPLER2D(s_opaqueDepth, 15);
 
 uniform vec4 u_oitParams;      // x=weight_power, y=max_distance, z=near_plane, w=far_plane
 
@@ -36,6 +37,32 @@ float calculateWeight(float z, float alpha)
     float maxDist = u_oitParams.y;
     z = clamp(z, 0.001, maxDist);
     return pow(max(alpha, 0.0), power) * clamp(0.03 / (1e-5 + pow(z / maxDist, 4.0)), 1e-2, 3e3);
+}
+
+vec3 reconstructWorldPos(vec2 uv, float depth)
+{
+    vec4 clipPos = vec4(uv * 2.0 - 1.0, depth, 1.0);
+#if BGFX_SHADER_LANGUAGE_HLSL
+    clipPos.y = -clipPos.y;
+#endif
+    vec4 worldPos = mul(u_invViewProj, clipPos);
+    return worldPos.xyz / worldPos.w;
+}
+
+vec2 projectWorldToScreenUV(vec3 worldPos)
+{
+    vec4 clipPos = mul(u_viewProj, vec4(worldPos, 1.0));
+    vec2 uv = clipPos.xy / clipPos.w * 0.5 + 0.5;
+#if BGFX_SHADER_LANGUAGE_HLSL || BGFX_SHADER_LANGUAGE_PSSL || BGFX_SHADER_LANGUAGE_METAL
+    uv.y = 1.0 - uv.y;
+#endif
+    return uv;
+}
+
+float getViewDepth(vec3 worldPos)
+{
+    vec4 viewPos = mul(u_view, vec4(worldPos, 1.0));
+    return -viewPos.z;
 }
 
 void main()
@@ -155,19 +182,75 @@ void main()
     {
         float ior = u_refractionParams.x;
         float thickness = u_refractionParams.z;
-        vec3 viewN = normalize(mul(u_view, vec4(N, 0.0)).xyz);
-        vec2 refractionOffset = viewN.xy * thickness * (1.0 / ior - 1.0);
-        vec2 refractedUV = clamp(screenUV + refractionOffset, vec2(0.0, 0.0), vec2(1.0, 1.0));
+        vec2 refractedUV = screenUV;
+        vec3 refractedDir = refract(-V, N, 1.0 / max(ior, 1.0));
 
-        // Sample the opaque scene behind this surface
-        vec3 background = texture2D(s_opaqueColor, refractedUV).rgb;
+        if (dot(refractedDir, refractedDir) > 0.0001)
+        {
+            const int refractionSteps = 6;
+            float volumeThickness = max(thickness * 2.0, 0.05);
+            vec3 exitPos = worldPos + refractedDir * volumeThickness;
+            vec3 outsideDir = refract(refractedDir, -N, max(ior, 1.0));
+            if (dot(outsideDir, outsideDir) < 0.0001)
+            {
+                outsideDir = -V;
+            }
+
+            float outsideDistance = clamp(max(viewSpaceDepth * 0.1, 0.35), 0.35, 1.5);
+            vec3 samplePos = exitPos + outsideDir * outsideDistance;
+            vec2 exitUV = projectWorldToScreenUV(samplePos);
+            refractedUV = exitUV;
+
+            // Keep the transmission sample local to the volume exit instead of
+            // tracing a long post-exit ray, which over-shifts curved glass and
+            // pulls in unrelated background geometry.
+            float exitViewDepth = getViewDepth(samplePos);
+            float depthBias = max((volumeThickness + outsideDistance) * 0.25, 0.01);
+
+            for (int step = 1; step <= refractionSteps; ++step)
+            {
+                float t = float(step) / float(refractionSteps);
+                vec2 marchUV = mix(screenUV, exitUV, t);
+
+                if (marchUV.x < 0.0 || marchUV.x > 1.0 ||
+                    marchUV.y < 0.0 || marchUV.y > 1.0)
+                {
+                    break;
+                }
+
+                float opaqueDepth = texture2D(s_opaqueDepth, marchUV).r;
+                if (opaqueDepth >= 0.9999)
+                {
+                    refractedUV = marchUV;
+                    continue;
+                }
+
+                vec3 opaqueWorldPos = reconstructWorldPos(marchUV, opaqueDepth);
+                float rayViewDepth = mix(viewSpaceDepth, exitViewDepth, t);
+                float opaqueViewDepth = getViewDepth(opaqueWorldPos);
+
+                if (rayViewDepth <= opaqueViewDepth + depthBias)
+                {
+                    refractedUV = marchUV;
+                }
+            }
+        }
+
+        // Sample the opaque scene behind this surface using the depth-aware hit/fallback UV.
+        vec3 background = texture2D(s_opaqueColor, clamp(refractedUV, vec2(0.0), vec2(1.0))).rgb;
 
         // Fresnel-based blend: more reflection at glancing angles, more transmission head-on
         float fresnel = pow(1.0 - max(dot(N, V), 0.0), 5.0);
         float transmissionFactor = transmission * (1.0 - fresnel);
 
+        // Transmission surfaces should keep only a thin reflective lobe over the
+        // refracted scene, not the full opaque diffuse response.
+        vec3 transmittedSurface = specularIBL * ao * ssao * u_iblParams.x * specularAmbientShadow
+                                + Lo * fresnel
+                                + emissive;
+
         // Blend refracted background with surface lighting once in shader space.
-        color = mix(background, color, 1.0 - transmissionFactor);
+        color = mix(background, transmittedSurface, 1.0 - transmissionFactor);
 
         // Transmission materials are already composed against the scene copy.
         // Output full coverage here so framebuffer alpha blending does not

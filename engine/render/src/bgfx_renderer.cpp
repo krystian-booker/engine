@@ -192,6 +192,7 @@ struct PBRUniforms {
     // Refraction uniforms
     bgfx::UniformHandle u_refractionParams = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_opaqueColor = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_opaqueDepth = BGFX_INVALID_HANDLE;
 
     // OIT uniforms
     bgfx::UniformHandle u_oitParams = BGFX_INVALID_HANDLE;
@@ -231,6 +232,7 @@ struct PBRUniforms {
         // Refraction
         u_refractionParams = bgfx::createUniform("u_refractionParams", bgfx::UniformType::Vec4);
         s_opaqueColor = bgfx::createUniform("s_opaqueColor", bgfx::UniformType::Sampler);
+        s_opaqueDepth = bgfx::createUniform("s_opaqueDepth", bgfx::UniformType::Sampler);
 
         // OIT
         u_oitParams = bgfx::createUniform("u_oitParams", bgfx::UniformType::Vec4);
@@ -280,6 +282,7 @@ struct PBRUniforms {
         // Refraction
         if (bgfx::isValid(u_refractionParams)) bgfx::destroy(u_refractionParams);
         if (bgfx::isValid(s_opaqueColor)) bgfx::destroy(s_opaqueColor);
+        if (bgfx::isValid(s_opaqueDepth)) bgfx::destroy(s_opaqueDepth);
 
         // OIT
         if (bgfx::isValid(u_oitParams)) bgfx::destroy(u_oitParams);
@@ -1843,9 +1846,30 @@ public:
     }
 
     void set_opaque_copy_texture(TextureHandle tex) override {
+        if (!tex.valid()) {
+            m_opaque_copy_texture = BGFX_INVALID_HANDLE;
+            return;
+        }
+
         auto it = m_textures.find(tex.id);
         if (it != m_textures.end()) {
             m_opaque_copy_texture = it->second;
+        } else {
+            m_opaque_copy_texture = BGFX_INVALID_HANDLE;
+        }
+    }
+
+    void set_opaque_depth_texture(TextureHandle tex) override {
+        if (!tex.valid()) {
+            m_opaque_depth_texture = BGFX_INVALID_HANDLE;
+            return;
+        }
+
+        auto it = m_textures.find(tex.id);
+        if (it != m_textures.end()) {
+            m_opaque_depth_texture = it->second;
+        } else {
+            m_opaque_depth_texture = BGFX_INVALID_HANDLE;
         }
     }
 
@@ -2195,6 +2219,9 @@ public:
         // Bind opaque scene copy for refraction (slot 13)
         bgfx::TextureHandle opaque_tex = bgfx::isValid(m_opaque_copy_texture) ? m_opaque_copy_texture : m_white_texture;
         bgfx::setTexture(13, m_pbr_uniforms.s_opaqueColor, opaque_tex);
+        bgfx::TextureHandle opaque_depth_tex =
+            bgfx::isValid(m_opaque_depth_texture) ? m_opaque_depth_texture : m_white_texture;
+        bgfx::setTexture(15, m_pbr_uniforms.s_opaqueDepth, opaque_depth_tex);
 
     }
 
@@ -2530,6 +2557,7 @@ private:
 
     // Opaque copy texture for screen-space refraction
     bgfx::TextureHandle m_opaque_copy_texture = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle m_opaque_depth_texture = BGFX_INVALID_HANDLE;
 
     // OIT state
     bool m_oit_enabled = false;

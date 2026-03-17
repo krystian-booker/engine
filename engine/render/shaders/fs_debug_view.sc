@@ -4,7 +4,8 @@ $input v_texcoord0
 
 SAMPLER2D(s_texture, 0);
 
-// Debug view params: x = mode (1=Normals, 2=LinearDepth), y = near plane, z = far plane
+// Debug view params: x = mode (1=Normals, 2=LinearDepth, 3=RawDepthCopy),
+// y = near plane, z = far plane
 uniform vec4 u_debugMode;
 
 void main()
@@ -36,6 +37,11 @@ void main()
         // z=5 with far=100 maps to only 5% brightness).
         float vis = sqrt(sqrt(t));
         gl_FragColor = vec4(vec3_splat(vis), 1.0);
+    } else if (mode == 3) {
+        // Raw depth copy for passes that need a sampleable color texture version
+        // of the opaque depth buffer.
+        float raw_depth = texture2D(s_texture, v_texcoord0).r;
+        gl_FragColor = vec4(raw_depth, 0.0, 0.0, 1.0);
     } else {
         // Fallback
         gl_FragColor = vec4(1.0, 0.0, 1.0, 1.0);

@@ -111,6 +111,7 @@ enum class RenderView : uint16_t {
     TAAResolve = 60,
     SSRResolve = 61,
     SSRApply = 62,
+    OpaqueDepthCopy = 63,
 
     // Bloom downsample/upsample passes
     BloomDownsample0 = 70,

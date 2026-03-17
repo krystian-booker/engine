@@ -128,6 +128,7 @@ public:
 
     // Opaque copy texture for screen-space refraction
     virtual void set_opaque_copy_texture(TextureHandle tex) = 0;
+    virtual void set_opaque_depth_texture(TextureHandle tex) = 0;
 
     // Sorts queued draws by material/mesh and submits to GPU
     virtual void flush() = 0;
