@@ -14,6 +14,7 @@
 #include <fstream>
 #include <array>
 #include <chrono>
+#include <limits>
 
 namespace engine::render {
 
@@ -191,6 +192,8 @@ struct PBRUniforms {
 
     // Refraction uniforms
     bgfx::UniformHandle u_refractionParams = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_invModel = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_refractionVolume = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_opaqueColor = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_opaqueDepth = BGFX_INVALID_HANDLE;
 
@@ -231,6 +234,8 @@ struct PBRUniforms {
 
         // Refraction
         u_refractionParams = bgfx::createUniform("u_refractionParams", bgfx::UniformType::Vec4);
+        u_invModel = bgfx::createUniform("u_invModel", bgfx::UniformType::Mat4);
+        u_refractionVolume = bgfx::createUniform("u_refractionVolume", bgfx::UniformType::Vec4);
         s_opaqueColor = bgfx::createUniform("s_opaqueColor", bgfx::UniformType::Sampler);
         s_opaqueDepth = bgfx::createUniform("s_opaqueDepth", bgfx::UniformType::Sampler);
 
@@ -281,6 +286,8 @@ struct PBRUniforms {
 
         // Refraction
         if (bgfx::isValid(u_refractionParams)) bgfx::destroy(u_refractionParams);
+        if (bgfx::isValid(u_invModel)) bgfx::destroy(u_invModel);
+        if (bgfx::isValid(u_refractionVolume)) bgfx::destroy(u_refractionVolume);
         if (bgfx::isValid(s_opaqueColor)) bgfx::destroy(s_opaqueColor);
         if (bgfx::isValid(s_opaqueDepth)) bgfx::destroy(s_opaqueDepth);
 
@@ -880,6 +887,35 @@ public:
         mesh.vertex_count = static_cast<uint32_t>(data.vertices.size());
         mesh.index_count = static_cast<uint32_t>(data.indices.size());
         mesh.bounds = data.bounds;
+
+        const Vec3 bounds_center = (data.bounds.min + data.bounds.max) * 0.5f;
+        float min_radius = std::numeric_limits<float>::max();
+        float max_radius = 0.0f;
+        float min_normal_alignment = 1.0f;
+
+        for (const auto& vertex : data.vertices) {
+            Vec3 radial = vertex.position - bounds_center;
+            float radius = glm::length(radial);
+            if (radius <= 1e-4f) {
+                min_radius = 0.0f;
+                max_radius = 0.0f;
+                min_normal_alignment = -1.0f;
+                break;
+            }
+
+            radial /= radius;
+            min_radius = std::min(min_radius, radius);
+            max_radius = std::max(max_radius, radius);
+            min_normal_alignment = std::min(min_normal_alignment, glm::dot(radial, glm::normalize(vertex.normal)));
+        }
+
+        if (max_radius > 1e-4f) {
+            const float relative_radius_spread = (max_radius - min_radius) / max_radius;
+            if (relative_radius_spread <= 0.05f && min_normal_alignment >= 0.97f) {
+                mesh.refraction_center = bounds_center;
+                mesh.refraction_radius = 0.5f * (min_radius + max_radius);
+            }
+        }
 
         // Create vertex buffer
         const bgfx::Memory* vb_mem = bgfx::copy(
@@ -1535,6 +1571,7 @@ public:
         } else {
             // Standard PBR pass - upload everything including shadow maps
             upload_pbr_uniforms(mat_data);
+            upload_refraction_draw_uniforms(bgfx_mesh, transform);
         }
 
         // Set render state
@@ -1967,6 +2004,7 @@ public:
             } else {
                 upload_pbr_uniforms(nullptr);
             }
+            upload_refraction_draw_uniforms(mesh, call.transform);
 
             uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A |
                              BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS |
@@ -2036,6 +2074,9 @@ public:
             upload_pbr_uniforms(&mat_it->second);
         } else if (use_pbr) {
             upload_pbr_uniforms(nullptr);
+        }
+        if (use_pbr) {
+            upload_refraction_draw_uniforms(mesh, call.transform);
         }
 
         // Submit draw call
@@ -2323,7 +2364,24 @@ private:
         uint32_t vertex_count = 0;
         uint32_t index_count = 0;
         AABB bounds;
+        Vec3 refraction_center{0.0f};
+        float refraction_radius = -1.0f;
     };
+
+    void upload_refraction_draw_uniforms(const BGFXMesh& mesh, const Mat4& transform) {
+        Mat4 inverse_model(1.0f);
+        float det = glm::determinant(transform);
+        if (std::abs(det) > 1e-6f) {
+            inverse_model = glm::inverse(transform);
+        }
+        bgfx::setUniform(m_pbr_uniforms.u_invModel, glm::value_ptr(inverse_model));
+
+        Vec4 refraction_volume(0.0f, 0.0f, 0.0f, -1.0f);
+        if (mesh.refraction_radius > 0.0f) {
+            refraction_volume = Vec4(mesh.refraction_center, mesh.refraction_radius);
+        }
+        bgfx::setUniform(m_pbr_uniforms.u_refractionVolume, glm::value_ptr(refraction_volume));
+    }
 
     // Internal render target structure
     struct BGFXRenderTarget {

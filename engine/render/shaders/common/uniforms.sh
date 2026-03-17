@@ -37,6 +37,8 @@ uniform vec4 u_probeState;            // x = enabled, y = hemisphere floor when 
 
 // Refraction uniforms
 uniform vec4 u_refractionParams;  // x = ior, y = transmission, z = thickness, w = unused
+uniform mat4 u_invModel;          // Inverse model matrix for local-space refraction
+uniform vec4 u_refractionVolume;  // xyz = local-space sphere center, w = radius (<=0 disables sphere solve)
 
 // Time and misc uniforms
 uniform vec4 u_time;           // x = total time, y = delta time, z = sin(time), w = cos(time)

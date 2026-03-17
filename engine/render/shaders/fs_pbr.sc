@@ -65,6 +65,219 @@ float getViewDepth(vec3 worldPos)
     return -viewPos.z;
 }
 
+float getMaxModelScale()
+{
+    vec3 c0 = u_model[0][0].xyz;
+    vec3 c1 = u_model[0][1].xyz;
+    vec3 c2 = u_model[0][2].xyz;
+    return max(length(c0), max(length(c1), length(c2)));
+}
+
+vec3 transformPointToLocal(vec3 worldPos)
+{
+    return mul(u_invModel, vec4(worldPos, 1.0)).xyz;
+}
+
+vec3 transformPointToWorld(vec3 localPos)
+{
+    return mul(u_model[0], vec4(localPos, 1.0)).xyz;
+}
+
+vec2 intersectSphere(vec3 rayOrigin, vec3 rayDir, vec3 sphereCenter, float sphereRadius)
+{
+    vec3 toOrigin = rayOrigin - sphereCenter;
+    float b = dot(toOrigin, rayDir);
+    float c = dot(toOrigin, toOrigin) - sphereRadius * sphereRadius;
+    float discriminant = b * b - c;
+    if (discriminant <= 0.0)
+    {
+        return vec2(-1.0, -1.0);
+    }
+
+    float root = sqrt(discriminant);
+    return vec2(-b - root, -b + root);
+}
+
+bool solveSphereTransmission(vec3 worldPos, float ior, out vec3 exitWorldPos, out vec3 exitWorldDir, out vec2 exitUV)
+{
+    if (u_refractionVolume.w <= 0.0)
+    {
+        return false;
+    }
+
+    vec3 localCenter = u_refractionVolume.xyz;
+    float localRadius = u_refractionVolume.w;
+    vec3 localSurfacePos = transformPointToLocal(worldPos);
+    vec3 localCameraPos = transformPointToLocal(u_cameraPos.xyz);
+    vec3 localEntryNormal = normalize(localSurfacePos - localCenter);
+    vec3 localIncidentDir = normalize(localSurfacePos - localCameraPos);
+    vec3 localInsideDir = refract(localIncidentDir, localEntryNormal, 1.0 / max(ior, 1.0));
+
+    if (dot(localInsideDir, localInsideDir) <= 0.0001)
+    {
+        return false;
+    }
+
+    float shellThickness = max(u_refractionParams.z, 0.0);
+    shellThickness = max(shellThickness, localRadius * 0.2);
+    float innerRadius = max(localRadius - shellThickness, 0.0);
+    vec3 localExitPos;
+    vec3 localExitDir;
+
+    if (innerRadius > 0.0001 && innerRadius < localRadius - 0.0001)
+    {
+        vec3 shellFrontOrigin = localSurfacePos + localInsideDir * (localRadius * 0.001);
+        vec2 innerFrontHits = intersectSphere(shellFrontOrigin, localInsideDir, localCenter, innerRadius);
+        if (innerFrontHits.x <= 0.0001)
+        {
+            return false;
+        }
+
+        vec3 localInnerFrontPos = shellFrontOrigin + localInsideDir * innerFrontHits.x;
+        vec3 localInnerFrontNormal = normalize(localInnerFrontPos - localCenter);
+        vec3 localCavityDir = refract(localInsideDir, localInnerFrontNormal, max(ior, 1.0));
+        if (dot(localCavityDir, localCavityDir) <= 0.0001)
+        {
+            return false;
+        }
+
+        vec3 cavityOrigin = localInnerFrontPos + localCavityDir * (innerRadius * 0.001);
+        vec2 innerBackHits = intersectSphere(cavityOrigin, localCavityDir, localCenter, innerRadius);
+        if (innerBackHits.y <= 0.0001)
+        {
+            return false;
+        }
+
+        vec3 localInnerBackPos = cavityOrigin + localCavityDir * innerBackHits.y;
+        vec3 localInnerBackNormal = normalize(localInnerBackPos - localCenter);
+        vec3 localBackShellDir = refract(localCavityDir, -localInnerBackNormal, 1.0 / max(ior, 1.0));
+        if (dot(localBackShellDir, localBackShellDir) <= 0.0001)
+        {
+            return false;
+        }
+
+        vec3 shellBackOrigin = localInnerBackPos + localBackShellDir * (localRadius * 0.001);
+        vec2 outerBackHits = intersectSphere(shellBackOrigin, localBackShellDir, localCenter, localRadius);
+        if (outerBackHits.y <= 0.0001)
+        {
+            return false;
+        }
+
+        localExitPos = shellBackOrigin + localBackShellDir * outerBackHits.y;
+        vec3 localExitNormal = normalize(localExitPos - localCenter);
+        localExitDir = refract(localBackShellDir, -localExitNormal, max(ior, 1.0));
+        if (dot(localExitDir, localExitDir) <= 0.0001)
+        {
+            localExitDir = reflect(localBackShellDir, -localExitNormal);
+        }
+    }
+    else
+    {
+        vec3 solidOrigin = localSurfacePos + localInsideDir * (localRadius * 0.001);
+        vec2 solidHits = intersectSphere(solidOrigin, localInsideDir, localCenter, localRadius);
+        if (solidHits.y <= 0.0001)
+        {
+            return false;
+        }
+
+        localExitPos = solidOrigin + localInsideDir * solidHits.y;
+        vec3 localExitNormal = normalize(localExitPos - localCenter);
+        localExitDir = refract(localInsideDir, -localExitNormal, max(ior, 1.0));
+        if (dot(localExitDir, localExitDir) <= 0.0001)
+        {
+            localExitDir = reflect(localInsideDir, -localExitNormal);
+        }
+    }
+
+    exitWorldPos = transformPointToWorld(localExitPos);
+    vec3 worldDirTarget = transformPointToWorld(localExitPos + localExitDir);
+    exitWorldDir = normalize(worldDirTarget - exitWorldPos);
+    exitUV = projectWorldToScreenUV(exitWorldPos);
+    return true;
+}
+
+vec2 traceTransmissionRay(vec3 rayOrigin, vec3 rayDir, vec2 fallbackUV)
+{
+    const int traceSteps = 24;
+    const int refineSteps = 4;
+
+    float maxDistance = clamp(u_oitParams.y * 0.08, 12.0, 48.0);
+    float stepSize = maxDistance / float(traceSteps);
+    float depthBias = 0.03;
+    float previousT = 0.0;
+    vec2 lastValidUV = clamp(fallbackUV, vec2(0.0), vec2(1.0));
+
+    for (int step = 1; step <= traceSteps; ++step)
+    {
+        float currentT = stepSize * float(step);
+        vec3 samplePos = rayOrigin + rayDir * currentT;
+        vec2 sampleUV = projectWorldToScreenUV(samplePos);
+
+        if (sampleUV.x < 0.0 || sampleUV.x > 1.0 ||
+            sampleUV.y < 0.0 || sampleUV.y > 1.0)
+        {
+            break;
+        }
+
+        lastValidUV = sampleUV;
+        float opaqueDepth = texture2D(s_opaqueDepth, sampleUV).r;
+        if (opaqueDepth >= 0.9999)
+        {
+            previousT = currentT;
+            continue;
+        }
+
+        vec3 opaqueWorldPos = reconstructWorldPos(sampleUV, opaqueDepth);
+        float rayViewDepth = getViewDepth(samplePos);
+        float opaqueViewDepth = getViewDepth(opaqueWorldPos);
+        if (rayViewDepth >= opaqueViewDepth - depthBias)
+        {
+            float nearT = previousT;
+            float farT = currentT;
+            vec2 hitUV = sampleUV;
+
+            for (int refine = 0; refine < refineSteps; ++refine)
+            {
+                float midT = 0.5 * (nearT + farT);
+                vec3 midPos = rayOrigin + rayDir * midT;
+                vec2 midUV = projectWorldToScreenUV(midPos);
+                if (midUV.x < 0.0 || midUV.x > 1.0 ||
+                    midUV.y < 0.0 || midUV.y > 1.0)
+                {
+                    farT = midT;
+                    continue;
+                }
+
+                float midDepth = texture2D(s_opaqueDepth, midUV).r;
+                if (midDepth >= 0.9999)
+                {
+                    nearT = midT;
+                    continue;
+                }
+
+                vec3 midOpaqueWorldPos = reconstructWorldPos(midUV, midDepth);
+                float midRayDepth = getViewDepth(midPos);
+                float midOpaqueDepth = getViewDepth(midOpaqueWorldPos);
+                if (midRayDepth >= midOpaqueDepth - depthBias)
+                {
+                    hitUV = midUV;
+                    farT = midT;
+                }
+                else
+                {
+                    nearT = midT;
+                }
+            }
+
+            return hitUV;
+        }
+
+        previousT = currentT;
+    }
+
+    return lastValidUV;
+}
+
 void main()
 {
     // Sample textures
@@ -183,74 +396,60 @@ void main()
         float ior = u_refractionParams.x;
         float thickness = u_refractionParams.z;
         vec2 refractedUV = screenUV;
-        vec3 refractedDir = refract(-V, N, 1.0 / max(ior, 1.0));
+        vec3 traceOrigin = worldPos;
+        vec3 traceDirection = vec3(0.0, 0.0, -1.0);
+        bool hasTraceRay = false;
+        vec3 sphereExitWorldPos;
+        vec3 sphereExitWorldDir;
+        vec2 sphereExitUV;
 
-        if (dot(refractedDir, refractedDir) > 0.0001)
+        if (solveSphereTransmission(worldPos, ior, sphereExitWorldPos, sphereExitWorldDir, sphereExitUV))
         {
-            const int refractionSteps = 6;
-            float volumeThickness = max(thickness * 2.0, 0.05);
-            vec3 exitPos = worldPos + refractedDir * volumeThickness;
-            vec3 outsideDir = refract(refractedDir, -N, max(ior, 1.0));
-            if (dot(outsideDir, outsideDir) < 0.0001)
+            traceOrigin = sphereExitWorldPos;
+            traceDirection = sphereExitWorldDir;
+            refractedUV = clamp(sphereExitUV, vec2(0.0), vec2(1.0));
+            hasTraceRay = true;
+        }
+        else
+        {
+            vec3 refractedDir = refract(-V, N, 1.0 / max(ior, 1.0));
+            if (dot(refractedDir, refractedDir) > 0.0001)
             {
-                outsideDir = -V;
-            }
+                float shellThickness = max(thickness * getMaxModelScale(), 0.0);
+                vec3 exitPos = worldPos + refractedDir * shellThickness;
+                vec2 exitUV = projectWorldToScreenUV(exitPos);
 
-            float outsideDistance = clamp(max(viewSpaceDepth * 0.1, 0.35), 0.35, 1.5);
-            vec3 samplePos = exitPos + outsideDir * outsideDistance;
-            vec2 exitUV = projectWorldToScreenUV(samplePos);
-            refractedUV = exitUV;
-
-            // Keep the transmission sample local to the volume exit instead of
-            // tracing a long post-exit ray, which over-shifts curved glass and
-            // pulls in unrelated background geometry.
-            float exitViewDepth = getViewDepth(samplePos);
-            float depthBias = max((volumeThickness + outsideDistance) * 0.25, 0.01);
-
-            for (int step = 1; step <= refractionSteps; ++step)
-            {
-                float t = float(step) / float(refractionSteps);
-                vec2 marchUV = mix(screenUV, exitUV, t);
-
-                if (marchUV.x < 0.0 || marchUV.x > 1.0 ||
-                    marchUV.y < 0.0 || marchUV.y > 1.0)
+                if (exitUV.x >= 0.0 && exitUV.x <= 1.0 && exitUV.y >= 0.0 && exitUV.y <= 1.0)
                 {
-                    break;
-                }
-
-                float opaqueDepth = texture2D(s_opaqueDepth, marchUV).r;
-                if (opaqueDepth >= 0.9999)
-                {
-                    refractedUV = marchUV;
-                    continue;
-                }
-
-                vec3 opaqueWorldPos = reconstructWorldPos(marchUV, opaqueDepth);
-                float rayViewDepth = mix(viewSpaceDepth, exitViewDepth, t);
-                float opaqueViewDepth = getViewDepth(opaqueWorldPos);
-
-                if (rayViewDepth <= opaqueViewDepth + depthBias)
-                {
-                    refractedUV = marchUV;
+                    traceOrigin = exitPos;
+                    traceDirection = normalize(refractedDir);
+                    refractedUV = clamp(exitUV, vec2(0.0), vec2(1.0));
+                    hasTraceRay = true;
                 }
             }
         }
 
-        // Sample the opaque scene behind this surface using the depth-aware hit/fallback UV.
+        if (hasTraceRay)
+        {
+            refractedUV = traceTransmissionRay(traceOrigin, traceDirection, refractedUV);
+        }
+
         vec3 background = texture2D(s_opaqueColor, clamp(refractedUV, vec2(0.0), vec2(1.0))).rgb;
 
         // Fresnel-based blend: more reflection at glancing angles, more transmission head-on
         float fresnel = pow(1.0 - max(dot(N, V), 0.0), 5.0);
-        float transmissionFactor = transmission * (1.0 - fresnel);
 
-        // Transmission surfaces should keep only a thin reflective lobe over the
-        // refracted scene, not the full opaque diffuse response.
-        vec3 transmittedSurface = specularIBL * ao * ssao * u_iblParams.x * specularAmbientShadow
-                                + Lo * fresnel
-                                + emissive;
+        // Keep probe/direct reflections Fresnel-weighted so the center of a
+        // glass object stays transmissive instead of showing a full reflected
+        // scene from an impossible angle.
+        vec3 reflectedSurface = (specularIBL * ao * ssao * u_iblParams.x * specularAmbientShadow
+                               + Lo) * fresnel
+                              + emissive;
+        float surfaceWeight = clamp((1.0 - transmission) * albedo.a + transmission * fresnel,
+                                    0.0, 1.0);
 
-        // Blend refracted background with surface lighting once in shader space.
-        color = mix(background, transmittedSurface, 1.0 - transmissionFactor);
+        // Blend refracted background with the thin reflective surface lobe.
+        color = mix(background, reflectedSurface, surfaceWeight);
 
         // Transmission materials are already composed against the scene copy.
         // Output full coverage here so framebuffer alpha blending does not
