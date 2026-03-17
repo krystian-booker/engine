@@ -276,7 +276,8 @@ private:
     void create_render_targets();
     void destroy_render_targets();
     void update_camera_uniforms(const CameraData& camera);
-    void update_light_uniforms(const std::vector<LightData>& lights);
+    void prepare_visible_lights(const std::vector<LightData>& lights);
+    void execute_custom_passes(RenderView after_view);
     void cull_objects(const CameraData& camera,
                       const std::vector<RenderObject>& objects,
                       std::vector<const RenderObject*>& visible_objects);
@@ -318,6 +319,7 @@ private:
     std::vector<const RenderObject*> m_visible_opaque;
     std::vector<const RenderObject*> m_visible_transparent;
     std::vector<const RenderObject*> m_shadow_casters;
+    VisibleLightSet m_visible_lights;
 
     // Custom passes
     std::vector<std::pair<RenderView, CustomRenderCallback>> m_custom_passes;

@@ -78,6 +78,15 @@ public:
     // Camera and lighting
     virtual void set_camera(const Mat4& view, const Mat4& proj) = 0;
     virtual void set_camera_position(const Vec3& position) = 0;
+    virtual void set_visible_lights(const VisibleLightSet& lights) {
+        clear_lights();
+        for (uint32_t slot = 0; slot < lights.forward_light_count; ++slot) {
+            const uint32_t light_index = lights.forward_indices[slot];
+            if (light_index < lights.lights.size()) {
+                set_light(slot, lights.lights[light_index]);
+            }
+        }
+    }
     virtual void set_light(uint32_t index, const LightData& light) = 0;
     virtual void clear_lights() = 0;
 

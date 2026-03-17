@@ -404,20 +404,24 @@ void RenderPipeline::render(const CameraData& camera,
 
     if (has_flag(m_config.enabled_passes, RenderPassFlags::DepthPrepass)) {
         depth_prepass(jittered_camera);
+        execute_custom_passes(RenderView::DepthPrepass);
     }
 
     // GBuffer pass for normals (needed by SSAO)
     if (has_flag(m_config.enabled_passes, RenderPassFlags::GBuffer)) {
         gbuffer_pass(jittered_camera);
+        execute_custom_passes(RenderView::GBuffer);
     }
 
     // Motion vectors pass (needed by TAA)
     if (has_flag(m_config.enabled_passes, RenderPassFlags::TAA) && m_config.taa_config.enabled) {
         motion_vector_pass(jittered_camera);
+        execute_custom_passes(RenderView::MotionVectors);
     }
 
     if (has_flag(m_config.enabled_passes, RenderPassFlags::SSAO)) {
         ssao_pass(jittered_camera);
+        execute_custom_passes(RenderView::SSAO);
     }
 
     // Skybox pass (rendered after depth prepass for correct compositing, but uses
@@ -425,14 +429,17 @@ void RenderPipeline::render(const CameraData& camera,
     // for the main pass since the main pass writes to a separate render target with its own depth)
     if (has_flag(m_config.enabled_passes, RenderPassFlags::Skybox)) {
         skybox_pass(jittered_camera);
+        execute_custom_passes(RenderView::Skybox);
     }
 
     if (has_flag(m_config.enabled_passes, RenderPassFlags::MainOpaque)) {
         main_pass(jittered_camera, lights);
+        execute_custom_passes(RenderView::MainOpaque);
     }
 
     if (has_flag(m_config.enabled_passes, RenderPassFlags::SSR)) {
         ssr_pass(jittered_camera);
+        execute_custom_passes(RenderView::SSRComposite);
     }
 
     // Copy opaque HDR scene for screen-space refraction before transparent pass
@@ -450,16 +457,23 @@ void RenderPipeline::render(const CameraData& camera,
         }
         m_renderer->set_opaque_copy_texture(opaque_copy_tex);
         m_renderer->set_opaque_depth_texture(opaque_depth_tex);
+        execute_custom_passes(RenderView::OpaqueCopy);
+        if (m_opaque_depth_copy.valid()) {
+            execute_custom_passes(RenderView::OpaqueDepthCopy);
+        }
     }
 
     // Run volumetric update and composite into the scene BEFORE transparency
     if (has_flag(m_config.enabled_passes, RenderPassFlags::Volumetric)) {
         volumetric_pass(jittered_camera, lights);
         m_volumetric_system.composite(m_hdr_target);
+        execute_custom_passes(RenderView::VolumetricIntegrate);
     }
 
     if (has_flag(m_config.enabled_passes, RenderPassFlags::Transparent)) {
         transparent_pass(jittered_camera, lights);
+        execute_custom_passes(RenderView::MainTransparent);
+        execute_custom_passes(RenderView::TransparentRefractive);
     }
 
     // Flush queued scene draw calls to bgfx
@@ -471,10 +485,12 @@ void RenderPipeline::render(const CameraData& camera,
 
     if (has_flag(m_config.enabled_passes, RenderPassFlags::Debug)) {
         debug_pass(jittered_camera);
+        execute_custom_passes(RenderView::Debug);
     }
 
     if (has_flag(m_config.enabled_passes, RenderPassFlags::Final) && !m_renderer->is_headless()) {
         final_pass();
+        execute_custom_passes(RenderView::Final);
     }
 
     // Store current view-projection for next frame's TAA/motion vectors
@@ -539,18 +555,23 @@ void RenderPipeline::render_to_target(RenderTargetHandle target,
 
     if (has_flag(passes, RenderPassFlags::Skybox)) {
         skybox_pass(camera);
+        execute_custom_passes(RenderView::Skybox);
     }
 
     if (has_flag(passes, RenderPassFlags::MainOpaque)) {
         main_pass(camera, lights);
+        execute_custom_passes(RenderView::MainOpaque);
     }
 
     if (has_flag(passes, RenderPassFlags::SSR)) {
         ssr_pass(camera);
+        execute_custom_passes(RenderView::SSRComposite);
     }
 
     if (has_flag(passes, RenderPassFlags::Transparent)) {
         transparent_pass(camera, lights);
+        execute_custom_passes(RenderView::MainTransparent);
+        execute_custom_passes(RenderView::TransparentRefractive);
     }
 
     // Restore original config
@@ -639,13 +660,20 @@ TextureHandle RenderPipeline::get_volumetric_debug_texture() const {
     return m_volumetric_system.get_volumetric_texture();
 }
 
-// TODO: Execute m_custom_passes callbacks at their specified after_view points in the render loop
 void RenderPipeline::add_custom_pass(RenderView after_view, CustomRenderCallback callback) {
     m_custom_passes.emplace_back(after_view, std::move(callback));
 }
 
 void RenderPipeline::clear_custom_passes() {
     m_custom_passes.clear();
+}
+
+void RenderPipeline::execute_custom_passes(RenderView after_view) {
+    for (const auto& [view, callback] : m_custom_passes) {
+        if (view == after_view && callback) {
+            callback(m_renderer, after_view);
+        }
+    }
 }
 
 void RenderPipeline::prepare_frame_data(const CameraData& camera,
@@ -949,29 +977,35 @@ void RenderPipeline::update_camera_uniforms(const CameraData& camera) {
     m_renderer->set_camera_position(camera.position);
 }
 
-void RenderPipeline::update_light_uniforms(const std::vector<LightData>& lights) {
-    // Clear stale lights from previous frame before setting new ones
-    m_renderer->clear_lights();
+void RenderPipeline::prepare_visible_lights(const std::vector<LightData>& lights) {
+    m_visible_lights.clear();
+    m_visible_lights.lights = lights;
 
-    std::vector<LightData> sorted_lights = lights;
-    auto it = std::find_if(sorted_lights.begin(), sorted_lights.end(),
-        [](const LightData& l) { return l.type == 0 && l.cast_shadows; });
-    if (it != sorted_lights.end() && it != sorted_lights.begin()) {
-        std::swap(*sorted_lights.begin(), *it);
+    auto it = std::find_if(m_visible_lights.lights.begin(), m_visible_lights.lights.end(),
+        [](const LightData& light) {
+            return light.type == 0 && light.cast_shadows;
+        });
+    if (it != m_visible_lights.lights.end()) {
+        m_visible_lights.primary_shadow_light = 0;
+        if (it != m_visible_lights.lights.begin()) {
+            std::iter_swap(m_visible_lights.lights.begin(), it);
+        }
     }
 
-    // Pack lights into uniform buffer
-    // Max 8 lights currently supported
-    constexpr int MAX_LIGHTS = 8;
-    if (sorted_lights.size() > MAX_LIGHTS) {
-        log(LogLevel::Warn, "Scene has {} lights but only {} are supported; excess lights will be ignored",
-            sorted_lights.size(), MAX_LIGHTS);
+    const uint32_t forward_light_count =
+        std::min(static_cast<uint32_t>(m_visible_lights.lights.size()), kForwardLightBudget);
+    m_visible_lights.forward_light_count = forward_light_count;
+    for (uint32_t i = 0; i < forward_light_count; ++i) {
+        m_visible_lights.forward_indices[i] = i;
     }
-    int light_count = std::min(static_cast<int>(sorted_lights.size()), MAX_LIGHTS);
 
-    for (int i = 0; i < light_count; ++i) {
-        m_renderer->set_light(static_cast<uint32_t>(i), sorted_lights[i]);
+    if (m_visible_lights.lights.size() > kForwardLightBudget) {
+        log(LogLevel::Warn,
+            "Scene has {} visible lights but the current forward path only submits {}; excess lights are deferred to future backends",
+            m_visible_lights.lights.size(), kForwardLightBudget);
     }
+
+    m_renderer->set_visible_lights(m_visible_lights);
 }
 
 // Extract frustum planes from view-projection matrix
@@ -1186,6 +1220,8 @@ void RenderPipeline::shadow_pass(const CameraData& camera,
             }
             m_stats.draw_calls++;
         }
+
+        execute_custom_passes(shadow_view);
     }
 }
 
@@ -1322,7 +1358,7 @@ void RenderPipeline::main_pass(const CameraData& camera,
     if (m_visible_opaque.empty()) return;
 
     // Update light uniforms
-    update_light_uniforms(lights);
+    prepare_visible_lights(lights);
 
     // Bind shadow maps
     if (has_flag(m_config.enabled_passes, RenderPassFlags::Shadows)) {
@@ -1498,10 +1534,12 @@ void RenderPipeline::post_process_pass(const CameraData& camera) {
         if (resolved.valid()) {
             hdr_tex = resolved;
         }
+        execute_custom_passes(RenderView::TAA);
     }
 
     // Render bloom and tonemapping to LDR target
     m_post_process_system.process(hdr_tex, m_ldr_target);
+    execute_custom_passes(RenderView::Tonemapping);
 }
 
 void RenderPipeline::debug_pass(const CameraData& camera) {

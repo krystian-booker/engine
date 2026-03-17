@@ -28,6 +28,8 @@ public:
     std::unordered_map<uint16_t, ViewConfig> configured_views;
     std::vector<std::pair<RenderView, ViewConfig>> configure_history;
     std::vector<RenderView> blit_history;
+    std::vector<std::pair<uint32_t, LightData>> set_light_history;
+    int clear_lights_count = 0;
     std::unordered_map<uint32_t, MaterialData> materials;
     TextureHandle last_opaque_copy_texture;
     TextureHandle last_opaque_depth_texture;
@@ -81,8 +83,10 @@ public:
 
     void set_camera(const Mat4&, const Mat4&) override {}
     void set_camera_position(const Vec3&) override {}
-    void set_light(uint32_t, const LightData&) override {}
-    void clear_lights() override {}
+    void set_light(uint32_t index, const LightData& light) override {
+        set_light_history.emplace_back(index, light);
+    }
+    void clear_lights() override { clear_lights_count++; }
 
     void set_shadow_data(const std::array<Mat4, 4>&, const Vec4&, const Vec4&) override {}
     void set_shadow_array_texture(TextureHandle) override {}
@@ -301,6 +305,60 @@ TEST_CASE("Low quality preset updates config", "[render][pipeline]") {
     REQUIRE(low.quality == RenderQuality::Low);
     REQUIRE_THAT(low.render_scale, WithinAbs(0.75f, 0.001f));
     REQUIRE(low.enabled_passes != config.enabled_passes);
+}
+
+TEST_CASE("Visible light preparation keeps shadowed directional light first and respects forward budget",
+          "[render][pipeline]") {
+    MockRenderer renderer;
+    RenderPipeline pipeline;
+    pipeline.m_renderer = &renderer;
+
+    std::vector<LightData> lights(10);
+    for (size_t i = 0; i < lights.size(); ++i) {
+        lights[i].type = 1;
+        lights[i].intensity = 1.0f + static_cast<float>(i);
+        lights[i].position = Vec3(static_cast<float>(i), 0.0f, 0.0f);
+    }
+
+    lights[5].type = 0;
+    lights[5].cast_shadows = true;
+    lights[5].direction = Vec3(0.0f, -1.0f, 0.0f);
+
+    pipeline.prepare_visible_lights(lights);
+
+    REQUIRE(pipeline.m_visible_lights.lights.size() == lights.size());
+    REQUIRE(pipeline.m_visible_lights.primary_shadow_light == 0);
+    REQUIRE(pipeline.m_visible_lights.forward_light_count == kForwardLightBudget);
+    REQUIRE(pipeline.m_visible_lights.lights[0].type == 0);
+    REQUIRE(pipeline.m_visible_lights.lights[0].cast_shadows);
+
+    REQUIRE(renderer.clear_lights_count == 1);
+    REQUIRE(renderer.set_light_history.size() == kForwardLightBudget);
+    REQUIRE(renderer.set_light_history[0].first == 0);
+    REQUIRE(renderer.set_light_history[0].second.type == 0);
+    REQUIRE(renderer.set_light_history[0].second.cast_shadows);
+}
+
+TEST_CASE("Custom passes execute when their target view is reached", "[render][pipeline]") {
+    MockRenderer renderer;
+    RenderPipeline pipeline;
+    pipeline.m_renderer = &renderer;
+
+    int callback_count = 0;
+    RenderView last_view = RenderView::Backbuffer;
+    pipeline.add_custom_pass(RenderView::MainOpaque,
+        [&](IRenderer* cb_renderer, RenderView after_view) {
+            REQUIRE(cb_renderer == &renderer);
+            callback_count++;
+            last_view = after_view;
+        });
+
+    pipeline.execute_custom_passes(RenderView::Skybox);
+    REQUIRE(callback_count == 0);
+
+    pipeline.execute_custom_passes(RenderView::MainOpaque);
+    REQUIRE(callback_count == 1);
+    REQUIRE(last_view == RenderView::MainOpaque);
 }
 
 TEST_CASE("SSR composite view follows the active HDR target", "[render][pipeline]") {

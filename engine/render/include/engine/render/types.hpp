@@ -1,6 +1,7 @@
 #pragma once
 
 #include <engine/core/math.hpp>
+#include <array>
 #include <cstdint>
 #include <vector>
 #include <string>
@@ -197,6 +198,27 @@ struct LightData {
     uint8_t type = 0;           // 0=directional, 1=point, 2=spot
     bool cast_shadows = false;
     int shadow_map_index = -1;
+};
+
+// Current forward renderer light budget. Forward+ will replace the fixed slot backend
+// later, but this limit remains the compatibility boundary for the existing path.
+inline constexpr uint32_t kForwardLightBudget = 8;
+
+// Frame-local light selection submitted by the pipeline to the renderer.
+// `lights` contains the full visible set in renderer-selected priority order.
+// `forward_indices` identifies the subset currently consumed by the fixed forward path.
+struct VisibleLightSet {
+    std::vector<LightData> lights;
+    std::array<uint32_t, kForwardLightBudget> forward_indices{};
+    uint32_t forward_light_count = 0;
+    uint32_t primary_shadow_light = UINT32_MAX;
+
+    void clear() {
+        lights.clear();
+        forward_indices.fill(0);
+        forward_light_count = 0;
+        primary_shadow_light = UINT32_MAX;
+    }
 };
 
 // Primitive mesh types for quick creation
