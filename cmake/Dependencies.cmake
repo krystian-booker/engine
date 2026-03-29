@@ -92,25 +92,6 @@ find_package(Jolt CONFIG REQUIRED)
 # vcpkg provides Jolt::Jolt - physics/CMakeLists.txt updated to use this
 
 # ============================================================================
-# Recast Navigation (pathfinding)
-# ============================================================================
-find_package(recastnavigation CONFIG REQUIRED)
-# vcpkg provides RecastNavigation::Recast etc.
-# Our code uses Recast::Recast, Recast::Detour, etc. - create aliases
-if(NOT TARGET Recast::Recast)
-    add_library(Recast::Recast ALIAS RecastNavigation::Recast)
-endif()
-if(NOT TARGET Recast::Detour)
-    add_library(Recast::Detour ALIAS RecastNavigation::Detour)
-endif()
-if(NOT TARGET Recast::DetourCrowd)
-    add_library(Recast::DetourCrowd ALIAS RecastNavigation::DetourCrowd)
-endif()
-if(NOT TARGET Recast::DetourTileCache)
-    add_library(Recast::DetourTileCache ALIAS RecastNavigation::DetourTileCache)
-endif()
-
-# ============================================================================
 # bgfx.cmake (via FetchContent - vcpkg version is older and missing shader tools)
 # ============================================================================
 # Cache bgfx outside the build directory so clean builds don't re-download
@@ -235,25 +216,6 @@ find_package(EnTT CONFIG REQUIRED)
 # vcpkg provides EnTT::EnTT - our code uses entt::entt (lowercase)
 if(NOT TARGET entt::entt)
     add_library(entt::entt ALIAS EnTT::EnTT)
-endif()
-
-# ============================================================================
-# Lua (scripting runtime)
-# ============================================================================
-find_package(lua CONFIG REQUIRED)
-# vcpkg's lua with "cpp" feature compiles as C++ - provides lua target
-
-# ============================================================================
-# sol2 (C++ Lua wrapper - header only)
-# ============================================================================
-find_package(sol2 CONFIG REQUIRED)
-# Add required compile definitions for safety and C++ Lua compatibility
-if(TARGET sol2::sol2)
-    set_property(TARGET sol2::sol2 APPEND PROPERTY
-        INTERFACE_COMPILE_DEFINITIONS SOL_ALL_SAFETIES_ON=1 SOL_USING_CXX_LUA=1)
-elseif(TARGET sol2)
-    set_property(TARGET sol2 APPEND PROPERTY
-        INTERFACE_COMPILE_DEFINITIONS SOL_ALL_SAFETIES_ON=1 SOL_USING_CXX_LUA=1)
 endif()
 
 # ============================================================================

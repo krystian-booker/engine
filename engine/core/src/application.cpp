@@ -13,14 +13,6 @@
 #include <engine/render/render_systems.hpp>
 #include <engine/plugin/plugin.hpp>
 #include <engine/audio/audio_system.hpp>
-#include <engine/streaming/streaming_volume.hpp>
-#include <engine/cinematic/cinematic.hpp>
-#include <engine/navigation/navigation_systems.hpp>
-#include <engine/terrain/terrain.hpp>
-#include <engine/vegetation/vegetation_systems.hpp>
-#include <engine/ui/ui_context.hpp>
-#include <engine/ui/ui_system.hpp>
-#include <engine/script/script_context.hpp>
 
 #include <cstring>
 
@@ -35,27 +27,6 @@
 #include <engine/physics/physics_world.hpp>
 #include <engine/physics/physics_system.hpp>
 
-// Helper to access physics world from terrain module
-namespace engine::terrain {
-    extern engine::physics::PhysicsWorld& get_physics_world();
-}
-
-namespace engine::core {
-    // Global pointer for the terrain accessor
-    static engine::physics::PhysicsWorld* s_physics_world_instance = nullptr;
-}
-
-namespace engine::terrain {
-    engine::physics::PhysicsWorld& get_physics_world() {
-        if (!engine::core::s_physics_world_instance) {
-            // Should not happen if application invalid
-            static std::unique_ptr<engine::physics::PhysicsWorld> fallback = std::make_unique<engine::physics::PhysicsWorld>();
-            return *fallback;
-        }
-        return *engine::core::s_physics_world_instance;
-    }
-}
-
 namespace engine::core {
 
 Application::Application()
@@ -66,11 +37,6 @@ Application::Application()
 Application::~Application() {
     // Ensure plugin is unloaded before engine systems are destroyed
     unload_game_plugin();
-    
-    // Clear global pointer
-    if (s_physics_world_instance == m_physics_world.get()) {
-        s_physics_world_instance = nullptr;
-    }
 }
 
 int Application::run(int argc, char** argv) {
@@ -139,16 +105,12 @@ int Application::run(int argc, char** argv) {
 
     // Initialize engine systems
     m_world = std::make_unique<scene::World>();
-    
+
     // Initialize Physics
     m_physics_world = std::make_unique<physics::PhysicsWorld>();
     m_physics_world->init(settings().physics);
-    s_physics_world_instance = m_physics_world.get();
-    
-    m_physics_system = std::make_unique<physics::PhysicsSystem>(*m_physics_world);
 
-    // Initialize script context with all subsystems
-    script::init_script_context(m_world.get(), m_physics_world.get());
+    m_physics_system = std::make_unique<physics::PhysicsSystem>(*m_physics_world);
 
     m_engine_scheduler = std::make_unique<scene::Scheduler>();
     m_system_registry = std::make_unique<plugin::SystemRegistry>();
@@ -173,30 +135,6 @@ int Application::run(int argc, char** argv) {
             // Initialize and register render systems
             render::init_render_systems(m_render_pipeline.get(), m_renderer.get());
             render::register_render_systems(*m_engine_scheduler);
-
-            // Initialize and register terrain systems
-            terrain::init_terrain_systems();
-            terrain::register_terrain_systems(*m_engine_scheduler);
-
-            // Initialize and register vegetation systems
-            vegetation::init_vegetation_systems();
-            vegetation::register_vegetation_systems(*m_engine_scheduler);
-
-            // Initialize UI system
-            m_ui_context = std::make_unique<ui::UIContext>();
-            m_ui_input_state = std::make_unique<ui::UIInputState>();
-            if (!m_headless_mode && m_ui_context->init(m_renderer.get())) {
-                m_ui_context->set_screen_size(m_window_width, m_window_height);
-                ui::set_ui_context(m_ui_context.get());
-                log(LogLevel::Info, "UI system initialized");
-            } else if (!m_headless_mode) {
-                log(LogLevel::Error, "Failed to initialize UI system");
-                m_ui_context.reset();
-                m_ui_input_state.reset();
-            } else {
-                m_ui_context.reset();
-                m_ui_input_state.reset();
-            }
         }
     }
 
@@ -215,11 +153,6 @@ int Application::run(int argc, char** argv) {
 
     // Main loop
     while (!m_quit_requested) {
-        // Begin UI input frame before processing events
-        if (m_ui_input_state) {
-            ui::ui_input_begin_frame(*m_ui_input_state);
-        }
-
         // Poll window events
         if (!m_headless_mode) {
             if (!poll_events()) {
@@ -270,12 +203,6 @@ int Application::run(int argc, char** argv) {
             m_system_registry->run(*m_world, dt, scene::Phase::PostUpdate);
         }
 
-        // Update UI system
-        if (m_ui_context && m_ui_input_state) {
-            m_ui_context->update(static_cast<float>(dt), *m_ui_input_state);
-            ui::ui_input_end_frame(*m_ui_input_state);
-        }
-
         // Begin renderer frame
         if (m_renderer) {
             m_renderer->begin_frame();
@@ -292,12 +219,6 @@ int Application::run(int argc, char** argv) {
         // Run Render phase (render_submit_system fires here)
         if (m_system_registry) {
             m_system_registry->run(*m_world, dt, scene::Phase::Render);
-        }
-
-        // Render UI (after 3D scene, before PostRender)
-        if (!m_headless_mode && m_ui_context && m_renderer) {
-            // Use specific view ID for UI rendering to ensure it draws on top
-            m_ui_context->render(static_cast<render::RenderView>(200));
         }
 
         // Run PostRender phase
@@ -341,25 +262,8 @@ int Application::run(int argc, char** argv) {
     m_system_registry.reset();
     m_engine_scheduler.reset();
 
-    // Shutdown script context
-    script::shutdown_script_context();
-
-    // Shutdown navigation system
-    navigation::navigation_shutdown();
-
-    // Shutdown terrain systems
-    terrain::shutdown_terrain_systems();
-
     // Shutdown render systems
     render::shutdown_render_systems();
-
-    // Shutdown UI system before renderer
-    if (m_ui_context) {
-        ui::set_ui_context(nullptr);
-        m_ui_context->shutdown();
-        m_ui_context.reset();
-    }
-    m_ui_input_state.reset();
 
     // Shutdown render pipeline before renderer
     if (m_render_pipeline) {
@@ -402,7 +306,6 @@ bool Application::load_game_plugin(const std::filesystem::path& dll_path) {
     m_game_context->world = m_world.get();
     m_game_context->scheduler = m_engine_scheduler.get();
     m_game_context->renderer = m_renderer.get();
-    m_game_context->ui_context = m_ui_context.get();
     m_game_context->app = this;
 
     // Create and initialize hot reload manager
@@ -523,55 +426,9 @@ bool Application::create_window(const WindowSettings& ws) {
         m_window_width = w;
         m_window_height = h;
         events().dispatch(WindowResizeEvent{w, h});
-        if (get_ui_context()) {
-            get_ui_context()->set_screen_size(w, h);
-        }
     };
     callbacks.on_focus = [](bool focused) {
         events().dispatch(WindowFocusEvent{focused});
-    };
-    callbacks.on_mouse_move = [this](float x, float y) {
-        if (auto* s = get_ui_input_state()) {
-            s->mouse_delta.x = x - s->mouse_position.x;
-            s->mouse_delta.y = y - s->mouse_position.y;
-            s->mouse_position.x = x;
-            s->mouse_position.y = y;
-        }
-    };
-    callbacks.on_mouse_button = [this](int button, bool pressed) {
-        if (auto* s = get_ui_input_state()) {
-            if (button >= 0 && button < 3)
-                s->mouse_buttons[button] = pressed;
-        }
-    };
-    callbacks.on_scroll = [this](float dx, float dy) {
-        if (auto* s = get_ui_input_state()) {
-            s->scroll_delta.x += dx;
-            s->scroll_delta.y += dy;
-        }
-    };
-    callbacks.on_key = [this](KeyAction action, bool pressed) {
-        auto* s = get_ui_input_state();
-        if (!s) return;
-        switch (action) {
-            case KeyAction::Backspace: s->key_backspace = pressed; break;
-            case KeyAction::Delete:    s->key_delete    = pressed; break;
-            case KeyAction::Left:      s->key_left      = pressed; break;
-            case KeyAction::Right:     s->key_right     = pressed; break;
-            case KeyAction::Home:      s->key_home      = pressed; break;
-            case KeyAction::End:       s->key_end       = pressed; break;
-            case KeyAction::Enter:     s->key_enter     = pressed; break;
-            case KeyAction::Tab:       s->key_tab       = pressed; break;
-            case KeyAction::Escape:    s->key_escape    = pressed; break;
-            case KeyAction::Up:        s->nav_up        = pressed; break;
-            case KeyAction::Down:      s->nav_down      = pressed; break;
-            case KeyAction::Space:     s->nav_confirm   = pressed; break;
-        }
-    };
-    callbacks.on_text_input = [this](const char* text) {
-        if (auto* s = get_ui_input_state()) {
-            s->text_input += text;
-        }
     };
 
     if (!m_platform_window->create(ws, callbacks))
@@ -606,34 +463,14 @@ void Application::register_engine_systems() {
     // Transform system in FixedUpdate for physics (priority 10 = runs first)
     m_engine_scheduler->add(scene::Phase::FixedUpdate, scene::transform_system, "transform_fixed", 10);
 
-    // Navigation behaviors in FixedUpdate (priority 6, before agents)
-    m_engine_scheduler->add(scene::Phase::FixedUpdate, navigation::navigation_behavior_system, "nav_behaviors", 6);
-
-    // Navigation agents in FixedUpdate (priority 5, after behaviors)
-    m_engine_scheduler->add(scene::Phase::FixedUpdate, navigation::navigation_agent_system, "nav_agents", 5);
-
-    // Navigation obstacles in FixedUpdate (priority 4, after agents)
-    m_engine_scheduler->add(scene::Phase::FixedUpdate, navigation::navigation_obstacle_system, "nav_obstacles", 4);
-
     // Transform system in PostUpdate for audio/render (priority 10 = runs first)
     m_engine_scheduler->add(scene::Phase::PostUpdate, scene::transform_system, "transform", 10);
-
-    // Streaming systems in PostUpdate, after transform (priority 9-6)
-    // Entity system runs first to handle migration before unloads
-    m_engine_scheduler->add(scene::Phase::PostUpdate, streaming::streaming_entity_system, "streaming_entities", 9);
-    m_engine_scheduler->add(scene::Phase::PostUpdate, streaming::streaming_update_system, "streaming_update", 8);
-    m_engine_scheduler->add(scene::Phase::PostUpdate, streaming::streaming_zone_system, "streaming_zones", 7);
-    m_engine_scheduler->add(scene::Phase::PostUpdate, streaming::streaming_volume_system, "streaming_volumes", 7);
-    m_engine_scheduler->add(scene::Phase::PostUpdate, streaming::streaming_portal_system, "streaming_portals", 6);
 
     // Audio systems in PostUpdate, after transform (lower priority = runs later)
     m_engine_scheduler->add(scene::Phase::PostUpdate, audio::AudioSystem::update_listener, "audio_listener", 5);
     m_engine_scheduler->add(scene::Phase::PostUpdate, audio::AudioSystem::update_sources, "audio_sources", 4);
     m_engine_scheduler->add(scene::Phase::PostUpdate, audio::AudioSystem::process_triggers, "audio_triggers", 3);
     m_engine_scheduler->add(scene::Phase::PostUpdate, audio::AudioSystem::update_reverb_zones, "audio_reverb", 2);
-
-    // Cinematic system in Update phase (priority 0 = runs after game logic)
-    m_engine_scheduler->add(scene::Phase::Update, cinematic::cinematic_update_system, "cinematic", 0);
 }
 
 } // namespace engine::core

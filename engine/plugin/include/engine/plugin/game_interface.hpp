@@ -26,10 +26,6 @@ namespace engine::core {
     class Application;
 }
 
-namespace engine::ui {
-    class UIContext;
-}
-
 namespace engine::plugin {
 
 // Engine version for compatibility checking
@@ -53,7 +49,6 @@ struct GameContext {
     scene::World* world;            // ECS world
     scene::Scheduler* scheduler;    // Engine scheduler (for reference)
     render::IRenderer* renderer;    // Renderer interface
-    ui::UIContext* ui_context;      // UI system context
     core::Application* app;         // Application instance
     const char* project_path;       // Path to project directory
 };
