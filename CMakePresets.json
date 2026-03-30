@@ -7,40 +7,6 @@
   },
   "configurePresets": [
     {
-      "name": "Qt",
-      "hidden": true,
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/out/build/${presetName}",
-      "architecture": {
-        "value": "x64",
-        "strategy": "external"
-      },
-      "cacheVariables": {
-        "CMAKE_PREFIX_PATH": "$env{QTDIR}"
-      },
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Windows"
-      }
-    },
-    {
-      "name": "Qt-Debug",
-      "displayName": "Qt Debug",
-      "inherits": "Qt",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
-      }
-    },
-    {
-      "name": "Qt-Release",
-      "displayName": "Qt Release",
-      "inherits": "Qt",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
-      }
-    },
-    {
       "name": "Linux",
       "hidden": true,
       "generator": "Ninja",
@@ -70,14 +36,6 @@
   ],
   "buildPresets": [
     {
-      "name": "Qt-Debug",
-      "configurePreset": "Qt-Debug"
-    },
-    {
-      "name": "Qt-Release",
-      "configurePreset": "Qt-Release"
-    },
-    {
       "name": "Linux-Debug",
       "configurePreset": "Linux-Debug"
     },
@@ -87,28 +45,6 @@
     }
   ],
   "testPresets": [
-    {
-      "name": "Qt-Debug",
-      "configurePreset": "Qt-Debug",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "noTestsAction": "error",
-        "stopOnFailure": false
-      }
-    },
-    {
-      "name": "Qt-Release",
-      "configurePreset": "Qt-Release",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "noTestsAction": "error",
-        "stopOnFailure": false
-      }
-    },
     {
       "name": "Linux-Debug",
       "configurePreset": "Linux-Debug",
