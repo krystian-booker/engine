@@ -290,7 +290,6 @@ Entity PrefabManager::instantiate(World& world, const std::string& prefab_path, 
     world.emplace<PrefabInstance>(root, prefab_path);
 
     // Mark children as part of this prefab instance
-    auto& hierarchy = world.get<Hierarchy>(root);
     std::function<void(Entity)> mark_children = [&](Entity e) {
         for (auto child : get_children(world, e)) {
             if (!world.has<PrefabInstance>(child)) {

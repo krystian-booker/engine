@@ -70,11 +70,8 @@ void PhysicsSystem::update_water_volumes(scene::World& world, double dt) {
     get_water_volumes().update_all(static_cast<float>(dt));
 }
 
-void PhysicsSystem::update_buoyancy(scene::World& world, double dt) {
+void PhysicsSystem::update_buoyancy(scene::World& world, double /*dt*/) {
     if (!m_physics_world) return;
-
-    // Find all water volumes
-    auto water_view = world.view<WaterVolumeControllerComponent, scene::LocalTransform>();
 
     // Process all entities with buoyancy and rigid body components
     auto buoyancy_view = world.view<BuoyancyComponent, RigidBodyComponent, scene::LocalTransform>();

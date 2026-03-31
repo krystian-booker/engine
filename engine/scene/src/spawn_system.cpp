@@ -341,7 +341,7 @@ void SpawnManager::despawn(World& world, Entity entity) {
     }
 
     // Check if pooled
-    if (auto* pooled = world.try_get<PooledEntity>(entity)) {
+    if (world.try_get<PooledEntity>(entity)) {
         pools().release(world, entity);
     } else {
         world.destroy(entity);

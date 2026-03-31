@@ -200,13 +200,22 @@ TEST_CASE("WorldTransform", "[scene][transform]") {
 TEST_CASE("PreviousTransform", "[scene][transform]") {
     SECTION("Default construction") {
         PreviousTransform pt;
-        REQUIRE_THAT(pt.matrix[0][0], WithinAbs(1.0f, 0.001f));
+        REQUIRE_THAT(pt.position.x, WithinAbs(0.0f, 0.001f));
+        REQUIRE_THAT(pt.scale.x, WithinAbs(1.0f, 0.001f));
+    }
+
+    SECTION("Construction from TRS") {
+        PreviousTransform pt{Vec3{1.0f, 2.0f, 3.0f}, Quat{1.0f, 0.0f, 0.0f, 0.0f}, Vec3{1.0f}};
+        REQUIRE_THAT(pt.position.x, WithinAbs(1.0f, 0.001f));
+        REQUIRE_THAT(pt.position.y, WithinAbs(2.0f, 0.001f));
+        REQUIRE_THAT(pt.position.z, WithinAbs(3.0f, 0.001f));
     }
 
     SECTION("Construction from matrix") {
         Mat4 m = glm::translate(Mat4{1.0f}, Vec3{1.0f, 2.0f, 3.0f});
-        PreviousTransform pt{m};
-        REQUIRE_THAT(pt.matrix[3][0], WithinAbs(1.0f, 0.001f));
+        PreviousTransform pt = PreviousTransform::from_matrix(m);
+        REQUIRE_THAT(pt.position.x, WithinAbs(1.0f, 0.001f));
+        REQUIRE_THAT(pt.position.y, WithinAbs(2.0f, 0.001f));
     }
 }
 

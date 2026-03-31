@@ -67,7 +67,7 @@ void HotReloadManager::poll() {
     auto now = std::chrono::steady_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_last_poll_time).count();
 
-    if (elapsed < m_config.poll_interval_ms) {
+    if (static_cast<float>(elapsed) < m_config.poll_interval_ms) {
         return;
     }
     m_last_poll_time = now;

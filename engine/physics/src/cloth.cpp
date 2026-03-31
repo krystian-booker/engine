@@ -151,8 +151,8 @@ void Cloth::generate_grid_mesh() {
     for (uint32_t y = 0; y < h; ++y) {
         for (uint32_t x = 0; x < w; ++x) {
             Vec3 pos{
-                start_x + x * dx,
-                start_y - y * dy,
+                start_x + static_cast<float>(x) * dx,
+                start_y - static_cast<float>(y) * dy,
                 0.0f
             };
             m_impl->positions.push_back(pos);

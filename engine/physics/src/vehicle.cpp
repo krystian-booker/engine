@@ -15,22 +15,6 @@ static float clamp(float v, float lo, float hi) {
     return std::max(lo, std::min(v, hi));
 }
 
-static float lerp(float a, float b, float t) {
-    return a + (b - a) * t;
-}
-
-static float vec3_length(const Vec3& v) {
-    return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
-}
-
-static Vec3 vec3_normalize(const Vec3& v) {
-    float len = vec3_length(v);
-    if (len > 0.0001f) {
-        return Vec3{v.x / len, v.y / len, v.z / len};
-    }
-    return Vec3{0.0f};
-}
-
 static float vec3_dot(const Vec3& a, const Vec3& b) {
     return a.x * b.x + a.y * b.y + a.z * b.z;
 }
@@ -158,7 +142,7 @@ void Vehicle::shift_down() {
 
 void Vehicle::set_gear(int gear) {
     int max_gear = static_cast<int>(m_settings.simulation.gear_ratios.size()) - 1;
-    m_state.current_gear = clamp(gear, -1, max_gear);
+    m_state.current_gear = static_cast<int>(clamp(static_cast<float>(gear), -1.0f, static_cast<float>(max_gear)));
 }
 
 int Vehicle::get_gear() const {
@@ -297,7 +281,6 @@ void Vehicle::update_state_from_physics() {
 
 void Vehicle::update_wheel_states() {
     // Simplified wheel state - would use Jolt's wheel collision in full implementation
-    Vec3 pos = get_position();
     m_state.is_grounded = true;  // Simplified - assume grounded
     m_state.wheels_on_ground = static_cast<int>(m_settings.wheels.size());
     m_state.is_airborne = false;
@@ -430,7 +413,7 @@ void Vehicle::arcade_steering(float dt) {
     }
 }
 
-void Vehicle::arcade_stability(float dt) {
+void Vehicle::arcade_stability(float /*dt*/) {
     // Keep vehicle upright
     Quat rot = get_rotation();
     Vec3 up = quat_rotate(rot, Vec3{0.0f, 1.0f, 0.0f});
@@ -517,7 +500,7 @@ void Vehicle::simulation_engine(float dt) {
     }
 }
 
-void Vehicle::simulation_transmission(float dt) {
+void Vehicle::simulation_transmission(float /*dt*/) {
     if (m_impl->shifting || m_state.current_gear == 0) return;
 
     const auto& sim = m_settings.simulation;
@@ -561,7 +544,7 @@ void Vehicle::simulation_transmission(float dt) {
     }
 }
 
-void Vehicle::simulation_differential(float dt) {
+void Vehicle::simulation_differential(float /*dt*/) {
     // Simplified differential - just apply equal force to driven wheels
     // Full implementation would distribute torque based on differential type
 }

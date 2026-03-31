@@ -24,24 +24,8 @@ static float vec3_length(const Vec3& v) {
     return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
 }
 
-static Vec3 vec3_normalize(const Vec3& v) {
-    float len = vec3_length(v);
-    if (len > 0.0001f) {
-        return Vec3{v.x / len, v.y / len, v.z / len};
-    }
-    return Vec3{0.0f, 0.0f, 0.0f};
-}
-
 static float vec3_dot(const Vec3& a, const Vec3& b) {
     return a.x * b.x + a.y * b.y + a.z * b.z;
-}
-
-static Vec3 vec3_cross(const Vec3& a, const Vec3& b) {
-    return Vec3{
-        a.y * b.z - a.z * b.y,
-        a.z * b.x - a.x * b.z,
-        a.x * b.y - a.y * b.x
-    };
 }
 
 // Extract euler angles from quaternion (roll, pitch, yaw)
@@ -504,7 +488,6 @@ void Boat::apply_rudder_forces() {
 
     Quat rot = get_rotation();
     Vec3 pos = get_position();
-    Vec3 forward = quat_rotate(rot, Vec3{0.0f, 0.0f, 1.0f});
     Vec3 right = quat_rotate(rot, Vec3{1.0f, 0.0f, 0.0f});
 
     Vec3 total_rudder_force{0.0f};

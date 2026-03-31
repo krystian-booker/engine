@@ -46,7 +46,6 @@ entt::meta_any ComponentFactory::create(entt::registry& registry, entt::entity e
     if (instance) {
         void* ptr = storage->value(entity);
         auto target = type.from_void(ptr);
-        auto* type_info = type_registry.get_type_info(type_name);
         if (type_info) {
             for (const auto& prop : type_info->properties) {
                 if (prop.getter && prop.setter) {

@@ -822,7 +822,7 @@ void set_music_position_impl(AudioEngine::Impl* impl, MusicHandle h, float secon
     if (it == impl->music.end() || !it->second.loaded) return;
 
     ma_uint32 sample_rate = ma_engine_get_sample_rate(&impl->engine);
-    ma_uint64 frame = static_cast<ma_uint64>(seconds * sample_rate);
+    ma_uint64 frame = static_cast<ma_uint64>(seconds * static_cast<float>(sample_rate));
     ma_sound_seek_to_pcm_frame(&it->second.sound, frame);
 }
 

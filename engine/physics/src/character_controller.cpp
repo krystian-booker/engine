@@ -604,7 +604,7 @@ void CharacterController::handle_step_up() {
 }
 
 // System function
-void character_controller_system(scene::World& world, PhysicsWorld& physics, float dt) {
+void character_controller_system(scene::World& world, PhysicsWorld& /*physics*/, float dt) {
     auto view = world.view<CharacterControllerComponent, scene::LocalTransform>();
 
     for (auto entity : view) {

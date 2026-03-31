@@ -46,14 +46,14 @@ Entity EntityPool::create_pooled_entity() {
 void EntityPool::deactivate_entity(Entity entity) {
     if (entity == NullEntity) return;
 
-    // Disable entity
+    // Disable entity — systems should check EntityInfo::enabled or PooledEntity::active
     if (auto* info = m_world.try_get<EntityInfo>(entity)) {
         info->enabled = false;
     }
 
-    // Hide from rendering by moving far away or scaling to zero
+    // Scale to zero to hide from rendering without polluting spatial queries
     if (auto* transform = m_world.try_get<LocalTransform>(entity)) {
-        transform->position = core::Vec3{-10000.0f, -10000.0f, -10000.0f};
+        transform->scale = core::Vec3{0.0f};
     }
 
     // Update pooled component
@@ -68,6 +68,11 @@ void EntityPool::activate_entity(Entity entity) {
     // Enable entity
     if (auto* info = m_world.try_get<EntityInfo>(entity)) {
         info->enabled = true;
+    }
+
+    // Restore default scale
+    if (auto* transform = m_world.try_get<LocalTransform>(entity)) {
+        transform->scale = core::Vec3{1.0f};
     }
 
     // Update pooled component
@@ -105,15 +110,11 @@ void EntityPool::expand(uint32_t count) {
     m_stats.expand_count++;
 }
 
-Entity EntityPool::acquire() {
-    m_stats.acquire_count++;
-
-    // First, check available pool
+Entity EntityPool::try_acquire_from_available() {
     while (!m_available.empty()) {
         Entity entity = m_available.back();
         m_available.pop_back();
 
-        // Validate entity still exists
         if (!m_world.valid(entity)) {
             continue;
         }
@@ -131,34 +132,26 @@ Entity EntityPool::acquire() {
 
         return entity;
     }
+    return NullEntity;
+}
 
-    // Pool is empty, try to expand
-    if (can_expand()) {
+Entity EntityPool::acquire() {
+    m_stats.acquire_count++;
+
+    // Try to grab a valid entity from the available pool
+    Entity entity = try_acquire_from_available();
+
+    // If pool was empty, try expanding then grab again
+    if (entity == NullEntity && can_expand()) {
         expand(m_config.growth_size);
-
-        // Try again
-        if (!m_available.empty()) {
-            Entity entity = m_available.back();
-            m_available.pop_back();
-
-            activate_entity(entity);
-            m_active.insert(entity);
-
-            m_stats.currently_active = static_cast<uint32_t>(m_active.size());
-            m_stats.currently_pooled = static_cast<uint32_t>(m_available.size());
-            m_stats.peak_active = std::max(m_stats.peak_active, m_stats.currently_active);
-
-            if (m_on_acquire) {
-                m_on_acquire(m_world, entity);
-            }
-
-            return entity;
-        }
+        entity = try_acquire_from_available();
     }
 
-    // Pool exhausted
-    m_stats.exhausted_count++;
-    return NullEntity;
+    if (entity == NullEntity) {
+        m_stats.exhausted_count++;
+    }
+
+    return entity;
 }
 
 Entity EntityPool::acquire(const core::Vec3& position, const core::Quat& rotation) {
@@ -352,22 +345,28 @@ void PoolManager::clear_all() {
 }
 
 Entity PoolManager::acquire(const std::string& pool_name) {
-    if (auto* pool = get_pool(pool_name)) {
-        return pool->acquire();
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_pools.find(pool_name);
+    if (it != m_pools.end()) {
+        return it->second->acquire();
     }
     return NullEntity;
 }
 
 Entity PoolManager::acquire(const std::string& pool_name, const core::Vec3& position) {
-    if (auto* pool = get_pool(pool_name)) {
-        return pool->acquire(position);
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_pools.find(pool_name);
+    if (it != m_pools.end()) {
+        return it->second->acquire(position);
     }
     return NullEntity;
 }
 
 Entity PoolManager::acquire(const std::string& pool_name, const core::Vec3& position, const core::Quat& rotation) {
-    if (auto* pool = get_pool(pool_name)) {
-        return pool->acquire(position, rotation);
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_pools.find(pool_name);
+    if (it != m_pools.end()) {
+        return it->second->acquire(position, rotation);
     }
     return NullEntity;
 }
@@ -378,8 +377,10 @@ void PoolManager::release(World& world, Entity entity) {
     auto* pooled = world.try_get<PooledEntity>(entity);
     if (!pooled) return;
 
-    if (auto* pool = get_pool(pooled->pool_name)) {
-        pool->release(entity);
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_pools.find(pooled->pool_name);
+    if (it != m_pools.end()) {
+        it->second->release(entity);
     }
 }
 
@@ -389,8 +390,10 @@ void PoolManager::release_immediate(World& world, Entity entity) {
     auto* pooled = world.try_get<PooledEntity>(entity);
     if (!pooled) return;
 
-    if (auto* pool = get_pool(pooled->pool_name)) {
-        pool->release_immediate(entity);
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_pools.find(pooled->pool_name);
+    if (it != m_pools.end()) {
+        it->second->release_immediate(entity);
     }
 }
 

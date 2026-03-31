@@ -5,9 +5,6 @@ namespace engine::physics {
 
 using namespace engine::core;
 
-// Forward declaration of Impl (defined in jolt_impl.cpp)
-struct PhysicsWorld::Impl;
-
 // These are implemented in jolt_impl.cpp
 extern PhysicsWorld::Impl* create_physics_impl();
 extern void destroy_physics_impl(PhysicsWorld::Impl* impl);

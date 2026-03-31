@@ -120,9 +120,22 @@ public:
     }
 
     // Subscribe with raw function pointer (no automatic cleanup)
+    // Returns the handler ID for use with unsubscribe()
     template<typename T>
     uint64_t subscribe_raw(void(*callback)(const T&)) {
-        return subscribe<T>([callback](const T& e) { callback(e); }).release(), m_next_handler_id - 1;
+        auto type_idx = std::type_index(typeid(T));
+        uint64_t handler_id = m_next_handler_id++;
+
+        auto wrapper = [callback](const void* event) {
+            callback(*static_cast<const T*>(event));
+        };
+
+        {
+            std::lock_guard<std::mutex> lock(m_handlers_mutex);
+            m_handlers[type_idx].push_back({handler_id, std::move(wrapper)});
+        }
+
+        return handler_id;
     }
 
     // Unsubscribe by handler ID

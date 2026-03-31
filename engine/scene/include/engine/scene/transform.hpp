@@ -87,25 +87,44 @@ struct WorldTransform {
     }
 };
 
-// Previous frame transform for interpolation
+// Previous frame transform for interpolation (stored as TRS to avoid decomposition)
 struct PreviousTransform {
-    Mat4 matrix{1.0f};
+    Vec3 position{0.0f};
+    Quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
+    Vec3 scale{1.0f};
 
     PreviousTransform() = default;
-    explicit PreviousTransform(const Mat4& m) : matrix(m) {}
+    PreviousTransform(const Vec3& pos, const Quat& rot, const Vec3& scl)
+        : position(pos), rotation(rot), scale(scl) {}
+
+    // Construct from world matrix (for migration/compatibility)
+    static PreviousTransform from_matrix(const Mat4& m) {
+        PreviousTransform pt;
+        pt.position = Vec3{m[3]};
+        pt.scale = Vec3{
+            glm::length(Vec3{m[0]}),
+            glm::length(Vec3{m[1]}),
+            glm::length(Vec3{m[2]})
+        };
+        Mat3 rot_mat{
+            Vec3{m[0]} / pt.scale.x,
+            Vec3{m[1]} / pt.scale.y,
+            Vec3{m[2]} / pt.scale.z
+        };
+        pt.rotation = glm::quat_cast(rot_mat);
+        return pt;
+    }
 };
 
 // Hierarchy links using intrusive linked list for efficient modification
+// Kept POD-like for cache efficiency — children cache is stored externally
 struct Hierarchy {
     Entity parent = NullEntity;
     Entity first_child = NullEntity;
     Entity next_sibling = NullEntity;
     Entity prev_sibling = NullEntity;
     uint32_t depth = 0;  // Used for sorting and update order
-
-    // Cached children list for iteration-heavy use cases
-    mutable std::vector<Entity> cached_children;
-    mutable bool children_dirty = true;
+    bool children_dirty = true;
 
     Hierarchy() = default;
 };
@@ -132,13 +151,17 @@ const std::vector<Entity>& get_children(World& world, Entity parent);
 void iterate_children(World& world, Entity parent, std::function<void(Entity)> fn);
 
 // Get root entities (entities with no parent)
-std::vector<Entity> get_root_entities(World& world);
+const std::vector<Entity>& get_root_entities(World& world);
 
 // Check if entity is ancestor of another
 bool is_ancestor_of(World& world, Entity ancestor, Entity descendant);
 
 // Reset the root entity list (call when clearing world)
 void reset_roots(World& world);
+
+// Check/clear whether hierarchy has changed since last transform update
+bool is_hierarchy_dirty(World& world);
+void clear_hierarchy_dirty(World& world);
 
 // Systems for transform updates
 void transform_system(World& world, double dt);

@@ -522,7 +522,7 @@ Vec3 TargetingSystem::get_target_point(World& world, Entity targeter) const {
     return get_entity_position(world, target);
 }
 
-bool TargetingSystem::validate_target(World& world, Entity targeter, const Vec3& position, const Vec3& forward) {
+bool TargetingSystem::validate_target(World& world, Entity targeter, const Vec3& position, const Vec3& /*forward*/) {
     auto* targeter_comp = world.try_get<TargeterComponent>(targeter);
     if (!targeter_comp || targeter_comp->current_target == NullEntity) {
         return false;
@@ -561,9 +561,9 @@ void TargetingSystem::set_line_of_sight_check(LineOfSightCheck check) {
 
 TargetCandidate TargetingSystem::evaluate_target(
     World& world,
-    Entity targeter,
+    Entity /*targeter*/,
     Entity target,
-    const TargeterComponent& targeter_comp,
+    const TargeterComponent& /*targeter_comp*/,
     const TargetableComponent& targetable,
     const Vec3& position,
     const Vec3& forward
@@ -617,7 +617,7 @@ float TargetingSystem::calculate_score(
     return score;
 }
 
-bool TargetingSystem::default_line_of_sight_check(World& world, const Vec3& from, const Vec3& to, Entity exclude) {
+bool TargetingSystem::default_line_of_sight_check(World& /*world*/, const Vec3& /*from*/, const Vec3& /*to*/, Entity /*exclude*/) {
     // Default implementation - would typically use physics raycast
     // For now, always return true (no obstacles)
     return true;
@@ -695,7 +695,7 @@ void targeting_system(World& world, double dt) {
     }
 }
 
-void soft_lock_system(World& world, double dt) {
+void soft_lock_system(World& world, double /*dt*/) {
     auto view = world.view<TargeterComponent>();
 
     for (auto entity : view) {

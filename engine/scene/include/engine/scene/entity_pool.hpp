@@ -146,6 +146,7 @@ public:
 
 private:
     Entity create_pooled_entity();
+    Entity try_acquire_from_available();
     void deactivate_entity(Entity entity);
     void activate_entity(Entity entity);
     bool can_expand() const;

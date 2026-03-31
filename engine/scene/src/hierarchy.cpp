@@ -8,25 +8,34 @@ namespace engine::scene {
 namespace {
 
 // Maximum iterations for hierarchy traversal to prevent infinite loops from corrupted data
-constexpr size_t MAX_HIERARCHY_ITERATIONS = 100000;
+constexpr size_t MAX_HIERARCHY_ITERATIONS = 1024;
+
+// External children cache — kept out of the Hierarchy component for cache efficiency
+struct ChildrenCache {
+    std::unordered_map<entt::id_type, std::vector<Entity>> cache;
+};
+
+ChildrenCache& children_cache(entt::registry& registry) {
+    if (!registry.ctx().contains<ChildrenCache>()) {
+        registry.ctx().emplace<ChildrenCache>();
+    }
+    return registry.ctx().get<ChildrenCache>();
+}
 
 struct RootList {
     Entity first = NullEntity;
     Entity last = NullEntity;
     mutable std::vector<Entity> cached;
     mutable bool dirty = true;
+    bool transforms_dirty = true;  // Set when hierarchy changes; consumed by transform_system
 };
 
-// Shared root map for all hierarchy operations
-std::unordered_map<entt::registry*, RootList>& get_root_map() {
-    static std::unordered_map<entt::registry*, RootList> root_map;
-    return root_map;
-}
-
 RootList& roots(World& world) {
-    auto& root_map = get_root_map();
     auto& registry = world.registry();
-    auto& root_list = root_map[&registry];
+    if (!registry.ctx().contains<RootList>()) {
+        registry.ctx().emplace<RootList>();
+    }
+    auto& root_list = registry.ctx().get<RootList>();
 
     // Reset if the cached head/tail are no longer valid (e.g., after a clear)
     if ((root_list.first != NullEntity && !registry.valid(root_list.first)) ||
@@ -53,6 +62,11 @@ RootList& roots(World& world) {
 
 void mark_roots_dirty(RootList& root_list) {
     root_list.dirty = true;
+    root_list.transforms_dirty = true;
+}
+
+void mark_transforms_dirty(RootList& root_list) {
+    root_list.transforms_dirty = true;
 }
 
 void update_descendant_depths(entt::registry& registry, Entity entity, uint32_t depth) {
@@ -301,6 +315,9 @@ void set_parent(World& world, Entity child, Entity parent, Entity before_sibling
             old_parent_h->children_dirty = true;
         }
     }
+
+    // Hierarchy changed — transform sort order may need updating
+    mark_transforms_dirty(root_list);
 }
 
 void remove_parent(World& world, Entity child) {
@@ -320,7 +337,7 @@ void detach_from_hierarchy(World& world, Entity child) {
 }
 
 const std::vector<Entity>& get_children(World& world, Entity parent) {
-    static std::vector<Entity> empty;
+    static const std::vector<Entity> empty;
     auto& registry = world.registry();
 
     auto* h = registry.try_get<Hierarchy>(parent);
@@ -329,18 +346,28 @@ const std::vector<Entity>& get_children(World& world, Entity parent) {
     }
 
     if (h->children_dirty) {
-        h->cached_children.clear();
+        auto& cc = children_cache(registry);
+        auto key = static_cast<entt::id_type>(parent);
+        auto& cached = cc.cache[key];
+        cached.clear();
         Entity child = h->first_child;
         size_t iterations = 0;
         while (child != NullEntity && iterations++ < MAX_HIERARCHY_ITERATIONS) {
-            h->cached_children.push_back(child);
+            cached.push_back(child);
             auto* child_h = registry.try_get<Hierarchy>(child);
             child = child_h ? child_h->next_sibling : NullEntity;
         }
         h->children_dirty = false;
+        return cached;
     }
 
-    return h->cached_children;
+    auto& cc = children_cache(registry);
+    auto key = static_cast<entt::id_type>(parent);
+    auto it = cc.cache.find(key);
+    if (it != cc.cache.end()) {
+        return it->second;
+    }
+    return empty;
 }
 
 void iterate_children(World& world, Entity parent, std::function<void(Entity)> fn) {
@@ -359,7 +386,7 @@ void iterate_children(World& world, Entity parent, std::function<void(Entity)> f
     }
 }
 
-std::vector<Entity> get_root_entities(World& world) {
+const std::vector<Entity>& get_root_entities(World& world) {
     auto& registry = world.registry();
     auto& root_list = roots(world);
 
@@ -434,6 +461,15 @@ void reset_roots(World& world) {
     root_list.last = NullEntity;
     root_list.cached.clear();
     root_list.dirty = true;
+    root_list.transforms_dirty = true;
+}
+
+bool is_hierarchy_dirty(World& world) {
+    return roots(world).transforms_dirty;
+}
+
+void clear_hierarchy_dirty(World& world) {
+    roots(world).transforms_dirty = false;
 }
 
 } // namespace engine::scene

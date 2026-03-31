@@ -65,7 +65,7 @@ static BuoyancyResult calculate_sphere_buoyancy(
 // Calculate buoyancy using automatic mode (estimate from shape bounds)
 BuoyancyResult calculate_automatic_buoyancy(
     const Vec3& body_position,
-    const Quat& body_rotation,
+    const Quat& /*body_rotation*/,
     const BodyShapeInfo& shape_info,
     const WaterVolume& water,
     float water_density,
@@ -133,7 +133,7 @@ BuoyancyResult calculate_automatic_buoyancy(
 // Calculate buoyancy using manual sample points
 BuoyancyResult calculate_manual_buoyancy(
     const Vec3& body_position,
-    const Quat& body_rotation,
+    const Quat& /*body_rotation*/,
     const std::vector<BuoyancyPoint>& points,
     const WaterVolume& water,
     float water_density,
@@ -215,7 +215,7 @@ BuoyancyResult calculate_manual_buoyancy(
 // Calculate buoyancy using voxel grid
 BuoyancyResult calculate_voxel_buoyancy(
     const Vec3& body_position,
-    const Quat& body_rotation,
+    const Quat& /*body_rotation*/,
     const BodyShapeInfo& shape_info,
     const Vec3& voxel_resolution,
     uint32_t max_voxels,
@@ -237,15 +237,15 @@ BuoyancyResult calculate_voxel_buoyancy(
     int total_voxels = nx * ny * nz;
     if (total_voxels > static_cast<int>(max_voxels)) {
         float scale = std::cbrt(static_cast<float>(max_voxels) / static_cast<float>(total_voxels));
-        nx = std::max(1, static_cast<int>(nx * scale));
-        ny = std::max(1, static_cast<int>(ny * scale));
-        nz = std::max(1, static_cast<int>(nz * scale));
+        nx = std::max(1, static_cast<int>(static_cast<float>(nx) * scale));
+        ny = std::max(1, static_cast<int>(static_cast<float>(ny) * scale));
+        nz = std::max(1, static_cast<int>(static_cast<float>(nz) * scale));
     }
 
     // Voxel dimensions
-    float vx = 2.0f * half_extents.x / nx;
-    float vy = 2.0f * half_extents.y / ny;
-    float vz = 2.0f * half_extents.z / nz;
+    float vx = 2.0f * half_extents.x / static_cast<float>(nx);
+    float vy = 2.0f * half_extents.y / static_cast<float>(ny);
+    float vz = 2.0f * half_extents.z / static_cast<float>(nz);
     float voxel_volume = vx * vy * vz;
     float voxel_radius = std::sqrt(vx * vx + vy * vy + vz * vz) * 0.5f;
 
@@ -261,9 +261,9 @@ BuoyancyResult calculate_voxel_buoyancy(
             for (int iz = 0; iz < nz; ++iz) {
                 // Voxel center in local space
                 Vec3 local_pos{
-                    -half_extents.x + vx * (ix + 0.5f),
-                    -half_extents.y + vy * (iy + 0.5f),
-                    -half_extents.z + vz * (iz + 0.5f)
+                    -half_extents.x + vx * (static_cast<float>(ix) + 0.5f),
+                    -half_extents.y + vy * (static_cast<float>(iy) + 0.5f),
+                    -half_extents.z + vz * (static_cast<float>(iz) + 0.5f)
                 };
 
                 // Transform to world space
@@ -335,10 +335,10 @@ BuoyancyResult calculate_voxel_buoyancy(
 // Calculate water drag forces
 Vec3 calculate_water_drag(
     const Vec3& velocity,
-    const Vec3& angular_velocity,
+    const Vec3& /*angular_velocity*/,
     float submerged_fraction,
     float linear_drag,
-    float angular_drag,
+    float /*angular_drag*/,
     float water_density)
 {
     if (submerged_fraction < MIN_SUBMERGED_FRACTION) {

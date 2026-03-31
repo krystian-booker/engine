@@ -1466,7 +1466,6 @@ ConstraintId create_fixed_constraint_impl(PhysicsWorld::Impl* impl, const FixedC
     jolt_settings.mPoint1 = RVec3(settings.local_anchor_a.x, settings.local_anchor_a.y, settings.local_anchor_a.z);
     jolt_settings.mPoint2 = RVec3(settings.local_anchor_b.x, settings.local_anchor_b.y, settings.local_anchor_b.z);
 
-    BodyInterface& body_interface = impl->physics_system->GetBodyInterface();
     BodyLockWrite lock_a(impl->physics_system->GetBodyLockInterface(), jolt_id_a);
     BodyLockWrite lock_b(impl->physics_system->GetBodyLockInterface(), jolt_id_b);
 

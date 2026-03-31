@@ -639,7 +639,7 @@ void SceneSerializer::deserialize_particle_emitter(ParticleEmitter& emitter, con
 
     std::smatch match;
     if (std::regex_search(json, match, max_re)) {
-        emitter.max_particles = safe_stoul(match[1].str());
+        emitter.max_particles = static_cast<uint32_t>(safe_stoul(match[1].str()));
     }
     if (std::regex_search(json, match, rate_re)) {
         emitter.emission_rate = safe_stof(match[1].str());
@@ -1170,7 +1170,7 @@ bool SceneSerializer::deserialize_custom_component(World& world, Entity entity, 
 }
 
 // Asset handle serialization helpers
-std::string SceneSerializer::serialize_asset_handle(const MeshHandle& handle, const char* asset_type) const {
+std::string SceneSerializer::serialize_asset_handle(const MeshHandle& handle, const char* /*asset_type*/) const {
     if (!m_asset_resolver) {
         // No resolver, just serialize raw ID
         return std::to_string(handle.id);
@@ -1187,7 +1187,7 @@ std::string SceneSerializer::serialize_asset_handle(const MeshHandle& handle, co
     return ss.str();
 }
 
-std::string SceneSerializer::serialize_asset_handle(const MaterialHandle& handle, const char* asset_type) const {
+std::string SceneSerializer::serialize_asset_handle(const MaterialHandle& handle, const char* /*asset_type*/) const {
     if (!m_asset_resolver) {
         return std::to_string(handle.id);
     }
@@ -1202,7 +1202,7 @@ std::string SceneSerializer::serialize_asset_handle(const MaterialHandle& handle
     return ss.str();
 }
 
-std::string SceneSerializer::serialize_asset_handle(const TextureHandle& handle, const char* asset_type) const {
+std::string SceneSerializer::serialize_asset_handle(const TextureHandle& handle, const char* /*asset_type*/) const {
     if (!m_asset_resolver) {
         return std::to_string(handle.id);
     }
@@ -1233,7 +1233,7 @@ HandleType SceneSerializer::deserialize_asset_handle(const std::string& json, co
         std::string path;
         
         if (std::regex_search(json, match, id_re)) {
-            id = safe_stoul(match[1].str());
+            id = static_cast<uint32_t>(safe_stoul(match[1].str()));
         }
         if (std::regex_search(json, match, path_re)) {
             path = match[1].str();
@@ -1261,7 +1261,7 @@ HandleType SceneSerializer::deserialize_asset_handle(const std::string& json, co
         handle.id = id;
     } else {
         // Just a raw number
-        handle.id = safe_stoul(json);
+        handle.id = static_cast<uint32_t>(safe_stoul(json));
     }
     
     return handle;

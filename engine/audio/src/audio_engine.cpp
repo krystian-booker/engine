@@ -6,8 +6,6 @@ namespace engine::audio {
 using namespace engine::core;
 
 // Forward declarations (implemented in miniaudio_impl.cpp)
-struct AudioEngine::Impl;
-
 extern AudioEngine::Impl* create_audio_impl();
 extern void destroy_audio_impl(AudioEngine::Impl* impl);
 extern void init_audio_impl(AudioEngine::Impl* impl, const AudioSettings& settings);

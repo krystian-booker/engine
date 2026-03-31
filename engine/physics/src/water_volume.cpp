@@ -186,8 +186,6 @@ float WaterVolume::calculate_gerstner_wave(float x, float z, float time) const {
     float k = TWO_PI / waves.wavelength;
     float omega = k * waves.speed;
     float A = waves.amplitude;
-    float Q = waves.steepness;  // Steepness parameter (0-1)
-
     // Position along wave direction
     float pos_along_wave = x * dir_x + z * dir_z;
 
