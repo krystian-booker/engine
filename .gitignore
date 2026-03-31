@@ -440,7 +440,6 @@ CMakeUserPresets.json
 
 /.claude
 /.deps
-/out
 /vcpkg
 /vcpkg_installed
 notes/
