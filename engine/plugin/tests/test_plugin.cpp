@@ -57,8 +57,6 @@ TEST_CASE("GameContext defaults", "[plugin][context]") {
 
     REQUIRE(ctx.world == nullptr);
     REQUIRE(ctx.scheduler == nullptr);
-    REQUIRE(ctx.renderer == nullptr);
-    REQUIRE(ctx.ui_context == nullptr);
     REQUIRE(ctx.app == nullptr);
     REQUIRE(ctx.project_path == nullptr);
 }

@@ -2,7 +2,6 @@
 
 #include <engine/physics/physics_world.hpp>
 #include <engine/physics/character_controller.hpp>
-#include <engine/physics/ragdoll.hpp>
 #include <engine/physics/rigid_body_component.hpp>
 #include <engine/scene/world.hpp>
 #include <functional>
@@ -48,9 +47,6 @@ public:
     // Update all character controllers - call in FixedUpdate phase (after physics step)
     void update_character_controllers(scene::World& world, double dt);
 
-    // Update all ragdolls - call in FixedUpdate or Update phase
-    void update_ragdolls(scene::World& world, double dt);
-
     // Update all rigid bodies - call in Update phase (after physics step)
     // Initializes new bodies and syncs physics transforms to ECS transforms
     void update_rigid_bodies(scene::World& world, double dt);
@@ -74,7 +70,6 @@ public:
     // These return std::function that can be added to SystemScheduler
     std::function<void(scene::World&, double)> create_step_system();
     std::function<void(scene::World&, double)> create_character_system();
-    std::function<void(scene::World&, double)> create_ragdoll_system();
     std::function<void(scene::World&, double)> create_rigid_body_system();
     std::function<void(scene::World&, double)> create_water_volume_system();
     std::function<void(scene::World&, double)> create_buoyancy_system();

@@ -8,9 +8,7 @@ target_sources(engine_physics
     PRIVATE
         src/physics_world.cpp
         src/jolt_impl.cpp
-        src/debug_renderer.cpp
         src/character_controller.cpp
-        src/ragdoll.cpp
         src/physics_system.cpp
         src/rigid_body_component.cpp
         # Water/Buoyancy/Boat physics
@@ -35,9 +33,7 @@ target_sources(engine_physics
             include/engine/physics/body.hpp
             include/engine/physics/shapes.hpp
             include/engine/physics/layers.hpp
-            include/engine/physics/debug_renderer.hpp
             include/engine/physics/character_controller.hpp
-            include/engine/physics/ragdoll.hpp
             include/engine/physics/rigid_body_component.hpp
             # Water/Buoyancy/Boat physics
             include/engine/physics/water_volume.hpp
@@ -60,7 +56,6 @@ target_include_directories(engine_physics
 target_link_libraries(engine_physics
     PUBLIC
         engine::core
-        engine::render
         engine::scene
         Jolt::Jolt
     PRIVATE

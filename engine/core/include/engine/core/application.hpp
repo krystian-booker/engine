@@ -18,11 +18,6 @@ namespace engine::physics {
     class PhysicsSystem;
 }
 
-namespace engine::render {
-    class IRenderer;
-    class RenderPipeline;
-}
-
 namespace engine::plugin {
     class HotReloadManager;
     class SystemRegistry;
@@ -62,8 +57,6 @@ public:
     scene::World* get_world() { return m_world.get(); }
     physics::PhysicsWorld* get_physics_world() { return m_physics_world.get(); }
     physics::PhysicsSystem* get_physics_system() { return m_physics_system.get(); }
-    render::IRenderer* get_renderer() { return m_renderer.get(); }
-    render::RenderPipeline* get_render_pipeline() { return m_render_pipeline.get(); }
     plugin::SystemRegistry* get_system_registry() { return m_system_registry.get(); }
 
 protected:
@@ -91,9 +84,6 @@ protected:
     // Get clock for fixed timestep management
     GameClock& clock() { return m_clock; }
 
-    // Screenshot capture (uses render pipeline's final texture)
-    bool save_screenshot(const std::string& path);
-
     // Parse command line arguments
     void parse_args(int argc, char** argv);
 
@@ -112,8 +102,6 @@ private:
     std::unique_ptr<scene::World> m_world;
     std::unique_ptr<physics::PhysicsWorld> m_physics_world;
     std::unique_ptr<physics::PhysicsSystem> m_physics_system;
-    std::unique_ptr<render::IRenderer> m_renderer;
-    std::unique_ptr<render::RenderPipeline> m_render_pipeline;
     std::unique_ptr<scene::Scheduler> m_engine_scheduler;
 
     // Plugin system
@@ -126,11 +114,6 @@ private:
     bool m_hot_reload_enabled = true;
     bool m_hot_reload_override = false;  // True if set via command line
     bool m_headless_mode = false;
-
-    // Screenshot automation (--screenshot=<path> --screenshot-frame=<N>)
-    std::string m_screenshot_path;
-    int m_screenshot_frame = 60;
-    uint32_t m_frame_counter = 0;
 
     // Register core engine systems (transform, audio, etc.)
     void register_engine_systems();

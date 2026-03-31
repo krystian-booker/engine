@@ -42,23 +42,6 @@ void PhysicsSystem::update_character_controllers(scene::World& world, double dt)
     }
 }
 
-void PhysicsSystem::update_ragdolls(scene::World& world, double dt) {
-    if (!m_physics_world) return;
-
-    auto view = world.view<RagdollComponent>();
-
-    for (auto entity : view) {
-        auto& rc = view.get<RagdollComponent>(entity);
-
-        if (!rc.ragdoll) continue;
-        if (!rc.ragdoll->is_initialized()) continue;
-
-        // Update ragdoll - pass nullptr for animation pose in pure ragdoll mode
-        // For powered/blending ragdolls, the game should provide animation pose
-        rc.ragdoll->update(static_cast<float>(dt), nullptr);
-    }
-}
-
 void PhysicsSystem::update_rigid_bodies(scene::World& world, double dt) {
     if (!m_physics_world) return;
 
@@ -227,12 +210,6 @@ std::function<void(scene::World&, double)> PhysicsSystem::create_step_system() {
 std::function<void(scene::World&, double)> PhysicsSystem::create_character_system() {
     return [this](scene::World& world, double dt) {
         this->update_character_controllers(world, dt);
-    };
-}
-
-std::function<void(scene::World&, double)> PhysicsSystem::create_ragdoll_system() {
-    return [this](scene::World& world, double dt) {
-        this->update_ragdolls(world, dt);
     };
 }
 

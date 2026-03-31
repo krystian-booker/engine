@@ -85,7 +85,6 @@ target_link_libraries(engine_core
 target_include_directories(engine_core
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../scene/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/../render/include
         ${CMAKE_CURRENT_SOURCE_DIR}/../plugin/include
         ${CMAKE_CURRENT_SOURCE_DIR}/../audio/include
         ${CMAKE_CURRENT_SOURCE_DIR}/../physics/include

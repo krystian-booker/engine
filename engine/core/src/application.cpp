@@ -8,9 +8,6 @@
 #include <engine/scene/world.hpp>
 #include <engine/scene/systems.hpp>
 #include <engine/scene/transform.hpp>
-#include <engine/render/renderer.hpp>
-#include <engine/render/render_pipeline.hpp>
-#include <engine/render/render_systems.hpp>
 #include <engine/plugin/plugin.hpp>
 #include <engine/audio/audio_system.hpp>
 
@@ -87,11 +84,6 @@ int Application::run(int argc, char** argv) {
     // Create window unless running headless.
     if (!m_headless_mode) {
         if (!create_window(settings().window)) {
-            if (!m_screenshot_path.empty()) {
-                log(LogLevel::Error,
-                    "Screenshot automation requires a working window/display backend; "
-                    "window creation failed before rendering could start");
-            }
             log(LogLevel::Error, "Failed to create window");
             return 1;
         }
@@ -118,25 +110,6 @@ int Application::run(int argc, char** argv) {
 
     // Register core engine systems
     register_engine_systems();
-
-    // Initialize renderer
-    m_renderer = render::create_bgfx_renderer();
-    if (m_renderer) {
-        bool use_wayland = !m_headless_mode && (m_window_backend == WindowBackend::Wayland);
-        if (!m_renderer->init(m_native_window, m_window_width, m_window_height, m_native_display, use_wayland)) {
-            log(LogLevel::Error, "Failed to initialize renderer");
-            m_renderer.reset();
-        } else {
-            // Create and initialize render pipeline
-            m_render_pipeline = std::make_unique<render::RenderPipeline>();
-            render::RenderPipelineConfig pipeline_config;
-            m_render_pipeline->init(m_renderer.get(), pipeline_config);
-
-            // Initialize and register render systems
-            render::init_render_systems(m_render_pipeline.get(), m_renderer.get());
-            render::register_render_systems(*m_engine_scheduler);
-        }
-    }
 
     m_initialized = true;
 
@@ -203,53 +176,9 @@ int Application::run(int argc, char** argv) {
             m_system_registry->run(*m_world, dt, scene::Phase::PostUpdate);
         }
 
-        // Begin renderer frame
-        if (m_renderer) {
-            m_renderer->begin_frame();
-        }
-
-        // Run PreRender phase
-        if (m_system_registry) {
-            m_system_registry->run(*m_world, dt, scene::Phase::PreRender);
-        }
-
         // Rendering (custom hook for subclassed apps)
         on_render(m_clock.get_alpha());
 
-        // Run Render phase (render_submit_system fires here)
-        if (m_system_registry) {
-            m_system_registry->run(*m_world, dt, scene::Phase::Render);
-        }
-
-        // Run PostRender phase
-        if (m_system_registry) {
-            m_system_registry->run(*m_world, dt, scene::Phase::PostRender);
-        }
-
-        // Queue screenshot capture before end_frame so the readback blit runs in
-        // the same bgfx frame as the rendered scene, after all render views.
-        if (!m_screenshot_path.empty()) {
-            const uint32_t rendered_frame = m_frame_counter + 1;
-            if (rendered_frame == static_cast<uint32_t>(m_screenshot_frame)) {
-                if (!save_screenshot(m_screenshot_path)) {
-                    log(LogLevel::Error, "Screenshot request failed: {}", m_screenshot_path);
-                    m_quit_requested = true;
-                }
-            }
-        }
-
-        // End renderer frame
-        if (m_renderer) {
-            m_renderer->end_frame();
-        }
-
-        // Screenshot automation: quit a few frames after the capture request to
-        // let the async readback complete.
-        ++m_frame_counter;
-        if (!m_screenshot_path.empty() &&
-            m_frame_counter >= static_cast<uint32_t>(m_screenshot_frame) + 5) {
-            m_quit_requested = true;
-        }
     }
 
     // Call user shutdown
@@ -262,19 +191,6 @@ int Application::run(int argc, char** argv) {
     m_system_registry.reset();
     m_engine_scheduler.reset();
 
-    // Shutdown render systems
-    render::shutdown_render_systems();
-
-    // Shutdown render pipeline before renderer
-    if (m_render_pipeline) {
-        m_render_pipeline->shutdown();
-        m_render_pipeline.reset();
-    }
-
-    if (m_renderer) {
-        m_renderer->shutdown();
-    }
-    m_renderer.reset();
     m_world.reset();
 
     // Destroy window
@@ -305,7 +221,6 @@ bool Application::load_game_plugin(const std::filesystem::path& dll_path) {
     m_game_context = std::make_unique<plugin::GameContext>();
     m_game_context->world = m_world.get();
     m_game_context->scheduler = m_engine_scheduler.get();
-    m_game_context->renderer = m_renderer.get();
     m_game_context->app = this;
 
     // Create and initialize hot reload manager
@@ -339,21 +254,6 @@ void Application::unload_game_plugin() {
 
 bool Application::has_game_plugin() const {
     return m_hot_reload_manager && m_hot_reload_manager->get_loader().is_loaded();
-}
-
-bool Application::save_screenshot(const std::string& path) {
-    if (!m_renderer || !m_render_pipeline) {
-        log(LogLevel::Error, "Screenshot failed: renderer or render pipeline is unavailable");
-        return false;
-    }
-
-    auto tex = m_render_pipeline->get_final_texture();
-    if (!tex.valid()) {
-        log(LogLevel::Error, "Screenshot failed: final render texture is invalid");
-        return false;
-    }
-
-    return m_renderer->save_screenshot(path, tex);
 }
 
 void Application::parse_args(int argc, char** argv) {
@@ -392,20 +292,6 @@ void Application::parse_args(int argc, char** argv) {
         }
         else if (std::strcmp(arg, "--headless") == 0) {
             m_headless_mode = true;
-        }
-        // --screenshot=<path>
-        else if (std::strncmp(arg, "--screenshot=", 13) == 0) {
-            m_screenshot_path = arg + 13;
-        } else if (std::strcmp(arg, "--screenshot") == 0 && i + 1 < argc) {
-            m_screenshot_path = argv[++i];
-        }
-        // --screenshot-frame=<N>
-        else if (std::strncmp(arg, "--screenshot-frame=", 19) == 0) {
-            m_screenshot_frame = std::atoi(arg + 19);
-            if (m_screenshot_frame < 1) m_screenshot_frame = 1;
-        } else if (std::strcmp(arg, "--screenshot-frame") == 0 && i + 1 < argc) {
-            m_screenshot_frame = std::atoi(argv[++i]);
-            if (m_screenshot_frame < 1) m_screenshot_frame = 1;
         }
     }
 }

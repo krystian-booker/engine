@@ -7,9 +7,7 @@
 #include <engine/physics/physics_world.hpp>
 #include <engine/physics/physics_system.hpp>
 #include <engine/physics/character_controller.hpp>
-#include <engine/physics/ragdoll.hpp>
 #include <engine/physics/rigid_body_component.hpp>
-#include <engine/physics/debug_renderer.hpp>
 
 // Water/Buoyancy/Boat physics
 #include <engine/physics/water_volume.hpp>

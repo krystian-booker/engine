@@ -4,8 +4,6 @@
 add_subdirectory(core)
 add_subdirectory(reflect)
 add_subdirectory(scene)
-add_subdirectory(render)
-add_subdirectory(asset)
 add_subdirectory(physics)
 add_subdirectory(audio)
 add_subdirectory(plugin)
@@ -22,8 +20,8 @@ if(UNIX)
         engine::core
         engine::reflect
         engine::scene
-        engine::render
-        engine::asset
+
+
         engine::physics
         engine::audio
         engine::plugin
@@ -34,8 +32,8 @@ else()
         engine::core
         engine::reflect
         engine::scene
-        engine::render
-        engine::asset
+
+
         engine::physics
         engine::audio
         engine::plugin

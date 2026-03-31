@@ -2,7 +2,6 @@
 #include <engine/core/log.hpp>
 #include <engine/core/time.hpp>
 #include <bgfx/bgfx.h>
-#include <engine/render/debug_draw.hpp>
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
@@ -267,36 +266,7 @@ std::string Profiler::get_frame_time_graph(int width) {
 }
 
 void Profiler::draw_overlay(void* renderer_ptr) {
-    if (!s_overlay_visible) return;
-
-    auto* renderer = static_cast<render::IRenderer*>(renderer_ptr);
-    if (!renderer) return;
-
-    const auto& stats = s_last_stats;
-    float y = 10.0f;
-    const float line_height = 16.0f;
-
-    // FPS and frame time
-    render::DebugDraw::text_2d(10.0f, y, std::format("FPS: {} ({:.2f}ms)",
-        stats.fps, stats.frame_time_ms), render::DebugDraw::WHITE);
-    y += line_height;
-
-    // GPU time
-    if (stats.gpu_time_ms > 0.0) {
-        render::DebugDraw::text_2d(10.0f, y, std::format("GPU: {:.2f}ms",
-            stats.gpu_time_ms), render::DebugDraw::CYAN);
-        y += line_height;
-    }
-
-    // Draw calls and triangles
-    render::DebugDraw::text_2d(10.0f, y, std::format("Draw calls: {} | Tris: {}",
-        stats.draw_calls, stats.triangles), render::DebugDraw::YELLOW);
-    y += line_height;
-
-    // Memory usage
-    size_t mem_mb = MemoryTracker::current_usage() / (1024 * 1024);
-    render::DebugDraw::text_2d(10.0f, y, std::format("Memory: {} MB", mem_mb),
-        render::DebugDraw::GREEN);
+    (void)renderer_ptr;
 }
 
 void Profiler::set_overlay_visible(bool visible) {
