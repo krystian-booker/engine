@@ -7,6 +7,7 @@
 #include <chrono>
 #include <iomanip>
 #include <regex>
+#include <mutex>
 
 namespace engine::scene {
 
@@ -46,8 +47,8 @@ uint64_t safe_stoull(const std::string& str, uint64_t default_val = 0) {
 
 // UUID generation using random + timestamp
 uint64_t SceneSerializer::generate_uuid() {
-    static std::random_device rd;
-    static std::mt19937_64 gen(rd());
+    static std::mutex rng_mutex;
+    static std::mt19937_64 gen(std::random_device{}());
     static std::uniform_int_distribution<uint64_t> dist;
 
     // Combine random bits with timestamp for better uniqueness
@@ -55,6 +56,7 @@ uint64_t SceneSerializer::generate_uuid() {
     uint64_t timestamp = static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::nanoseconds>(now).count());
 
+    std::lock_guard<std::mutex> lock(rng_mutex);
     return dist(gen) ^ (timestamp << 32) ^ (timestamp >> 32);
 }
 
@@ -190,8 +192,17 @@ bool SceneSerializer::deserialize(World& world, const std::string& json) {
                     // Try custom deserializer first
                     auto deserializer_it = m_component_deserializers.find(comp.type_name);
                     if (deserializer_it != m_component_deserializers.end()) {
-                        // Use registered custom deserializer
-                        deserializer_it->second(nullptr, comp.json_data);
+                        // Create the component via reflection, then pass a valid pointer to the deserializer
+                        auto& type_reg = reflect::TypeRegistry::instance();
+                        if (type_reg.add_component_any(world.registry(), entity, comp.type_name)) {
+                            auto type = type_reg.find_type(comp.type_name);
+                            auto* storage = type ? world.registry().storage(type.id()) : nullptr;
+                            if (storage && storage->contains(entity)) {
+                                deserializer_it->second(storage->value(entity), comp.json_data);
+                            }
+                        } else {
+                            log(LogLevel::Warn, "Custom deserializer: failed to create component '{}'", comp.type_name);
+                        }
                     } else {
                         // Use reflection system to dynamically deserialize (with entity context)
                         if (!deserialize_custom_component(world, entity, comp.type_name, comp.json_data, &entity_ctx)) {

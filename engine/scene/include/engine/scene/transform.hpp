@@ -87,6 +87,13 @@ struct WorldTransform {
     }
 };
 
+// Interpolated transform for smooth rendering between fixed updates.
+// Written by interpolate_transforms(), read by the renderer.
+// Keeps WorldTransform untouched so gameplay systems always see the true simulation state.
+struct InterpolatedTransform {
+    Mat4 matrix{1.0f};
+};
+
 // Previous frame transform for interpolation (stored as TRS to avoid decomposition)
 struct PreviousTransform {
     Vec3 position{0.0f};

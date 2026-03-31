@@ -379,7 +379,13 @@ void SpawnManager::despawn_all_from_waves(World& world, Entity spawner) {
 void SpawnManager::update(World& world, float dt) {
     update_spawn_points(world, dt);
     update_wave_spawners(world, dt);
-    cleanup_dead_entities(world);
+
+    // Only prune dead entity references periodically, not every frame
+    m_cleanup_timer += dt;
+    if (m_cleanup_timer >= CleanupInterval) {
+        m_cleanup_timer = 0.0f;
+        cleanup_dead_entities(world);
+    }
 }
 
 void SpawnManager::update_spawn_points(World& world, float dt) {

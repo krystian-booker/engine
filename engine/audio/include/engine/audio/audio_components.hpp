@@ -43,13 +43,18 @@ struct AudioSource {
     bool enable_doppler = true;
     float doppler_factor = 1.0f;
 
-    // Computed values (updated by audio system)
+    // Set to true when any spatial parameter above changes at runtime.
+    // The audio system clears it after applying. Starts true so initial values are applied.
+    bool spatial_params_dirty = true;
+};
+
+// Transient runtime state for AudioSource, managed by the audio system.
+// Not serialized — reconstructed automatically when an AudioSource starts playing.
+struct AudioSourceState {
+    Vec3 prev_position{0.0f};
     float computed_volume = 1.0f;
     float computed_pan = 0.0f;  // -1 = left, 0 = center, 1 = right
-    
-    // For Doppler calculation
-    Vec3 prev_position{0.0f};
-    bool first_update = true;
+    bool initialized = false;   // false until first update sets prev_position
 };
 
 // Audio listener component (typically on camera/player)
@@ -57,11 +62,13 @@ struct AudioListener {
     bool active = true;
     uint8_t priority = 0;      // Highest priority listener is used
     float volume_scale = 1.0f;  // Master volume multiplier
+};
 
-    // Velocity for doppler calculations
+// Transient runtime state for AudioListener, managed by the audio system.
+struct AudioListenerState {
     Vec3 velocity{0.0f};
     Vec3 prev_position{0.0f};
-    bool first_update = true;
+    bool initialized = false;
 };
 
 // Audio trigger zone (plays sound when entered)

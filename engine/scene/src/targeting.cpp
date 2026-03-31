@@ -761,10 +761,12 @@ void target_indicator_system(World& world, double dt) {
 
         // Animation scale (pulse when targeted)
         if (targetable.is_targeted) {
-            float pulse = 1.0f + 0.1f * std::sin(static_cast<float>(dt) * 5.0f);
+            indicator.pulse_time += static_cast<float>(dt);
+            float pulse = 1.0f + 0.1f * std::sin(indicator.pulse_time * 5.0f);
             indicator.indicator_scale = pulse;
         } else {
             indicator.indicator_scale = 1.0f;
+            indicator.pulse_time = 0.0f;
         }
     }
 }

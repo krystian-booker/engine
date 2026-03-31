@@ -246,6 +246,8 @@ private:
 
     SpawnCallback m_on_spawn;
     SpawnCallback m_on_despawn;
+    float m_cleanup_timer = 0.0f;
+    static constexpr float CleanupInterval = 0.5f;  // Prune dead refs every 500ms
     static std::vector<Entity> s_empty_entities;
 };
 

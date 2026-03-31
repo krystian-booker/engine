@@ -105,6 +105,9 @@ struct TargetIndicatorComponent {
     Vec2 screen_position{0.0f, 0.0f};
     bool is_on_screen = true;
     float distance_to_camera = 0.0f;
+
+    // Runtime: accumulated time for pulse animation
+    float pulse_time = 0.0f;
 };
 
 // ============================================================================

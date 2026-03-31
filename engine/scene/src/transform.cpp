@@ -99,7 +99,8 @@ void transform_system(World& world, double /*dt*/) {
     }
 }
 
-// Interpolate transforms for smooth rendering between fixed updates
+// Interpolate transforms for smooth rendering between fixed updates.
+// Writes to InterpolatedTransform so WorldTransform retains the true simulation state.
 void interpolate_transforms(World& world, double alpha) {
     auto& registry = world.registry();
     float a = static_cast<float>(alpha);
@@ -125,12 +126,12 @@ void interpolate_transforms(World& world, double alpha) {
         Quat rot = glm::slerp(prev.rotation, cur_rot, a);
         Vec3 scl = glm::mix(prev.scale, cur_scale, a);
 
-        // Recompose matrix
+        // Recompose into InterpolatedTransform (renderer reads this)
         Mat4 result{1.0f};
         result = glm::translate(result, pos);
         result = result * glm::mat4_cast(rot);
         result = glm::scale(result, scl);
-        world_tf.matrix = result;
+        registry.emplace_or_replace<InterpolatedTransform>(entity, result);
     }
 }
 

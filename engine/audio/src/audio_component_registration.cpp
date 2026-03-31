@@ -77,12 +77,6 @@ struct AudioSourceRegistrar {
         TypeRegistry::instance().register_property<AudioSource, &AudioSource::doppler_factor>("doppler_factor",
             PropertyMeta().set_display_name("Doppler Factor").set_category("Doppler").set_range(0.0f, 5.0f));
 
-        // Computed values (read-only, for debugging)
-        TypeRegistry::instance().register_property<AudioSource, &AudioSource::computed_volume>("computed_volume",
-            PropertyMeta().set_display_name("Computed Volume").set_category("Debug").set_read_only(true));
-
-        TypeRegistry::instance().register_property<AudioSource, &AudioSource::computed_pan>("computed_pan",
-            PropertyMeta().set_display_name("Computed Pan").set_category("Debug").set_read_only(true));
     }
 };
 static AudioSourceRegistrar _audiosource_registrar;

@@ -124,30 +124,14 @@ void HotReloadManager::do_reload() {
     nlohmann::json game_state;
     nlohmann::json world_state;
 
-    // Step 1: Call pre_reload on game
-    m_loader.call_pre_reload(m_context->world, &game_state);
-
-    // Step 2: Serialize world state if enabled
-    if (m_config.preserve_state) {
-        if (!serialize_world_state(world_state)) {
-            core::log(core::LogLevel::Warn, "Failed to serialize world state");
-        }
-    }
-
-    // Step 3: Clear game systems
-    m_registry->clear_game_systems();
-
-    // Step 4: Shutdown and unload old plugin
-    m_loader.call_shutdown();
-    m_loader.unload();
-
-    // Step 5: Load new plugin (with copy)
-    LoadResult result = m_loader.load(m_dll_path, true);
+    // Step 1: Try loading the new plugin FIRST, before touching the old one.
+    // This way, if the load fails, the old plugin continues running.
+    PluginLoader new_loader;
+    LoadResult result = new_loader.load(m_dll_path, true);
     if (result != LoadResult::Success) {
         core::log(core::LogLevel::Error,
-            "Hot reload failed: {}. Game plugin unloaded - restart required.",
+            "Hot reload failed: {}. Keeping current plugin.",
             load_result_to_string(result));
-        m_initialized = false;
         m_reload_in_progress = false;
 
         if (m_callback) {
@@ -155,6 +139,24 @@ void HotReloadManager::do_reload() {
         }
         return;
     }
+
+    // Step 2: New DLL loaded — safe to proceed. Call pre_reload on old plugin.
+    m_loader.call_pre_reload(m_context->world, &game_state);
+
+    // Step 3: Serialize world state if enabled
+    if (m_config.preserve_state) {
+        if (!serialize_world_state(world_state)) {
+            core::log(core::LogLevel::Warn, "Failed to serialize world state");
+        }
+    }
+
+    // Step 4: Clear game systems and shut down old plugin
+    m_registry->clear_game_systems();
+    m_loader.call_shutdown();
+    m_loader.unload();
+
+    // Step 5: Replace with new loader
+    m_loader = std::move(new_loader);
 
     // Step 6: Register components
     m_loader.call_register_components();
