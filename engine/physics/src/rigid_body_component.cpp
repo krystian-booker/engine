@@ -32,12 +32,12 @@ void on_rigid_body_component_destroy(entt::registry& registry, entt::entity enti
 } // namespace
 
 // Create a physics body from component settings and initial transform
-PhysicsBodyId create_rigid_body(PhysicsWorld& world, RigidBodyComponent& rb, const scene::LocalTransform& transform) {
+PhysicsBodyId create_rigid_body(PhysicsWorld& world, RigidBodyComponent& rb, const scene::World& scene_world,
+                                scene::Entity entity, const scene::LocalTransform& transform) {
     BodySettings settings;
     settings.type = rb.type;
     settings.shape = rb.get_shape_ptr();
-    settings.position = transform.position;
-    settings.rotation = transform.rotation;
+    scene::get_entity_world_pose(scene_world, entity, transform, settings.position, settings.rotation);
     settings.mass = rb.mass;
     settings.friction = rb.friction;
     settings.restitution = rb.restitution;
@@ -98,7 +98,7 @@ void rigid_body_prepare_system(scene::World& world, PhysicsWorld& physics, float
 
         // Initialize body if needed
         if (!rb.initialized) {
-            rb.body_id = create_rigid_body(physics, rb, transform);
+            rb.body_id = create_rigid_body(physics, rb, world, entity, transform);
             rb.initialized = rb.body_id.valid();
             if (!rb.initialized) {
                 continue;
@@ -114,7 +114,10 @@ void rigid_body_prepare_system(scene::World& world, PhysicsWorld& physics, float
         // Kinematic bodies are authored by gameplay code, so push the latest ECS transform
         // before the physics step runs.
         if (rb.type == BodyType::Kinematic) {
-            physics.set_transform(rb.body_id, transform.position, transform.rotation);
+            Vec3 world_position{0.0f};
+            Quat world_rotation{1.0f, 0.0f, 0.0f, 0.0f};
+            scene::get_entity_world_pose(world, entity, transform, world_position, world_rotation);
+            physics.set_transform(rb.body_id, world_position, world_rotation);
         }
     }
 }
@@ -143,8 +146,13 @@ void rigid_body_sync_system(scene::World& world, PhysicsWorld& physics, float /*
 
         // Sync physics transform back to ECS transform
         if (rb.sync_to_transform && rb.type != BodyType::Static) {
-            transform.position = physics.get_position(rb.body_id);
-            transform.rotation = physics.get_rotation(rb.body_id);
+            scene::set_entity_world_pose(
+                world,
+                entity,
+                transform,
+                physics.get_position(rb.body_id),
+                physics.get_rotation(rb.body_id)
+            );
         }
     }
 }

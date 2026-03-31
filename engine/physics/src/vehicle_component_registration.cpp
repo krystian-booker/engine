@@ -468,3 +468,9 @@ struct WheelSettingsRegistrar {
 static WheelSettingsRegistrar _wheel_settings_registrar;
 
 } // anonymous namespace
+
+namespace engine::physics {
+
+void ensure_vehicle_component_registration() {}
+
+} // namespace engine::physics

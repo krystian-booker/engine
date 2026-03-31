@@ -235,3 +235,9 @@ struct MathTypesRegistrar {
 static MathTypesRegistrar _mathtypes_registrar;
 
 } // anonymous namespace
+
+namespace engine::scene {
+
+void ensure_component_registrations() {}
+
+} // namespace engine::scene

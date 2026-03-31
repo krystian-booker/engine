@@ -10,9 +10,20 @@
 
 namespace engine::physics {
 
+void ensure_rigid_body_component_registration();
+void ensure_water_component_registration();
+void ensure_vehicle_component_registration();
+void ensure_cloth_component_registration();
+
 PhysicsSystem::PhysicsSystem(PhysicsWorld& world)
     : m_physics_world(&world)
 {
+    // Force-link reflection registration units from the static library so
+    // serialization/editor metadata is present in all executables.
+    ensure_rigid_body_component_registration();
+    ensure_water_component_registration();
+    ensure_vehicle_component_registration();
+    ensure_cloth_component_registration();
 }
 
 PhysicsSystem::~PhysicsSystem() {
@@ -63,8 +74,9 @@ void PhysicsSystem::update_character_controllers(scene::World& world, double dt)
         cc.controller->update(static_cast<float>(dt));
 
         // Sync position and rotation back to transform component
-        transform.position = cc.controller->get_position();
-        transform.rotation = cc.controller->get_rotation();
+        scene::set_entity_world_pose(world, entity, transform,
+                                     cc.controller->get_position(),
+                                     cc.controller->get_rotation());
     }
 }
 
@@ -92,9 +104,13 @@ void PhysicsSystem::update_water_volumes(scene::World& world, double dt) {
 
         if (!wvc.volume) continue;
 
+        Vec3 world_position{0.0f};
+        Quat world_rotation{1.0f, 0.0f, 0.0f, 0.0f};
+        scene::get_entity_world_pose(world, entity, transform, world_position, world_rotation);
+
         // Sync water volume position with transform
-        wvc.volume->set_position(transform.position);
-        wvc.volume->set_rotation(transform.rotation);
+        wvc.volume->set_position(world_position);
+        wvc.volume->set_rotation(world_rotation);
 
         // Update wave animation
         wvc.volume->update(static_cast<float>(dt));
@@ -117,19 +133,23 @@ void PhysicsSystem::update_buoyancy(scene::World& world, double /*dt*/) {
         auto& rb = buoyancy_view.get<RigidBodyComponent>(entity);
         auto& transform = buoyancy_view.get<scene::LocalTransform>(entity);
 
+        Vec3 world_position{0.0f};
+        Quat unused_world_rotation{1.0f, 0.0f, 0.0f, 0.0f};
+        scene::get_entity_world_pose(world, entity, transform, world_position, unused_world_rotation);
+
         if (!rb.initialized || !rb.body_id.valid()) continue;
 
         // Track previous water state for events
         bool was_in_water = bc.is_in_water;
 
         // Find water volume at entity position
-        WaterVolume* water = get_water_volumes().find_volume_at(transform.position);
+        WaterVolume* water = get_water_volumes().find_volume_at(world_position);
 
         if (water) {
             bc.is_in_water = true;
 
             // Calculate surface height at entity position
-            float surface_height = water->get_surface_height_at(transform.position);
+            float surface_height = water->get_surface_height_at(world_position);
             float water_density = water->get_density();
 
             // Apply buoyancy force
@@ -180,15 +200,20 @@ void PhysicsSystem::update_boats(scene::World& world, double dt) {
         if (!bc.boat) continue;
         if (!bc.boat->is_initialized()) continue;
 
+        Vec3 world_position{0.0f};
+        Quat unused_world_rotation{1.0f, 0.0f, 0.0f, 0.0f};
+        scene::get_entity_world_pose(world, entity, transform, world_position, unused_world_rotation);
+
         // Find water volume at boat position
-        WaterVolume* water = get_water_volumes().find_volume_at(transform.position);
+        WaterVolume* water = get_water_volumes().find_volume_at(world_position);
 
         // Update boat physics
         bc.boat->update(static_cast<float>(dt), water);
 
         // Sync boat transform back to ECS
-        transform.position = bc.boat->get_position();
-        transform.rotation = bc.boat->get_rotation();
+        scene::set_entity_world_pose(world, entity, transform,
+                                     bc.boat->get_position(),
+                                     bc.boat->get_rotation());
     }
 }
 
@@ -211,8 +236,9 @@ void PhysicsSystem::update_vehicles(scene::World& world, double dt) {
         vc.vehicle->update(static_cast<float>(dt));
 
         // Sync vehicle transform back to ECS
-        transform.position = vc.vehicle->get_position();
-        transform.rotation = vc.vehicle->get_rotation();
+        scene::set_entity_world_pose(world, entity, transform,
+                                     vc.vehicle->get_position(),
+                                     vc.vehicle->get_rotation());
     }
 }
 
@@ -231,9 +257,13 @@ void PhysicsSystem::update_cloth(scene::World& world, double dt) {
         if (!cc.cloth->is_initialized()) continue;
         if (!cc.cloth->is_enabled()) continue;
 
+        Vec3 world_position{0.0f};
+        Quat world_rotation{1.0f, 0.0f, 0.0f, 0.0f};
+        scene::get_entity_world_pose(world, entity, transform, world_position, world_rotation);
+
         // Sync cloth position with entity transform
-        cc.cloth->set_position(transform.position);
-        cc.cloth->set_rotation(transform.rotation);
+        cc.cloth->set_position(world_position);
+        cc.cloth->set_rotation(world_rotation);
 
         // Update cloth physics
         cc.cloth->update(static_cast<float>(dt));

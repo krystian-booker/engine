@@ -7,6 +7,7 @@
 namespace engine::scene {
 
 namespace {
+constexpr float kScaleEpsilon = 1e-6f;
 
 struct TransformEntity {
     Entity entity;
@@ -27,6 +28,68 @@ TransformCache& get_transform_cache(entt::registry& registry) {
 }
 
 } // namespace
+
+Mat4 compose_matrix_trs(const Vec3& position, const Quat& rotation, const Vec3& scale) {
+    Mat4 result{1.0f};
+    result = glm::translate(result, position);
+    result = result * glm::mat4_cast(rotation);
+    result = glm::scale(result, scale);
+    return result;
+}
+
+void decompose_matrix_trs(const Mat4& matrix, Vec3& position, Quat& rotation, Vec3& scale) {
+    position = Vec3{matrix[3]};
+
+    const Vec3 axis_x{matrix[0]};
+    const Vec3 axis_y{matrix[1]};
+    const Vec3 axis_z{matrix[2]};
+
+    scale = Vec3{
+        glm::length(axis_x),
+        glm::length(axis_y),
+        glm::length(axis_z)
+    };
+
+    if (scale.x <= kScaleEpsilon || scale.y <= kScaleEpsilon || scale.z <= kScaleEpsilon) {
+        rotation = Quat{1.0f, 0.0f, 0.0f, 0.0f};
+        return;
+    }
+
+    Mat3 rotation_matrix{
+        axis_x / scale.x,
+        axis_y / scale.y,
+        axis_z / scale.z
+    };
+    rotation = glm::normalize(glm::quat_cast(rotation_matrix));
+}
+
+void get_entity_world_pose(const World& world, Entity entity, const LocalTransform& local, Vec3& position, Quat& rotation) {
+    if (const auto* world_transform = world.try_get<WorldTransform>(entity)) {
+        position = world_transform->position();
+        rotation = world_transform->rotation();
+        return;
+    }
+
+    position = local.position;
+    rotation = local.rotation;
+}
+
+void set_entity_world_pose(World& world, Entity entity, LocalTransform& local, const Vec3& position, const Quat& rotation) {
+    if (const auto* hierarchy = world.try_get<Hierarchy>(entity); hierarchy && hierarchy->parent != NullEntity) {
+        if (const auto* parent_world = world.try_get<WorldTransform>(hierarchy->parent)) {
+            const Mat4 desired_world = compose_matrix_trs(position, rotation, local.scale);
+            const float determinant = glm::determinant(parent_world->matrix);
+            if (std::abs(determinant) > kScaleEpsilon) {
+                const Mat4 local_matrix = glm::inverse(parent_world->matrix) * desired_world;
+                decompose_matrix_trs(local_matrix, local.position, local.rotation, local.scale);
+                return;
+            }
+        }
+    }
+
+    local.position = position;
+    local.rotation = rotation;
+}
 
 // Transform system - computes world matrices from local transforms and hierarchy
 void transform_system(World& world, double /*dt*/) {
@@ -67,18 +130,7 @@ void transform_system(World& world, double /*dt*/) {
 
         // Store previous transform for interpolation (as TRS from current world matrix)
         if (auto* prev = registry.try_get<PreviousTransform>(te.entity)) {
-            prev->position = Vec3{world_tf.matrix[3]};
-            prev->scale = Vec3{
-                glm::length(Vec3{world_tf.matrix[0]}),
-                glm::length(Vec3{world_tf.matrix[1]}),
-                glm::length(Vec3{world_tf.matrix[2]})
-            };
-            Mat3 rot_mat{
-                Vec3{world_tf.matrix[0]} / prev->scale.x,
-                Vec3{world_tf.matrix[1]} / prev->scale.y,
-                Vec3{world_tf.matrix[2]} / prev->scale.z
-            };
-            prev->rotation = glm::quat_cast(rot_mat);
+            decompose_matrix_trs(world_tf.matrix, prev->position, prev->rotation, prev->scale);
         }
 
         // Compute local matrix
@@ -107,19 +159,10 @@ void interpolate_transforms(World& world, double alpha) {
 
     auto view = registry.view<WorldTransform, PreviousTransform>();
     for (auto [entity, world_tf, prev] : view.each()) {
-        // Decompose current world transform
-        Vec3 cur_pos{world_tf.matrix[3]};
-        Vec3 cur_scale{
-            glm::length(Vec3{world_tf.matrix[0]}),
-            glm::length(Vec3{world_tf.matrix[1]}),
-            glm::length(Vec3{world_tf.matrix[2]})
-        };
-        Mat3 cur_rot_mat{
-            Vec3{world_tf.matrix[0]} / cur_scale.x,
-            Vec3{world_tf.matrix[1]} / cur_scale.y,
-            Vec3{world_tf.matrix[2]} / cur_scale.z
-        };
-        Quat cur_rot = glm::quat_cast(cur_rot_mat);
+        Vec3 cur_pos{0.0f};
+        Quat cur_rot{1.0f, 0.0f, 0.0f, 0.0f};
+        Vec3 cur_scale{1.0f};
+        decompose_matrix_trs(world_tf.matrix, cur_pos, cur_rot, cur_scale);
 
         // Previous transform is already TRS — no decomposition needed
         Vec3 pos = glm::mix(prev.position, cur_pos, a);
@@ -127,10 +170,7 @@ void interpolate_transforms(World& world, double alpha) {
         Vec3 scl = glm::mix(prev.scale, cur_scale, a);
 
         // Recompose into InterpolatedTransform (renderer reads this)
-        Mat4 result{1.0f};
-        result = glm::translate(result, pos);
-        result = result * glm::mat4_cast(rot);
-        result = glm::scale(result, scl);
+        Mat4 result = compose_matrix_trs(pos, rot, scl);
         registry.emplace_or_replace<InterpolatedTransform>(entity, result);
     }
 }

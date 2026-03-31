@@ -5,6 +5,11 @@ namespace engine::reflect {
 
 TypeRegistry& TypeRegistry::instance() {
     static TypeRegistry instance;
+    static const bool initialized = [] {
+        instance.register_type<entt::entity>("Entity");
+        return true;
+    }();
+    (void)initialized;
     return instance;
 }
 
@@ -122,6 +127,22 @@ void TypeRegistry::serialize_any(const entt::meta_any& value, core::IArchive& ar
         bool v = value.cast<bool>();
         ar.serialize(name, v);
     }
+    else if (type_id == entt::type_hash<int8_t>::value()) {
+        int32_t v = static_cast<int32_t>(value.cast<int8_t>());
+        ar.serialize(name, v);
+    }
+    else if (type_id == entt::type_hash<uint8_t>::value()) {
+        uint32_t v = static_cast<uint32_t>(value.cast<uint8_t>());
+        ar.serialize(name, v);
+    }
+    else if (type_id == entt::type_hash<int16_t>::value()) {
+        int32_t v = static_cast<int32_t>(value.cast<int16_t>());
+        ar.serialize(name, v);
+    }
+    else if (type_id == entt::type_hash<uint16_t>::value()) {
+        uint32_t v = static_cast<uint32_t>(value.cast<uint16_t>());
+        ar.serialize(name, v);
+    }
     else if (type_id == entt::type_hash<int32_t>::value()) {
         int32_t v = value.cast<int32_t>();
         ar.serialize(name, v);
@@ -200,14 +221,14 @@ void TypeRegistry::serialize_any(const entt::meta_any& value, core::IArchive& ar
             // Get the underlying integer value from the enum
             // Enums are typically stored as their underlying type (usually int)
             int64_t int_val = 0;
-            if (value.allow_cast<int>()) {
-                int_val = static_cast<int64_t>(value.cast<int>());
-            } else if (value.allow_cast<int64_t>()) {
-                int_val = value.cast<int64_t>();
-            } else if (value.allow_cast<uint32_t>()) {
-                int_val = static_cast<int64_t>(value.cast<uint32_t>());
-            } else if (value.allow_cast<int32_t>()) {
-                int_val = static_cast<int64_t>(value.cast<int32_t>());
+            if (auto converted_int = value.allow_cast<int>(); converted_int) {
+                int_val = static_cast<int64_t>(converted_int.cast<int>());
+            } else if (auto converted_i64 = value.allow_cast<int64_t>(); converted_i64) {
+                int_val = converted_i64.cast<int64_t>();
+            } else if (auto converted_u32 = value.allow_cast<uint32_t>(); converted_u32) {
+                int_val = static_cast<int64_t>(converted_u32.cast<uint32_t>());
+            } else if (auto converted_i32 = value.allow_cast<int32_t>(); converted_i32) {
+                int_val = static_cast<int64_t>(converted_i32.cast<int32_t>());
             }
 
             // Find the string name for this value
@@ -260,6 +281,26 @@ entt::meta_any TypeRegistry::deserialize_any(entt::meta_type type, core::IArchiv
         bool v{};
         ar.serialize(name, v);
         return entt::meta_any{v};
+    }
+    else if (type_id == entt::type_hash<int8_t>::value()) {
+        int32_t v{};
+        ar.serialize(name, v);
+        return entt::meta_any{static_cast<int8_t>(v)};
+    }
+    else if (type_id == entt::type_hash<uint8_t>::value()) {
+        uint32_t v{};
+        ar.serialize(name, v);
+        return entt::meta_any{static_cast<uint8_t>(v)};
+    }
+    else if (type_id == entt::type_hash<int16_t>::value()) {
+        int32_t v{};
+        ar.serialize(name, v);
+        return entt::meta_any{static_cast<int16_t>(v)};
+    }
+    else if (type_id == entt::type_hash<uint16_t>::value()) {
+        uint32_t v{};
+        ar.serialize(name, v);
+        return entt::meta_any{static_cast<uint16_t>(v)};
     }
     else if (type_id == entt::type_hash<int32_t>::value()) {
         int32_t v{};
@@ -419,6 +460,11 @@ entt::meta_any TypeRegistry::deserialize_any(entt::meta_type type, core::IArchiv
 }
 
 entt::meta_any TypeRegistry::get_component_any(entt::registry& registry, entt::entity entity, const std::string& type_name) {
+    auto factory_it = m_component_factories.find(type_name);
+    if (factory_it != m_component_factories.end() && factory_it->second.get) {
+        return factory_it->second.get(registry, entity);
+    }
+
     auto it = m_name_to_id.find(type_name);
     if (it == m_name_to_id.end()) {
         return {};
@@ -441,22 +487,16 @@ entt::meta_any TypeRegistry::get_component_any(entt::registry& registry, entt::e
 }
 
 void TypeRegistry::set_component_any(entt::registry& registry, entt::entity entity, const std::string& type_name, const entt::meta_any& value) {
-    auto it = m_name_to_id.find(type_name);
-    if (it == m_name_to_id.end()) {
+    if (!value) {
         return;
     }
 
-    auto* storage = registry.storage(it->second);
-    if (!storage || !storage->contains(entity)) {
+    entt::meta_any target = get_component_any(registry, entity, type_name);
+    if (!target) {
         return;
     }
 
-    auto type = entt::resolve(it->second);
-    if (!type || !value) {
-        return;
-    }
-
-    auto* type_info = get_type_info(it->second);
+    auto* type_info = get_type_info(type_name);
     if (!type_info) {
         return;
     }
@@ -475,16 +515,7 @@ void TypeRegistry::set_component_any(entt::registry& registry, entt::entity enti
     }
 
     for (const auto& update : pending_updates) {
-        auto* current_storage = registry.storage(it->second);
-        if (!current_storage || !current_storage->contains(entity)) {
-            break;
-        }
-
-        void* ptr = current_storage->value(entity);
-        entt::meta_any target = type.from_void(ptr);
-        if (target) {
-            update.first->setter(target, update.second);
-        }
+        update.first->setter(target, update.second);
     }
 }
 
@@ -521,6 +552,14 @@ bool TypeRegistry::remove_component_any(entt::registry& registry, entt::entity e
 
 // Static registration of common vector types
 namespace {
+struct CoreMetaTypeRegistrar {
+    CoreMetaTypeRegistrar() {
+        auto& reg = TypeRegistry::instance();
+        reg.register_type<entt::entity>("Entity");
+    }
+};
+static CoreMetaTypeRegistrar _core_meta_type_registrar;
+
 struct VectorTypeRegistrar {
     VectorTypeRegistrar() {
         auto& reg = TypeRegistry::instance();

@@ -1,8 +1,56 @@
 #include <catch2/catch_test_macros.hpp>
 #include <engine/scene/scene_serializer.hpp>
 #include <engine/scene/transform.hpp>
+#include <engine/reflect/reflect.hpp>
 
 using namespace engine::scene;
+
+namespace {
+
+struct TestReferenceComponent {
+    entt::entity target = entt::null;
+    int weight = 0;
+
+    TestReferenceComponent() = default;
+    TestReferenceComponent(entt::entity target_entity, int new_weight)
+        : target(target_entity), weight(new_weight) {}
+};
+
+struct TestCustomEncodedComponent {
+    int hp = 0;
+
+    TestCustomEncodedComponent() = default;
+    explicit TestCustomEncodedComponent(int value) : hp(value) {}
+};
+
+void register_test_components() {
+    static bool registered = false;
+    if (registered) {
+        return;
+    }
+    registered = true;
+
+    auto& type_registry = engine::reflect::TypeRegistry::instance();
+
+    type_registry.register_component<TestReferenceComponent>(
+        "TestReferenceComponent",
+        engine::reflect::TypeMeta().set_display_name("Test Reference"));
+    type_registry.register_property<TestReferenceComponent, &TestReferenceComponent::target>(
+        "target",
+        engine::reflect::PropertyMeta().set_entity_ref(true));
+    type_registry.register_property<TestReferenceComponent, &TestReferenceComponent::weight>(
+        "weight",
+        engine::reflect::PropertyMeta());
+
+    type_registry.register_component<TestCustomEncodedComponent>(
+        "TestCustomEncodedComponent",
+        engine::reflect::TypeMeta().set_display_name("Test Custom Encoded"));
+    type_registry.register_property<TestCustomEncodedComponent, &TestCustomEncodedComponent::hp>(
+        "hp",
+        engine::reflect::PropertyMeta());
+}
+
+} // namespace
 
 TEST_CASE("SceneSerializer deserialize_entity reuses World EntityInfo", "[scene][serializer]") {
     World world;
@@ -93,4 +141,89 @@ TEST_CASE("SceneSerializer deserializes entity components from scenes", "[scene]
     REQUIRE(world.has<LocalTransform>(mover));
     REQUIRE(world.has<WorldTransform>(mover));
     REQUIRE(world.get<LocalTransform>(mover).position == engine::core::Vec3{4.0f, 5.0f, 6.0f});
+}
+
+TEST_CASE("SceneSerializer round-trips reflected entity references", "[scene][serializer][reflection]") {
+    register_test_components();
+
+    World source_world;
+    SceneSerializer serializer;
+
+    Entity target = source_world.create("Target");
+    Entity owner = source_world.create("Owner");
+    source_world.emplace<TestReferenceComponent>(owner, target, 7);
+
+    const std::string json = serializer.serialize(source_world);
+
+    World loaded_world;
+    REQUIRE(serializer.deserialize(loaded_world, json));
+
+    Entity loaded_owner = loaded_world.find_by_name("Owner");
+    Entity loaded_target = loaded_world.find_by_name("Target");
+
+    REQUIRE(loaded_owner != NullEntity);
+    REQUIRE(loaded_target != NullEntity);
+    REQUIRE(loaded_world.has<TestReferenceComponent>(loaded_owner));
+    REQUIRE(loaded_world.get<TestReferenceComponent>(loaded_owner).target == loaded_target);
+    REQUIRE(loaded_world.get<TestReferenceComponent>(loaded_owner).weight == 7);
+}
+
+TEST_CASE("SceneSerializer deserialize_entity resolves internal entity references", "[scene][serializer][prefab]") {
+    register_test_components();
+
+    World source_world;
+    SceneSerializer serializer;
+
+    Entity root = source_world.create("Root");
+    Entity child = source_world.create("Child");
+    source_world.emplace<LocalTransform>(root, engine::core::Vec3{0.0f, 0.0f, 0.0f});
+    source_world.emplace<LocalTransform>(child, engine::core::Vec3{1.0f, 0.0f, 0.0f});
+    set_parent(source_world, child, root);
+    source_world.emplace<TestReferenceComponent>(root, child, 99);
+
+    const std::string json = serializer.serialize_entity(source_world, root, true);
+
+    World instance_world;
+    Entity new_root = serializer.deserialize_entity(instance_world, json);
+
+    REQUIRE(new_root != NullEntity);
+    REQUIRE(instance_world.has<TestReferenceComponent>(new_root));
+
+    const auto& children = get_children(instance_world, new_root);
+    REQUIRE(children.size() == 1);
+    REQUIRE(instance_world.get<TestReferenceComponent>(new_root).target == children[0]);
+    REQUIRE(instance_world.get<TestReferenceComponent>(new_root).weight == 99);
+}
+
+TEST_CASE("SceneSerializer uses registered custom component serializers during round-trip", "[scene][serializer][custom]") {
+    SceneSerializer serializer;
+    serializer.register_component<TestCustomEncodedComponent>(
+        "TestCustomEncodedComponent",
+        [](const void* component) {
+            const auto& value = *static_cast<const TestCustomEncodedComponent*>(component);
+            return std::string{"{\"encoded_hp\": "} + std::to_string(value.hp) + "}";
+        },
+        [](void* component, const std::string& json) {
+            auto& value = *static_cast<TestCustomEncodedComponent*>(component);
+            const auto colon = json.find(':');
+            const auto end = json.find('}', colon == std::string::npos ? 0 : colon);
+            value.hp = (colon != std::string::npos)
+                ? std::stoi(json.substr(colon + 1, end == std::string::npos ? std::string::npos : end - colon - 1))
+                : 0;
+        }
+    );
+
+    World source_world;
+    Entity entity = source_world.create("Custom");
+    source_world.emplace<TestCustomEncodedComponent>(entity, 123);
+
+    const std::string json = serializer.serialize_entity(source_world, entity, false);
+    REQUIRE(json.find("\"encoded_hp\"") != std::string::npos);
+
+    World loaded_world;
+    Entity loaded = serializer.deserialize_entity(loaded_world, json);
+
+    REQUIRE(loaded != NullEntity);
+    REQUIRE(loaded_world.has<TestCustomEncodedComponent>(loaded));
+    REQUIRE(loaded_world.get<TestCustomEncodedComponent>(loaded).hp == 123);
 }

@@ -100,6 +100,12 @@ public:
                            ComponentDeserializer deserializer) {
         m_component_serializers[type_name] = std::move(serializer);
         m_component_deserializers[type_name] = std::move(deserializer);
+        m_custom_component_accessors[type_name] = [](const World& world, Entity entity) -> const void* {
+            return world.try_get<T>(entity);
+        };
+        m_custom_component_emplacers[type_name] = [](World& world, Entity entity) -> void* {
+            return &world.emplace_or_replace<T>(entity);
+        };
         // Store type ID for runtime lookup
         m_type_names[typeid(T).hash_code()] = type_name;
     }
@@ -152,6 +158,8 @@ private:
 
     // Custom component serialization (using reflection)
     bool serialize_custom_component(World& world, Entity entity, const std::string& type_name, std::string& out_json) const;
+    bool serialize_custom_component(World& world, Entity entity, const std::string& type_name, std::string& out_json,
+                                    const EntityResolutionContext* entity_ctx) const;
     bool deserialize_custom_component(World& world, Entity entity, const std::string& type_name, const std::string& json);
     bool deserialize_custom_component(World& world, Entity entity, const std::string& type_name, const std::string& json,
                                       const EntityResolutionContext* entity_ctx);
@@ -168,6 +176,8 @@ private:
     SerializerConfig m_config;
     std::unordered_map<std::string, ComponentSerializer> m_component_serializers;
     std::unordered_map<std::string, ComponentDeserializer> m_component_deserializers;
+    std::unordered_map<std::string, std::function<const void*(const World&, Entity)>> m_custom_component_accessors;
+    std::unordered_map<std::string, std::function<void*(World&, Entity)>> m_custom_component_emplacers;
     std::unordered_map<size_t, std::string> m_type_names;  // type_id hash -> name
 
     std::function<AssetReference(uint32_t)> m_asset_resolver;

@@ -9,6 +9,8 @@
 
 namespace engine::audio {
 
+void ensure_component_registrations();
+
 using namespace engine::scene;
 using namespace engine::core;
 
@@ -17,6 +19,7 @@ Vec3 AudioSystem::s_listener_position{0.0f};
 Vec3 AudioSystem::s_listener_forward{0.0f, 0.0f, -1.0f};
 
 void AudioSystem::init(World& /*world*/) {
+    ensure_component_registrations();
     // Nothing to initialize - AudioEngine is already a singleton
 }
 

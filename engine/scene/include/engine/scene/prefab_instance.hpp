@@ -127,8 +127,11 @@ private:
     // Collect entity hierarchy for saving
     std::vector<Entity> collect_hierarchy(World& world, Entity root);
 
+    SceneSerializer& serializer() { return m_serializer ? *m_serializer : m_default_serializer; }
+
     std::unordered_map<std::string, PrefabData> m_cache;
     SceneSerializer* m_serializer = nullptr;
+    SceneSerializer m_default_serializer;
 };
 
 // Prefab utilities

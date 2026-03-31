@@ -5,6 +5,13 @@
 
 namespace engine::scene {
 
+void ensure_component_registrations();
+
+World::World() {
+    // Force-link scene reflection registrations from the static library.
+    ensure_component_registrations();
+}
+
 Entity World::create() {
     Entity e = m_registry.create();
     auto& info = m_registry.emplace_or_replace<EntityInfo>(e);

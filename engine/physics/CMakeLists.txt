@@ -9,6 +9,7 @@ engine_add_module(
         src/character_controller.cpp
         src/physics_system.cpp
         src/rigid_body_component.cpp
+        src/rigid_body_component_registration.cpp
         # Water/Buoyancy/Boat physics
         src/water_volume.cpp
         src/buoyancy.cpp

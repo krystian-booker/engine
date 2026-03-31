@@ -93,8 +93,8 @@ private:
 
     json m_root;
     std::vector<json*> m_stack;
+    std::vector<size_t> m_array_indices;
     bool m_writing;
-    size_t m_array_index = 0;
 };
 
 // Binary Archive for compact serialization

@@ -2,6 +2,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <engine/scene/transform.hpp>
 #include <engine/scene/world.hpp>
+#include <cmath>
 
 using namespace engine::scene;
 using namespace engine::core;
@@ -247,6 +248,29 @@ TEST_CASE("Removing LocalTransform cleans up derived transform state", "[scene][
     REQUIRE_FALSE(world.has<WorldTransform>(entity));
     REQUIRE_FALSE(world.has<PreviousTransform>(entity));
     REQUIRE_FALSE(world.has<InterpolatedTransform>(entity));
+}
+
+TEST_CASE("Transform decomposition tolerates zero scale", "[scene][transform][regression]") {
+    World world;
+    Entity entity = world.create("ZeroScale");
+
+    auto& local = world.emplace<LocalTransform>(entity);
+    local.scale = Vec3{0.0f, 0.0f, 0.0f};
+
+    transform_system(world, 0.0);
+    interpolate_transforms(world, 0.5);
+
+    const Quat rotation = world.get<WorldTransform>(entity).rotation();
+    REQUIRE(std::isfinite(rotation.w));
+    REQUIRE(std::isfinite(rotation.x));
+    REQUIRE(std::isfinite(rotation.y));
+    REQUIRE(std::isfinite(rotation.z));
+
+    const auto& previous = world.get<PreviousTransform>(entity);
+    REQUIRE(std::isfinite(previous.rotation.w));
+    REQUIRE(std::isfinite(previous.rotation.x));
+    REQUIRE(std::isfinite(previous.rotation.y));
+    REQUIRE(std::isfinite(previous.rotation.z));
 }
 
 TEST_CASE("Interpolate transforms writes render state from previous and current world transforms", "[scene][transform]") {

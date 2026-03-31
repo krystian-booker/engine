@@ -341,3 +341,9 @@ struct ClothAttachmentRegistrar {
 static ClothAttachmentRegistrar _cloth_attachment_registrar;
 
 } // anonymous namespace
+
+namespace engine::physics {
+
+void ensure_cloth_component_registration() {}
+
+} // namespace engine::physics

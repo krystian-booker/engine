@@ -190,3 +190,9 @@ struct BoatComponentRegistrar {
 static BoatComponentRegistrar _boat_registrar;
 
 } // anonymous namespace
+
+namespace engine::physics {
+
+void ensure_water_component_registration() {}
+
+} // namespace engine::physics

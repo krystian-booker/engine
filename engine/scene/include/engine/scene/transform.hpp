@@ -13,6 +13,10 @@ using core::Quat;
 using core::Mat3;
 using core::Mat4;
 
+// Shared TRS helpers used by scene, physics, and rendering systems.
+Mat4 compose_matrix_trs(const Vec3& position, const Quat& rotation, const Vec3& scale = Vec3{1.0f});
+void decompose_matrix_trs(const Mat4& matrix, Vec3& position, Quat& rotation, Vec3& scale);
+
 // Local space transform (relative to parent)
 struct LocalTransform {
     Vec3 position{0.0f};
@@ -27,11 +31,7 @@ struct LocalTransform {
 
     // Compute the local transformation matrix
     Mat4 matrix() const {
-        Mat4 result{1.0f};
-        result = glm::translate(result, position);
-        result = result * glm::mat4_cast(rotation);
-        result = glm::scale(result, scale);
-        return result;
+        return compose_matrix_trs(position, rotation, scale);
     }
 
     // Get forward, right, up vectors
@@ -68,22 +68,20 @@ struct WorldTransform {
 
     // Extract world scale (approximate, doesn't handle skew)
     Vec3 scale() const {
-        return Vec3{
-            glm::length(Vec3{matrix[0]}),
-            glm::length(Vec3{matrix[1]}),
-            glm::length(Vec3{matrix[2]})
-        };
+        Vec3 position_out{0.0f};
+        Quat rotation_out{1.0f, 0.0f, 0.0f, 0.0f};
+        Vec3 scale_out{1.0f};
+        decompose_matrix_trs(matrix, position_out, rotation_out, scale_out);
+        return scale_out;
     }
 
     // Extract world rotation
     Quat rotation() const {
-        Vec3 s = scale();
-        Mat3 rot_mat{
-            Vec3{matrix[0]} / s.x,
-            Vec3{matrix[1]} / s.y,
-            Vec3{matrix[2]} / s.z
-        };
-        return glm::quat_cast(rot_mat);
+        Vec3 position_out{0.0f};
+        Quat rotation_out{1.0f, 0.0f, 0.0f, 0.0f};
+        Vec3 scale_out{1.0f};
+        decompose_matrix_trs(matrix, position_out, rotation_out, scale_out);
+        return rotation_out;
     }
 };
 
@@ -107,18 +105,7 @@ struct PreviousTransform {
     // Construct from world matrix (for migration/compatibility)
     static PreviousTransform from_matrix(const Mat4& m) {
         PreviousTransform pt;
-        pt.position = Vec3{m[3]};
-        pt.scale = Vec3{
-            glm::length(Vec3{m[0]}),
-            glm::length(Vec3{m[1]}),
-            glm::length(Vec3{m[2]})
-        };
-        Mat3 rot_mat{
-            Vec3{m[0]} / pt.scale.x,
-            Vec3{m[1]} / pt.scale.y,
-            Vec3{m[2]} / pt.scale.z
-        };
-        pt.rotation = glm::quat_cast(rot_mat);
+        decompose_matrix_trs(m, pt.position, pt.rotation, pt.scale);
         return pt;
     }
 };
@@ -138,6 +125,10 @@ struct Hierarchy {
 
 // Forward declarations of hierarchy functions
 class World;
+
+// World-space helpers for systems that author absolute motion while ECS stores local transforms.
+void get_entity_world_pose(const World& world, Entity entity, const LocalTransform& local, Vec3& position, Quat& rotation);
+void set_entity_world_pose(World& world, Entity entity, LocalTransform& local, const Vec3& position, const Quat& rotation);
 
 // Set parent of an entity, handles all linked list updates
 void set_parent(World& world, Entity child, Entity parent);

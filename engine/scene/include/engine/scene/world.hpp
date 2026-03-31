@@ -19,7 +19,7 @@ namespace engine::scene {
 // - Component modifications must be synchronized or deferred
 class World {
 public:
-    World() = default;
+    World();
     ~World() = default;
 
     // Non-copyable but movable

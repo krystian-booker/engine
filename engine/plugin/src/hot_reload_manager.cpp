@@ -209,8 +209,11 @@ bool HotReloadManager::serialize_world_state(nlohmann::json& out) {
         // Use scene serializer to save world state
         // This captures all entities and components registered with reflection
         scene::SceneSerializer serializer;
-        out = serializer.serialize(*m_context->world);
+        out = nlohmann::json::parse(serializer.serialize(*m_context->world));
         return true;
+    } catch (const nlohmann::json::exception& e) {
+        core::log(core::LogLevel::Error, "World serialization JSON parse failed: {}", e.what());
+        return false;
     } catch (const std::exception& e) {
         core::log(core::LogLevel::Error, "World serialization failed: {}", e.what());
         return false;
@@ -228,8 +231,15 @@ bool HotReloadManager::deserialize_world_state(const nlohmann::json& state) {
 
         // Deserialize saved state
         scene::SceneSerializer serializer;
-        serializer.deserialize(*m_context->world, state.dump());
-        return true;
+        std::string scene_json;
+        if (state.is_string()) {
+            // Backward compatibility for previously string-wrapped snapshots.
+            scene_json = state.get<std::string>();
+        } else {
+            scene_json = state.dump();
+        }
+
+        return serializer.deserialize(*m_context->world, scene_json);
     } catch (const std::exception& e) {
         core::log(core::LogLevel::Error, "World deserialization failed: {}", e.what());
         return false;

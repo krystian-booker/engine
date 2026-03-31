@@ -149,10 +149,12 @@ private:
     // Component factory function types
     using ComponentEmplacer = std::function<void(entt::registry&, entt::entity)>;
     using ComponentRemover = std::function<void(entt::registry&, entt::entity)>;
+    using ComponentGetter = std::function<entt::meta_any(entt::registry&, entt::entity)>;
 
     struct ComponentFactory {
         ComponentEmplacer emplace;
         ComponentRemover remove;
+        ComponentGetter get;
     };
 
     TypeRegistry() = default;
@@ -187,7 +189,10 @@ void TypeRegistry::register_type(const char* name, const TypeMeta& type_meta) {
     m_type_info[type_id] = std::move(info);
 
     // Register with EnTT meta system
-    entt::meta_factory<T>{}.type(type_id);
+    auto meta_factory = entt::meta_factory<T>{}.type(type_id);
+    if constexpr (std::is_default_constructible_v<T>) {
+        meta_factory.template ctor<>();
+    }
 }
 
 template<typename T>
@@ -209,7 +214,10 @@ void TypeRegistry::register_component(const char* name, const TypeMeta& type_met
     m_component_names.push_back(name);
 
     // Register with EnTT meta system
-    entt::meta_factory<T>{}.type(type_id);
+    auto meta_factory = entt::meta_factory<T>{}.type(type_id);
+    if constexpr (std::is_default_constructible_v<T>) {
+        meta_factory.template ctor<>();
+    }
 
     // Store factory functions for runtime add/remove
     ComponentFactory factory;
@@ -218,6 +226,12 @@ void TypeRegistry::register_component(const char* name, const TypeMeta& type_met
     };
     factory.remove = [](entt::registry& reg, entt::entity ent) {
         reg.remove<T>(ent);
+    };
+    factory.get = [](entt::registry& reg, entt::entity ent) -> entt::meta_any {
+        if (auto* component = reg.try_get<T>(ent)) {
+            return entt::forward_as_meta(*component);
+        }
+        return {};
     };
     m_component_factories[name] = std::move(factory);
 }
@@ -251,6 +265,17 @@ void TypeRegistry::register_property(const char* name, const PropertyMeta& prope
             if (auto* ptr = obj.try_cast<T>()) {
                 if (auto* val = value.try_cast<MemberType>()) {
                     ptr->*MemberPtr = *val;
+                }
+                else if constexpr (std::is_integral_v<MemberType> && !std::is_same_v<MemberType, bool> && !std::is_enum_v<MemberType>) {
+                    if (auto* int_val = value.try_cast<int32_t>()) {
+                        ptr->*MemberPtr = static_cast<MemberType>(*int_val);
+                    } else if (auto* uint_val = value.try_cast<uint32_t>()) {
+                        ptr->*MemberPtr = static_cast<MemberType>(*uint_val);
+                    } else if (auto* int64_val = value.try_cast<int64_t>()) {
+                        ptr->*MemberPtr = static_cast<MemberType>(*int64_val);
+                    } else if (auto* uint64_val = value.try_cast<uint64_t>()) {
+                        ptr->*MemberPtr = static_cast<MemberType>(*uint64_val);
+                    }
                 }
                 // Handle int -> enum conversion for deserialization
                 else if constexpr (std::is_enum_v<MemberType>) {
@@ -408,6 +433,17 @@ void TypeRegistry::register_property(const char* name, const PropertyMeta& prope
                 // Try direct cast first
                 if (auto* val = value.try_cast<PropertyType>()) {
                     s(*ptr, *val);
+                }
+                else if constexpr (std::is_integral_v<PropertyType> && !std::is_same_v<PropertyType, bool> && !std::is_enum_v<PropertyType>) {
+                    if (auto* int_val = value.try_cast<int32_t>()) {
+                        s(*ptr, static_cast<PropertyType>(*int_val));
+                    } else if (auto* uint_val = value.try_cast<uint32_t>()) {
+                        s(*ptr, static_cast<PropertyType>(*uint_val));
+                    } else if (auto* int64_val = value.try_cast<int64_t>()) {
+                        s(*ptr, static_cast<PropertyType>(*int64_val));
+                    } else if (auto* uint64_val = value.try_cast<uint64_t>()) {
+                        s(*ptr, static_cast<PropertyType>(*uint64_val));
+                    }
                 }
                 // Handle int -> enum conversion for deserialization
                 else if constexpr (std::is_enum_v<PropertyType>) {

@@ -9,6 +9,22 @@ namespace {
 using namespace engine::audio;
 using namespace engine::reflect;
 
+struct SoundHandleRegistrar {
+    SoundHandleRegistrar() {
+        TypeRegistry::instance().register_type<SoundHandle>(
+            "SoundHandle",
+            TypeMeta()
+                .set_display_name("Sound Handle")
+                .set_description("Opaque sound asset handle"));
+
+        TypeRegistry::instance().register_property<SoundHandle, &SoundHandle::id>(
+            "id",
+            PropertyMeta()
+                .set_display_name("ID"));
+    }
+};
+static SoundHandleRegistrar _sound_handle_registrar;
+
 // Register AttenuationModel enum
 struct AttenuationModelRegistrar {
     AttenuationModelRegistrar() {
@@ -27,6 +43,9 @@ struct AudioSourceRegistrar {
     AudioSourceRegistrar() {
         TypeRegistry::instance().register_component<AudioSource>("AudioSource",
             TypeMeta().set_display_name("Audio Source").set_description("3D spatial audio source"));
+
+        TypeRegistry::instance().register_property<AudioSource, &AudioSource::sound>("sound",
+            PropertyMeta().set_display_name("Sound").set_category("Playback"));
 
         // Playback settings
         TypeRegistry::instance().register_property<AudioSource, &AudioSource::playing>("playing",
@@ -105,6 +124,9 @@ struct AudioTriggerRegistrar {
         TypeRegistry::instance().register_component<AudioTrigger>("AudioTrigger",
             TypeMeta().set_display_name("Audio Trigger").set_description("Zone-based sound trigger"));
 
+        TypeRegistry::instance().register_property<AudioTrigger, &AudioTrigger::sound>("sound",
+            PropertyMeta().set_display_name("Sound"));
+
         TypeRegistry::instance().register_property<AudioTrigger, &AudioTrigger::trigger_radius>("trigger_radius",
             PropertyMeta().set_display_name("Trigger Radius").set_range(0.0f, 1000.0f));
 
@@ -157,3 +179,9 @@ struct ReverbZoneRegistrar {
 static ReverbZoneRegistrar _reverbzone_registrar;
 
 } // anonymous namespace
+
+namespace engine::audio {
+
+void ensure_component_registrations() {}
+
+} // namespace engine::audio

@@ -5,6 +5,35 @@ namespace engine::core {
 
 namespace {
     constexpr uint32_t MAX_SERIALIZED_SIZE = 256 * 1024 * 1024; // 256MB limit
+
+    template<typename T>
+    void write_json_value(json& current, const char* name, const T& value) {
+        if (current.is_array()) {
+            current.push_back(value);
+        } else {
+            current[name] = value;
+        }
+    }
+
+    template<typename T>
+    void read_json_value(const json& current, const char* name, std::vector<size_t>& array_indices, T& value) {
+        if (current.is_array()) {
+            if (array_indices.empty()) {
+                return;
+            }
+
+            const size_t index = array_indices.back();
+            if (index < current.size()) {
+                value = current[index].get<T>();
+                array_indices.back() = index + 1;
+            }
+            return;
+        }
+
+        if (current.contains(name)) {
+            value = current[name].get<T>();
+        }
+    }
 }
 
 // JsonArchive implementation
@@ -39,141 +68,169 @@ const json& JsonArchive::current() const {
 
 void JsonArchive::serialize(const char* name, bool& value) {
     if (m_writing) {
-        current()[name] = value;
+        write_json_value(current(), name, value);
     } else {
-        if (current().contains(name)) {
-            value = current()[name].get<bool>();
-        }
+        read_json_value(current(), name, m_array_indices, value);
     }
 }
 
 void JsonArchive::serialize(const char* name, int32_t& value) {
     if (m_writing) {
-        current()[name] = value;
+        write_json_value(current(), name, value);
     } else {
-        if (current().contains(name)) {
-            value = current()[name].get<int32_t>();
-        }
+        read_json_value(current(), name, m_array_indices, value);
     }
 }
 
 void JsonArchive::serialize(const char* name, uint32_t& value) {
     if (m_writing) {
-        current()[name] = value;
+        write_json_value(current(), name, value);
     } else {
-        if (current().contains(name)) {
-            value = current()[name].get<uint32_t>();
-        }
+        read_json_value(current(), name, m_array_indices, value);
     }
 }
 
 void JsonArchive::serialize(const char* name, int64_t& value) {
     if (m_writing) {
-        current()[name] = value;
+        write_json_value(current(), name, value);
     } else {
-        if (current().contains(name)) {
-            value = current()[name].get<int64_t>();
-        }
+        read_json_value(current(), name, m_array_indices, value);
     }
 }
 
 void JsonArchive::serialize(const char* name, uint64_t& value) {
     if (m_writing) {
-        current()[name] = value;
+        write_json_value(current(), name, value);
     } else {
-        if (current().contains(name)) {
-            value = current()[name].get<uint64_t>();
-        }
+        read_json_value(current(), name, m_array_indices, value);
     }
 }
 
 void JsonArchive::serialize(const char* name, float& value) {
     if (m_writing) {
-        current()[name] = value;
+        write_json_value(current(), name, value);
     } else {
-        if (current().contains(name)) {
-            value = current()[name].get<float>();
-        }
+        read_json_value(current(), name, m_array_indices, value);
     }
 }
 
 void JsonArchive::serialize(const char* name, double& value) {
     if (m_writing) {
-        current()[name] = value;
+        write_json_value(current(), name, value);
     } else {
-        if (current().contains(name)) {
-            value = current()[name].get<double>();
-        }
+        read_json_value(current(), name, m_array_indices, value);
     }
 }
 
 void JsonArchive::serialize(const char* name, std::string& value) {
     if (m_writing) {
-        current()[name] = value;
+        write_json_value(current(), name, value);
     } else {
-        if (current().contains(name)) {
-            value = current()[name].get<std::string>();
-        }
+        read_json_value(current(), name, m_array_indices, value);
     }
 }
 
 void JsonArchive::serialize(const char* name, Vec2& value) {
     if (m_writing) {
-        current()[name] = {value.x, value.y};
+        write_json_value(current(), name, json::array({value.x, value.y}));
     } else {
-        if (current().contains(name) && current()[name].is_array()) {
-            auto& arr = current()[name];
-            if (arr.size() >= 2) {
-                value.x = arr[0].get<float>();
-                value.y = arr[1].get<float>();
+        const json* arr = nullptr;
+        if (current().is_array()) {
+            if (m_array_indices.empty()) {
+                return;
             }
+            const size_t index = m_array_indices.back();
+            if (index < current().size() && current()[index].is_array()) {
+                arr = &current()[index];
+                m_array_indices.back() = index + 1;
+            }
+        } else if (current().contains(name) && current()[name].is_array()) {
+            arr = &current()[name];
+        }
+
+        if (arr && arr->size() >= 2) {
+            value.x = (*arr)[0].get<float>();
+            value.y = (*arr)[1].get<float>();
         }
     }
 }
 
 void JsonArchive::serialize(const char* name, Vec3& value) {
     if (m_writing) {
-        current()[name] = {value.x, value.y, value.z};
+        write_json_value(current(), name, json::array({value.x, value.y, value.z}));
     } else {
-        if (current().contains(name) && current()[name].is_array()) {
-            auto& arr = current()[name];
-            if (arr.size() >= 3) {
-                value.x = arr[0].get<float>();
-                value.y = arr[1].get<float>();
-                value.z = arr[2].get<float>();
+        const json* arr = nullptr;
+        if (current().is_array()) {
+            if (m_array_indices.empty()) {
+                return;
             }
+            const size_t index = m_array_indices.back();
+            if (index < current().size() && current()[index].is_array()) {
+                arr = &current()[index];
+                m_array_indices.back() = index + 1;
+            }
+        } else if (current().contains(name) && current()[name].is_array()) {
+            arr = &current()[name];
+        }
+
+        if (arr && arr->size() >= 3) {
+            value.x = (*arr)[0].get<float>();
+            value.y = (*arr)[1].get<float>();
+            value.z = (*arr)[2].get<float>();
         }
     }
 }
 
 void JsonArchive::serialize(const char* name, Vec4& value) {
     if (m_writing) {
-        current()[name] = {value.x, value.y, value.z, value.w};
+        write_json_value(current(), name, json::array({value.x, value.y, value.z, value.w}));
     } else {
-        if (current().contains(name) && current()[name].is_array()) {
-            auto& arr = current()[name];
-            if (arr.size() >= 4) {
-                value.x = arr[0].get<float>();
-                value.y = arr[1].get<float>();
-                value.z = arr[2].get<float>();
-                value.w = arr[3].get<float>();
+        const json* arr = nullptr;
+        if (current().is_array()) {
+            if (m_array_indices.empty()) {
+                return;
             }
+            const size_t index = m_array_indices.back();
+            if (index < current().size() && current()[index].is_array()) {
+                arr = &current()[index];
+                m_array_indices.back() = index + 1;
+            }
+        } else if (current().contains(name) && current()[name].is_array()) {
+            arr = &current()[name];
+        }
+
+        if (arr && arr->size() >= 4) {
+            value.x = (*arr)[0].get<float>();
+            value.y = (*arr)[1].get<float>();
+            value.z = (*arr)[2].get<float>();
+            value.w = (*arr)[3].get<float>();
         }
     }
 }
 
 void JsonArchive::serialize(const char* name, Quat& value) {
     if (m_writing) {
-        current()[name] = {value.w, value.x, value.y, value.z};
+        write_json_value(current(), name, json::array({value.w, value.x, value.y, value.z}));
     } else {
-        if (current().contains(name) && current()[name].is_array()) {
-            auto& arr = current()[name];
-            if (arr.size() >= 4) {
-                value.w = arr[0].get<float>();
-                value.x = arr[1].get<float>();
-                value.y = arr[2].get<float>();
-                value.z = arr[3].get<float>();
+        const json* arr = nullptr;
+        if (current().is_array()) {
+            if (m_array_indices.empty()) {
+                return;
             }
+            const size_t index = m_array_indices.back();
+            if (index < current().size() && current()[index].is_array()) {
+                arr = &current()[index];
+                m_array_indices.back() = index + 1;
+            }
+        } else if (current().contains(name) && current()[name].is_array()) {
+            arr = &current()[name];
+        }
+
+        if (arr && arr->size() >= 4) {
+            value.w = (*arr)[0].get<float>();
+            value.x = (*arr)[1].get<float>();
+            value.y = (*arr)[2].get<float>();
+            value.z = (*arr)[3].get<float>();
         }
     }
 }
@@ -186,15 +243,26 @@ void JsonArchive::serialize(const char* name, Mat4& value) {
                 arr.push_back(value[i][j]);
             }
         }
-        current()[name] = arr;
+        write_json_value(current(), name, arr);
     } else {
-        if (current().contains(name) && current()[name].is_array()) {
-            auto& arr = current()[name];
-            if (arr.size() >= 16) {
-                for (int i = 0; i < 4; ++i) {
-                    for (int j = 0; j < 4; ++j) {
-                        value[i][j] = arr[i * 4 + j].get<float>();
-                    }
+        const json* arr = nullptr;
+        if (current().is_array()) {
+            if (m_array_indices.empty()) {
+                return;
+            }
+            const size_t index = m_array_indices.back();
+            if (index < current().size() && current()[index].is_array()) {
+                arr = &current()[index];
+                m_array_indices.back() = index + 1;
+            }
+        } else if (current().contains(name) && current()[name].is_array()) {
+            arr = &current()[name];
+        }
+
+        if (arr && arr->size() >= 16) {
+            for (int i = 0; i < 4; ++i) {
+                for (int j = 0; j < 4; ++j) {
+                    value[i][j] = (*arr)[i * 4 + j].get<float>();
                 }
             }
         }
@@ -203,10 +271,28 @@ void JsonArchive::serialize(const char* name, Mat4& value) {
 
 bool JsonArchive::begin_object(const char* name) {
     if (m_writing) {
-        current()[name] = json::object();
-        m_stack.push_back(&current()[name]);
+        if (current().is_array()) {
+            current().push_back(json::object());
+            m_stack.push_back(&current().back());
+        } else {
+            current()[name] = json::object();
+            m_stack.push_back(&current()[name]);
+        }
         return true;
     } else {
+        if (current().is_array()) {
+            if (m_array_indices.empty()) {
+                return false;
+            }
+            const size_t index = m_array_indices.back();
+            if (index < current().size() && current()[index].is_object()) {
+                m_array_indices.back() = index + 1;
+                m_stack.push_back(&current()[index]);
+                return true;
+            }
+            return false;
+        }
+
         if (current().contains(name) && current()[name].is_object()) {
             m_stack.push_back(&current()[name]);
             return true;
@@ -223,15 +309,36 @@ void JsonArchive::end_object() {
 
 size_t JsonArchive::begin_array(const char* name, size_t count) {
     if (m_writing) {
-        current()[name] = json::array();
-        m_stack.push_back(&current()[name]);
-        m_array_index = 0;
+        if (current().is_array()) {
+            current().push_back(json::array());
+            m_stack.push_back(&current().back());
+        } else {
+            current()[name] = json::array();
+            m_stack.push_back(&current()[name]);
+        }
+        m_array_indices.push_back(0);
         return count;  // JSON doesn't need to store count, but return it for consistency
     } else {
+        if (current().is_array()) {
+            if (m_array_indices.empty()) {
+                return 0;
+            }
+            const size_t index = m_array_indices.back();
+            if (index < current().size() && current()[index].is_array()) {
+                json* array_ptr = &current()[index];
+                m_array_indices.back() = index + 1;
+                m_stack.push_back(array_ptr);
+                m_array_indices.push_back(0);
+                return array_ptr->size();
+            }
+            return 0;
+        }
+
         if (current().contains(name) && current()[name].is_array()) {
-            m_stack.push_back(&current()[name]);
-            m_array_index = 0;
-            return current().size();
+            json* array_ptr = &current()[name];
+            m_stack.push_back(array_ptr);
+            m_array_indices.push_back(0);
+            return array_ptr->size();
         }
         return 0;
     }
@@ -240,6 +347,9 @@ size_t JsonArchive::begin_array(const char* name, size_t count) {
 void JsonArchive::end_array() {
     if (m_stack.size() > 1) {
         m_stack.pop_back();
+    }
+    if (!m_array_indices.empty()) {
+        m_array_indices.pop_back();
     }
 }
 

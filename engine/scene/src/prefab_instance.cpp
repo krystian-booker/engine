@@ -273,13 +273,8 @@ Entity PrefabManager::instantiate(World& world, const std::string& prefab_path, 
         return NullEntity;
     }
 
-    if (!m_serializer) {
-        core::log(core::LogLevel::Error, "PrefabManager: No serializer set, cannot instantiate prefab");
-        return NullEntity;
-    }
-
     // Deserialize the prefab
-    Entity root = m_serializer->deserialize_entity(world, data->json_data, parent);
+    Entity root = serializer().deserialize_entity(world, data->json_data, parent);
 
     if (root == NullEntity) {
         core::log(core::LogLevel::Error, "PrefabManager: Failed to deserialize prefab '{}'", prefab_path);
@@ -324,18 +319,13 @@ Entity PrefabManager::instantiate(World& world, const std::string& prefab_path,
 }
 
 bool PrefabManager::create_prefab(World& world, Entity root, const std::string& save_path) {
-    if (!m_serializer) {
-        core::log(core::LogLevel::Error, "PrefabManager: No serializer set, cannot create prefab");
-        return false;
-    }
-
     if (root == NullEntity || !world.valid(root)) {
         core::log(core::LogLevel::Error, "PrefabManager: Invalid entity for prefab creation");
         return false;
     }
 
     // Serialize the entity hierarchy
-    std::string json = m_serializer->serialize_entity(world, root, true);
+    std::string json = serializer().serialize_entity(world, root, true);
 
     if (json.empty()) {
         core::log(core::LogLevel::Error, "PrefabManager: Failed to serialize entity for prefab");
@@ -363,7 +353,7 @@ void PrefabManager::update_instances(World& world, const std::string& prefab_pat
     unload_prefab(prefab_path);
     const PrefabData* data = load_prefab(prefab_path);
 
-    if (!data || !m_serializer) {
+    if (!data) {
         return;
     }
 
@@ -401,7 +391,7 @@ void PrefabManager::update_instances(World& world, const std::string& prefab_pat
         }
 
         // Re-deserialize from prefab data as a fresh hierarchy rooted under the previous parent.
-        Entity new_root = m_serializer->deserialize_entity(world, data->json_data, parent);
+        Entity new_root = serializer().deserialize_entity(world, data->json_data, parent);
 
         if (new_root == NullEntity) {
             core::log(core::LogLevel::Warn,
