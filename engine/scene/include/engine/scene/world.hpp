@@ -1,9 +1,12 @@
 #pragma once
 
 #include <engine/scene/entity.hpp>
+#include <engine/scene/transform.hpp>
 #include <entt/entt.hpp>
+#include <algorithm>
 #include <string>
 #include <unordered_map>
+#include <type_traits>
 #include <utility>
 
 namespace engine::scene {
@@ -34,12 +37,16 @@ public:
     // Component management
     template<typename T, typename... Args>
     decltype(auto) emplace(Entity e, Args&&... args) {
-        return m_registry.emplace<T>(e, std::forward<Args>(args)...);
+        auto& component = m_registry.emplace<T>(e, std::forward<Args>(args)...);
+        on_component_added<T>(e);
+        return component;
     }
 
     template<typename T, typename... Args>
     decltype(auto) emplace_or_replace(Entity e, Args&&... args) {
-        return m_registry.emplace_or_replace<T>(e, std::forward<Args>(args)...);
+        auto& component = m_registry.emplace_or_replace<T>(e, std::forward<Args>(args)...);
+        on_component_added<T>(e);
+        return component;
     }
 
     template<typename T>
@@ -116,6 +123,15 @@ public:
     // Find entity by name (slow, for editor use)
     Entity find_by_name(const std::string& name) const;
 
+    // UUID helpers
+    uint64_t allocate_uuid() { return m_next_uuid++; }
+    void observe_uuid(uint64_t uuid) {
+        if (uuid == 0) {
+            return;
+        }
+        m_next_uuid = std::max(m_next_uuid, uuid + 1);
+    }
+
     // Scene metadata
     const std::string& get_scene_name() const { return m_scene_name; }
     void set_scene_name(const std::string& name) { m_scene_name = name; }
@@ -124,6 +140,15 @@ public:
     std::unordered_map<std::string, std::string>& get_scene_metadata() { return m_scene_metadata; }
 
 private:
+    template<typename T>
+    void on_component_added(Entity e) {
+        if constexpr (std::is_same_v<T, LocalTransform>) {
+            if (!m_registry.all_of<WorldTransform>(e)) {
+                m_registry.emplace<WorldTransform>(e);
+            }
+        }
+    }
+
     entt::registry m_registry;
     uint64_t m_next_uuid = 1;
     

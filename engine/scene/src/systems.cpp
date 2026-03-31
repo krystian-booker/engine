@@ -9,7 +9,7 @@ void Scheduler::add(Phase phase, SystemFn fn, int priority) {
 
 void Scheduler::add(Phase phase, SystemFn fn, const std::string& name, int priority) {
     auto& systems = m_systems[static_cast<int>(phase)];
-    systems.push_back({priority, std::move(fn), name, true});
+    systems.push_back(std::make_shared<SystemEntry>(SystemEntry{priority, std::move(fn), name, true}));
     sort_phase(phase);
 }
 
@@ -19,7 +19,7 @@ void Scheduler::remove(const std::string& name) {
     for (auto& systems : m_systems) {
         systems.erase(
             std::remove_if(systems.begin(), systems.end(),
-                [&name](const SystemEntry& entry) { return entry.name == name; }),
+                [&name](const auto& entry) { return entry->name == name; }),
             systems.end()
         );
     }
@@ -29,8 +29,8 @@ void Scheduler::run(World& world, double dt, Phase phase) {
     // Run from a snapshot so add/remove during callbacks cannot invalidate iteration.
     const auto systems = m_systems[static_cast<int>(phase)];
     for (const auto& entry : systems) {
-        if (entry.enabled) {
-            entry.fn(world, dt);
+        if (entry->enabled) {
+            entry->fn(world, dt);
         }
     }
 }
@@ -46,8 +46,8 @@ void Scheduler::set_enabled(const std::string& name, bool enabled) {
 
     for (auto& systems : m_systems) {
         for (auto& entry : systems) {
-            if (entry.name == name) {
-                entry.enabled = enabled;
+            if (entry->name == name) {
+                entry->enabled = enabled;
             }
         }
     }
@@ -58,8 +58,8 @@ bool Scheduler::is_enabled(const std::string& name) const {
 
     for (const auto& systems : m_systems) {
         for (const auto& entry : systems) {
-            if (entry.name == name) {
-                return entry.enabled;
+            if (entry->name == name) {
+                return entry->enabled;
             }
         }
     }
@@ -70,8 +70,8 @@ void Scheduler::sort_phase(Phase phase) {
     auto& systems = m_systems[static_cast<int>(phase)];
     // Sort by priority (higher priority first)
     std::stable_sort(systems.begin(), systems.end(),
-        [](const SystemEntry& a, const SystemEntry& b) {
-            return a.priority > b.priority;
+        [](const auto& a, const auto& b) {
+            return a->priority > b->priority;
         });
 }
 

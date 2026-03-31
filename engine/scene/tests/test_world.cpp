@@ -2,6 +2,7 @@
 #include <engine/scene/world.hpp>
 #include <engine/scene/transform.hpp>
 #include <engine/scene/components.hpp>
+#include <algorithm>
 
 using namespace engine::scene;
 
@@ -238,6 +239,36 @@ TEST_CASE("World clear", "[scene][world]") {
 
     REQUIRE(world.empty());
     REQUIRE(world.size() == 0);
+}
+
+TEST_CASE("World root bookkeeping stays current", "[scene][world][hierarchy]") {
+    World world;
+
+    Entity first = world.create("First");
+    const auto& initial_roots = get_root_entities(world);
+    REQUIRE(initial_roots.size() == 1);
+    REQUIRE(initial_roots[0] == first);
+
+    Entity second = world.create("Second");
+    const auto& updated_roots = get_root_entities(world);
+    REQUIRE(updated_roots.size() == 2);
+    REQUIRE(std::find(updated_roots.begin(), updated_roots.end(), first) != updated_roots.end());
+    REQUIRE(std::find(updated_roots.begin(), updated_roots.end(), second) != updated_roots.end());
+}
+
+TEST_CASE("Adding LocalTransform also provisions WorldTransform", "[scene][world][transform]") {
+    World world;
+    Entity e = world.create("TransformEntity");
+
+    auto& local = world.emplace<LocalTransform>(e);
+    local.position = Vec3{1.0f, 2.0f, 3.0f};
+
+    REQUIRE(world.has<WorldTransform>(e));
+
+    transform_system(world, 0.016);
+
+    const auto& world_transform = world.get<WorldTransform>(e);
+    REQUIRE(world_transform.position() == Vec3{1.0f, 2.0f, 3.0f});
 }
 
 TEST_CASE("World find by name", "[scene][world]") {

@@ -1,4 +1,5 @@
 #include <engine/scene/interaction.hpp>
+#include <engine/scene/entity_pool.hpp>
 #include <engine/scene/world.hpp>
 #include <engine/scene/transform.hpp>
 #include <engine/core/log.hpp>
@@ -37,6 +38,10 @@ std::vector<InteractionCandidate> InteractionSystem::find_all_interactables(
 
     auto view = world.view<InteractableComponent, WorldTransform>();
     for (auto entity : view) {
+        if (!is_entity_active(world, entity)) {
+            continue;
+        }
+
         const auto& interactable = view.get<InteractableComponent>(entity);
 
         if (!interactable.enabled) {
@@ -65,6 +70,9 @@ std::optional<InteractionCandidate> InteractionSystem::can_interact_with(
     const Vec3& forward
 ) {
     if (!world.valid(target)) {
+        return std::nullopt;
+    }
+    if (!is_entity_active(world, target)) {
         return std::nullopt;
     }
 
@@ -212,6 +220,9 @@ float InteractionSystem::get_hold_progress() const {
 
 void InteractionSystem::interact(World& world, Entity interactor, Entity target) {
     if (!world.valid(target)) {
+        return;
+    }
+    if (!is_entity_active(world, target)) {
         return;
     }
 

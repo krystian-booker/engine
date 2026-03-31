@@ -43,6 +43,158 @@ uint64_t safe_stoull(const std::string& str, uint64_t default_val = 0) {
     }
 }
 
+size_t skip_whitespace(const std::string& json, size_t pos) {
+    while (pos < json.size() && std::isspace(static_cast<unsigned char>(json[pos]))) {
+        ++pos;
+    }
+    return pos;
+}
+
+size_t find_matching_delimiter(const std::string& json, size_t open_pos, char open_char, char close_char) {
+    bool in_string = false;
+    bool escaped = false;
+    int depth = 0;
+
+    for (size_t i = open_pos; i < json.size(); ++i) {
+        const char ch = json[i];
+
+        if (in_string) {
+            if (escaped) {
+                escaped = false;
+            } else if (ch == '\\') {
+                escaped = true;
+            } else if (ch == '"') {
+                in_string = false;
+            }
+            continue;
+        }
+
+        if (ch == '"') {
+            in_string = true;
+            continue;
+        }
+
+        if (ch == open_char) {
+            ++depth;
+        } else if (ch == close_char) {
+            --depth;
+            if (depth == 0) {
+                return i;
+            }
+        }
+    }
+
+    return std::string::npos;
+}
+
+std::string extract_json_block(const std::string& json, size_t open_pos, char open_char, char close_char) {
+    const size_t close_pos = find_matching_delimiter(json, open_pos, open_char, close_char);
+    if (close_pos == std::string::npos) {
+        return {};
+    }
+    return json.substr(open_pos, close_pos - open_pos + 1);
+}
+
+std::string extract_array_for_key(const std::string& json, const std::string& key) {
+    const std::string token = "\"" + key + "\"";
+    const size_t key_pos = json.find(token);
+    if (key_pos == std::string::npos) {
+        return {};
+    }
+
+    const size_t colon_pos = json.find(':', key_pos + token.size());
+    if (colon_pos == std::string::npos) {
+        return {};
+    }
+
+    const size_t array_pos = json.find('[', colon_pos + 1);
+    if (array_pos == std::string::npos) {
+        return {};
+    }
+
+    return extract_json_block(json, array_pos, '[', ']');
+}
+
+std::string extract_value_for_key(const std::string& json, const std::string& key) {
+    const std::string token = "\"" + key + "\"";
+    const size_t key_pos = json.find(token);
+    if (key_pos == std::string::npos) {
+        return {};
+    }
+
+    const size_t colon_pos = json.find(':', key_pos + token.size());
+    if (colon_pos == std::string::npos) {
+        return {};
+    }
+
+    const size_t value_pos = skip_whitespace(json, colon_pos + 1);
+    if (value_pos >= json.size()) {
+        return {};
+    }
+
+    const char first = json[value_pos];
+    if (first == '{') {
+        return extract_json_block(json, value_pos, '{', '}');
+    }
+    if (first == '[') {
+        return extract_json_block(json, value_pos, '[', ']');
+    }
+    if (first == '"') {
+        bool escaped = false;
+        for (size_t i = value_pos + 1; i < json.size(); ++i) {
+            const char ch = json[i];
+            if (escaped) {
+                escaped = false;
+            } else if (ch == '\\') {
+                escaped = true;
+            } else if (ch == '"') {
+                return json.substr(value_pos, i - value_pos + 1);
+            }
+        }
+        return {};
+    }
+
+    size_t end = value_pos;
+    while (end < json.size() && json[end] != ',' && json[end] != '}' && json[end] != ']') {
+        ++end;
+    }
+    return json.substr(value_pos, end - value_pos);
+}
+
+std::vector<std::string> extract_top_level_objects(const std::string& json_array) {
+    std::vector<std::string> objects;
+    if (json_array.empty()) {
+        return objects;
+    }
+
+    size_t pos = skip_whitespace(json_array, 0);
+    if (pos >= json_array.size() || json_array[pos] != '[') {
+        return objects;
+    }
+
+    ++pos;
+    while (pos < json_array.size()) {
+        pos = skip_whitespace(json_array, pos);
+        if (pos >= json_array.size() || json_array[pos] == ']') {
+            break;
+        }
+
+        if (json_array[pos] == '{') {
+            const size_t end = find_matching_delimiter(json_array, pos, '{', '}');
+            if (end == std::string::npos) {
+                break;
+            }
+            objects.push_back(json_array.substr(pos, end - pos + 1));
+            pos = end + 1;
+            continue;
+        }
+
+        ++pos;
+    }
+
+    return objects;
+}
+
 } // anonymous namespace
 
 // UUID generation using random + timestamp
@@ -137,10 +289,11 @@ bool SceneSerializer::deserialize(World& world, const std::string& json) {
             // world.create() already adds EntityInfo, so get and modify it
             EntityInfo& info = world.get<EntityInfo>(entity);
             info.name = entity_data.name;
-            info.uuid = entity_data.uuid;
+            info.uuid = (entity_data.uuid != 0) ? entity_data.uuid : world.allocate_uuid();
             info.enabled = entity_data.enabled;
+            world.observe_uuid(info.uuid);
 
-            uuid_to_entity[entity_data.uuid] = entity;
+            uuid_to_entity[info.uuid] = entity;
         }
 
         // Create entity resolution context for resolving entity references
@@ -272,10 +425,92 @@ std::string SceneSerializer::serialize_entity(World& world, Entity entity, bool 
 }
 
 Entity SceneSerializer::deserialize_entity(World& world, const std::string& json, Entity parent) {
-    // Parse as array of entities
-    // For now, just create single entity (simplified)
-    SerializedEntity data = parse_entity_json(json);
-    return create_entity_from_serialized(world, data, parent);
+    std::vector<SerializedEntity> serialized_entities;
+    const size_t start = skip_whitespace(json, 0);
+    if (start < json.size() && json[start] == '[') {
+        for (const auto& entity_json : extract_top_level_objects(json.substr(start))) {
+            serialized_entities.push_back(parse_entity_json(entity_json));
+        }
+    } else {
+        serialized_entities.push_back(parse_entity_json(json));
+    }
+
+    if (serialized_entities.empty()) {
+        return NullEntity;
+    }
+
+    std::unordered_map<uint64_t, Entity> uuid_to_entity;
+    std::vector<Entity> created_entities;
+    created_entities.reserve(serialized_entities.size());
+
+    for (const auto& data : serialized_entities) {
+        Entity entity = world.create();
+        auto& info = world.get<EntityInfo>(entity);
+        info.name = data.name;
+        info.uuid = world.allocate_uuid();
+        info.enabled = data.enabled;
+        world.observe_uuid(info.uuid);
+
+        if (data.uuid != 0) {
+            uuid_to_entity[data.uuid] = entity;
+        }
+
+        created_entities.push_back(entity);
+    }
+
+    for (size_t index = 0; index < serialized_entities.size(); ++index) {
+        const auto& entity_data = serialized_entities[index];
+        Entity entity = created_entities[index];
+
+        Entity resolved_parent = NullEntity;
+        if (entity_data.parent_uuid != 0) {
+            const auto it = uuid_to_entity.find(entity_data.parent_uuid);
+            if (it != uuid_to_entity.end()) {
+                resolved_parent = it->second;
+            }
+        } else if (index == 0 && parent != NullEntity) {
+            resolved_parent = parent;
+        }
+
+        if (resolved_parent != NullEntity) {
+            set_parent(world, entity, resolved_parent);
+        }
+
+        for (const auto& comp : entity_data.components) {
+            if (comp.type_name == "LocalTransform") {
+                auto& transform = world.emplace_or_replace<LocalTransform>(entity);
+                deserialize_transform(transform, comp.json_data);
+            } else if (comp.type_name == "MeshRenderer") {
+                auto& renderer = world.emplace_or_replace<MeshRenderer>(entity);
+                deserialize_mesh_renderer(renderer, comp.json_data);
+            } else if (comp.type_name == "Camera") {
+                auto& camera = world.emplace_or_replace<Camera>(entity);
+                deserialize_camera(camera, comp.json_data);
+            } else if (comp.type_name == "Light") {
+                auto& light = world.emplace_or_replace<Light>(entity);
+                deserialize_light(light, comp.json_data);
+            } else if (comp.type_name == "ParticleEmitter") {
+                auto& emitter = world.emplace_or_replace<ParticleEmitter>(entity);
+                deserialize_particle_emitter(emitter, comp.json_data);
+            } else {
+                auto deserializer_it = m_component_deserializers.find(comp.type_name);
+                if (deserializer_it != m_component_deserializers.end()) {
+                    auto& type_reg = reflect::TypeRegistry::instance();
+                    if (type_reg.add_component_any(world.registry(), entity, comp.type_name)) {
+                        auto type = type_reg.find_type(comp.type_name);
+                        auto* storage = type ? world.registry().storage(type.id()) : nullptr;
+                        if (storage && storage->contains(entity)) {
+                            deserializer_it->second(storage->value(entity), comp.json_data);
+                        }
+                    }
+                } else {
+                    deserialize_custom_component(world, entity, comp.type_name, comp.json_data);
+                }
+            }
+        }
+    }
+
+    return created_entities.front();
 }
 
 SerializedEntity SceneSerializer::serialize_entity_internal(World& world, Entity entity) const {
@@ -755,8 +990,10 @@ SerializedScene SceneSerializer::parse_scene_json(const std::string& json) {
         scene.version = match[1].str();
     }
 
-    // Parse entities array - this is simplified, real implementation would use proper JSON parser
-    // For now, we rely on well-formed JSON from our own serializer
+    const std::string entities_json = extract_array_for_key(json, "entities");
+    for (const auto& entity_json : extract_top_level_objects(entities_json)) {
+        scene.entities.push_back(parse_entity_json(entity_json));
+    }
 
     return scene;
 }
@@ -783,6 +1020,21 @@ SerializedEntity SceneSerializer::parse_entity_json(const std::string& json) {
         entity.parent_uuid = safe_stoull(match[1].str());
     }
 
+    const std::string components_json = extract_array_for_key(json, "components");
+    for (const auto& component_json : extract_top_level_objects(components_json)) {
+        SerializedComponent component;
+
+        std::regex type_re(R"REGEX("type"\s*:\s*"([^"]*)")REGEX");
+        if (std::regex_search(component_json, match, type_re)) {
+            component.type_name = match[1].str();
+        }
+
+        component.json_data = extract_value_for_key(component_json, "data");
+        if (!component.type_name.empty() && !component.json_data.empty()) {
+            entity.components.push_back(std::move(component));
+        }
+    }
+
     return entity;
 }
 
@@ -790,10 +1042,11 @@ Entity SceneSerializer::create_entity_from_serialized(World& world, const Serial
                                                        Entity parent) {
     Entity entity = world.create();
 
-    EntityInfo& info = world.emplace<EntityInfo>(entity);
+    EntityInfo& info = world.get<EntityInfo>(entity);
     info.name = data.name;
-    info.uuid = data.uuid != 0 ? data.uuid : generate_uuid();
+    info.uuid = (data.uuid != 0) ? data.uuid : world.allocate_uuid();
     info.enabled = data.enabled;
+    world.observe_uuid(info.uuid);
 
     if (parent != NullEntity) {
         set_parent(world, entity, parent);

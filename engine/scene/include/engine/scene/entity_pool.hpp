@@ -56,6 +56,22 @@ struct PooledEntity {
     uint64_t acquire_id = 0;            // Unique ID for this acquisition (for validation)
 };
 
+inline bool is_entity_active(const World& world, Entity entity) {
+    if (!world.valid(entity)) {
+        return false;
+    }
+
+    if (const auto* info = world.try_get<EntityInfo>(entity); info && !info->enabled) {
+        return false;
+    }
+
+    if (const auto* pooled = world.try_get<PooledEntity>(entity); pooled && !pooled->active) {
+        return false;
+    }
+
+    return true;
+}
+
 // ============================================================================
 // EntityPool - Manages a pool of reusable entities
 // ============================================================================

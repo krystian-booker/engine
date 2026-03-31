@@ -5,6 +5,7 @@
 #include <engine/physics/boat.hpp>
 #include <engine/physics/vehicle.hpp>
 #include <engine/physics/cloth.hpp>
+#include <engine/scene/entity_pool.hpp>
 #include <engine/scene/transform.hpp>
 
 namespace engine::physics {
@@ -26,6 +27,8 @@ void PhysicsSystem::update_character_controllers(scene::World& world, double dt)
     auto view = world.view<CharacterControllerComponent, scene::LocalTransform>();
 
     for (auto entity : view) {
+        if (!scene::is_entity_active(world, entity)) continue;
+
         auto& cc = view.get<CharacterControllerComponent>(entity);
         auto& transform = view.get<scene::LocalTransform>(entity);
 
@@ -53,6 +56,8 @@ void PhysicsSystem::update_water_volumes(scene::World& world, double dt) {
     auto view = world.view<WaterVolumeControllerComponent, scene::LocalTransform>();
 
     for (auto entity : view) {
+        if (!scene::is_entity_active(world, entity)) continue;
+
         auto& wvc = view.get<WaterVolumeControllerComponent>(entity);
         auto& transform = view.get<scene::LocalTransform>(entity);
 
@@ -77,6 +82,8 @@ void PhysicsSystem::update_buoyancy(scene::World& world, double /*dt*/) {
     auto buoyancy_view = world.view<BuoyancyComponent, RigidBodyComponent, scene::LocalTransform>();
 
     for (auto entity : buoyancy_view) {
+        if (!scene::is_entity_active(world, entity)) continue;
+
         auto& bc = buoyancy_view.get<BuoyancyComponent>(entity);
         auto& rb = buoyancy_view.get<RigidBodyComponent>(entity);
         auto& transform = buoyancy_view.get<scene::LocalTransform>(entity);
@@ -136,6 +143,8 @@ void PhysicsSystem::update_boats(scene::World& world, double dt) {
     auto view = world.view<BoatControllerComponent, scene::LocalTransform>();
 
     for (auto entity : view) {
+        if (!scene::is_entity_active(world, entity)) continue;
+
         auto& bc = view.get<BoatControllerComponent>(entity);
         auto& transform = view.get<scene::LocalTransform>(entity);
 
@@ -160,6 +169,8 @@ void PhysicsSystem::update_vehicles(scene::World& world, double dt) {
     auto view = world.view<VehicleControllerComponent, scene::LocalTransform>();
 
     for (auto entity : view) {
+        if (!scene::is_entity_active(world, entity)) continue;
+
         auto& vc = view.get<VehicleControllerComponent>(entity);
         auto& transform = view.get<scene::LocalTransform>(entity);
 
@@ -182,6 +193,8 @@ void PhysicsSystem::update_cloth(scene::World& world, double dt) {
     auto view = world.view<ClothControllerComponent, scene::LocalTransform>();
 
     for (auto entity : view) {
+        if (!scene::is_entity_active(world, entity)) continue;
+
         auto& cc = view.get<ClothControllerComponent>(entity);
         auto& transform = view.get<scene::LocalTransform>(entity);
 

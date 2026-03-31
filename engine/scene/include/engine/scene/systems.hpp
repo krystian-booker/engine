@@ -2,6 +2,7 @@
 
 #include <engine/scene/world.hpp>
 #include <functional>
+#include <memory>
 #include <vector>
 #include <string>
 
@@ -53,7 +54,7 @@ private:
     };
 
     // One vector of systems per phase
-    std::vector<SystemEntry> m_systems[7];
+    std::vector<std::shared_ptr<SystemEntry>> m_systems[7];
 
     // Sort systems by priority after adding
     void sort_phase(Phase phase);

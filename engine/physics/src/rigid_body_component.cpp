@@ -1,5 +1,6 @@
 #include <engine/physics/rigid_body_component.hpp>
 #include <engine/physics/physics_world.hpp>
+#include <engine/scene/entity_pool.hpp>
 #include <engine/scene/world.hpp>
 #include <engine/scene/transform.hpp>
 
@@ -42,6 +43,10 @@ void rigid_body_sync_system(scene::World& world, PhysicsWorld& physics, float /*
     auto view = world.view<RigidBodyComponent, scene::LocalTransform>();
 
     for (auto entity : view) {
+        if (!scene::is_entity_active(world, entity)) {
+            continue;
+        }
+
         auto& rb = view.get<RigidBodyComponent>(entity);
         auto& transform = view.get<scene::LocalTransform>(entity);
 

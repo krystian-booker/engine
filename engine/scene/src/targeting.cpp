@@ -1,4 +1,5 @@
 #include "../include/engine/scene/targeting_v3.hpp"
+#include <engine/scene/entity_pool.hpp>
 #include <engine/scene/world.hpp>
 #include <engine/scene/transform.hpp>
 #include <engine/core/event_dispatcher.hpp>
@@ -108,7 +109,7 @@ std::vector<TargetCandidate> TargetingSystem::find_all_targets(
     std::vector<TargetCandidate> candidates;
 
     auto* targeter_comp = world.try_get<TargeterComponent>(targeter);
-    if (!targeter_comp) return candidates;
+    if (!targeter_comp || !is_entity_active(world, targeter)) return candidates;
 
     float max_dist = max_distance > 0.0f ? max_distance : targeter_comp->max_lock_distance;
     float max_angle = targeter_comp->lock_angle;
@@ -117,6 +118,7 @@ std::vector<TargetCandidate> TargetingSystem::find_all_targets(
 
     for (auto entity : view) {
         if (entity == targeter) continue;
+        if (!is_entity_active(world, entity)) continue;
 
         auto& targetable = view.get<TargetableComponent>(entity);
 
@@ -162,10 +164,10 @@ std::optional<TargetCandidate> TargetingSystem::can_target(
     const Vec3& forward
 ) {
     auto* targeter_comp = world.try_get<TargeterComponent>(targeter);
-    if (!targeter_comp) return std::nullopt;
+    if (!targeter_comp || !is_entity_active(world, targeter)) return std::nullopt;
 
     auto* targetable = world.try_get<TargetableComponent>(target);
-    if (!targetable || !targetable->enabled) return std::nullopt;
+    if (!targetable || !targetable->enabled || !is_entity_active(world, target)) return std::nullopt;
 
     if (!is_faction_targetable(*targeter_comp, targetable->faction)) return std::nullopt;
 
@@ -191,10 +193,10 @@ std::optional<TargetCandidate> TargetingSystem::can_target(
 
 void TargetingSystem::lock_on(World& world, Entity targeter, Entity target) {
     auto* targeter_comp = world.try_get<TargeterComponent>(targeter);
-    if (!targeter_comp) return;
+    if (!targeter_comp || !is_entity_active(world, targeter)) return;
 
     auto* targetable = world.try_get<TargetableComponent>(target);
-    if (!targetable || !targetable->enabled) return;
+    if (!targetable || !targetable->enabled || !is_entity_active(world, target)) return;
 
     Entity old_target = targeter_comp->current_target;
 

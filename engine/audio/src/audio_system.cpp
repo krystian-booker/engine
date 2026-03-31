@@ -1,6 +1,7 @@
 #include <engine/audio/audio_system.hpp>
 #include <engine/audio/audio_engine.hpp>
 #include <engine/audio/audio_components.hpp>
+#include <engine/scene/entity_pool.hpp>
 #include <engine/scene/transform.hpp>
 #include <algorithm>
 #include <limits>
@@ -32,6 +33,8 @@ void AudioSystem::update_listener(World& world, double dt) {
 
     auto view = world.view<AudioListener, LocalTransform>();
     for (auto entity : view) {
+        if (!is_entity_active(world, entity)) continue;
+
         auto& listener = view.get<AudioListener>(entity);
         if (!listener.active) continue;
 
@@ -97,6 +100,8 @@ void AudioSystem::update_sources(World& world, double dt) {
     {
         auto view = world.view<AudioSource, LocalTransform>();
         for (auto entity : view) {
+            if (!is_entity_active(world, entity)) continue;
+
             auto& source = view.get<AudioSource>(entity);
             if (!source.sound.valid()) continue;
             if (!world.has<AudioSourceState>(entity)) {
@@ -115,6 +120,8 @@ void AudioSystem::update_sources(World& world, double dt) {
 
     auto view = world.view<AudioSource, LocalTransform>();
     for (auto entity : view) {
+        if (!is_entity_active(world, entity)) continue;
+
         auto& source = view.get<AudioSource>(entity);
         auto& local = view.get<LocalTransform>(entity);
 
@@ -237,6 +244,8 @@ void AudioSystem::process_triggers(World& world, double dt) {
 
     auto view = world.view<AudioTrigger, LocalTransform>();
     for (auto entity : view) {
+        if (!is_entity_active(world, entity)) continue;
+
         auto& trigger = view.get<AudioTrigger>(entity);
         auto& local = view.get<LocalTransform>(entity);
 
@@ -278,6 +287,8 @@ void AudioSystem::update_reverb_zones(World& world, double /*dt*/) {
 
     auto view = world.view<ReverbZone, LocalTransform>();
     for (auto entity : view) {
+        if (!is_entity_active(world, entity)) continue;
+
         auto& zone = view.get<ReverbZone>(entity);
         auto& local = view.get<LocalTransform>(entity);
 

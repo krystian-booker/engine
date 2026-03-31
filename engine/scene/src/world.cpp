@@ -8,8 +8,9 @@ namespace engine::scene {
 Entity World::create() {
     Entity e = m_registry.create();
     auto& info = m_registry.emplace_or_replace<EntityInfo>(e);
-    info.uuid = m_next_uuid++;
+    info.uuid = allocate_uuid();
     info.name = "Entity_" + std::to_string(info.uuid);
+    reset_roots(*this);
 
     // Dispatch entity created event
     core::events().dispatch(core::EntityCreatedEvent{static_cast<uint32_t>(e)});
@@ -20,8 +21,9 @@ Entity World::create() {
 Entity World::create(const std::string& name) {
     Entity e = m_registry.create();
     auto& info = m_registry.emplace_or_replace<EntityInfo>(e);
-    info.uuid = m_next_uuid++;
+    info.uuid = allocate_uuid();
     info.name = name;
+    reset_roots(*this);
 
     // Dispatch entity created event
     core::events().dispatch(core::EntityCreatedEvent{static_cast<uint32_t>(e)});
