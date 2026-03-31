@@ -34,7 +34,7 @@ public:
     // Component management
     template<typename T, typename... Args>
     decltype(auto) emplace(Entity e, Args&&... args) {
-        return m_registry.emplace_or_replace<T>(e, std::forward<Args>(args)...);
+        return m_registry.emplace<T>(e, std::forward<Args>(args)...);
     }
 
     template<typename T, typename... Args>

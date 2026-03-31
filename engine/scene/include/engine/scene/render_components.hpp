@@ -5,12 +5,20 @@
 
 namespace engine::scene {
 
-using namespace engine::core;
-
 // Forward declarations for render handles (defined in engine::render)
 struct MeshHandle { uint32_t id = UINT32_MAX; bool valid() const { return id != UINT32_MAX; } };
 struct MaterialHandle { uint32_t id = UINT32_MAX; bool valid() const { return id != UINT32_MAX; } };
 struct TextureHandle { uint32_t id = UINT32_MAX; bool valid() const { return id != UINT32_MAX; } };
+
+// Blend modes for rendering
+enum class BlendMode : uint8_t {
+    Opaque = 0,
+    AlphaTest,
+    AlphaBlend,
+    Additive,
+    Multiply,
+    Transmission
+};
 
 // Mesh renderer component
 struct MeshRenderer {
@@ -20,7 +28,7 @@ struct MeshRenderer {
     bool visible = true;
     bool cast_shadows = true;
     bool receive_shadows = true;
-    uint8_t blend_mode = 0;  // 0=Opaque, 1=AlphaTest, 2=AlphaBlend, 3=Additive, 4=Multiply, 5=Transmission
+    BlendMode blend_mode = BlendMode::Opaque;
 };
 
 // Camera component
@@ -35,7 +43,7 @@ struct Camera {
     float ortho_size = 10.0f;    // Half-size for orthographic
 
     // Compute projection matrix (ZO = [0,1] depth range for D3D11/Vulkan/Metal)
-    Mat4 projection() const {
+    core::Mat4 projection() const {
         if (orthographic) {
             float w = ortho_size * aspect_ratio;
             float h = ortho_size;
@@ -56,7 +64,7 @@ enum class LightType : uint8_t {
 // Light component
 struct Light {
     LightType type = LightType::Point;
-    Vec3 color{1.0f, 1.0f, 1.0f};
+    core::Vec3 color{1.0f, 1.0f, 1.0f};
     float intensity = 1.0f;
     float range = 10.0f;           // Point/Spot only
     float spot_inner_angle = 30.0f; // Spot only (degrees)
@@ -82,10 +90,10 @@ enum class BillboardMode : uint8_t {
 // Billboard component for world-space 2D elements
 struct Billboard {
     TextureHandle texture;
-    Vec2 size{1.0f, 1.0f};
-    Vec4 color{1.0f};
-    Vec2 uv_offset{0.0f};      // For sprite sheets
-    Vec2 uv_scale{1.0f};       // For sprite sheets
+    core::Vec2 size{1.0f, 1.0f};
+    core::Vec4 color{1.0f};
+    core::Vec2 uv_offset{0.0f};      // For sprite sheets
+    core::Vec2 uv_scale{1.0f};       // For sprite sheets
     BillboardMode mode = BillboardMode::ScreenAligned;
     float rotation = 0.0f;      // Z-axis rotation in radians
     bool depth_test = true;
@@ -98,12 +106,12 @@ struct ParticleEmitter {
     float emission_rate = 100.0f;  // Particles per second
     float lifetime = 2.0f;
     float initial_speed = 5.0f;
-    Vec3 initial_velocity_variance{1.0f};
-    Vec4 start_color{1.0f};
-    Vec4 end_color{1.0f, 1.0f, 1.0f, 0.0f};
+    core::Vec3 initial_velocity_variance{1.0f};
+    core::Vec4 start_color{1.0f};
+    core::Vec4 end_color{1.0f, 1.0f, 1.0f, 0.0f};
     float start_size = 0.1f;
     float end_size = 0.0f;
-    Vec3 gravity{0.0f, -9.81f, 0.0f};
+    core::Vec3 gravity{0.0f, -9.81f, 0.0f};
     bool enabled = true;
 };
 

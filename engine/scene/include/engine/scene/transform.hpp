@@ -7,7 +7,11 @@
 
 namespace engine::scene {
 
-using namespace engine::core;
+using core::Vec3;
+using core::Vec4;
+using core::Quat;
+using core::Mat3;
+using core::Mat4;
 
 // Local space transform (relative to parent)
 struct LocalTransform {

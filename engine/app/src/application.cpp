@@ -176,8 +176,23 @@ int Application::run(int argc, char** argv) {
             m_system_registry->run(*m_world, dt, scene::Phase::PostUpdate);
         }
 
-        // Rendering (custom hook for subclassed apps)
+        // Pre-render phase (transform interpolation, culling)
+        if (m_system_registry) {
+            m_system_registry->run(*m_world, dt, scene::Phase::PreRender);
+        }
+
+        // Render phase
+        if (m_system_registry) {
+            m_system_registry->run(*m_world, dt, scene::Phase::Render);
+        }
+
+        // Custom render hook for subclassed apps
         on_render(m_clock.get_alpha());
+
+        // Post-render phase (cleanup, debug drawing)
+        if (m_system_registry) {
+            m_system_registry->run(*m_world, dt, scene::Phase::PostRender);
+        }
 
     }
 
@@ -187,10 +202,11 @@ int Application::run(int argc, char** argv) {
     // Unload game plugin
     unload_game_plugin();
 
-    // Destroy engine systems
+    // Destroy engine systems in dependency order
     m_system_registry.reset();
     m_engine_scheduler.reset();
-
+    m_physics_system.reset();
+    m_physics_world.reset();
     m_world.reset();
 
     // Destroy window
