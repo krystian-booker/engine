@@ -26,8 +26,9 @@ void Scheduler::remove(const std::string& name) {
 }
 
 void Scheduler::run(World& world, double dt, Phase phase) {
-    auto& systems = m_systems[static_cast<int>(phase)];
-    for (auto& entry : systems) {
+    // Run from a snapshot so add/remove during callbacks cannot invalidate iteration.
+    const auto systems = m_systems[static_cast<int>(phase)];
+    for (const auto& entry : systems) {
         if (entry.enabled) {
             entry.fn(world, dt);
         }

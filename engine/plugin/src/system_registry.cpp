@@ -17,8 +17,10 @@ void SystemRegistry::add(scene::Phase phase, scene::SystemFn fn, const std::stri
 
     m_game_scheduler.add(phase, std::move(fn), name, priority);
     m_game_system_names.push_back(name);
-    core::log(core::LogLevel::Debug, "Registered game system: {} (phase {}, priority {})",
-              name, static_cast<int>(phase), priority);
+    std::string message = "Registered game system: " + name +
+                          " (phase " + std::to_string(static_cast<int>(phase)) +
+                          ", priority " + std::to_string(priority) + ")";
+    core::log(core::LogLevel::Debug, message.c_str());
 }
 
 void SystemRegistry::remove(const std::string& name) {
@@ -34,8 +36,9 @@ void SystemRegistry::remove(const std::string& name) {
 void SystemRegistry::clear_game_systems() {
     std::unique_lock<std::shared_mutex> lock(m_systems_mutex);
 
-    core::log(core::LogLevel::Info, "Clearing {} game systems for hot reload",
-              m_game_system_names.size());
+    std::string message = "Clearing " + std::to_string(m_game_system_names.size()) +
+                          " game systems for hot reload";
+    core::log(core::LogLevel::Info, message.c_str());
 
     for (const auto& name : m_game_system_names) {
         m_game_scheduler.remove(name);
@@ -61,14 +64,17 @@ void SystemRegistry::set_enabled(const std::string& name, bool enabled) {
 }
 
 bool SystemRegistry::is_enabled(const std::string& name) const {
+    std::shared_lock<std::shared_mutex> lock(m_systems_mutex);
     return m_game_scheduler.is_enabled(name);
 }
 
 std::vector<std::string> SystemRegistry::get_game_system_names() const {
+    std::shared_lock<std::shared_mutex> lock(m_systems_mutex);
     return m_game_system_names;
 }
 
 size_t SystemRegistry::game_system_count() const {
+    std::shared_lock<std::shared_mutex> lock(m_systems_mutex);
     return m_game_system_names.size();
 }
 

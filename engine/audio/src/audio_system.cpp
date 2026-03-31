@@ -3,6 +3,8 @@
 #include <engine/audio/audio_components.hpp>
 #include <engine/scene/transform.hpp>
 #include <algorithm>
+#include <limits>
+#include <vector>
 
 namespace engine::audio {
 
@@ -26,24 +28,23 @@ void AudioSystem::update_listener(World& world, double dt) {
 
     // Find the highest-priority active listener
     Entity best_entity = scene::NullEntity;
-    AudioListener* best_listener = nullptr;
-    LocalTransform* best_local = nullptr;
-    WorldTransform* best_world = nullptr;
+    int best_priority = std::numeric_limits<int>::lowest();
 
     auto view = world.view<AudioListener, LocalTransform>();
     for (auto entity : view) {
         auto& listener = view.get<AudioListener>(entity);
         if (!listener.active) continue;
 
-        if (!best_listener || listener.priority > best_listener->priority) {
+        if (best_entity == scene::NullEntity || listener.priority > best_priority) {
             best_entity = entity;
-            best_listener = &listener;
-            best_local = &view.get<LocalTransform>(entity);
-            best_world = world.try_get<WorldTransform>(entity);
+            best_priority = listener.priority;
         }
     }
 
-    if (best_listener && best_local) {
+    if (best_entity != scene::NullEntity && world.valid(best_entity)) {
+        auto& best_local = world.get<LocalTransform>(best_entity);
+        auto* best_world = world.try_get<WorldTransform>(best_entity);
+
         // Use world transform if available, otherwise use local
         Vec3 position;
         Vec3 forward;
@@ -55,9 +56,9 @@ void AudioSystem::update_listener(World& world, double dt) {
             forward = rot * Vec3{0.0f, 0.0f, -1.0f};
             up = rot * Vec3{0.0f, 1.0f, 0.0f};
         } else {
-            position = best_local->position;
-            forward = best_local->forward();
-            up = best_local->up();
+            position = best_local.position;
+            forward = best_local.forward();
+            up = best_local.up();
         }
 
         // Get or create transient state
@@ -91,6 +92,27 @@ void AudioSystem::update_listener(World& world, double dt) {
 void AudioSystem::update_sources(World& world, double dt) {
     auto& audio = get_audio_engine();
 
+    // Create transient source states in a separate pass to avoid structural mutation during iteration.
+    std::vector<Entity> missing_state;
+    {
+        auto view = world.view<AudioSource, LocalTransform>();
+        for (auto entity : view) {
+            auto& source = view.get<AudioSource>(entity);
+            if (!source.sound.valid()) continue;
+            if (!world.has<AudioSourceState>(entity)) {
+                missing_state.push_back(entity);
+            }
+        }
+    }
+
+    for (Entity entity : missing_state) {
+        if (!world.valid(entity)) continue;
+        if (!world.has<AudioSource>(entity) || !world.has<LocalTransform>(entity)) continue;
+        if (!world.has<AudioSourceState>(entity)) {
+            world.emplace<AudioSourceState>(entity);
+        }
+    }
+
     auto view = world.view<AudioSource, LocalTransform>();
     for (auto entity : view) {
         auto& source = view.get<AudioSource>(entity);
@@ -105,11 +127,9 @@ void AudioSystem::update_sources(World& world, double dt) {
             position = wt->position();
         }
 
-        // Get or create transient state for Doppler/debug
+        // State was created in a pre-pass.
         auto* src_state = world.try_get<AudioSourceState>(entity);
-        if (!src_state) {
-            src_state = &world.emplace<AudioSourceState>(entity);
-        }
+        if (!src_state) continue;
 
         // Compute velocity for Doppler
         Vec3 velocity{0.0f};

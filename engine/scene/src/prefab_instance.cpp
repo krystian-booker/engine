@@ -371,7 +371,7 @@ void PrefabManager::update_instances(World& world, const std::string& prefab_pat
     auto instances = get_instances(world, prefab_path);
 
     for (Entity instance_root : instances) {
-        if (!world.has<PrefabInstance>(instance_root)) continue;
+        if (!world.valid(instance_root) || !world.has<PrefabInstance>(instance_root)) continue;
 
         // Store current overrides before updating
         auto& prefab_instance = world.get<PrefabInstance>(instance_root);
@@ -383,53 +383,58 @@ void PrefabManager::update_instances(World& world, const std::string& prefab_pat
             parent = world.get<Hierarchy>(instance_root).parent;
         }
 
-        // Collect all entities in the current instance hierarchy
+        // Collect all entities in the current instance hierarchy.
         auto old_entities = collect_hierarchy(world, instance_root);
 
-        // Remove PrefabInstance components before destroying (to avoid triggering cleanup)
+        // Remove PrefabInstance components before destroying (to avoid nested prefab cleanup paths).
         for (Entity e : old_entities) {
-            if (e != instance_root && world.has<PrefabInstance>(e)) {
+            if (world.has<PrefabInstance>(e)) {
                 world.remove<PrefabInstance>(e);
             }
         }
 
-        // Destroy old instance entities (except root, which we'll update in place)
+        // Destroy old instance hierarchy fully (children first, root last).
         for (auto it = old_entities.rbegin(); it != old_entities.rend(); ++it) {
-            if (*it != instance_root) {
+            if (world.valid(*it)) {
                 world.destroy(*it);
             }
         }
 
-        // Re-deserialize from prefab data as a new entity
+        // Re-deserialize from prefab data as a fresh hierarchy rooted under the previous parent.
         Entity new_root = m_serializer->deserialize_entity(world, data->json_data, parent);
 
-        if (new_root != NullEntity && new_root != instance_root) {
-            // Copy the new entity's components to the original root
-            // This is a simplified approach - in a full implementation, we'd need
-            // to properly merge the entity data
+        if (new_root == NullEntity) {
+            core::log(core::LogLevel::Warn,
+                      "Failed to refresh prefab instance {} from '{}': deserialize returned null",
+                      static_cast<uint32_t>(instance_root), prefab_path);
+            continue;
+        }
 
-            // Re-add PrefabInstance component
-            if (!world.has<PrefabInstance>(new_root)) {
-                world.emplace<PrefabInstance>(new_root, prefab_path);
-            }
+        // Re-add PrefabInstance component and restore saved overrides.
+        if (!world.has<PrefabInstance>(new_root)) {
+            world.emplace<PrefabInstance>(new_root, prefab_path);
+        }
 
-            // Restore saved overrides
-            auto& new_instance = world.get<PrefabInstance>(new_root);
-            new_instance.overrides = saved_overrides;
-            new_instance.is_root = true;
+        auto& new_instance = world.get<PrefabInstance>(new_root);
+        new_instance.prefab_path = prefab_path;
+        new_instance.overrides = saved_overrides;
+        new_instance.is_root = true;
 
-            // Apply overrides to restore user modifications
-            apply_overrides(world, new_root, new_instance);
+        // Apply overrides to restore user modifications.
+        apply_overrides(world, new_root, new_instance);
 
-            // Mark children as part of this prefab instance
-            for (auto child : get_children(world, new_root)) {
+        // Mark all descendants as part of this prefab instance.
+        std::function<void(Entity)> mark_children = [&](Entity e) {
+            for (auto child : get_children(world, e)) {
                 if (!world.has<PrefabInstance>(child)) {
                     auto& child_instance = world.emplace<PrefabInstance>(child);
                     child_instance.prefab_path = prefab_path;
                     child_instance.is_root = false;
                 }
+                mark_children(child);
             }
-        }
+        };
+        mark_children(new_root);
 
         core::log(core::LogLevel::Debug, "Updated prefab instance {} from '{}'",
                   static_cast<uint32_t>(instance_root), prefab_path);

@@ -108,7 +108,7 @@ TEST_CASE("Scheduler world access", "[scene][systems]") {
     World world;
 
     Entity e = world.create();
-    world.emplace<EntityInfo>(e).name = "TestEntity";
+    world.emplace_or_replace<EntityInfo>(e).name = "TestEntity";
 
     SECTION("System can read world") {
         std::string found_name;
@@ -254,4 +254,27 @@ TEST_CASE("Scheduler all phases", "[scene][systems]") {
     REQUIRE(executed_phases[4] == Phase::PreRender);
     REQUIRE(executed_phases[5] == Phase::Render);
     REQUIRE(executed_phases[6] == Phase::PostRender);
+}
+
+TEST_CASE("Scheduler add during run is deferred", "[scene][systems]") {
+    Scheduler scheduler;
+    World world;
+    std::vector<std::string> executed;
+
+    scheduler.add(Phase::Update, [&](World&, double) {
+        executed.push_back("A");
+        scheduler.add(Phase::Update, [&](World&, double) {
+            executed.push_back("B");
+        }, "B", 0);
+    }, "A", 0);
+
+    scheduler.add(Phase::Update, [&](World&, double) {
+        executed.push_back("C");
+    }, "C", 0);
+
+    scheduler.run(world, 0.016, Phase::Update);
+    REQUIRE(executed == std::vector<std::string>{"A", "C"});
+
+    scheduler.run(world, 0.016, Phase::Update);
+    REQUIRE(executed == std::vector<std::string>{"A", "C", "A", "C", "B"});
 }

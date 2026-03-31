@@ -331,7 +331,9 @@ entt::meta_any TypeRegistry::deserialize_any(entt::meta_type type, core::IArchiv
         if (uuid != EntityResolutionContext::NullUUID && entity_ctx && entity_ctx->can_deserialize()) {
             entity = entity_ctx->uuid_to_entity(uuid);
             if (entity == entt::null) {
-                core::log(core::LogLevel::Warn, "Entity reference UUID {} not found during deserialization", uuid);
+                std::string message = "Entity reference UUID " + std::to_string(uuid) +
+                                      " not found during deserialization";
+                core::log(core::LogLevel::Warn, message.c_str());
             }
         }
         return entt::meta_any{entity};
@@ -445,23 +447,43 @@ void TypeRegistry::set_component_any(entt::registry& registry, entt::entity enti
     }
 
     auto* storage = registry.storage(it->second);
-    if (storage && storage->contains(entity)) {
-        void* ptr = storage->value(entity);
-        auto type = entt::resolve(it->second);
-        if (type && value) {
-            // Copy property-by-property from value to target
-            auto* type_info = get_type_info(it->second);
-            if (type_info) {
-                entt::meta_any target = type.from_void(ptr);
-                for (const auto& prop : type_info->properties) {
-                    if (prop.getter && prop.setter) {
-                        auto prop_value = prop.getter(value);
-                        if (prop_value) {
-                            prop.setter(target, prop_value);
-                        }
-                    }
-                }
-            }
+    if (!storage || !storage->contains(entity)) {
+        return;
+    }
+
+    auto type = entt::resolve(it->second);
+    if (!type || !value) {
+        return;
+    }
+
+    auto* type_info = get_type_info(it->second);
+    if (!type_info) {
+        return;
+    }
+
+    // Resolve source property values first, then reacquire target storage on each write.
+    std::vector<std::pair<const PropertyInfo*, entt::meta_any>> pending_updates;
+    pending_updates.reserve(type_info->properties.size());
+    for (const auto& prop : type_info->properties) {
+        if (!prop.getter || !prop.setter) {
+            continue;
+        }
+        auto prop_value = prop.getter(value);
+        if (prop_value) {
+            pending_updates.emplace_back(&prop, std::move(prop_value));
+        }
+    }
+
+    for (const auto& update : pending_updates) {
+        auto* current_storage = registry.storage(it->second);
+        if (!current_storage || !current_storage->contains(entity)) {
+            break;
+        }
+
+        void* ptr = current_storage->value(entity);
+        entt::meta_any target = type.from_void(ptr);
+        if (target) {
+            update.first->setter(target, update.second);
         }
     }
 }

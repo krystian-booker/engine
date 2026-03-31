@@ -15,6 +15,7 @@ TEST_CASE("AttenuationModel enum", "[audio][components]") {
 
 TEST_CASE("AudioSource defaults", "[audio][components]") {
     AudioSource source;
+    AudioSourceState state;
 
     REQUIRE_FALSE(source.sound.valid());
     REQUIRE(source.playing == false);
@@ -32,9 +33,10 @@ TEST_CASE("AudioSource defaults", "[audio][components]") {
     REQUIRE_THAT(source.cone_outer_volume, WithinAbs(0.0f, 0.001f));
     REQUIRE(source.enable_doppler == true);
     REQUIRE_THAT(source.doppler_factor, WithinAbs(1.0f, 0.001f));
-    REQUIRE_THAT(source.computed_volume, WithinAbs(1.0f, 0.001f));
-    REQUIRE_THAT(source.computed_pan, WithinAbs(0.0f, 0.001f));
-    REQUIRE(source.first_update == true);
+    REQUIRE(source.spatial_params_dirty == true);
+    REQUIRE_THAT(state.computed_volume, WithinAbs(1.0f, 0.001f));
+    REQUIRE_THAT(state.computed_pan, WithinAbs(0.0f, 0.001f));
+    REQUIRE(state.initialized == false);
 }
 
 TEST_CASE("AudioSource custom values", "[audio][components]") {
@@ -73,26 +75,30 @@ TEST_CASE("AudioSource cone settings", "[audio][components]") {
 
 TEST_CASE("AudioListener defaults", "[audio][components]") {
     AudioListener listener;
+    AudioListenerState state;
 
     REQUIRE(listener.active == true);
     REQUIRE(listener.priority == 0);
     REQUIRE_THAT(listener.volume_scale, WithinAbs(1.0f, 0.001f));
-    REQUIRE_THAT(listener.velocity.x, WithinAbs(0.0f, 0.001f));
-    REQUIRE_THAT(listener.prev_position.x, WithinAbs(0.0f, 0.001f));
-    REQUIRE(listener.first_update == true);
+    REQUIRE_THAT(state.velocity.x, WithinAbs(0.0f, 0.001f));
+    REQUIRE_THAT(state.prev_position.x, WithinAbs(0.0f, 0.001f));
+    REQUIRE(state.initialized == false);
 }
 
 TEST_CASE("AudioListener custom values", "[audio][components]") {
     AudioListener listener;
+    AudioListenerState state;
     listener.active = false;
     listener.priority = 10;
     listener.volume_scale = 0.8f;
-    listener.velocity = Vec3{1.0f, 0.0f, 0.0f};
+    state.velocity = Vec3{1.0f, 0.0f, 0.0f};
+    state.initialized = true;
 
     REQUIRE(listener.active == false);
     REQUIRE(listener.priority == 10);
     REQUIRE_THAT(listener.volume_scale, WithinAbs(0.8f, 0.001f));
-    REQUIRE_THAT(listener.velocity.x, WithinAbs(1.0f, 0.001f));
+    REQUIRE_THAT(state.velocity.x, WithinAbs(1.0f, 0.001f));
+    REQUIRE(state.initialized == true);
 }
 
 TEST_CASE("AudioTrigger defaults", "[audio][components]") {
