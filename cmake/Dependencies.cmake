@@ -78,14 +78,11 @@ FetchContent_Declare(
     GIT_TAG v0.14.3
     GIT_SHALLOW TRUE
     UPDATE_DISCONNECTED TRUE
+    SOURCE_SUBDIR _none
 )
-# Use FetchContent_Populate (not MakeAvailable) because we build ufbx
-# as a custom static library from its single source file, rather than
-# using its own CMake build.
-FetchContent_GetProperties(ufbx)
-if(NOT ufbx_POPULATED)
-    FetchContent_Populate(ufbx)
-endif()
+# SOURCE_SUBDIR _none skips ufbx's own CMakeLists.txt so we can build it
+# as a custom static library from its single source file.
+FetchContent_MakeAvailable(ufbx)
 add_library(ufbx STATIC ${ufbx_SOURCE_DIR}/ufbx.c)
 add_library(ufbx::ufbx ALIAS ufbx)
 target_include_directories(ufbx PUBLIC ${ufbx_SOURCE_DIR})

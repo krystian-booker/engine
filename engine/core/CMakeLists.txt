@@ -1,11 +1,9 @@
 # engine/core/CMakeLists.txt
 # engine::core - logging, job system, time, filesystem, math, settings
 
-add_library(engine_core STATIC)
-add_library(engine::core ALIAS engine_core)
-
-target_sources(engine_core
-    PRIVATE
+engine_add_module(
+    NAME core
+    SOURCES
         src/log.cpp
         src/job_system.cpp
         src/time.cpp
@@ -28,57 +26,42 @@ target_sources(engine_core
         src/timer.cpp
         src/game_events.cpp
         src/time_manager.cpp
-    PUBLIC
-        FILE_SET public_headers
-        TYPE HEADERS
-        BASE_DIRS include
-        FILES
-            include/engine/core/log.hpp
-            include/engine/core/job_system.hpp
-            include/engine/core/time.hpp
-            include/engine/core/filesystem.hpp
-            include/engine/core/file_watcher.hpp
-            include/engine/core/math.hpp
-            include/engine/core/project_settings.hpp
-            include/engine/core/game_clock.hpp
-            include/engine/core/application.hpp
-            include/engine/core/platform_window.hpp
-            include/engine/core/input.hpp
-            include/engine/core/input_buffer.hpp
-            include/engine/core/serialize.hpp
-            include/engine/core/profiler.hpp
-            include/engine/core/core.hpp
-            include/engine/core/events.hpp
-            include/engine/core/event_dispatcher.hpp
-            include/engine/core/allocators.hpp
-            include/engine/core/string_hash.hpp
-            include/engine/core/uuid.hpp
-            include/engine/core/asset_handle.hpp
-            include/engine/core/scene_transition.hpp
-            include/engine/core/timer.hpp
-            include/engine/core/game_events.hpp
-            include/engine/core/state_machine.hpp
-            include/engine/core/time_manager.hpp
-            include/engine/core/object_pool.hpp
-)
-
-target_include_directories(engine_core
-    PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:include>
-)
-
-target_link_libraries(engine_core
-    PUBLIC
+    HEADERS
+        include/engine/core/log.hpp
+        include/engine/core/job_system.hpp
+        include/engine/core/time.hpp
+        include/engine/core/filesystem.hpp
+        include/engine/core/file_watcher.hpp
+        include/engine/core/math.hpp
+        include/engine/core/project_settings.hpp
+        include/engine/core/game_clock.hpp
+        include/engine/core/application.hpp
+        include/engine/core/platform_window.hpp
+        include/engine/core/input.hpp
+        include/engine/core/input_buffer.hpp
+        include/engine/core/serialize.hpp
+        include/engine/core/profiler.hpp
+        include/engine/core/core.hpp
+        include/engine/core/events.hpp
+        include/engine/core/event_dispatcher.hpp
+        include/engine/core/allocators.hpp
+        include/engine/core/string_hash.hpp
+        include/engine/core/uuid.hpp
+        include/engine/core/asset_handle.hpp
+        include/engine/core/scene_transition.hpp
+        include/engine/core/timer.hpp
+        include/engine/core/game_events.hpp
+        include/engine/core/state_machine.hpp
+        include/engine/core/time_manager.hpp
+        include/engine/core/object_pool.hpp
+    PUBLIC_DEPS
         glm::glm
         nlohmann_json::nlohmann_json
         bgfx::bx
         bgfx::bgfx
-    PRIVATE
-        engine_compiler_flags
 )
 
-
+# Platform-specific dependencies
 if(UNIX AND NOT APPLE)
     find_package(X11 REQUIRED)
     target_link_libraries(engine_core PRIVATE X11::X11)
@@ -159,13 +142,4 @@ if(UNIX AND NOT APPLE)
     else()
         message(STATUS "Wayland support disabled (wayland-client or xkbcommon not found)")
     endif()
-endif()
-
-set_target_properties(engine_core PROPERTIES
-    FOLDER "engine"
-)
-
-# Unit tests
-if(ENGINE_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests")
-    add_subdirectory(tests)
 endif()

@@ -34,6 +34,26 @@
       }
     },
     {
+      "name": "Linux-Dev",
+      "displayName": "Linux Dev (Debug + Tests)",
+      "inherits": "Linux-Debug",
+      "cacheVariables": {
+        "ENGINE_BUILD_TESTS": "ON",
+        "VCPKG_MANIFEST_FEATURES": "tests"
+      }
+    },
+    {
+      "name": "Linux-Asan",
+      "displayName": "Linux ASan (Debug + Sanitizers + Tests)",
+      "inherits": "Linux-Debug",
+      "cacheVariables": {
+        "ENGINE_BUILD_TESTS": "ON",
+        "ENGINE_ENABLE_ASAN": "ON",
+        "ENGINE_ENABLE_UBSAN": "ON",
+        "VCPKG_MANIFEST_FEATURES": "tests"
+      }
+    },
+    {
       "name": "Windows",
       "hidden": true,
       "generator": "Ninja",
@@ -59,30 +79,30 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "Windows-Dev",
+      "displayName": "Windows Dev (Debug + Tests)",
+      "inherits": "Windows-Debug",
+      "cacheVariables": {
+        "ENGINE_BUILD_TESTS": "ON",
+        "VCPKG_MANIFEST_FEATURES": "tests"
+      }
     }
   ],
   "buildPresets": [
-    {
-      "name": "Linux-Debug",
-      "configurePreset": "Linux-Debug"
-    },
-    {
-      "name": "Linux-Release",
-      "configurePreset": "Linux-Release"
-    },
-    {
-      "name": "Windows-Debug",
-      "configurePreset": "Windows-Debug"
-    },
-    {
-      "name": "Windows-Release",
-      "configurePreset": "Windows-Release"
-    }
+    { "name": "Linux-Debug",   "configurePreset": "Linux-Debug" },
+    { "name": "Linux-Release", "configurePreset": "Linux-Release" },
+    { "name": "Linux-Dev",     "configurePreset": "Linux-Dev" },
+    { "name": "Linux-Asan",    "configurePreset": "Linux-Asan" },
+    { "name": "Windows-Debug",   "configurePreset": "Windows-Debug" },
+    { "name": "Windows-Release", "configurePreset": "Windows-Release" },
+    { "name": "Windows-Dev",     "configurePreset": "Windows-Dev" }
   ],
   "testPresets": [
     {
-      "name": "Linux-Debug",
-      "configurePreset": "Linux-Debug",
+      "name": "test-base",
+      "hidden": true,
       "output": {
         "outputOnFailure": true
       },
@@ -91,38 +111,8 @@
         "stopOnFailure": false
       }
     },
-    {
-      "name": "Linux-Release",
-      "configurePreset": "Linux-Release",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "noTestsAction": "error",
-        "stopOnFailure": false
-      }
-    },
-    {
-      "name": "Windows-Debug",
-      "configurePreset": "Windows-Debug",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "noTestsAction": "error",
-        "stopOnFailure": false
-      }
-    },
-    {
-      "name": "Windows-Release",
-      "configurePreset": "Windows-Release",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "noTestsAction": "error",
-        "stopOnFailure": false
-      }
-    }
+    { "name": "Linux-Dev",     "configurePreset": "Linux-Dev",     "inherits": "test-base" },
+    { "name": "Linux-Asan",    "configurePreset": "Linux-Asan",    "inherits": "test-base" },
+    { "name": "Windows-Dev",   "configurePreset": "Windows-Dev",   "inherits": "test-base" }
   ]
 }

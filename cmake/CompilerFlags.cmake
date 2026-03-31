@@ -11,8 +11,6 @@ if(MSVC)
         /permissive-
         /utf-8
         /MP
-        $<$<CONFIG:Release>:/O2 /Ob2>
-        $<$<CONFIG:Debug>:/Od /Zi>
     )
     target_compile_definitions(engine_compiler_flags INTERFACE
         _CRT_SECURE_NO_WARNINGS
@@ -22,9 +20,29 @@ if(MSVC)
 else()
     target_compile_options(engine_compiler_flags INTERFACE
         -Wall -Wextra -Wpedantic
+        -Wshadow
+        -Wconversion
         -pthread
-        $<$<CONFIG:Release>:-O3>
-        $<$<CONFIG:Debug>:-O0 -g>
     )
     target_link_options(engine_compiler_flags INTERFACE -pthread)
+endif()
+
+# Sanitizers (GCC/Clang only — MSVC ASan doesn't support link-time flag)
+option(ENGINE_ENABLE_ASAN "Enable AddressSanitizer" OFF)
+option(ENGINE_ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer" OFF)
+
+if(ENGINE_ENABLE_ASAN)
+    if(MSVC)
+        target_compile_options(engine_compiler_flags INTERFACE /fsanitize=address)
+    else()
+        target_compile_options(engine_compiler_flags INTERFACE -fsanitize=address -fno-omit-frame-pointer)
+        target_link_options(engine_compiler_flags INTERFACE -fsanitize=address)
+    endif()
+endif()
+
+if(ENGINE_ENABLE_UBSAN)
+    if(NOT MSVC)
+        target_compile_options(engine_compiler_flags INTERFACE -fsanitize=undefined)
+        target_link_options(engine_compiler_flags INTERFACE -fsanitize=undefined)
+    endif()
 endif()

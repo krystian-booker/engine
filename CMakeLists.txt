@@ -49,6 +49,9 @@ include(Dependencies)
 # Compiler flags
 include(CompilerFlags)
 
+# Module helper
+include(EngineModule)
+
 # Options
 option(ENGINE_BUILD_TESTS "Build unit tests" OFF)
 
