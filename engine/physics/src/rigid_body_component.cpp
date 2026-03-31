@@ -6,6 +6,31 @@
 
 namespace engine::physics {
 
+// Destroy a physics body owned by a component
+void destroy_rigid_body(PhysicsWorld& world, RigidBodyComponent& rb);
+
+namespace {
+
+struct RigidBodyLifecycleBinding {
+    PhysicsWorld* physics = nullptr;
+};
+
+void on_rigid_body_component_destroy(entt::registry& registry, entt::entity entity) {
+    if (!registry.ctx().contains<RigidBodyLifecycleBinding>()) {
+        return;
+    }
+
+    auto& binding = registry.ctx().get<RigidBodyLifecycleBinding>();
+    auto* rb = registry.try_get<RigidBodyComponent>(entity);
+    if (!binding.physics || !rb) {
+        return;
+    }
+
+    destroy_rigid_body(*binding.physics, *rb);
+}
+
+} // namespace
+
 // Create a physics body from component settings and initial transform
 PhysicsBodyId create_rigid_body(PhysicsWorld& world, RigidBodyComponent& rb, const scene::LocalTransform& transform) {
     BodySettings settings;
@@ -29,7 +54,6 @@ PhysicsBodyId create_rigid_body(PhysicsWorld& world, RigidBodyComponent& rb, con
     return world.create_body(settings);
 }
 
-// Destroy a physics body owned by a component
 void destroy_rigid_body(PhysicsWorld& world, RigidBodyComponent& rb) {
     if (rb.body_id.valid()) {
         world.destroy_body(rb.body_id);
@@ -38,7 +62,64 @@ void destroy_rigid_body(PhysicsWorld& world, RigidBodyComponent& rb) {
     }
 }
 
-// System function: initializes new rigid bodies and syncs physics transforms to ECS transforms
+void bind_rigid_body_lifecycle(scene::World& world, PhysicsWorld& physics) {
+    auto& registry = world.registry();
+
+    if (registry.ctx().contains<RigidBodyLifecycleBinding>()) {
+        registry.ctx().get<RigidBodyLifecycleBinding>().physics = &physics;
+    } else {
+        registry.ctx().emplace<RigidBodyLifecycleBinding>(RigidBodyLifecycleBinding{&physics});
+    }
+
+    registry.on_destroy<RigidBodyComponent>().disconnect<&on_rigid_body_component_destroy>();
+    registry.on_destroy<RigidBodyComponent>().connect<&on_rigid_body_component_destroy>();
+}
+
+void unbind_rigid_body_lifecycle(scene::World& world) {
+    auto& registry = world.registry();
+    registry.on_destroy<RigidBodyComponent>().disconnect<&on_rigid_body_component_destroy>();
+
+    if (registry.ctx().contains<RigidBodyLifecycleBinding>()) {
+        registry.ctx().erase<RigidBodyLifecycleBinding>();
+    }
+}
+
+void rigid_body_prepare_system(scene::World& world, PhysicsWorld& physics, float /*dt*/) {
+    auto view = world.view<RigidBodyComponent, scene::LocalTransform>();
+
+    for (auto entity : view) {
+        auto& rb = view.get<RigidBodyComponent>(entity);
+        auto& transform = view.get<scene::LocalTransform>(entity);
+
+        if (!scene::is_entity_active(world, entity)) {
+            destroy_rigid_body(physics, rb);
+            continue;
+        }
+
+        // Initialize body if needed
+        if (!rb.initialized) {
+            rb.body_id = create_rigid_body(physics, rb, transform);
+            rb.initialized = rb.body_id.valid();
+            if (!rb.initialized) {
+                continue;
+            }
+        }
+
+        // Validate body still exists
+        if (!physics.is_valid(rb.body_id)) {
+            rb.initialized = false;
+            continue;
+        }
+
+        // Kinematic bodies are authored by gameplay code, so push the latest ECS transform
+        // before the physics step runs.
+        if (rb.type == BodyType::Kinematic) {
+            physics.set_transform(rb.body_id, transform.position, transform.rotation);
+        }
+    }
+}
+
+// System function: syncs physics transforms back to ECS transforms after simulation
 void rigid_body_sync_system(scene::World& world, PhysicsWorld& physics, float /*dt*/) {
     auto view = world.view<RigidBodyComponent, scene::LocalTransform>();
 
@@ -50,15 +131,12 @@ void rigid_body_sync_system(scene::World& world, PhysicsWorld& physics, float /*
         auto& rb = view.get<RigidBodyComponent>(entity);
         auto& transform = view.get<scene::LocalTransform>(entity);
 
-        // Initialize body if needed
         if (!rb.initialized) {
-            rb.body_id = create_rigid_body(physics, rb, transform);
-            rb.initialized = rb.body_id.valid();
-            continue;  // Skip sync on first frame after creation
+            continue;
         }
 
-        // Validate body still exists
         if (!physics.is_valid(rb.body_id)) {
+            rb.body_id = PhysicsBodyId{};
             rb.initialized = false;
             continue;
         }

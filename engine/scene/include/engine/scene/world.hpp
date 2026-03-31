@@ -51,6 +51,11 @@ public:
 
     template<typename T>
     void remove(Entity e) {
+        if constexpr (std::is_same_v<T, LocalTransform>) {
+            m_registry.remove<InterpolatedTransform>(e);
+            m_registry.remove<PreviousTransform>(e);
+            m_registry.remove<WorldTransform>(e);
+        }
         m_registry.remove<T>(e);
     }
 
@@ -143,9 +148,20 @@ private:
     template<typename T>
     void on_component_added(Entity e) {
         if constexpr (std::is_same_v<T, LocalTransform>) {
-            if (!m_registry.all_of<WorldTransform>(e)) {
-                m_registry.emplace<WorldTransform>(e);
+            const auto& local = m_registry.get<LocalTransform>(e);
+            const Mat4 local_matrix = local.matrix();
+
+            auto* world_transform = m_registry.try_get<WorldTransform>(e);
+            if (!world_transform) {
+                world_transform = &m_registry.emplace<WorldTransform>(e);
             }
+            world_transform->matrix = local_matrix;
+
+            if (!m_registry.all_of<PreviousTransform>(e)) {
+                m_registry.emplace<PreviousTransform>(e, local.position, local.rotation, local.scale);
+            }
+
+            m_registry.emplace_or_replace<InterpolatedTransform>(e, local_matrix);
         }
     }
 

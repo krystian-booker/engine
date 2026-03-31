@@ -103,6 +103,7 @@ int Application::run(int argc, char** argv) {
     m_physics_world->init(settings().physics);
 
     m_physics_system = std::make_unique<physics::PhysicsSystem>(*m_physics_world);
+    m_physics_system->attach_world(*m_world);
 
     m_engine_scheduler = std::make_unique<scene::Scheduler>();
     m_system_registry = std::make_unique<plugin::SystemRegistry>();
@@ -367,6 +368,19 @@ void Application::register_engine_systems() {
 
     // Transform system in PostUpdate for audio/render (priority 10 = runs first)
     m_engine_scheduler->add(scene::Phase::PostUpdate, scene::transform_system, "transform", 10);
+
+    if (m_physics_system) {
+        m_physics_system->register_default_systems(*m_engine_scheduler);
+    }
+
+    m_engine_scheduler->add(
+        scene::Phase::PreRender,
+        [this](scene::World& world, double) {
+            scene::interpolate_transforms(world, m_clock.get_alpha());
+        },
+        "interpolate_transforms",
+        10
+    );
 
     // Audio systems in PostUpdate, after transform (lower priority = runs later)
     m_engine_scheduler->add(scene::Phase::PostUpdate, audio::AudioSystem::update_listener, "audio_listener", 5);

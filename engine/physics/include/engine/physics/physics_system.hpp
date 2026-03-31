@@ -4,6 +4,7 @@
 #include <engine/physics/character_controller.hpp>
 #include <engine/physics/rigid_body_component.hpp>
 #include <engine/scene/world.hpp>
+#include <engine/scene/systems.hpp>
 #include <functional>
 
 namespace engine::physics {
@@ -29,23 +30,30 @@ struct ClothControllerComponent;
 class PhysicsSystem {
 public:
     explicit PhysicsSystem(PhysicsWorld& world);
-    ~PhysicsSystem() = default;
+    ~PhysicsSystem();
 
     // Non-copyable, movable
     PhysicsSystem(const PhysicsSystem&) = delete;
     PhysicsSystem& operator=(const PhysicsSystem&) = delete;
-    PhysicsSystem(PhysicsSystem&&) = default;
-    PhysicsSystem& operator=(PhysicsSystem&&) = default;
+    PhysicsSystem(PhysicsSystem&&) = delete;
+    PhysicsSystem& operator=(PhysicsSystem&&) = delete;
 
     // Get the underlying physics world
     PhysicsWorld& get_world() { return *m_physics_world; }
     const PhysicsWorld& get_world() const { return *m_physics_world; }
+
+    // Bind ECS lifecycle hooks so body teardown tracks entity/component destruction.
+    void attach_world(scene::World& world);
+    void detach_world();
 
     // Physics step - call in FixedUpdate phase (before character/ragdoll updates)
     void step(scene::World& world, double dt);
 
     // Update all character controllers - call in FixedUpdate phase (after physics step)
     void update_character_controllers(scene::World& world, double dt);
+
+    // Prepare rigid bodies before simulation (initialization, kinematic push, inactive cleanup)
+    void prepare_rigid_bodies(scene::World& world, double dt);
 
     // Update all rigid bodies - call in Update phase (after physics step)
     // Initializes new bodies and syncs physics transforms to ECS transforms
@@ -70,6 +78,7 @@ public:
     // These return std::function that can be added to SystemScheduler
     std::function<void(scene::World&, double)> create_step_system();
     std::function<void(scene::World&, double)> create_character_system();
+    std::function<void(scene::World&, double)> create_rigid_body_prepare_system();
     std::function<void(scene::World&, double)> create_rigid_body_system();
     std::function<void(scene::World&, double)> create_water_volume_system();
     std::function<void(scene::World&, double)> create_buoyancy_system();
@@ -77,8 +86,12 @@ public:
     std::function<void(scene::World&, double)> create_vehicle_system();
     std::function<void(scene::World&, double)> create_cloth_system();
 
+    // Register the engine's default physics systems into a scheduler.
+    void register_default_systems(scene::Scheduler& scheduler);
+
 private:
     PhysicsWorld* m_physics_world;
+    scene::World* m_attached_world = nullptr;
 };
 
 } // namespace engine::physics

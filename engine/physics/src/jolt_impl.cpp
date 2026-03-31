@@ -179,6 +179,7 @@ struct PhysicsWorld::Impl {
 
     mutable std::mutex body_map_mutex;
     std::unordered_map<uint32_t, BodyID> body_map;
+    std::unordered_map<uint32_t, PhysicsBodyId> reverse_body_map;
     uint32_t next_body_id = 1;
 
     std::unique_ptr<ContactListenerImpl> contact_listener;
@@ -198,10 +199,9 @@ struct PhysicsWorld::Impl {
 
     // Helper to find PhysicsBodyId from Jolt BodyID (must hold mutex)
     PhysicsBodyId find_body_id(BodyID jolt_id) const {
-        for (const auto& [id, jid] : body_map) {
-            if (jid == jolt_id) {
-                return PhysicsBodyId{id};
-            }
+        const auto it = reverse_body_map.find(jolt_id.GetIndexAndSequenceNumber());
+        if (it != reverse_body_map.end()) {
+            return it->second;
         }
         return PhysicsBodyId{};
     }
@@ -614,6 +614,7 @@ PhysicsBodyId create_body_impl(PhysicsWorld::Impl* impl, const BodySettings& set
     std::lock_guard<std::mutex> lock(impl->body_map_mutex);
     PhysicsBodyId id{impl->next_body_id++};
     impl->body_map[id.id] = body->GetID();
+    impl->reverse_body_map[body->GetID().GetIndexAndSequenceNumber()] = id;
 
     // Store shape info for debug rendering
     BodyShapeInfo shape_info;
@@ -661,6 +662,7 @@ void destroy_body_impl(PhysicsWorld::Impl* impl, PhysicsBodyId id) {
         if (it == impl->body_map.end()) return;
         jolt_id = it->second;
         impl->body_map.erase(it);
+        impl->reverse_body_map.erase(jolt_id.GetIndexAndSequenceNumber());
         impl->body_shape_info.erase(id.id);
     }
 
@@ -1943,4 +1945,3 @@ void* get_temp_allocator_impl(PhysicsWorld::Impl* impl) {
 // End of Jolt implementation
 
 } // namespace engine::physics
-

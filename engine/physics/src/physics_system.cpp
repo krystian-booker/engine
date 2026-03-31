@@ -15,6 +15,29 @@ PhysicsSystem::PhysicsSystem(PhysicsWorld& world)
 {
 }
 
+PhysicsSystem::~PhysicsSystem() {
+    detach_world();
+}
+
+void PhysicsSystem::attach_world(scene::World& world) {
+    if (m_attached_world == &world) {
+        return;
+    }
+
+    detach_world();
+    bind_rigid_body_lifecycle(world, *m_physics_world);
+    m_attached_world = &world;
+}
+
+void PhysicsSystem::detach_world() {
+    if (!m_attached_world) {
+        return;
+    }
+
+    unbind_rigid_body_lifecycle(*m_attached_world);
+    m_attached_world = nullptr;
+}
+
 void PhysicsSystem::step(scene::World& /*world*/, double dt) {
     if (m_physics_world) {
         m_physics_world->step(dt);
@@ -43,6 +66,12 @@ void PhysicsSystem::update_character_controllers(scene::World& world, double dt)
         transform.position = cc.controller->get_position();
         transform.rotation = cc.controller->get_rotation();
     }
+}
+
+void PhysicsSystem::prepare_rigid_bodies(scene::World& world, double dt) {
+    if (!m_physics_world) return;
+
+    rigid_body_prepare_system(world, *m_physics_world, static_cast<float>(dt));
 }
 
 void PhysicsSystem::update_rigid_bodies(scene::World& world, double dt) {
@@ -223,6 +252,12 @@ std::function<void(scene::World&, double)> PhysicsSystem::create_character_syste
     };
 }
 
+std::function<void(scene::World&, double)> PhysicsSystem::create_rigid_body_prepare_system() {
+    return [this](scene::World& world, double dt) {
+        this->prepare_rigid_bodies(world, dt);
+    };
+}
+
 std::function<void(scene::World&, double)> PhysicsSystem::create_rigid_body_system() {
     return [this](scene::World& world, double dt) {
         this->update_rigid_bodies(world, dt);
@@ -257,6 +292,12 @@ std::function<void(scene::World&, double)> PhysicsSystem::create_cloth_system() 
     return [this](scene::World& world, double dt) {
         this->update_cloth(world, dt);
     };
+}
+
+void PhysicsSystem::register_default_systems(scene::Scheduler& scheduler) {
+    scheduler.add(scene::Phase::FixedUpdate, create_rigid_body_prepare_system(), "physics_rigid_body_prepare", 9);
+    scheduler.add(scene::Phase::FixedUpdate, create_step_system(), "physics_step", 8);
+    scheduler.add(scene::Phase::FixedUpdate, create_rigid_body_system(), "physics_rigid_body_sync", 7);
 }
 
 } // namespace engine::physics

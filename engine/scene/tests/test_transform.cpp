@@ -219,6 +219,52 @@ TEST_CASE("PreviousTransform", "[scene][transform]") {
     }
 }
 
+TEST_CASE("LocalTransform auto-provisions render transform state", "[scene][transform]") {
+    World world;
+    Entity entity = world.create("Renderable");
+
+    auto& local = world.emplace<LocalTransform>(entity, Vec3{1.0f, 2.0f, 3.0f});
+
+    REQUIRE(world.has<WorldTransform>(entity));
+    REQUIRE(world.has<PreviousTransform>(entity));
+    REQUIRE(world.has<InterpolatedTransform>(entity));
+    REQUIRE(world.get<WorldTransform>(entity).position() == local.position);
+    REQUIRE(world.get<PreviousTransform>(entity).position == local.position);
+}
+
+TEST_CASE("Removing LocalTransform cleans up derived transform state", "[scene][transform]") {
+    World world;
+    Entity entity = world.create("Renderable");
+
+    world.emplace<LocalTransform>(entity, Vec3{1.0f, 2.0f, 3.0f});
+    REQUIRE(world.has<WorldTransform>(entity));
+    REQUIRE(world.has<PreviousTransform>(entity));
+    REQUIRE(world.has<InterpolatedTransform>(entity));
+
+    world.remove<LocalTransform>(entity);
+
+    REQUIRE_FALSE(world.has<LocalTransform>(entity));
+    REQUIRE_FALSE(world.has<WorldTransform>(entity));
+    REQUIRE_FALSE(world.has<PreviousTransform>(entity));
+    REQUIRE_FALSE(world.has<InterpolatedTransform>(entity));
+}
+
+TEST_CASE("Interpolate transforms writes render state from previous and current world transforms", "[scene][transform]") {
+    World world;
+    Entity entity = world.create("Interpolated");
+
+    auto& local = world.emplace<LocalTransform>(entity, Vec3{0.0f, 0.0f, 0.0f});
+    transform_system(world, 0.016);
+
+    local.position = Vec3{10.0f, 0.0f, 0.0f};
+    transform_system(world, 0.016);
+    interpolate_transforms(world, 0.5);
+
+    REQUIRE(world.has<InterpolatedTransform>(entity));
+    const auto& interpolated = world.get<InterpolatedTransform>(entity);
+    REQUIRE_THAT(interpolated.matrix[3][0], WithinAbs(5.0f, 0.01f));
+}
+
 TEST_CASE("Hierarchy component", "[scene][transform][hierarchy]") {
     Hierarchy h;
 

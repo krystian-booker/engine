@@ -118,6 +118,13 @@ namespace engine::physics {
 
 class PhysicsWorld;
 
+// Connect rigid body cleanup to the world's component lifecycle.
+void bind_rigid_body_lifecycle(engine::scene::World& world, PhysicsWorld& physics);
+void unbind_rigid_body_lifecycle(engine::scene::World& world);
+
+// System to initialize bodies, destroy inactive ones, and push ECS-authored transforms to physics.
+void rigid_body_prepare_system(engine::scene::World& world, PhysicsWorld& physics, float dt);
+
 // System to sync rigid bodies with transforms
 void rigid_body_sync_system(engine::scene::World& world, PhysicsWorld& physics, float dt);
 
