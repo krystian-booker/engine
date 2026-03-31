@@ -18,7 +18,7 @@ namespace engine::scene {
     class Scheduler;
 }
 
-namespace engine::core {
+namespace engine::app {
     class Application;
 }
 
@@ -44,7 +44,7 @@ struct PluginInfo {
 struct GameContext {
     scene::World* world;            // ECS world
     scene::Scheduler* scheduler;    // Engine scheduler (for reference)
-    core::Application* app;         // Application instance
+    app::Application* app;          // Application instance
     const char* project_path;       // Path to project directory
 };
 

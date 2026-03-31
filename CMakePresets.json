@@ -2,7 +2,7 @@
   "version": 6,
   "cmakeMinimumRequired": {
     "major": 3,
-    "minor": 21,
+    "minor": 25,
     "patch": 0
   },
   "configurePresets": [
@@ -32,6 +32,33 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "Windows",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "Windows-Debug",
+      "displayName": "Windows Debug",
+      "inherits": "Windows",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "Windows-Release",
+      "displayName": "Windows Release",
+      "inherits": "Windows",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
     }
   ],
   "buildPresets": [
@@ -42,6 +69,14 @@
     {
       "name": "Linux-Release",
       "configurePreset": "Linux-Release"
+    },
+    {
+      "name": "Windows-Debug",
+      "configurePreset": "Windows-Debug"
+    },
+    {
+      "name": "Windows-Release",
+      "configurePreset": "Windows-Release"
     }
   ],
   "testPresets": [
@@ -59,6 +94,28 @@
     {
       "name": "Linux-Release",
       "configurePreset": "Linux-Release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      }
+    },
+    {
+      "name": "Windows-Debug",
+      "configurePreset": "Windows-Debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      }
+    },
+    {
+      "name": "Windows-Release",
+      "configurePreset": "Windows-Release",
       "output": {
         "outputOnFailure": true
       },

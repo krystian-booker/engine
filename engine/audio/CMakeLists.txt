@@ -47,12 +47,12 @@ set_target_properties(engine_audio PROPERTIES
 
 # Test executable
 add_executable(audio_test tests/manual/audio_manual_test.cpp)
-target_link_libraries(audio_test PRIVATE engine_audio)
+target_link_libraries(audio_test PRIVATE engine_audio engine_compiler_flags)
 set_target_properties(audio_test PROPERTIES FOLDER "tests")
 
 # 3D Audio Test
 add_executable(audio_3d_test tests/manual/audio_3d_test.cpp)
-target_link_libraries(audio_3d_test PRIVATE engine_audio)
+target_link_libraries(audio_3d_test PRIVATE engine_audio engine_compiler_flags)
 set_target_properties(audio_3d_test PROPERTIES FOLDER "tests")
 
 # Unit tests

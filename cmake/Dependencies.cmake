@@ -3,6 +3,10 @@
 
 include(FetchContent)
 
+# Cache all FetchContent downloads outside the build directory so clean builds
+# don't re-download large dependencies (bgfx, ufbx, etc.)
+set(FETCHCONTENT_BASE_DIR "${CMAKE_SOURCE_DIR}/.deps" CACHE PATH "FetchContent base directory")
+
 # ============================================================================
 # vcpkg packages (installed automatically via manifest mode)
 # ============================================================================
@@ -75,6 +79,9 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
     UPDATE_DISCONNECTED TRUE
 )
+# Use FetchContent_Populate (not MakeAvailable) because we build ufbx
+# as a custom static library from its single source file, rather than
+# using its own CMake build.
 FetchContent_GetProperties(ufbx)
 if(NOT ufbx_POPULATED)
     FetchContent_Populate(ufbx)
@@ -94,9 +101,6 @@ find_package(Jolt CONFIG REQUIRED)
 # ============================================================================
 # bgfx.cmake (via FetchContent - vcpkg version is older and missing shader tools)
 # ============================================================================
-# Cache bgfx outside the build directory so clean builds don't re-download
-set(FETCHCONTENT_BASE_DIR "${CMAKE_SOURCE_DIR}/.deps" CACHE PATH "FetchContent base directory")
-
 FetchContent_Declare(
     bgfx_cmake
     GIT_REPOSITORY https://github.com/bkaradzic/bgfx.cmake.git
@@ -124,9 +128,6 @@ if(CMAKE_BUILD_TYPE)
 endif()
 
 FetchContent_MakeAvailable(bgfx_cmake)
-
-# Restore FETCHCONTENT_BASE_DIR to default for any future FetchContent usage
-set(FETCHCONTENT_BASE_DIR "${CMAKE_BINARY_DIR}/_deps" CACHE PATH "FetchContent base directory" FORCE)
 
 # Fix broken imstb_textedit.h wrapper in bgfx's dear-imgui bundle
 # The bundled imstb_textedit.h is a 47-line wrapper that incorrectly bridges to stb_textedit.h,

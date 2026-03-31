@@ -11,7 +11,7 @@ if(MSVC)
         /permissive-
         /utf-8
         /MP
-        $<$<CONFIG:Release>:/O2 /Ob2 /DNDEBUG>
+        $<$<CONFIG:Release>:/O2 /Ob2>
         $<$<CONFIG:Debug>:/Od /Zi>
     )
     target_compile_definitions(engine_compiler_flags INTERFACE
@@ -23,7 +23,7 @@ else()
     target_compile_options(engine_compiler_flags INTERFACE
         -Wall -Wextra -Wpedantic
         -pthread
-        $<$<CONFIG:Release>:-O3 -DNDEBUG>
+        $<$<CONFIG:Release>:-O3>
         $<$<CONFIG:Debug>:-O0 -g>
     )
     target_link_options(engine_compiler_flags INTERFACE -pthread)

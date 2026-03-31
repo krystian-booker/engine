@@ -12,7 +12,6 @@ target_sources(engine_core
         src/filesystem.cpp
         src/file_watcher.cpp
         src/project_settings.cpp
-        src/application.cpp
         src/platform_window.cpp
         src/x11_window.cpp
         src/win32_window.cpp
@@ -79,22 +78,6 @@ target_link_libraries(engine_core
         engine_compiler_flags
 )
 
-# Application class requires additional engine modules
-# These are linked via object library to avoid circular dependencies
-# The umbrella engine::engine target will provide proper linkage
-target_include_directories(engine_core
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../scene/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/../plugin/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/../audio/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/../physics/include
-)
-
-# Scene headers require EnTT
-target_link_libraries(engine_core
-    PRIVATE
-        entt::entt
-)
 
 if(UNIX AND NOT APPLE)
     find_package(X11 REQUIRED)

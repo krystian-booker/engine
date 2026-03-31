@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 3.25)
 
 # Auto-detect vcpkg toolchain (must be before project())
 if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
@@ -31,11 +31,6 @@ project(Engine
     LANGUAGES C CXX
     DESCRIPTION "C++ Game Engine"
 )
-
-# Global settings
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
 
 # IDE folder organization
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
