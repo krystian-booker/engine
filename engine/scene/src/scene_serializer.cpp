@@ -239,6 +239,7 @@ SceneSerializer::SceneSerializer(const SerializerConfig& config)
 std::string SceneSerializer::serialize(World& world) const {
     SerializedScene scene;
     scene.name = world.get_scene_name();
+    scene.metadata = world.get_scene_metadata();
 
     // Get all root entities
     auto roots = get_root_entities(world);
@@ -305,6 +306,8 @@ bool SceneSerializer::deserialize(World& world, const std::string& json) {
 
         // Build UUID to entity mapping for parent resolution
         std::unordered_map<uint64_t, Entity> uuid_to_entity;
+        std::vector<Entity> created_entities;
+        created_entities.reserve(scene.entities.size());
 
         // First pass: create all entities
         for (const auto& entity_data : scene.entities) {
@@ -317,7 +320,10 @@ bool SceneSerializer::deserialize(World& world, const std::string& json) {
             info.enabled = entity_data.enabled;
             world.observe_uuid(info.uuid);
 
-            uuid_to_entity[info.uuid] = entity;
+            if (entity_data.uuid != 0) {
+                uuid_to_entity[entity_data.uuid] = entity;
+            }
+            created_entities.push_back(entity);
         }
 
         // Create entity resolution context for resolving entity references
@@ -334,16 +340,15 @@ bool SceneSerializer::deserialize(World& world, const std::string& json) {
         };
 
         // Second pass: set up hierarchy and components
-        for (const auto& entity_data : scene.entities) {
-            auto it = uuid_to_entity.find(entity_data.uuid);
-            if (it == uuid_to_entity.end()) continue;
-            Entity entity = it->second;
+        for (size_t index = 0; index < scene.entities.size(); ++index) {
+            const auto& entity_data = scene.entities[index];
+            Entity entity = created_entities[index];
 
             // Set parent
             if (entity_data.parent_uuid != 0) {
                 auto parent_it = uuid_to_entity.find(entity_data.parent_uuid);
                 if (parent_it != uuid_to_entity.end()) {
-                    set_parent(world, entity, parent_it->second);
+                    set_parent(world, entity, parent_it->second, NullEntity);
                 }
             }
 
@@ -516,7 +521,7 @@ Entity SceneSerializer::deserialize_entity(World& world, const std::string& json
         }
 
         if (resolved_parent != NullEntity) {
-            set_parent(world, entity, resolved_parent);
+            set_parent(world, entity, resolved_parent, NullEntity);
         }
 
         for (const auto& comp : entity_data.components) {
@@ -1049,6 +1054,18 @@ std::string SceneSerializer::scene_to_json(const SerializedScene& scene) const {
     ss << "{" << newline;
     ss << indent << "\"name\": " << json_quote(scene.name) << "," << newline;
     ss << indent << "\"version\": " << json_quote(scene.version) << "," << newline;
+    ss << indent << "\"metadata\": {" << newline;
+
+    size_t metadata_index = 0;
+    for (const auto& [key, value] : scene.metadata) {
+        ss << indent << indent << json_quote(key) << ": " << json_quote(value);
+        if (++metadata_index < scene.metadata.size()) {
+            ss << ",";
+        }
+        ss << newline;
+    }
+
+    ss << indent << "}," << newline;
     ss << indent << "\"entities\": [" << newline;
 
     for (size_t i = 0; i < scene.entities.size(); ++i) {
@@ -1079,6 +1096,24 @@ SerializedScene SceneSerializer::parse_scene_json(const std::string& json) {
     const std::string entities_json = extract_array_for_key(json, "entities");
     for (const auto& entity_json : extract_top_level_objects(entities_json)) {
         scene.entities.push_back(parse_entity_json(entity_json));
+    }
+
+    const std::string metadata_json = extract_value_for_key(json, "metadata");
+    if (!metadata_json.empty()) {
+        try {
+            const nlohmann::json parsed_metadata = nlohmann::json::parse(metadata_json);
+            if (parsed_metadata.is_object()) {
+                for (auto it = parsed_metadata.begin(); it != parsed_metadata.end(); ++it) {
+                    if (it.value().is_string()) {
+                        scene.metadata[it.key()] = it.value().get<std::string>();
+                    } else {
+                        scene.metadata[it.key()] = it.value().dump();
+                    }
+                }
+            }
+        } catch (const nlohmann::json::exception& e) {
+            log(LogLevel::Warn, "Failed to parse scene metadata: {}", e.what());
+        }
     }
 
     return scene;

@@ -69,6 +69,15 @@ void mark_transforms_dirty(RootList& root_list) {
     root_list.transforms_dirty = true;
 }
 
+void erase_children_cache_entry(entt::registry& registry, Entity entity) {
+    if (entity == NullEntity || !registry.ctx().contains<ChildrenCache>()) {
+        return;
+    }
+
+    auto& cc = registry.ctx().get<ChildrenCache>();
+    cc.cache.erase(static_cast<entt::id_type>(entity));
+}
+
 void update_descendant_depths(entt::registry& registry, Entity entity, uint32_t depth) {
     auto* h = registry.try_get<Hierarchy>(entity);
     if (!h) return;
@@ -136,6 +145,9 @@ void detach_from_parent(entt::registry& registry, RootList& root_list, Entity ch
         parent_h.children_dirty = true;
     }
 
+    erase_children_cache_entry(registry, child);
+    erase_children_cache_entry(registry, old_parent);
+
     child_h.parent = NullEntity;
     child_h.prev_sibling = NullEntity;
     child_h.next_sibling = NullEntity;
@@ -193,6 +205,7 @@ void attach_to_parent(entt::registry& registry, RootList& root_list, Entity chil
     }
 
     auto& parent_h = registry.get<Hierarchy>(parent);
+    erase_children_cache_entry(registry, parent);
 
     child_h.parent = parent;
     child_h.depth = parent_h.depth + 1;
@@ -456,12 +469,17 @@ bool is_ancestor_of(World& world, Entity ancestor, Entity descendant) {
 }
 
 void reset_roots(World& world) {
+    auto& registry = world.registry();
     auto& root_list = roots(world);
     root_list.first = NullEntity;
     root_list.last = NullEntity;
     root_list.cached.clear();
     root_list.dirty = true;
     root_list.transforms_dirty = true;
+
+    if (registry.ctx().contains<ChildrenCache>()) {
+        registry.ctx().get<ChildrenCache>().cache.clear();
+    }
 }
 
 bool is_hierarchy_dirty(World& world) {
