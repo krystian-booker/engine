@@ -366,7 +366,7 @@ void Cloth::attach_vertex(uint32_t vertex_index, const Vec3& world_position) {
     m_settings.attachments.push_back(attachment);
 }
 
-void Cloth::attach_vertex_to_entity(uint32_t vertex_index, uint32_t entity_id, const Vec3& local_offset) {
+void Cloth::attach_vertex_to_entity(uint32_t vertex_index, entt::entity entity_id, const Vec3& local_offset) {
     if (vertex_index >= m_impl->positions.size()) return;
 
     m_impl->inv_masses[vertex_index] = 0.0f;
@@ -855,10 +855,7 @@ void Cloth::sync_attachments() {
     // For now, just ensure fixed positions are maintained
     for (const auto& attachment : m_settings.attachments) {
         if (attachment.vertex_index >= m_impl->positions.size()) continue;
-
-        if (!attachment.attach_to_entity) {
-            m_impl->positions[attachment.vertex_index] = attachment.world_position;
-        }
+        m_impl->positions[attachment.vertex_index] = attachment.world_position;
     }
 }
 
@@ -898,9 +895,7 @@ void Cloth::solve_attachment_constraints() {
         if (attachment.vertex_index >= m_impl->positions.size()) continue;
 
         if (attachment.type == AttachmentType::Fixed) {
-            if (!attachment.attach_to_entity) {
-                m_impl->positions[attachment.vertex_index] = attachment.world_position;
-            }
+            m_impl->positions[attachment.vertex_index] = attachment.world_position;
         } else if (attachment.type == AttachmentType::Spring) {
             Vec3 target = attachment.world_position;
             Vec3 current = m_impl->positions[attachment.vertex_index];

@@ -108,6 +108,35 @@ TEST_CASE("SceneSerializer advances World UUID counter after deserialize", "[sce
     REQUIRE(world.get<EntityInfo>(created).uuid > 41);
 }
 
+TEST_CASE("SceneSerializer replaces existing world state on scene deserialize", "[scene][serializer]") {
+    World world;
+    SceneSerializer serializer;
+
+    Entity stale = world.create("StaleEntity");
+    world.emplace<LocalTransform>(stale, engine::core::Vec3{9.0f, 9.0f, 9.0f});
+    world.get_scene_metadata()["stale"] = "true";
+
+    const std::string json = R"({
+        "name": "FreshScene",
+        "entities": [
+            {
+                "uuid": 12,
+                "name": "FreshEntity",
+                "enabled": true,
+                "parent_uuid": 0,
+                "components": []
+            }
+        ]
+    })";
+
+    REQUIRE(serializer.deserialize(world, json));
+
+    REQUIRE(world.find_by_name("StaleEntity") == NullEntity);
+    REQUIRE(world.find_by_name("FreshEntity") != NullEntity);
+    REQUIRE(world.get_scene_name() == "FreshScene");
+    REQUIRE(world.get_scene_metadata().find("stale") == world.get_scene_metadata().end());
+}
+
 TEST_CASE("SceneSerializer deserializes entity components from scenes", "[scene][serializer]") {
     World world;
     SceneSerializer serializer;

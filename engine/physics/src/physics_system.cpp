@@ -265,6 +265,35 @@ void PhysicsSystem::update_cloth(scene::World& world, double dt) {
         cc.cloth->set_position(world_position);
         cc.cloth->set_rotation(world_rotation);
 
+        // Resolve entity-attached anchors from the current ECS world before simulating.
+        for (const auto& attachment : cc.cloth->get_settings().attachments) {
+            if (!attachment.attach_to_entity || attachment.entity_id == entt::null) {
+                continue;
+            }
+
+            const scene::Entity attached = attachment.entity_id;
+            if (!world.valid(attached) || !scene::is_entity_active(world, attached)) {
+                continue;
+            }
+
+            Vec3 anchor_position{0.0f};
+            Quat anchor_rotation{1.0f, 0.0f, 0.0f, 0.0f};
+
+            if (const auto* attached_world = world.try_get<scene::WorldTransform>(attached)) {
+                anchor_position = attached_world->position();
+                anchor_rotation = attached_world->rotation();
+            } else if (const auto* attached_local = world.try_get<scene::LocalTransform>(attached)) {
+                scene::get_entity_world_pose(world, attached, *attached_local, anchor_position, anchor_rotation);
+            } else {
+                continue;
+            }
+
+            cc.cloth->set_attachment_position(
+                attachment.vertex_index,
+                anchor_position + anchor_rotation * attachment.local_offset
+            );
+        }
+
         // Update cloth physics
         cc.cloth->update(static_cast<float>(dt));
     }

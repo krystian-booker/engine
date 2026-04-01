@@ -37,7 +37,7 @@ public:
 
     // Attachment management
     void attach_vertex(uint32_t vertex_index, const Vec3& world_position);
-    void attach_vertex_to_entity(uint32_t vertex_index, uint32_t entity_id, const Vec3& local_offset);
+    void attach_vertex_to_entity(uint32_t vertex_index, entt::entity entity_id, const Vec3& local_offset);
     void detach_vertex(uint32_t vertex_index);
     void detach_all();
     void set_attachment_position(uint32_t vertex_index, const Vec3& world_position);

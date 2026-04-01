@@ -7,6 +7,36 @@ namespace {
 using namespace engine::physics;
 using namespace engine::reflect;
 
+struct ClothEnumRegistrar {
+    ClothEnumRegistrar() {
+        auto& registry = TypeRegistry::instance();
+        registry.register_enum<ClothType>("ClothType", {
+            {ClothType::Visual, "Visual"},
+            {ClothType::Interactive, "Interactive"},
+        });
+        registry.register_enum<ClothWindMode>("ClothWindMode", {
+            {ClothWindMode::None, "None"},
+            {ClothWindMode::Global, "Global"},
+            {ClothWindMode::Local, "Local"},
+            {ClothWindMode::Turbulent, "Turbulent"},
+        });
+        registry.register_enum<AttachmentType>("AttachmentType", {
+            {AttachmentType::Fixed, "Fixed"},
+            {AttachmentType::Sliding, "Sliding"},
+            {AttachmentType::Spring, "Spring"},
+        });
+    }
+};
+static ClothEnumRegistrar _cloth_enum_registrar;
+
+struct ClothVectorRegistrar {
+    ClothVectorRegistrar() {
+        auto& registry = TypeRegistry::instance();
+        registry.register_vector_type<ClothAttachment>();
+    }
+};
+static ClothVectorRegistrar _cloth_vector_registrar;
+
 // ClothComponent registration
 struct ClothComponentRegistrar {
     ClothComponentRegistrar() {
@@ -22,6 +52,13 @@ struct ClothComponentRegistrar {
             PropertyMeta()
                 .set_display_name("Type")
                 .set_category("General"));
+
+        TypeRegistry::instance().register_property<ClothComponent,
+            &ClothComponent::mesh>(
+            "mesh",
+            PropertyMeta()
+                .set_display_name("Mesh")
+                .set_category("Geometry"));
 
         TypeRegistry::instance().register_property<ClothComponent,
             &ClothComponent::mass>(
@@ -72,10 +109,39 @@ struct ClothComponentRegistrar {
                 .set_range(1, 16));
 
         TypeRegistry::instance().register_property<ClothComponent,
+            &ClothComponent::substep_delta>(
+            "substep_delta",
+            PropertyMeta()
+                .set_display_name("Substep Delta")
+                .set_category("Solver")
+                .set_range(1.0f / 1000.0f, 1.0f / 15.0f));
+
+        TypeRegistry::instance().register_property<ClothComponent,
+            &ClothComponent::attachments>(
+            "attachments",
+            PropertyMeta()
+                .set_display_name("Attachments")
+                .set_category("Attachments"));
+
+        TypeRegistry::instance().register_property<ClothComponent,
+            &ClothComponent::collision>(
+            "collision",
+            PropertyMeta()
+                .set_display_name("Collision")
+                .set_category("Collision"));
+
+        TypeRegistry::instance().register_property<ClothComponent,
             &ClothComponent::wind_mode>(
             "wind_mode",
             PropertyMeta()
                 .set_display_name("Wind Mode")
+                .set_category("Wind"));
+
+        TypeRegistry::instance().register_property<ClothComponent,
+            &ClothComponent::wind>(
+            "wind",
+            PropertyMeta()
+                .set_display_name("Wind")
                 .set_category("Wind"));
 
         TypeRegistry::instance().register_property<ClothComponent,
@@ -169,6 +235,60 @@ struct ClothGridSettingsRegistrar {
     }
 };
 static ClothGridSettingsRegistrar _cloth_grid_settings_registrar;
+
+// ClothMeshSettings registration
+struct ClothMeshSettingsRegistrar {
+    ClothMeshSettingsRegistrar() {
+        TypeRegistry::instance().register_type<ClothMeshSettings>(
+            "ClothMeshSettings",
+            TypeMeta()
+                .set_display_name("Cloth Mesh Settings")
+                .set_description("Cloth mesh generation and custom mesh data"));
+
+        TypeRegistry::instance().register_property<ClothMeshSettings,
+            &ClothMeshSettings::use_grid>(
+            "use_grid",
+            PropertyMeta()
+                .set_display_name("Use Grid")
+                .set_category("Mesh"));
+
+        TypeRegistry::instance().register_property<ClothMeshSettings,
+            &ClothMeshSettings::grid>(
+            "grid",
+            PropertyMeta()
+                .set_display_name("Grid")
+                .set_category("Mesh"));
+
+        TypeRegistry::instance().register_property<ClothMeshSettings,
+            &ClothMeshSettings::vertices>(
+            "vertices",
+            PropertyMeta()
+                .set_display_name("Vertices")
+                .set_category("Custom Mesh"));
+
+        TypeRegistry::instance().register_property<ClothMeshSettings,
+            &ClothMeshSettings::normals>(
+            "normals",
+            PropertyMeta()
+                .set_display_name("Normals")
+                .set_category("Custom Mesh"));
+
+        TypeRegistry::instance().register_property<ClothMeshSettings,
+            &ClothMeshSettings::uvs>(
+            "uvs",
+            PropertyMeta()
+                .set_display_name("UVs")
+                .set_category("Custom Mesh"));
+
+        TypeRegistry::instance().register_property<ClothMeshSettings,
+            &ClothMeshSettings::indices>(
+            "indices",
+            PropertyMeta()
+                .set_display_name("Indices")
+                .set_category("Custom Mesh"));
+    }
+};
+static ClothMeshSettingsRegistrar _cloth_mesh_settings_registrar;
 
 // ClothCollisionSettings registration
 struct ClothCollisionSettingsRegistrar {
@@ -272,48 +392,57 @@ static ClothWindSettingsRegistrar _cloth_wind_settings_registrar;
 // ClothAttachment registration
 struct ClothAttachmentRegistrar {
     ClothAttachmentRegistrar() {
-        TypeRegistry::instance().register_type<ClothAttachment>(
+        auto& registry = TypeRegistry::instance();
+        registry.register_type<ClothAttachment>(
             "ClothAttachment",
             TypeMeta()
                 .set_display_name("Cloth Attachment")
                 .set_description("Cloth vertex attachment configuration"));
 
-        TypeRegistry::instance().register_property<ClothAttachment,
+        registry.register_property<ClothAttachment,
             &ClothAttachment::vertex_index>(
             "vertex_index",
             PropertyMeta()
                 .set_display_name("Vertex Index")
                 .set_category("Attachment"));
 
-        TypeRegistry::instance().register_property<ClothAttachment,
+        registry.register_property<ClothAttachment,
             &ClothAttachment::type>(
             "type",
             PropertyMeta()
                 .set_display_name("Type")
                 .set_category("Attachment"));
 
-        TypeRegistry::instance().register_property<ClothAttachment,
+        registry.register_property<ClothAttachment,
             &ClothAttachment::attach_to_entity>(
             "attach_to_entity",
             PropertyMeta()
                 .set_display_name("Attach to Entity")
                 .set_category("Attachment"));
 
-        TypeRegistry::instance().register_property<ClothAttachment,
+        registry.register_property<ClothAttachment,
+            &ClothAttachment::entity_id>(
+            "entity_id",
+            PropertyMeta()
+                .set_display_name("Entity")
+                .set_category("Attachment")
+                .set_entity_ref(true));
+
+        registry.register_property<ClothAttachment,
             &ClothAttachment::local_offset>(
             "local_offset",
             PropertyMeta()
                 .set_display_name("Local Offset")
                 .set_category("Attachment"));
 
-        TypeRegistry::instance().register_property<ClothAttachment,
+        registry.register_property<ClothAttachment,
             &ClothAttachment::world_position>(
             "world_position",
             PropertyMeta()
                 .set_display_name("World Position")
                 .set_category("Attachment"));
 
-        TypeRegistry::instance().register_property<ClothAttachment,
+        registry.register_property<ClothAttachment,
             &ClothAttachment::spring_stiffness>(
             "spring_stiffness",
             PropertyMeta()
@@ -321,7 +450,7 @@ struct ClothAttachmentRegistrar {
                 .set_category("Spring")
                 .set_range(1.0f, 10000.0f));
 
-        TypeRegistry::instance().register_property<ClothAttachment,
+        registry.register_property<ClothAttachment,
             &ClothAttachment::spring_damping>(
             "spring_damping",
             PropertyMeta()
@@ -329,13 +458,15 @@ struct ClothAttachmentRegistrar {
                 .set_category("Spring")
                 .set_range(0.0f, 100.0f));
 
-        TypeRegistry::instance().register_property<ClothAttachment,
+        registry.register_property<ClothAttachment,
             &ClothAttachment::max_distance>(
             "max_distance",
             PropertyMeta()
                 .set_display_name("Max Distance")
                 .set_category("Spring")
                 .set_range(0.0f, 1.0f));
+
+        registry.register_vector_type<ClothAttachment>();
     }
 };
 static ClothAttachmentRegistrar _cloth_attachment_registrar;

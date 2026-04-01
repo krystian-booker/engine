@@ -14,7 +14,7 @@
 			"label": "Build: Debug",
 			"type": "shell",
 			"command": "cmake",
-			"args": ["--build", "${workspaceFolder}/out/build/Linux-Debug"],
+			"args": ["--build", "--preset", "Linux-Debug"],
 			"group": {
 				"kind": "build",
 				"isDefault": true
@@ -26,7 +26,7 @@
 			"label": "Build: Dev",
 			"type": "shell",
 			"command": "cmake",
-			"args": ["--build", "${workspaceFolder}/out/build/Linux-Dev"],
+			"args": ["--build", "--preset", "Linux-Dev"],
 			"group": "build",
 			"problemMatcher": "$gcc",
 			"detail": "Build all targets (Dev + tests)"
@@ -35,7 +35,7 @@
 			"label": "Rebuild: Debug",
 			"type": "shell",
 			"command": "cmake",
-			"args": ["--build", "${workspaceFolder}/out/build/Linux-Debug", "--clean-first"],
+			"args": ["--build", "--preset", "Linux-Debug", "--clean-first"],
 			"group": "build",
 			"problemMatcher": "$gcc",
 			"detail": "Clean and rebuild all targets (Debug)"

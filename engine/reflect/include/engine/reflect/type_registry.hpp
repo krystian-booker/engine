@@ -48,8 +48,8 @@ struct TypeInfo {
     TypeMeta meta;
     std::vector<PropertyInfo> properties;
     std::vector<MethodInfo> methods;
-    bool is_component;
-    bool is_enum;
+    bool is_component = false;
+    bool is_enum = false;
     std::vector<std::pair<std::string, int64_t>> enum_values;
 };
 

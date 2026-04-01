@@ -1,6 +1,7 @@
 #pragma once
 
 #include <engine/physics/body.hpp>
+#include <entt/entt.hpp>
 #include <vector>
 #include <cstdint>
 
@@ -55,7 +56,7 @@ struct ClothAttachment {
 
     // For entity-attached points
     bool attach_to_entity = false;
-    uint32_t entity_id = 0;           // EnTT entity (if attached)
+    entt::entity entity_id = entt::null; // Resolved through scene serialization
     Vec3 local_offset{0.0f};          // Offset from entity
 
     // For world-attached points

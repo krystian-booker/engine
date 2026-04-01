@@ -293,6 +293,10 @@ bool SceneSerializer::deserialize(World& world, const std::string& json) {
     try {
         SerializedScene scene = parse_scene_json(json);
 
+        // Full scene loads replace the current world rather than merging into it.
+        world.clear();
+        world.get_scene_metadata().clear();
+
         // Store scene metadata
         world.set_scene_name(scene.name);
         for (const auto& [key, value] : scene.metadata) {
@@ -1368,8 +1372,7 @@ bool SceneSerializer::serialize_custom_component(World& world, Entity entity, co
             continue;
         }
 
-        const EntityResolutionContext* prop_ctx = prop.meta.is_entity_ref ? entity_ctx : nullptr;
-        registry.serialize_any(prop_value, archive, prop.name.c_str(), prop_ctx);
+        registry.serialize_any(prop_value, archive, prop.name.c_str(), entity_ctx);
     }
 
     archive.end_object();
@@ -1423,8 +1426,7 @@ bool SceneSerializer::deserialize_custom_component(World& world, Entity entity, 
             continue;
         }
 
-        const EntityResolutionContext* prop_ctx = prop.meta.is_entity_ref ? entity_ctx : nullptr;
-        auto prop_value = registry.deserialize_any(prop.type, archive, prop.name.c_str(), prop_ctx);
+        auto prop_value = registry.deserialize_any(prop.type, archive, prop.name.c_str(), entity_ctx);
         if (prop_value) {
             prop.setter(component, prop_value);
         }

@@ -51,6 +51,15 @@ struct UniqueTestType {
     int x = 0;
 };
 
+struct LateRegisteredVectorElement {
+    int id = 0;
+    float weight = 0.0f;
+};
+
+struct LateRegisteredVectorHolder {
+    std::vector<LateRegisteredVectorElement> items;
+};
+
 } // namespace test_types
 
 class TypeRegistryFixture {
@@ -334,4 +343,49 @@ TEST_CASE_METHOD(TypeRegistryFixture, "TypeRegistry get all type names", "[refle
 
     REQUIRE(has_simple);
     REQUIRE(has_transform);
+}
+
+TEST_CASE("TypeRegistry deserializes vectors whose element type was registered later", "[reflect][registry][vector]") {
+    auto& registry = TypeRegistry::instance();
+
+    registry.register_vector_type<test_types::LateRegisteredVectorElement>();
+
+    registry.register_type<test_types::LateRegisteredVectorElement>(
+        "LateRegisteredVectorElement",
+        TypeMeta().set_display_name("Late Vector Element")
+    );
+    registry.register_property<test_types::LateRegisteredVectorElement, &test_types::LateRegisteredVectorElement::id>(
+        "id", PropertyMeta().set_display_name("Id")
+    );
+    registry.register_property<test_types::LateRegisteredVectorElement, &test_types::LateRegisteredVectorElement::weight>(
+        "weight", PropertyMeta().set_display_name("Weight")
+    );
+
+    registry.register_type<test_types::LateRegisteredVectorHolder>(
+        "LateRegisteredVectorHolder",
+        TypeMeta().set_display_name("Late Vector Holder")
+    );
+    registry.register_property<test_types::LateRegisteredVectorHolder, &test_types::LateRegisteredVectorHolder::items>(
+        "items", PropertyMeta().set_display_name("Items")
+    );
+
+    test_types::LateRegisteredVectorHolder source;
+    source.items.push_back({7, 2.5f});
+
+    JsonArchive write_archive;
+    registry.serialize_any(entt::meta_any{source}, write_archive, "holder");
+
+    JsonArchive read_archive(write_archive.get_json());
+    auto loaded_any = registry.deserialize_any(
+        registry.find_type("LateRegisteredVectorHolder"),
+        read_archive,
+        "holder"
+    );
+
+    REQUIRE(loaded_any);
+    const auto* loaded = loaded_any.try_cast<test_types::LateRegisteredVectorHolder>();
+    REQUIRE(loaded != nullptr);
+    REQUIRE(loaded->items.size() == 1);
+    REQUIRE(loaded->items.front().id == 7);
+    REQUIRE_THAT(loaded->items.front().weight, WithinAbs(2.5f, 0.001f));
 }

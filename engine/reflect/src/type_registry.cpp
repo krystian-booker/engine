@@ -89,6 +89,13 @@ void cleanup_runtime_local_transform_state(entt::registry& registry, entt::entit
     type_registry.remove_component_any(registry, entity, "WorldTransform");
 }
 
+entt::meta_type resolve_vector_element_type(const TypeRegistry::VectorTypeInfo& info) {
+    if (info.element_type) {
+        return info.element_type;
+    }
+    return entt::resolve(info.element_type_id);
+}
+
 } // namespace
 
 TypeRegistry& TypeRegistry::instance() {
@@ -476,11 +483,17 @@ entt::meta_any TypeRegistry::deserialize_any(entt::meta_type type, core::IArchiv
             return vec_info->create_vector(0);
         }
 
+        const entt::meta_type element_type = resolve_vector_element_type(*vec_info);
+        if (!element_type) {
+            ar.end_array();
+            return {};
+        }
+
         auto result = vec_info->create_vector(count);
 
         for (size_t i = 0; i < count; ++i) {
             std::string elem_name = std::to_string(i);
-            auto element = deserialize_any(vec_info->element_type, ar, elem_name.c_str(), entity_ctx);
+            auto element = deserialize_any(element_type, ar, elem_name.c_str(), entity_ctx);
             if (element) {
                 vec_info->set_element(result, i, element);
             }

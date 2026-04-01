@@ -6,38 +6,140 @@ namespace {
 
 using namespace engine::physics;
 using namespace engine::reflect;
+using engine::core::Quat;
+using engine::core::Vec3;
+
+ShapeType get_chassis_shape_type(const VehicleComponent& vehicle) {
+    return std::visit([](const auto& shape) { return shape.type; }, vehicle.chassis_shape);
+}
+
+void set_chassis_shape_type(VehicleComponent& vehicle, ShapeType type) {
+    switch (type) {
+        case ShapeType::Box:
+            vehicle.chassis_shape = BoxShapeSettings{};
+            break;
+        case ShapeType::Sphere:
+            vehicle.chassis_shape = SphereShapeSettings{};
+            break;
+        case ShapeType::Capsule:
+            vehicle.chassis_shape = CapsuleShapeSettings{};
+            break;
+        case ShapeType::Cylinder:
+            vehicle.chassis_shape = CylinderShapeSettings{};
+            break;
+        case ShapeType::ConvexHull:
+            vehicle.chassis_shape = ConvexHullShapeSettings{};
+            break;
+        case ShapeType::Mesh:
+            vehicle.chassis_shape = MeshShapeSettings{};
+            break;
+        case ShapeType::HeightField:
+            vehicle.chassis_shape = HeightFieldShapeSettings{};
+            break;
+        case ShapeType::Compound:
+            vehicle.chassis_shape = CompoundShapeSettings{};
+            break;
+    }
+}
+
+template<typename ShapeT>
+const ShapeT* get_shape_if(const VehicleComponent& vehicle) {
+    return std::get_if<ShapeT>(&vehicle.chassis_shape);
+}
+
+Vec3 get_center_offset(const VehicleComponent& vehicle) {
+    return std::visit([](const auto& shape) { return shape.center_offset; }, vehicle.chassis_shape);
+}
+
+void set_center_offset(VehicleComponent& vehicle, const Vec3& offset) {
+    std::visit([&](auto& shape) { shape.center_offset = offset; }, vehicle.chassis_shape);
+}
+
+Quat get_rotation_offset(const VehicleComponent& vehicle) {
+    return std::visit([](const auto& shape) { return shape.rotation_offset; }, vehicle.chassis_shape);
+}
+
+void set_rotation_offset(VehicleComponent& vehicle, const Quat& offset) {
+    std::visit([&](auto& shape) { shape.rotation_offset = offset; }, vehicle.chassis_shape);
+}
+
+struct VehicleEnumRegistrar {
+    VehicleEnumRegistrar() {
+        auto& registry = TypeRegistry::instance();
+        registry.register_enum<VehicleType>("VehicleType", {
+            {VehicleType::Wheeled, "Wheeled"},
+            {VehicleType::Tracked, "Tracked"},
+            {VehicleType::Motorcycle, "Motorcycle"},
+        });
+        registry.register_enum<VehicleMode>("VehicleMode", {
+            {VehicleMode::Arcade, "Arcade"},
+            {VehicleMode::Simulation, "Simulation"},
+        });
+        registry.register_enum<DriveType>("DriveType", {
+            {DriveType::FrontWheelDrive, "FrontWheelDrive"},
+            {DriveType::RearWheelDrive, "RearWheelDrive"},
+            {DriveType::AllWheelDrive, "AllWheelDrive"},
+        });
+        registry.register_enum<ShapeType>("ShapeType", {
+            {ShapeType::Box, "Box"},
+            {ShapeType::Sphere, "Sphere"},
+            {ShapeType::Capsule, "Capsule"},
+            {ShapeType::Cylinder, "Cylinder"},
+            {ShapeType::ConvexHull, "ConvexHull"},
+            {ShapeType::Mesh, "Mesh"},
+            {ShapeType::HeightField, "HeightField"},
+            {ShapeType::Compound, "Compound"},
+        });
+        registry.register_enum<DifferentialType>("DifferentialType", {
+            {DifferentialType::Open, "Open"},
+            {DifferentialType::Limited, "Limited"},
+            {DifferentialType::Locked, "Locked"},
+        });
+    }
+};
+static VehicleEnumRegistrar _vehicle_enum_registrar;
+
+struct VehicleVectorRegistrar {
+    VehicleVectorRegistrar() {
+        auto& registry = TypeRegistry::instance();
+        registry.register_vector_type<WheelSettings>();
+        registry.register_vector_type<AntiRollBarSettings>();
+    }
+};
+static VehicleVectorRegistrar _vehicle_vector_registrar;
 
 // VehicleComponent registration
 struct VehicleComponentRegistrar {
     VehicleComponentRegistrar() {
-        TypeRegistry::instance().register_component<VehicleComponent>(
+        auto& registry = TypeRegistry::instance();
+        registry.register_component<VehicleComponent>(
             "VehicleComponent",
             TypeMeta()
                 .set_display_name("Vehicle")
                 .set_description("Vehicle physics configuration"));
 
-        TypeRegistry::instance().register_property<VehicleComponent,
+        registry.register_property<VehicleComponent,
             &VehicleComponent::type>(
             "type",
             PropertyMeta()
                 .set_display_name("Type")
                 .set_category("General"));
 
-        TypeRegistry::instance().register_property<VehicleComponent,
+        registry.register_property<VehicleComponent,
             &VehicleComponent::mode>(
             "mode",
             PropertyMeta()
                 .set_display_name("Mode")
                 .set_category("General"));
 
-        TypeRegistry::instance().register_property<VehicleComponent,
+        registry.register_property<VehicleComponent,
             &VehicleComponent::drive_type>(
             "drive_type",
             PropertyMeta()
                 .set_display_name("Drive Type")
                 .set_category("General"));
 
-        TypeRegistry::instance().register_property<VehicleComponent,
+        registry.register_property<VehicleComponent,
             &VehicleComponent::chassis_mass>(
             "chassis_mass",
             PropertyMeta()
@@ -45,21 +147,273 @@ struct VehicleComponentRegistrar {
                 .set_category("Chassis")
                 .set_range(100.0f, 10000.0f));
 
-        TypeRegistry::instance().register_property<VehicleComponent,
+        registry.register_property<VehicleComponent,
             &VehicleComponent::center_of_mass_offset>(
             "center_of_mass_offset",
             PropertyMeta()
                 .set_display_name("Center of Mass Offset")
                 .set_category("Chassis"));
 
-        TypeRegistry::instance().register_property<VehicleComponent,
+        registry.register_property<VehicleComponent, &VehicleComponent::chassis_mass>(
+            "chassis_shape_type",
+            PropertyMeta()
+                .set_display_name("Shape Type")
+                .set_category("Chassis Shape"),
+            [](const VehicleComponent& vehicle) { return get_chassis_shape_type(vehicle); },
+            [](VehicleComponent& vehicle, ShapeType type) { set_chassis_shape_type(vehicle, type); });
+
+        registry.register_property<VehicleComponent, &VehicleComponent::chassis_mass>(
+            "chassis_shape_center_offset",
+            PropertyMeta()
+                .set_display_name("Center Offset")
+                .set_category("Chassis Shape"),
+            [](const VehicleComponent& vehicle) { return get_center_offset(vehicle); },
+            [](VehicleComponent& vehicle, const Vec3& value) { set_center_offset(vehicle, value); });
+
+        registry.register_property<VehicleComponent, &VehicleComponent::chassis_mass>(
+            "chassis_shape_rotation_offset",
+            PropertyMeta()
+                .set_display_name("Rotation Offset")
+                .set_category("Chassis Shape"),
+            [](const VehicleComponent& vehicle) { return get_rotation_offset(vehicle); },
+            [](VehicleComponent& vehicle, const Quat& value) { set_rotation_offset(vehicle, value); });
+
+        registry.register_property<VehicleComponent, &VehicleComponent::chassis_mass>(
+            "chassis_box_half_extents",
+            PropertyMeta()
+                .set_display_name("Box Half Extents")
+                .set_category("Chassis Shape"),
+            [](const VehicleComponent& vehicle) {
+                return get_shape_if<BoxShapeSettings>(vehicle) ? get_shape_if<BoxShapeSettings>(vehicle)->half_extents : Vec3{0.5f};
+            },
+            [](VehicleComponent& vehicle, const Vec3& value) {
+                if (auto* shape = std::get_if<BoxShapeSettings>(&vehicle.chassis_shape)) {
+                    shape->half_extents = value;
+                }
+            });
+
+        registry.register_property<VehicleComponent, &VehicleComponent::chassis_mass>(
+            "chassis_sphere_radius",
+            PropertyMeta()
+                .set_display_name("Sphere Radius")
+                .set_category("Chassis Shape")
+                .set_range(0.0f, 1000.0f),
+            [](const VehicleComponent& vehicle) {
+                return get_shape_if<SphereShapeSettings>(vehicle) ? get_shape_if<SphereShapeSettings>(vehicle)->radius : 0.5f;
+            },
+            [](VehicleComponent& vehicle, float value) {
+                if (auto* shape = std::get_if<SphereShapeSettings>(&vehicle.chassis_shape)) {
+                    shape->radius = value;
+                }
+            });
+
+        registry.register_property<VehicleComponent, &VehicleComponent::chassis_mass>(
+            "chassis_capsule_radius",
+            PropertyMeta()
+                .set_display_name("Capsule Radius")
+                .set_category("Chassis Shape")
+                .set_range(0.0f, 1000.0f),
+            [](const VehicleComponent& vehicle) {
+                return get_shape_if<CapsuleShapeSettings>(vehicle) ? get_shape_if<CapsuleShapeSettings>(vehicle)->radius : 0.5f;
+            },
+            [](VehicleComponent& vehicle, float value) {
+                if (auto* shape = std::get_if<CapsuleShapeSettings>(&vehicle.chassis_shape)) {
+                    shape->radius = value;
+                }
+            });
+
+        registry.register_property<VehicleComponent, &VehicleComponent::chassis_mass>(
+            "chassis_capsule_half_height",
+            PropertyMeta()
+                .set_display_name("Capsule Half Height")
+                .set_category("Chassis Shape")
+                .set_range(0.0f, 1000.0f),
+            [](const VehicleComponent& vehicle) {
+                return get_shape_if<CapsuleShapeSettings>(vehicle) ? get_shape_if<CapsuleShapeSettings>(vehicle)->half_height : 0.5f;
+            },
+            [](VehicleComponent& vehicle, float value) {
+                if (auto* shape = std::get_if<CapsuleShapeSettings>(&vehicle.chassis_shape)) {
+                    shape->half_height = value;
+                }
+            });
+
+        registry.register_property<VehicleComponent, &VehicleComponent::chassis_mass>(
+            "chassis_cylinder_radius",
+            PropertyMeta()
+                .set_display_name("Cylinder Radius")
+                .set_category("Chassis Shape")
+                .set_range(0.0f, 1000.0f),
+            [](const VehicleComponent& vehicle) {
+                return get_shape_if<CylinderShapeSettings>(vehicle) ? get_shape_if<CylinderShapeSettings>(vehicle)->radius : 0.5f;
+            },
+            [](VehicleComponent& vehicle, float value) {
+                if (auto* shape = std::get_if<CylinderShapeSettings>(&vehicle.chassis_shape)) {
+                    shape->radius = value;
+                }
+            });
+
+        registry.register_property<VehicleComponent, &VehicleComponent::chassis_mass>(
+            "chassis_cylinder_half_height",
+            PropertyMeta()
+                .set_display_name("Cylinder Half Height")
+                .set_category("Chassis Shape")
+                .set_range(0.0f, 1000.0f),
+            [](const VehicleComponent& vehicle) {
+                return get_shape_if<CylinderShapeSettings>(vehicle) ? get_shape_if<CylinderShapeSettings>(vehicle)->half_height : 0.5f;
+            },
+            [](VehicleComponent& vehicle, float value) {
+                if (auto* shape = std::get_if<CylinderShapeSettings>(&vehicle.chassis_shape)) {
+                    shape->half_height = value;
+                }
+            });
+
+        registry.register_property<VehicleComponent, &VehicleComponent::chassis_mass>(
+            "chassis_convex_points",
+            PropertyMeta()
+                .set_display_name("Convex Points")
+                .set_category("Chassis Shape"),
+            [](const VehicleComponent& vehicle) {
+                return get_shape_if<ConvexHullShapeSettings>(vehicle) ? get_shape_if<ConvexHullShapeSettings>(vehicle)->points : std::vector<Vec3>{};
+            },
+            [](VehicleComponent& vehicle, const std::vector<Vec3>& value) {
+                if (auto* shape = std::get_if<ConvexHullShapeSettings>(&vehicle.chassis_shape)) {
+                    shape->points = value;
+                }
+            });
+
+        registry.register_property<VehicleComponent, &VehicleComponent::chassis_mass>(
+            "chassis_mesh_vertices",
+            PropertyMeta()
+                .set_display_name("Mesh Vertices")
+                .set_category("Chassis Shape"),
+            [](const VehicleComponent& vehicle) {
+                return get_shape_if<MeshShapeSettings>(vehicle) ? get_shape_if<MeshShapeSettings>(vehicle)->vertices : std::vector<Vec3>{};
+            },
+            [](VehicleComponent& vehicle, const std::vector<Vec3>& value) {
+                if (auto* shape = std::get_if<MeshShapeSettings>(&vehicle.chassis_shape)) {
+                    shape->vertices = value;
+                }
+            });
+
+        registry.register_property<VehicleComponent, &VehicleComponent::chassis_mass>(
+            "chassis_mesh_indices",
+            PropertyMeta()
+                .set_display_name("Mesh Indices")
+                .set_category("Chassis Shape"),
+            [](const VehicleComponent& vehicle) {
+                return get_shape_if<MeshShapeSettings>(vehicle) ? get_shape_if<MeshShapeSettings>(vehicle)->indices : std::vector<uint32_t>{};
+            },
+            [](VehicleComponent& vehicle, const std::vector<uint32_t>& value) {
+                if (auto* shape = std::get_if<MeshShapeSettings>(&vehicle.chassis_shape)) {
+                    shape->indices = value;
+                }
+            });
+
+        registry.register_property<VehicleComponent, &VehicleComponent::chassis_mass>(
+            "chassis_heightfield_heights",
+            PropertyMeta()
+                .set_display_name("HeightField Heights")
+                .set_category("Chassis Shape"),
+            [](const VehicleComponent& vehicle) {
+                return get_shape_if<HeightFieldShapeSettings>(vehicle) ? get_shape_if<HeightFieldShapeSettings>(vehicle)->heights : std::vector<float>{};
+            },
+            [](VehicleComponent& vehicle, const std::vector<float>& value) {
+                if (auto* shape = std::get_if<HeightFieldShapeSettings>(&vehicle.chassis_shape)) {
+                    shape->heights = value;
+                }
+            });
+
+        registry.register_property<VehicleComponent, &VehicleComponent::chassis_mass>(
+            "chassis_heightfield_num_rows",
+            PropertyMeta().set_display_name("HeightField Rows").set_category("Chassis Shape"),
+            [](const VehicleComponent& vehicle) {
+                return get_shape_if<HeightFieldShapeSettings>(vehicle) ? get_shape_if<HeightFieldShapeSettings>(vehicle)->num_rows : 0u;
+            },
+            [](VehicleComponent& vehicle, uint32_t value) {
+                if (auto* shape = std::get_if<HeightFieldShapeSettings>(&vehicle.chassis_shape)) {
+                    shape->num_rows = value;
+                }
+            });
+
+        registry.register_property<VehicleComponent, &VehicleComponent::chassis_mass>(
+            "chassis_heightfield_num_cols",
+            PropertyMeta().set_display_name("HeightField Cols").set_category("Chassis Shape"),
+            [](const VehicleComponent& vehicle) {
+                return get_shape_if<HeightFieldShapeSettings>(vehicle) ? get_shape_if<HeightFieldShapeSettings>(vehicle)->num_cols : 0u;
+            },
+            [](VehicleComponent& vehicle, uint32_t value) {
+                if (auto* shape = std::get_if<HeightFieldShapeSettings>(&vehicle.chassis_shape)) {
+                    shape->num_cols = value;
+                }
+            });
+
+        registry.register_property<VehicleComponent, &VehicleComponent::chassis_mass>(
+            "chassis_heightfield_scale",
+            PropertyMeta().set_display_name("HeightField Scale").set_category("Chassis Shape"),
+            [](const VehicleComponent& vehicle) {
+                return get_shape_if<HeightFieldShapeSettings>(vehicle) ? get_shape_if<HeightFieldShapeSettings>(vehicle)->scale : Vec3{1.0f};
+            },
+            [](VehicleComponent& vehicle, const Vec3& value) {
+                if (auto* shape = std::get_if<HeightFieldShapeSettings>(&vehicle.chassis_shape)) {
+                    shape->scale = value;
+                }
+            });
+
+        registry.register_property<VehicleComponent, &VehicleComponent::chassis_mass>(
+            "chassis_heightfield_offset",
+            PropertyMeta().set_display_name("HeightField Offset").set_category("Chassis Shape"),
+            [](const VehicleComponent& vehicle) {
+                return get_shape_if<HeightFieldShapeSettings>(vehicle) ? get_shape_if<HeightFieldShapeSettings>(vehicle)->offset : Vec3{0.0f};
+            },
+            [](VehicleComponent& vehicle, const Vec3& value) {
+                if (auto* shape = std::get_if<HeightFieldShapeSettings>(&vehicle.chassis_shape)) {
+                    shape->offset = value;
+                }
+            });
+
+        registry.register_property<VehicleComponent,
             &VehicleComponent::layer>(
             "layer",
             PropertyMeta()
                 .set_display_name("Collision Layer")
                 .set_category("Collision"));
 
-        TypeRegistry::instance().register_property<VehicleComponent,
+        registry.register_property<VehicleComponent,
+            &VehicleComponent::wheel_collision_mask>(
+            "wheel_collision_mask",
+            PropertyMeta()
+                .set_display_name("Wheel Collision Mask")
+                .set_category("Collision"));
+
+        registry.register_property<VehicleComponent,
+            &VehicleComponent::wheels>(
+            "wheels",
+            PropertyMeta()
+                .set_display_name("Wheels")
+                .set_category("Chassis"));
+
+        registry.register_property<VehicleComponent,
+            &VehicleComponent::anti_roll_bars>(
+            "anti_roll_bars",
+            PropertyMeta()
+                .set_display_name("Anti-Roll Bars")
+                .set_category("Chassis"));
+
+        registry.register_property<VehicleComponent,
+            &VehicleComponent::arcade>(
+            "arcade",
+            PropertyMeta()
+                .set_display_name("Arcade Settings")
+                .set_category("Handling"));
+
+        registry.register_property<VehicleComponent,
+            &VehicleComponent::simulation>(
+            "simulation",
+            PropertyMeta()
+                .set_display_name("Simulation Settings")
+                .set_category("Handling"));
+
+        registry.register_property<VehicleComponent,
             &VehicleComponent::throttle>(
             "throttle",
             PropertyMeta()
@@ -68,7 +422,7 @@ struct VehicleComponentRegistrar {
                 .set_range(0.0f, 1.0f)
                 .set_read_only(true));
 
-        TypeRegistry::instance().register_property<VehicleComponent,
+        registry.register_property<VehicleComponent,
             &VehicleComponent::brake>(
             "brake",
             PropertyMeta()
@@ -77,7 +431,7 @@ struct VehicleComponentRegistrar {
                 .set_range(0.0f, 1.0f)
                 .set_read_only(true));
 
-        TypeRegistry::instance().register_property<VehicleComponent,
+        registry.register_property<VehicleComponent,
             &VehicleComponent::steering>(
             "steering",
             PropertyMeta()
@@ -261,6 +615,13 @@ struct SimulationVehicleSettingsRegistrar {
                 .set_range(1000.0f, 8000.0f));
 
         TypeRegistry::instance().register_property<SimulationVehicleSettings,
+            &SimulationVehicleSettings::gear_ratios>(
+            "gear_ratios",
+            PropertyMeta()
+                .set_display_name("Gear Ratios")
+                .set_category("Transmission"));
+
+        TypeRegistry::instance().register_property<SimulationVehicleSettings,
             &SimulationVehicleSettings::final_drive_ratio>(
             "final_drive_ratio",
             PropertyMeta()
@@ -341,6 +702,40 @@ struct SimulationVehicleSettingsRegistrar {
 };
 static SimulationVehicleSettingsRegistrar _simulation_settings_registrar;
 
+// AntiRollBarSettings registration
+struct AntiRollBarSettingsRegistrar {
+    AntiRollBarSettingsRegistrar() {
+        TypeRegistry::instance().register_type<AntiRollBarSettings>(
+            "AntiRollBarSettings",
+            TypeMeta()
+                .set_display_name("Anti-Roll Bar Settings")
+                .set_description("Links left/right wheels for roll resistance"));
+
+        TypeRegistry::instance().register_property<AntiRollBarSettings,
+            &AntiRollBarSettings::left_wheel_index>(
+            "left_wheel_index",
+            PropertyMeta()
+                .set_display_name("Left Wheel Index")
+                .set_category("Anti-Roll"));
+
+        TypeRegistry::instance().register_property<AntiRollBarSettings,
+            &AntiRollBarSettings::right_wheel_index>(
+            "right_wheel_index",
+            PropertyMeta()
+                .set_display_name("Right Wheel Index")
+                .set_category("Anti-Roll"));
+
+        TypeRegistry::instance().register_property<AntiRollBarSettings,
+            &AntiRollBarSettings::stiffness>(
+            "stiffness",
+            PropertyMeta()
+                .set_display_name("Stiffness")
+                .set_category("Anti-Roll")
+                .set_range(0.0f, 100000.0f));
+    }
+};
+static AntiRollBarSettingsRegistrar _anti_roll_bar_settings_registrar;
+
 // WheelSettings registration
 struct WheelSettingsRegistrar {
     WheelSettingsRegistrar() {
@@ -420,6 +815,14 @@ struct WheelSettingsRegistrar {
                 .set_range(100.0f, 5000.0f));
 
         TypeRegistry::instance().register_property<WheelSettings,
+            &WheelSettings::suspension_preload>(
+            "suspension_preload",
+            PropertyMeta()
+                .set_display_name("Suspension Preload")
+                .set_category("Suspension")
+                .set_range(0.0f, 1.0f));
+
+        TypeRegistry::instance().register_property<WheelSettings,
             &WheelSettings::longitudinal_friction>(
             "longitudinal_friction",
             PropertyMeta()
@@ -462,6 +865,13 @@ struct WheelSettingsRegistrar {
             "has_handbrake",
             PropertyMeta()
                 .set_display_name("Has Handbrake")
+                .set_category("Function"));
+
+        TypeRegistry::instance().register_property<WheelSettings,
+            &WheelSettings::anti_roll_bar_group>(
+            "anti_roll_bar_group",
+            PropertyMeta()
+                .set_display_name("Anti-Roll Bar Group")
                 .set_category("Function"));
     }
 };
