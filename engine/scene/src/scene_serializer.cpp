@@ -10,6 +10,7 @@
 #include <regex>
 #include <mutex>
 #include <unordered_set>
+#include <nlohmann/json.hpp>
 
 namespace engine::scene {
 
@@ -195,6 +196,23 @@ std::vector<std::string> extract_top_level_objects(const std::string& json_array
     }
 
     return objects;
+}
+
+std::string json_quote(const std::string& value) {
+    return nlohmann::json(value).dump();
+}
+
+std::string parse_json_string_literal(const std::string& json_value) {
+    if (json_value.empty()) {
+        return {};
+    }
+
+    try {
+        nlohmann::json parsed = nlohmann::json::parse(json_value);
+        return parsed.is_string() ? parsed.get<std::string>() : std::string{};
+    } catch (const nlohmann::json::exception&) {
+        return {};
+    }
 }
 
 } // anonymous namespace
@@ -998,7 +1016,7 @@ std::string SceneSerializer::entity_to_json(const SerializedEntity& entity) cons
 
     ss << "{" << newline;
     ss << indent << "\"uuid\": " << entity.uuid << "," << newline;
-    ss << indent << "\"name\": \"" << entity.name << "\"," << newline;
+    ss << indent << "\"name\": " << json_quote(entity.name) << "," << newline;
     ss << indent << "\"enabled\": " << (entity.enabled ? "true" : "false") << "," << newline;
     ss << indent << "\"parent_uuid\": " << entity.parent_uuid << "," << newline;
     ss << indent << "\"components\": [" << newline;
@@ -1006,7 +1024,7 @@ std::string SceneSerializer::entity_to_json(const SerializedEntity& entity) cons
     for (size_t i = 0; i < entity.components.size(); ++i) {
         const auto& comp = entity.components[i];
         ss << indent << indent << "{" << newline;
-        ss << indent << indent << indent << "\"type\": \"" << comp.type_name << "\"," << newline;
+        ss << indent << indent << indent << "\"type\": " << json_quote(comp.type_name) << "," << newline;
         ss << indent << indent << indent << "\"data\": " << comp.json_data << newline;
         ss << indent << indent << "}";
         if (i < entity.components.size() - 1) ss << ",";
@@ -1025,8 +1043,8 @@ std::string SceneSerializer::scene_to_json(const SerializedScene& scene) const {
     std::string newline = m_config.pretty_print ? "\n" : "";
 
     ss << "{" << newline;
-    ss << indent << "\"name\": \"" << scene.name << "\"," << newline;
-    ss << indent << "\"version\": \"" << scene.version << "\"," << newline;
+    ss << indent << "\"name\": " << json_quote(scene.name) << "," << newline;
+    ss << indent << "\"version\": " << json_quote(scene.version) << "," << newline;
     ss << indent << "\"entities\": [" << newline;
 
     for (size_t i = 0; i < scene.entities.size(); ++i) {
@@ -1048,18 +1066,10 @@ std::string SceneSerializer::scene_to_json(const SerializedScene& scene) const {
 
 SerializedScene SceneSerializer::parse_scene_json(const std::string& json) {
     SerializedScene scene;
-
-    // Parse name
-    std::regex name_re(R"REGEX("name"\s*:\s*"([^"]*)")REGEX");
-    std::smatch match;
-    if (std::regex_search(json, match, name_re)) {
-        scene.name = match[1].str();
-    }
-
-    // Parse version
-    std::regex version_re(R"REGEX("version"\s*:\s*"([^"]*)")REGEX");
-    if (std::regex_search(json, match, version_re)) {
-        scene.version = match[1].str();
+    scene.name = parse_json_string_literal(extract_value_for_key(json, "name"));
+    if (const std::string version = parse_json_string_literal(extract_value_for_key(json, "version"));
+        !version.empty()) {
+        scene.version = version;
     }
 
     const std::string entities_json = extract_array_for_key(json, "entities");
@@ -1074,7 +1084,6 @@ SerializedEntity SceneSerializer::parse_entity_json(const std::string& json) {
     SerializedEntity entity;
 
     std::regex uuid_re(R"("uuid"\s*:\s*(\d+))");
-    std::regex name_re(R"REGEX("name"\s*:\s*"([^"]*)")REGEX");
     std::regex enabled_re(R"("enabled"\s*:\s*(true|false))");
     std::regex parent_re(R"("parent_uuid"\s*:\s*(\d+))");
 
@@ -1082,9 +1091,7 @@ SerializedEntity SceneSerializer::parse_entity_json(const std::string& json) {
     if (std::regex_search(json, match, uuid_re)) {
         entity.uuid = safe_stoull(match[1].str());
     }
-    if (std::regex_search(json, match, name_re)) {
-        entity.name = match[1].str();
-    }
+    entity.name = parse_json_string_literal(extract_value_for_key(json, "name"));
     if (std::regex_search(json, match, enabled_re)) {
         entity.enabled = (match[1].str() == "true");
     }
@@ -1095,12 +1102,7 @@ SerializedEntity SceneSerializer::parse_entity_json(const std::string& json) {
     const std::string components_json = extract_array_for_key(json, "components");
     for (const auto& component_json : extract_top_level_objects(components_json)) {
         SerializedComponent component;
-
-        std::regex type_re(R"REGEX("type"\s*:\s*"([^"]*)")REGEX");
-        if (std::regex_search(component_json, match, type_re)) {
-            component.type_name = match[1].str();
-        }
-
+        component.type_name = parse_json_string_literal(extract_value_for_key(component_json, "type"));
         component.json_data = extract_value_for_key(component_json, "data");
         if (!component.type_name.empty() && !component.json_data.empty()) {
             entity.components.push_back(std::move(component));
@@ -1444,7 +1446,7 @@ std::string SceneSerializer::serialize_asset_handle(const MeshHandle& handle, co
     std::ostringstream ss;
     ss << "{\"id\": " << handle.id;
     if (!ref.path.empty()) {
-        ss << ", \"path\": \"" << ref.path << "\"";
+        ss << ", \"path\": " << json_quote(ref.path);
     }
     ss << "}";
     return ss.str();
@@ -1459,7 +1461,7 @@ std::string SceneSerializer::serialize_asset_handle(const MaterialHandle& handle
     std::ostringstream ss;
     ss << "{\"id\": " << handle.id;
     if (!ref.path.empty()) {
-        ss << ", \"path\": \"" << ref.path << "\"";
+        ss << ", \"path\": " << json_quote(ref.path);
     }
     ss << "}";
     return ss.str();
@@ -1474,7 +1476,7 @@ std::string SceneSerializer::serialize_asset_handle(const TextureHandle& handle,
     std::ostringstream ss;
     ss << "{\"id\": " << handle.id;
     if (!ref.path.empty()) {
-        ss << ", \"path\": \"" << ref.path << "\"";
+        ss << ", \"path\": " << json_quote(ref.path);
     }
     ss << "}";
     return ss.str();
@@ -1486,20 +1488,19 @@ HandleType SceneSerializer::deserialize_asset_handle(const std::string& json, co
     
     // Check if JSON is an object (contains path) or just a number
     if (json.find('{') != std::string::npos) {
-        // Parse object with ID and optional path
-        std::regex id_re(R"("id"\s*:\s*(\d+))");
-        // Use standard string escaping to avoid potential raw string literal issues across compilers
-        std::regex path_re("\"path\"\\s*:\\s*\"([^\"]+)\"");
-        std::smatch match;
-        
         uint32_t id = UINT32_MAX;
         std::string path;
-        
-        if (std::regex_search(json, match, id_re)) {
-            id = static_cast<uint32_t>(safe_stoul(match[1].str()));
-        }
-        if (std::regex_search(json, match, path_re)) {
-            path = match[1].str();
+
+        try {
+            const nlohmann::json parsed = nlohmann::json::parse(json);
+            if (parsed.contains("id") && parsed["id"].is_number_unsigned()) {
+                id = parsed["id"].get<uint32_t>();
+            }
+            if (parsed.contains("path") && parsed["path"].is_string()) {
+                path = parsed["path"].get<std::string>();
+            }
+        } catch (const nlohmann::json::exception& e) {
+            log(LogLevel::Warn, "Failed to parse {} asset handle '{}': {}", asset_type, json, e.what());
         }
         
         // If we have an asset loader and a path, try to reload/validate

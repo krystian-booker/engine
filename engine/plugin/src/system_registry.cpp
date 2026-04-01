@@ -48,18 +48,24 @@ void SystemRegistry::clear_game_systems() {
 }
 
 void SystemRegistry::run(scene::World& world, double dt, scene::Phase phase) {
-    std::shared_lock<std::shared_mutex> lock(m_systems_mutex);
+    scene::Scheduler* engine_scheduler = nullptr;
+    scene::Scheduler game_scheduler_snapshot;
 
-    // Run engine systems first
-    if (m_engine_scheduler) {
-        m_engine_scheduler->run(world, dt, phase);
+    {
+        std::shared_lock<std::shared_mutex> lock(m_systems_mutex);
+        engine_scheduler = m_engine_scheduler;
+        game_scheduler_snapshot = m_game_scheduler;
     }
 
-    // Then run game systems
-    m_game_scheduler.run(world, dt, phase);
+    // Run from snapshots so callbacks can safely mutate the live registry.
+    if (engine_scheduler) {
+        engine_scheduler->run(world, dt, phase);
+    }
+    game_scheduler_snapshot.run(world, dt, phase);
 }
 
 void SystemRegistry::set_enabled(const std::string& name, bool enabled) {
+    std::unique_lock<std::shared_mutex> lock(m_systems_mutex);
     m_game_scheduler.set_enabled(name, enabled);
 }
 

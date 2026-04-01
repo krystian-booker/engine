@@ -30,22 +30,19 @@ entt::meta_any ComponentFactory::create(entt::registry& registry, entt::entity e
         return {};
     }
 
-    // Get or create storage for this component type
-    auto* storage = registry.storage(type.id());
-    if (!storage) {
-        core::log(core::LogLevel::Error, "ComponentFactory: Failed to get storage for '{}'", type_name);
+    if (!type_registry.add_component_any(registry, entity, type_name)) {
+        core::log(core::LogLevel::Error, "ComponentFactory: Failed to add '{}' to entity", type_name);
         return {};
     }
 
-    // Add to entity via storage
-    if (!storage->contains(entity)) {
-        storage->push(entity);
+    auto target = type_registry.get_component_any(registry, entity, type_name);
+    if (!target) {
+        core::log(core::LogLevel::Error, "ComponentFactory: Failed to retrieve attached '{}'", type_name);
+        return {};
     }
 
-    // Apply constructed instance data to the component in storage
+    // Apply constructed instance data to the attached component.
     if (instance) {
-        void* ptr = storage->value(entity);
-        auto target = type.from_void(ptr);
         if (type_info) {
             for (const auto& prop : type_info->properties) {
                 if (prop.getter && prop.setter) {
@@ -58,7 +55,7 @@ entt::meta_any ComponentFactory::create(entt::registry& registry, entt::entity e
         }
     }
 
-    return instance;
+    return target;
 }
 
 entt::meta_any ComponentFactory::create_default(const std::string& type_name) {
@@ -73,20 +70,7 @@ entt::meta_any ComponentFactory::create_default(const std::string& type_name) {
 }
 
 bool ComponentFactory::remove(entt::registry& registry, entt::entity entity, const std::string& type_name) {
-    auto& type_registry = TypeRegistry::instance();
-
-    auto type = type_registry.find_type(type_name);
-    if (!type) {
-        return false;
-    }
-
-    auto* storage = registry.storage(type.id());
-    if (storage && storage->contains(entity)) {
-        storage->remove(entity);
-        return true;
-    }
-
-    return false;
+    return TypeRegistry::instance().remove_component_any(registry, entity, type_name);
 }
 
 bool ComponentFactory::has(entt::registry& registry, entt::entity entity, const std::string& type_name) {

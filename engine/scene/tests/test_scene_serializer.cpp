@@ -2,6 +2,7 @@
 #include <engine/scene/scene_serializer.hpp>
 #include <engine/scene/transform.hpp>
 #include <engine/reflect/reflect.hpp>
+#include <nlohmann/json.hpp>
 
 using namespace engine::scene;
 
@@ -226,4 +227,57 @@ TEST_CASE("SceneSerializer uses registered custom component serializers during r
     REQUIRE(loaded != NullEntity);
     REQUIRE(loaded_world.has<TestCustomEncodedComponent>(loaded));
     REQUIRE(loaded_world.get<TestCustomEncodedComponent>(loaded).hp == 123);
+}
+
+TEST_CASE("SceneSerializer round-trips escaped scene and entity names", "[scene][serializer][strings]") {
+    World source_world;
+    SceneSerializer serializer;
+
+    source_world.set_scene_name("Scene \"Main\" \\ Build");
+    Entity entity = source_world.create("Hero \"Alpha\" \\ Path");
+
+    const std::string json = serializer.serialize(source_world);
+    REQUIRE_NOTHROW([&json] {
+        const auto parsed = nlohmann::json::parse(json);
+        (void)parsed;
+    }());
+
+    World loaded_world;
+    REQUIRE(serializer.deserialize(loaded_world, json));
+    REQUIRE(loaded_world.get_scene_name() == "Scene \"Main\" \\ Build");
+
+    const Entity loaded = loaded_world.find_by_name("Hero \"Alpha\" \\ Path");
+    REQUIRE(loaded != NullEntity);
+    REQUIRE(loaded_world.valid(loaded));
+    REQUIRE(loaded_world.get<EntityInfo>(loaded).name == "Hero \"Alpha\" \\ Path");
+}
+
+TEST_CASE("SceneSerializer round-trips escaped asset paths", "[scene][serializer][assets]") {
+    SceneSerializer serializer;
+    serializer.set_asset_resolver([](uint32_t id) -> AssetReference {
+        return AssetReference{"assets\\hero \"quoted\".mesh", id == 7 ? "mesh" : "material"};
+    });
+    serializer.set_asset_loader([](const AssetReference& ref) -> uint32_t {
+        if (ref.path == "assets\\hero \"quoted\".mesh") {
+            return 77;
+        }
+        return UINT32_MAX;
+    });
+
+    World source_world;
+    Entity entity = source_world.create("MeshEntity");
+    auto& renderer = source_world.emplace<MeshRenderer>(entity);
+    renderer.mesh.id = 7;
+
+    const std::string json = serializer.serialize_entity(source_world, entity, false);
+    REQUIRE_NOTHROW([&json] {
+        const auto parsed = nlohmann::json::parse(json);
+        (void)parsed;
+    }());
+
+    World loaded_world;
+    const Entity loaded = serializer.deserialize_entity(loaded_world, json);
+    REQUIRE(loaded != NullEntity);
+    REQUIRE(loaded_world.has<MeshRenderer>(loaded));
+    REQUIRE(loaded_world.get<MeshRenderer>(loaded).mesh.id == 77);
 }

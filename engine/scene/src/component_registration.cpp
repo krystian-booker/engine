@@ -59,6 +59,32 @@ struct WorldTransformRegistrar {
 };
 static WorldTransformRegistrar _worldtransform_registrar;
 
+struct InterpolatedTransformRegistrar {
+    InterpolatedTransformRegistrar() {
+        TypeRegistry::instance().register_component<InterpolatedTransform>("InterpolatedTransform",
+            TypeMeta().set_display_name("Interpolated Transform").set_description("Render interpolation state"));
+
+        TypeRegistry::instance().register_property<InterpolatedTransform, &InterpolatedTransform::matrix>("matrix",
+            PropertyMeta().set_display_name("Matrix").set_read_only(true));
+    }
+};
+static InterpolatedTransformRegistrar _interpolatedtransform_registrar;
+
+struct PreviousTransformRegistrar {
+    PreviousTransformRegistrar() {
+        TypeRegistry::instance().register_component<PreviousTransform>("PreviousTransform",
+            TypeMeta().set_display_name("Previous Transform").set_description("Previous frame transform state"));
+
+        TypeRegistry::instance().register_property<PreviousTransform, &PreviousTransform::position>("position",
+            PropertyMeta().set_display_name("Position").set_read_only(true));
+        TypeRegistry::instance().register_property<PreviousTransform, &PreviousTransform::rotation>("rotation",
+            PropertyMeta().set_display_name("Rotation").set_read_only(true));
+        TypeRegistry::instance().register_property<PreviousTransform, &PreviousTransform::scale>("scale",
+            PropertyMeta().set_display_name("Scale").set_read_only(true));
+    }
+};
+static PreviousTransformRegistrar _previoustransform_registrar;
+
 // Register Hierarchy component
 struct HierarchyRegistrar {
     HierarchyRegistrar() {

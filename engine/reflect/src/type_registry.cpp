@@ -1,7 +1,95 @@
 #include <engine/reflect/type_registry.hpp>
 #include <engine/core/log.hpp>
+#include <engine/core/math.hpp>
 
 namespace engine::reflect {
+
+namespace {
+
+engine::core::Mat4 compose_runtime_local_matrix(const engine::core::Vec3& position,
+                                                const engine::core::Quat& rotation,
+                                                const engine::core::Vec3& scale) {
+    engine::core::Mat4 result{1.0f};
+    result = glm::translate(result, position);
+    result = result * glm::mat4_cast(rotation);
+    result = glm::scale(result, scale);
+    return result;
+}
+
+template<typename T>
+bool try_get_property_value(TypeRegistry& type_registry, const std::string& type_name,
+                            const std::string& prop_name, const entt::meta_any& object, T& out_value) {
+    const auto* prop = type_registry.get_property_info(type_name, prop_name);
+    if (!prop || !prop->getter) {
+        return false;
+    }
+
+    entt::meta_any value = prop->getter(object);
+    if (auto* cast_value = value.try_cast<T>()) {
+        out_value = *cast_value;
+        return true;
+    }
+
+    return false;
+}
+
+template<typename T>
+void set_property_value(TypeRegistry& type_registry, const std::string& type_name,
+                        const std::string& prop_name, entt::meta_any& object, T value) {
+    const auto* prop = type_registry.get_property_info(type_name, prop_name);
+    if (prop && prop->setter) {
+        prop->setter(object, entt::meta_any{std::move(value)});
+    }
+}
+
+void provision_runtime_local_transform_state(entt::registry& registry, entt::entity entity) {
+    auto& type_registry = TypeRegistry::instance();
+    entt::meta_any local_transform = type_registry.get_component_any(registry, entity, "LocalTransform");
+    if (!local_transform) {
+        return;
+    }
+
+    engine::core::Vec3 position{0.0f};
+    engine::core::Quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
+    engine::core::Vec3 scale{1.0f};
+    try_get_property_value(type_registry, "LocalTransform", "position", local_transform, position);
+    try_get_property_value(type_registry, "LocalTransform", "rotation", local_transform, rotation);
+    try_get_property_value(type_registry, "LocalTransform", "scale", local_transform, scale);
+
+    const engine::core::Mat4 local_matrix = compose_runtime_local_matrix(position, rotation, scale);
+
+    if (type_registry.add_component_any(registry, entity, "WorldTransform")) {
+        entt::meta_any world_transform = type_registry.get_component_any(registry, entity, "WorldTransform");
+        if (world_transform) {
+            set_property_value(type_registry, "WorldTransform", "matrix", world_transform, local_matrix);
+        }
+    }
+
+    if (type_registry.add_component_any(registry, entity, "PreviousTransform")) {
+        entt::meta_any previous_transform = type_registry.get_component_any(registry, entity, "PreviousTransform");
+        if (previous_transform) {
+            set_property_value(type_registry, "PreviousTransform", "position", previous_transform, position);
+            set_property_value(type_registry, "PreviousTransform", "rotation", previous_transform, rotation);
+            set_property_value(type_registry, "PreviousTransform", "scale", previous_transform, scale);
+        }
+    }
+
+    if (type_registry.add_component_any(registry, entity, "InterpolatedTransform")) {
+        entt::meta_any interpolated_transform = type_registry.get_component_any(registry, entity, "InterpolatedTransform");
+        if (interpolated_transform) {
+            set_property_value(type_registry, "InterpolatedTransform", "matrix", interpolated_transform, local_matrix);
+        }
+    }
+}
+
+void cleanup_runtime_local_transform_state(entt::registry& registry, entt::entity entity) {
+    auto& type_registry = TypeRegistry::instance();
+    type_registry.remove_component_any(registry, entity, "InterpolatedTransform");
+    type_registry.remove_component_any(registry, entity, "PreviousTransform");
+    type_registry.remove_component_any(registry, entity, "WorldTransform");
+}
+
+} // namespace
 
 TypeRegistry& TypeRegistry::instance() {
     static TypeRegistry instance;
@@ -526,6 +614,9 @@ bool TypeRegistry::add_component_any(entt::registry& registry, entt::entity enti
     }
 
     it->second.emplace(registry, entity);
+    if (type_name == "LocalTransform") {
+        provision_runtime_local_transform_state(registry, entity);
+    }
     return true;
 }
 
@@ -546,6 +637,9 @@ bool TypeRegistry::remove_component_any(entt::registry& registry, entt::entity e
         return false;
     }
 
+    if (type_name == "LocalTransform") {
+        cleanup_runtime_local_transform_state(registry, entity);
+    }
     it->second.remove(registry, entity);
     return true;
 }

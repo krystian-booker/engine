@@ -1,7 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <engine/reflect/component_factory.hpp>
 #include <engine/reflect/type_registry.hpp>
 #include <engine/core/math.hpp>
+#include <engine/scene/world.hpp>
+#include <engine/scene/transform.hpp>
 
 using namespace engine::reflect;
 using namespace engine::core;
@@ -279,6 +282,43 @@ TEST_CASE_METHOD(TypeRegistryFixture, "TypeRegistry enum registration", "[reflec
         REQUIRE(found_value2);
         REQUIRE(found_value3);
     }
+}
+
+TEST_CASE("TypeRegistry runtime LocalTransform add/remove preserves derived transform state", "[reflect][registry][scene]") {
+    engine::scene::World world;
+    const auto entity = world.create("RuntimeTransform");
+    auto& registry = TypeRegistry::instance();
+
+    REQUIRE(registry.add_component_any(world.registry(), entity, "LocalTransform"));
+    REQUIRE(world.has<engine::scene::LocalTransform>(entity));
+    REQUIRE(world.has<engine::scene::WorldTransform>(entity));
+    REQUIRE(world.has<engine::scene::PreviousTransform>(entity));
+    REQUIRE(world.has<engine::scene::InterpolatedTransform>(entity));
+
+    REQUIRE(registry.remove_component_any(world.registry(), entity, "LocalTransform"));
+    REQUIRE_FALSE(world.has<engine::scene::LocalTransform>(entity));
+    REQUIRE_FALSE(world.has<engine::scene::WorldTransform>(entity));
+    REQUIRE_FALSE(world.has<engine::scene::PreviousTransform>(entity));
+    REQUIRE_FALSE(world.has<engine::scene::InterpolatedTransform>(entity));
+}
+
+TEST_CASE("ComponentFactory create/remove keeps LocalTransform render state coherent", "[reflect][factory][scene]") {
+    engine::scene::World world;
+    const auto entity = world.create("FactoryTransform");
+    auto& factory = ComponentFactory::instance();
+
+    auto component = factory.create(world.registry(), entity, "LocalTransform");
+    REQUIRE(component);
+    REQUIRE(world.has<engine::scene::LocalTransform>(entity));
+    REQUIRE(world.has<engine::scene::WorldTransform>(entity));
+    REQUIRE(world.has<engine::scene::PreviousTransform>(entity));
+    REQUIRE(world.has<engine::scene::InterpolatedTransform>(entity));
+
+    REQUIRE(factory.remove(world.registry(), entity, "LocalTransform"));
+    REQUIRE_FALSE(world.has<engine::scene::LocalTransform>(entity));
+    REQUIRE_FALSE(world.has<engine::scene::WorldTransform>(entity));
+    REQUIRE_FALSE(world.has<engine::scene::PreviousTransform>(entity));
+    REQUIRE_FALSE(world.has<engine::scene::InterpolatedTransform>(entity));
 }
 
 TEST_CASE_METHOD(TypeRegistryFixture, "TypeRegistry get all type names", "[reflect][registry]") {
