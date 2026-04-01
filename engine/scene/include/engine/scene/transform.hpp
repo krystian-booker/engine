@@ -129,6 +129,8 @@ class World;
 // World-space helpers for systems that author absolute motion while ECS stores local transforms.
 void get_entity_world_pose(const World& world, Entity entity, const LocalTransform& local, Vec3& position, Quat& rotation);
 void set_entity_world_pose(World& world, Entity entity, LocalTransform& local, const Vec3& position, const Quat& rotation);
+void sync_world_transform(World& world, Entity entity, bool snap_previous = false);
+void sync_world_transform_tree(World& world, Entity entity, bool snap_previous = false);
 
 // Set parent of an entity, handles all linked list updates
 void set_parent(World& world, Entity child, Entity parent);

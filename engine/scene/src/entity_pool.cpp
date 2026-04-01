@@ -46,6 +46,8 @@ Entity EntityPool::create_pooled_entity() {
 void EntityPool::deactivate_entity(Entity entity) {
     if (entity == NullEntity) return;
 
+    auto* pooled = m_world.try_get<PooledEntity>(entity);
+
     // Disable entity — systems should check EntityInfo::enabled or PooledEntity::active
     if (auto* info = m_world.try_get<EntityInfo>(entity)) {
         info->enabled = false;
@@ -53,30 +55,41 @@ void EntityPool::deactivate_entity(Entity entity) {
 
     // Scale to zero to hide from rendering without polluting spatial queries
     if (auto* transform = m_world.try_get<LocalTransform>(entity)) {
+        if (pooled && !pooled->scale_hidden) {
+            pooled->stored_scale = transform->scale;
+            pooled->scale_hidden = true;
+        }
         transform->scale = core::Vec3{0.0f};
     }
 
     // Update pooled component
-    if (auto* pooled = m_world.try_get<PooledEntity>(entity)) {
+    if (pooled) {
         pooled->active = false;
     }
+
+    sync_world_transform_tree(m_world, entity, true);
 }
 
 void EntityPool::activate_entity(Entity entity) {
     if (entity == NullEntity) return;
+
+    auto* pooled = m_world.try_get<PooledEntity>(entity);
 
     // Enable entity
     if (auto* info = m_world.try_get<EntityInfo>(entity)) {
         info->enabled = true;
     }
 
-    // Restore default scale
+    // Restore the authored scale captured when the entity was pooled.
     if (auto* transform = m_world.try_get<LocalTransform>(entity)) {
-        transform->scale = core::Vec3{1.0f};
+        if (pooled && pooled->scale_hidden) {
+            transform->scale = pooled->stored_scale;
+            pooled->scale_hidden = false;
+        }
     }
 
     // Update pooled component
-    if (auto* pooled = m_world.try_get<PooledEntity>(entity)) {
+    if (pooled) {
         pooled->active = true;
         pooled->acquire_id = m_next_acquire_id++;
     }
@@ -130,6 +143,8 @@ Entity EntityPool::try_acquire_from_available() {
             m_on_acquire(m_world, entity);
         }
 
+        sync_world_transform_tree(m_world, entity, true);
+
         return entity;
     }
     return NullEntity;
@@ -162,6 +177,7 @@ Entity EntityPool::acquire(const core::Vec3& position, const core::Quat& rotatio
             transform->position = position;
             transform->rotation = rotation;
         }
+        sync_world_transform_tree(m_world, entity, true);
     }
 
     return entity;

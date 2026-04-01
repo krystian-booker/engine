@@ -54,6 +54,8 @@ struct PooledEntity {
     bool active = false;
     float recycle_time = 0.0f;          // When entity was released (for recycle delay)
     uint64_t acquire_id = 0;            // Unique ID for this acquisition (for validation)
+    core::Vec3 stored_scale{1.0f};
+    bool scale_hidden = false;
 };
 
 inline bool is_entity_active(const World& world, Entity entity) {

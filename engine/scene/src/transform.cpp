@@ -8,6 +8,7 @@ namespace engine::scene {
 
 namespace {
 constexpr float kScaleEpsilon = 1e-6f;
+constexpr size_t kMaxTransformHierarchyDepth = 1024;
 
 struct TransformEntity {
     Entity entity;
@@ -25,6 +26,54 @@ TransformCache& get_transform_cache(entt::registry& registry) {
         registry.ctx().emplace<TransformCache>();
     }
     return registry.ctx().get<TransformCache>();
+}
+
+Mat4 compute_world_matrix_recursive(const World& world, Entity entity, const LocalTransform& local, size_t depth = 0) {
+    const Mat4 local_matrix = local.matrix();
+
+    if (depth >= kMaxTransformHierarchyDepth) {
+        return local_matrix;
+    }
+
+    const auto* hierarchy = world.try_get<Hierarchy>(entity);
+    if (!hierarchy || hierarchy->parent == NullEntity) {
+        return local_matrix;
+    }
+
+    const Entity parent = hierarchy->parent;
+    if (const auto* parent_local = world.try_get<LocalTransform>(parent)) {
+        return compute_world_matrix_recursive(world, parent, *parent_local, depth + 1) * local_matrix;
+    }
+
+    if (const auto* parent_world = world.try_get<WorldTransform>(parent)) {
+        return parent_world->matrix * local_matrix;
+    }
+
+    return local_matrix;
+}
+
+void write_runtime_transform_state(entt::registry& registry, Entity entity, const Mat4& world_matrix, bool snap_previous) {
+    registry.emplace_or_replace<WorldTransform>(entity, world_matrix);
+    registry.emplace_or_replace<InterpolatedTransform>(entity, world_matrix);
+
+    if (!snap_previous) {
+        return;
+    }
+
+    Vec3 position{0.0f};
+    Quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
+    Vec3 scale{1.0f};
+    decompose_matrix_trs(world_matrix, position, rotation, scale);
+    registry.emplace_or_replace<PreviousTransform>(entity, position, rotation, scale);
+}
+
+bool transform_cache_has_stale_entities(const entt::registry& registry, const std::vector<TransformEntity>& entities) {
+    for (const auto& te : entities) {
+        if (!registry.valid(te.entity) || !registry.all_of<LocalTransform, WorldTransform>(te.entity)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 } // namespace
@@ -64,19 +113,23 @@ void decompose_matrix_trs(const Mat4& matrix, Vec3& position, Quat& rotation, Ve
 }
 
 void get_entity_world_pose(const World& world, Entity entity, const LocalTransform& local, Vec3& position, Quat& rotation) {
-    if (const auto* world_transform = world.try_get<WorldTransform>(entity)) {
-        position = world_transform->position();
-        rotation = world_transform->rotation();
-        return;
-    }
-
-    position = local.position;
-    rotation = local.rotation;
+    const Mat4 world_matrix = compute_world_matrix_recursive(world, entity, local);
+    Vec3 scale{1.0f};
+    decompose_matrix_trs(world_matrix, position, rotation, scale);
 }
 
 void set_entity_world_pose(World& world, Entity entity, LocalTransform& local, const Vec3& position, const Quat& rotation) {
     if (const auto* hierarchy = world.try_get<Hierarchy>(entity); hierarchy && hierarchy->parent != NullEntity) {
-        if (const auto* parent_world = world.try_get<WorldTransform>(hierarchy->parent)) {
+        if (const auto* parent_local = world.try_get<LocalTransform>(hierarchy->parent)) {
+            const Mat4 parent_world_matrix = compute_world_matrix_recursive(world, hierarchy->parent, *parent_local);
+            const Mat4 desired_world = compose_matrix_trs(position, rotation, local.scale);
+            const float determinant = glm::determinant(parent_world_matrix);
+            if (std::abs(determinant) > kScaleEpsilon) {
+                const Mat4 local_matrix = glm::inverse(parent_world_matrix) * desired_world;
+                decompose_matrix_trs(local_matrix, local.position, local.rotation, local.scale);
+                return;
+            }
+        } else if (const auto* parent_world = world.try_get<WorldTransform>(hierarchy->parent)) {
             const Mat4 desired_world = compose_matrix_trs(position, rotation, local.scale);
             const float determinant = glm::determinant(parent_world->matrix);
             if (std::abs(determinant) > kScaleEpsilon) {
@@ -91,6 +144,33 @@ void set_entity_world_pose(World& world, Entity entity, LocalTransform& local, c
     local.rotation = rotation;
 }
 
+void sync_world_transform(World& world, Entity entity, bool snap_previous) {
+    auto* local = world.try_get<LocalTransform>(entity);
+    if (!local) {
+        return;
+    }
+
+    write_runtime_transform_state(world.registry(), entity, compute_world_matrix_recursive(world, entity, *local), snap_previous);
+}
+
+void sync_world_transform_tree(World& world, Entity entity, bool snap_previous) {
+    sync_world_transform(world, entity, snap_previous);
+
+    auto* hierarchy = world.try_get<Hierarchy>(entity);
+    if (!hierarchy) {
+        return;
+    }
+
+    Entity child = hierarchy->first_child;
+    size_t iterations = 0;
+    while (child != NullEntity && iterations++ < kMaxTransformHierarchyDepth) {
+        auto* child_h = world.try_get<Hierarchy>(child);
+        const Entity next = child_h ? child_h->next_sibling : NullEntity;
+        sync_world_transform_tree(world, child, snap_previous);
+        child = next;
+    }
+}
+
 // Transform system - computes world matrices from local transforms and hierarchy
 void transform_system(World& world, double /*dt*/) {
     auto& registry = world.registry();
@@ -103,7 +183,8 @@ void transform_system(World& world, double /*dt*/) {
     auto view = registry.view<LocalTransform, WorldTransform>();
     size_t current_count = view.size_hint();
 
-    if (hierarchy_changed || current_count != cache.last_count) {
+    if (hierarchy_changed || current_count != cache.last_count ||
+        entities.size() != current_count || transform_cache_has_stale_entities(registry, entities)) {
         entities.clear();
 
         for (auto entity : view) {

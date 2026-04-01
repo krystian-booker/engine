@@ -313,6 +313,7 @@ Entity PrefabManager::instantiate(World& world, const std::string& prefab_path,
         auto& transform = world.get<LocalTransform>(root);
         transform.position = position;
         transform.rotation = rotation;
+        sync_world_transform_tree(world, root, true);
     }
 
     return root;

@@ -273,6 +273,46 @@ TEST_CASE("Transform decomposition tolerates zero scale", "[scene][transform][re
     REQUIRE(std::isfinite(previous.rotation.z));
 }
 
+TEST_CASE("get_entity_world_pose uses current local hierarchy state before transform_system", "[scene][transform][regression]") {
+    World world;
+    const Entity parent = world.create("Parent");
+    const Entity child = world.create("Child");
+
+    auto& parent_local = world.emplace<LocalTransform>(parent, Vec3{10.0f, 0.0f, 0.0f});
+    auto& child_local = world.emplace<LocalTransform>(child, Vec3{1.0f, 0.0f, 0.0f});
+    set_parent(world, child, parent);
+
+    transform_system(world, 0.0);
+
+    parent_local.position = Vec3{20.0f, 0.0f, 0.0f};
+    child_local.position = Vec3{2.0f, 0.0f, 0.0f};
+
+    Vec3 world_position{0.0f};
+    Quat world_rotation{1.0f, 0.0f, 0.0f, 0.0f};
+    get_entity_world_pose(world, child, child_local, world_position, world_rotation);
+
+    REQUIRE_THAT(world_position.x, WithinAbs(22.0f, 0.001f));
+    REQUIRE_THAT(world_position.y, WithinAbs(0.0f, 0.001f));
+    REQUIRE_THAT(world_position.z, WithinAbs(0.0f, 0.001f));
+}
+
+TEST_CASE("Transform system rebuilds cache when membership changes without count change", "[scene][transform][regression]") {
+    World world;
+    const Entity first = world.create("First");
+    const Entity second = world.create("Second");
+
+    world.emplace<LocalTransform>(first, Vec3{1.0f, 0.0f, 0.0f});
+    transform_system(world, 0.0);
+
+    world.remove<LocalTransform>(first);
+    world.emplace<LocalTransform>(second, Vec3{7.0f, 0.0f, 0.0f});
+
+    REQUIRE_NOTHROW(transform_system(world, 0.0));
+    REQUIRE_FALSE(world.has<WorldTransform>(first));
+    REQUIRE(world.has<WorldTransform>(second));
+    REQUIRE_THAT(world.get<WorldTransform>(second).position().x, WithinAbs(7.0f, 0.001f));
+}
+
 TEST_CASE("Interpolate transforms writes render state from previous and current world transforms", "[scene][transform]") {
     World world;
     Entity entity = world.create("Interpolated");

@@ -402,6 +402,17 @@ bool SceneSerializer::deserialize(World& world, const std::string& json) {
             }
         }
 
+        for (size_t index = 0; index < scene.entities.size(); ++index) {
+            const auto& entity_data = scene.entities[index];
+            const bool has_internal_parent =
+                entity_data.parent_uuid != 0 &&
+                uuid_to_entity.find(entity_data.parent_uuid) != uuid_to_entity.end();
+
+            if (!has_internal_parent) {
+                sync_world_transform_tree(world, created_entities[index], true);
+            }
+        }
+
         log(LogLevel::Info, "Scene deserialized: {} entities", scene.entities.size());
         return true;
 
@@ -563,6 +574,17 @@ Entity SceneSerializer::deserialize_entity(World& world, const std::string& json
                     deserialize_custom_component(world, entity, comp.type_name, comp.json_data, &entity_ctx);
                 }
             }
+        }
+    }
+
+    for (size_t index = 0; index < serialized_entities.size(); ++index) {
+        const auto& entity_data = serialized_entities[index];
+        const bool has_internal_parent =
+            entity_data.parent_uuid != 0 &&
+            uuid_to_entity.find(entity_data.parent_uuid) != uuid_to_entity.end();
+
+        if (!has_internal_parent) {
+            sync_world_transform_tree(world, created_entities[index], true);
         }
     }
 

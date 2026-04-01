@@ -1,10 +1,12 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <engine/scene/scene_serializer.hpp>
 #include <engine/scene/transform.hpp>
 #include <engine/reflect/reflect.hpp>
 #include <nlohmann/json.hpp>
 
 using namespace engine::scene;
+using Catch::Matchers::WithinAbs;
 
 namespace {
 
@@ -257,6 +259,31 @@ TEST_CASE("SceneSerializer deserialize_entity resolves internal entity reference
     REQUIRE(children.size() == 1);
     REQUIRE(instance_world.get<TestReferenceComponent>(new_root).target == children[0]);
     REQUIRE(instance_world.get<TestReferenceComponent>(new_root).weight == 99);
+}
+
+TEST_CASE("SceneSerializer deserialize_entity refreshes hierarchy world transforms immediately", "[scene][serializer][transform]") {
+    World source_world;
+    SceneSerializer serializer;
+
+    const Entity root = source_world.create("Root");
+    const Entity child = source_world.create("Child");
+    source_world.emplace<LocalTransform>(root, engine::core::Vec3{10.0f, 0.0f, 0.0f});
+    source_world.emplace<LocalTransform>(child, engine::core::Vec3{1.0f, 0.0f, 0.0f});
+    set_parent(source_world, child, root);
+
+    const std::string json = serializer.serialize_entity(source_world, root, true);
+
+    World loaded_world;
+    const Entity loaded_root = serializer.deserialize_entity(loaded_world, json);
+
+    REQUIRE(loaded_root != NullEntity);
+    REQUIRE(loaded_world.has<WorldTransform>(loaded_root));
+    REQUIRE_THAT(loaded_world.get<WorldTransform>(loaded_root).position().x, WithinAbs(10.0f, 0.001f));
+
+    const auto& loaded_children = get_children(loaded_world, loaded_root);
+    REQUIRE(loaded_children.size() == 1);
+    REQUIRE(loaded_world.has<WorldTransform>(loaded_children[0]));
+    REQUIRE_THAT(loaded_world.get<WorldTransform>(loaded_children[0]).position().x, WithinAbs(11.0f, 0.001f));
 }
 
 TEST_CASE("SceneSerializer uses registered custom component serializers during round-trip", "[scene][serializer][custom]") {
