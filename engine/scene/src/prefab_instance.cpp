@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <sstream>
 #include <regex>
+#include <unordered_set>
 
 namespace engine::scene {
 
@@ -221,33 +222,19 @@ const PrefabData* PrefabManager::load_prefab(const std::string& path) {
     data.path = path;
     data.json_data = content;
 
-    // Parse JSON to extract root_uuid and entity_uuids
     try {
-        nlohmann::json j = nlohmann::json::parse(content);
-
-        // Extract root entity UUID if present
-        if (j.contains("root_uuid") && j["root_uuid"].is_number_unsigned()) {
-            data.root_uuid = j["root_uuid"].get<uint64_t>();
-        } else if (j.contains("root") && j["root"].is_object() && j["root"].contains("uuid")) {
-            data.root_uuid = j["root"]["uuid"].get<uint64_t>();
+        data.entities = serializer().parse_entities_json(content);
+        data.entity_uuids.reserve(data.entities.size());
+        for (const auto& entity : data.entities) {
+            data.entity_uuids.push_back(entity.uuid);
+            data.parent_by_uuid[entity.uuid] = entity.parent_uuid;
         }
-
-        // Extract all entity UUIDs from the entities array
-        if (j.contains("entities") && j["entities"].is_array()) {
-            for (const auto& entity : j["entities"]) {
-                if (entity.contains("uuid") && entity["uuid"].is_number_unsigned()) {
-                    data.entity_uuids.push_back(entity["uuid"].get<uint64_t>());
-                }
-            }
-        }
-
-        // If root_uuid wasn't explicitly set but we have entities, use the first one
-        if (data.root_uuid == 0 && !data.entity_uuids.empty()) {
+        if (!data.entity_uuids.empty()) {
             data.root_uuid = data.entity_uuids.front();
         }
-    } catch (const nlohmann::json::exception& e) {
+    } catch (const std::exception& e) {
         core::log(core::LogLevel::Warn, "PrefabManager: JSON parsing error in '{}': {}", path, e.what());
-        // Continue with empty UUIDs - will be parsed at instantiation time as fallback
+        return nullptr;
     }
 
     m_cache[path] = std::move(data);
@@ -282,20 +269,7 @@ Entity PrefabManager::instantiate(World& world, const std::string& prefab_path, 
     }
 
     // Add PrefabInstance component to root
-    world.emplace<PrefabInstance>(root, prefab_path);
-
-    // Mark children as part of this prefab instance
-    std::function<void(Entity)> mark_children = [&](Entity e) {
-        for (auto child : get_children(world, e)) {
-            if (!world.has<PrefabInstance>(child)) {
-                auto& child_instance = world.emplace<PrefabInstance>(child);
-                child_instance.prefab_path = prefab_path;
-                child_instance.is_root = false;
-            }
-            mark_children(child);
-        }
-    };
-    mark_children(root);
+    tag_instance_hierarchy(world, root, *data);
 
     core::log(core::LogLevel::Debug, "Instantiated prefab '{}' as entity {}",
               prefab_path, static_cast<uint32_t>(root));
@@ -363,72 +337,11 @@ void PrefabManager::update_instances(World& world, const std::string& prefab_pat
 
     for (Entity instance_root : instances) {
         if (!world.valid(instance_root) || !world.has<PrefabInstance>(instance_root)) continue;
-
-        // Store current overrides before updating
-        auto& prefab_instance = world.get<PrefabInstance>(instance_root);
-        std::vector<PropertyOverride> saved_overrides = prefab_instance.overrides;
-
-        // Get current parent for re-parenting after update
-        Entity parent = NullEntity;
-        if (world.has<Hierarchy>(instance_root)) {
-            parent = world.get<Hierarchy>(instance_root).parent;
-        }
-
-        // Collect all entities in the current instance hierarchy.
-        auto old_entities = collect_hierarchy(world, instance_root);
-
-        // Remove PrefabInstance components before destroying (to avoid nested prefab cleanup paths).
-        for (Entity e : old_entities) {
-            if (world.has<PrefabInstance>(e)) {
-                world.remove<PrefabInstance>(e);
-            }
-        }
-
-        // Destroy old instance hierarchy fully (children first, root last).
-        for (auto it = old_entities.rbegin(); it != old_entities.rend(); ++it) {
-            if (world.valid(*it)) {
-                world.destroy(*it);
-            }
-        }
-
-        // Re-deserialize from prefab data as a fresh hierarchy rooted under the previous parent.
-        Entity new_root = serializer().deserialize_entity(world, data->json_data, parent);
-
-        if (new_root == NullEntity) {
-            core::log(core::LogLevel::Warn,
-                      "Failed to refresh prefab instance {} from '{}': deserialize returned null",
+        auto saved_overrides = capture_override_map(world, instance_root, *data);
+        if (refresh_instance(world, instance_root, *data, saved_overrides)) {
+            core::log(core::LogLevel::Debug, "Updated prefab instance {} from '{}'",
                       static_cast<uint32_t>(instance_root), prefab_path);
-            continue;
         }
-
-        // Re-add PrefabInstance component and restore saved overrides.
-        if (!world.has<PrefabInstance>(new_root)) {
-            world.emplace<PrefabInstance>(new_root, prefab_path);
-        }
-
-        auto& new_instance = world.get<PrefabInstance>(new_root);
-        new_instance.prefab_path = prefab_path;
-        new_instance.overrides = saved_overrides;
-        new_instance.is_root = true;
-
-        // Apply overrides to restore user modifications.
-        apply_overrides(world, new_root, new_instance);
-
-        // Mark all descendants as part of this prefab instance.
-        std::function<void(Entity)> mark_children = [&](Entity e) {
-            for (auto child : get_children(world, e)) {
-                if (!world.has<PrefabInstance>(child)) {
-                    auto& child_instance = world.emplace<PrefabInstance>(child);
-                    child_instance.prefab_path = prefab_path;
-                    child_instance.is_root = false;
-                }
-                mark_children(child);
-            }
-        };
-        mark_children(new_root);
-
-        core::log(core::LogLevel::Debug, "Updated prefab instance {} from '{}'",
-                  static_cast<uint32_t>(instance_root), prefab_path);
     }
 }
 
@@ -444,15 +357,18 @@ void PrefabManager::revert_instance(World& world, Entity instance_root) {
         return;
     }
 
-    // Clear all overrides
-    instance.clear_overrides();
+    const PrefabData* data = load_prefab(instance.prefab_path);
+    if (!data || !data->valid()) {
+        core::log(core::LogLevel::Warn, "Cannot revert prefab instance {} from missing prefab '{}'",
+                  static_cast<uint32_t>(instance_root), instance.prefab_path);
+        return;
+    }
 
-    // Re-instantiate from prefab
-    // This is a simplified version - a full implementation would need to
-    // preserve the entity ID and update in place
-
-    core::log(core::LogLevel::Info, "Reverted prefab instance {} to '{}'",
-              static_cast<uint32_t>(instance_root), instance.prefab_path);
+    std::unordered_map<uint64_t, std::vector<PropertyOverride>> cleared_overrides;
+    if (refresh_instance(world, instance_root, *data, cleared_overrides)) {
+        core::log(core::LogLevel::Info, "Reverted prefab instance {} to '{}'",
+                  static_cast<uint32_t>(instance_root), instance.prefab_path);
+    }
 }
 
 void PrefabManager::unpack_prefab(World& world, Entity instance_root, bool recursive) {
@@ -576,7 +492,7 @@ void PrefabManager::apply_overrides(World& world, Entity entity, const PrefabIns
               instance.overrides.size(), static_cast<uint32_t>(entity));
 }
 
-std::vector<Entity> PrefabManager::collect_hierarchy(World& world, Entity root) {
+std::vector<Entity> PrefabManager::collect_hierarchy(World& world, Entity root) const {
     std::vector<Entity> entities;
     entities.push_back(root);
 
@@ -589,6 +505,156 @@ std::vector<Entity> PrefabManager::collect_hierarchy(World& world, Entity root) 
 
     collect(root);
     return entities;
+}
+
+void PrefabManager::tag_instance_hierarchy(World& world, Entity root, const PrefabData& data,
+                                           const std::unordered_map<uint64_t, std::vector<PropertyOverride>>* overrides_by_uuid) {
+    auto entities = collect_hierarchy(world, root);
+    const size_t count = std::min(entities.size(), data.entities.size());
+
+    for (size_t i = 0; i < count; ++i) {
+        const uint64_t prefab_uuid = data.entities[i].uuid;
+        auto& instance = world.has<PrefabInstance>(entities[i])
+            ? world.get<PrefabInstance>(entities[i])
+            : world.emplace<PrefabInstance>(entities[i]);
+        instance.prefab_path = data.path;
+        instance.prefab_entity_uuid = prefab_uuid;
+        instance.is_root = (prefab_uuid == data.root_uuid);
+        if (overrides_by_uuid) {
+            if (auto it = overrides_by_uuid->find(prefab_uuid); it != overrides_by_uuid->end()) {
+                instance.overrides = it->second;
+            } else {
+                instance.overrides.clear();
+            }
+        }
+    }
+}
+
+std::unordered_map<uint64_t, Entity> PrefabManager::build_instance_entity_map(World& world, Entity root, const PrefabData& data) const {
+    std::unordered_map<uint64_t, Entity> result;
+    auto entities = collect_hierarchy(world, root);
+    std::unordered_set<Entity> mapped_entities;
+
+    for (Entity entity : entities) {
+        if (const auto* instance = world.try_get<PrefabInstance>(entity);
+            instance && instance->prefab_entity_uuid != 0) {
+            result[instance->prefab_entity_uuid] = entity;
+            mapped_entities.insert(entity);
+        }
+    }
+
+    const size_t count = std::min(entities.size(), data.entities.size());
+    for (size_t i = 0; i < count; ++i) {
+        if (!result.contains(data.entities[i].uuid) && !mapped_entities.contains(entities[i])) {
+            result[data.entities[i].uuid] = entities[i];
+        }
+    }
+
+    return result;
+}
+
+std::unordered_map<uint64_t, std::vector<PropertyOverride>> PrefabManager::capture_override_map(World& world, Entity root, const PrefabData& data) const {
+    std::unordered_map<uint64_t, std::vector<PropertyOverride>> overrides_by_uuid;
+    auto entities = collect_hierarchy(world, root);
+    std::unordered_set<Entity> mapped_entities;
+
+    for (Entity entity : entities) {
+        if (const auto* instance = world.try_get<PrefabInstance>(entity);
+            instance && instance->prefab_entity_uuid != 0) {
+            overrides_by_uuid[instance->prefab_entity_uuid] = instance->overrides;
+            mapped_entities.insert(entity);
+        }
+    }
+
+    const size_t count = std::min(entities.size(), data.entities.size());
+    for (size_t i = 0; i < count; ++i) {
+        if (!overrides_by_uuid.contains(data.entities[i].uuid) && !mapped_entities.contains(entities[i])) {
+            if (const auto* instance = world.try_get<PrefabInstance>(entities[i])) {
+                overrides_by_uuid[data.entities[i].uuid] = instance->overrides;
+            }
+        }
+    }
+
+    return overrides_by_uuid;
+}
+
+bool PrefabManager::refresh_instance(World& world, Entity instance_root, const PrefabData& data,
+                                     const std::unordered_map<uint64_t, std::vector<PropertyOverride>>& overrides_by_uuid) {
+    if (!world.valid(instance_root) || data.entities.empty()) {
+        return false;
+    }
+
+    const Entity external_parent = world.has<Hierarchy>(instance_root)
+        ? world.get<Hierarchy>(instance_root).parent
+        : NullEntity;
+
+    const auto old_entities = collect_hierarchy(world, instance_root);
+    auto existing_map = build_instance_entity_map(world, instance_root, data);
+    std::unordered_map<uint64_t, Entity> final_map;
+    final_map.reserve(data.entities.size());
+
+    for (const auto& serialized : data.entities) {
+        Entity target = NullEntity;
+        if (auto it = existing_map.find(serialized.uuid); it != existing_map.end() && world.valid(it->second)) {
+            target = it->second;
+        } else {
+            target = world.create(serialized.name);
+        }
+        final_map[serialized.uuid] = target;
+    }
+
+    EntityResolutionContext entity_ctx;
+    entity_ctx.entity_to_uuid = [&world](entt::entity e) -> uint64_t {
+        if (world.has<EntityInfo>(e)) {
+            return world.get<EntityInfo>(e).uuid;
+        }
+        return EntityResolutionContext::NullUUID;
+    };
+    entity_ctx.uuid_to_entity = [&final_map](uint64_t uuid) -> entt::entity {
+        auto it = final_map.find(uuid);
+        return (it != final_map.end()) ? it->second : entt::null;
+    };
+
+    for (const auto& serialized : data.entities) {
+        serializer().apply_entity(world, final_map.at(serialized.uuid), serialized, &entity_ctx, true);
+    }
+
+    for (const auto& serialized : data.entities) {
+        Entity target = final_map.at(serialized.uuid);
+        Entity desired_parent = NullEntity;
+        if (serialized.parent_uuid != 0) {
+            desired_parent = final_map.at(serialized.parent_uuid);
+        } else if (serialized.uuid == data.root_uuid) {
+            desired_parent = external_parent;
+        }
+        set_parent(world, target, desired_parent, NullEntity);
+    }
+
+    tag_instance_hierarchy(world, final_map.at(data.root_uuid), data, &overrides_by_uuid);
+
+    for (const auto& serialized : data.entities) {
+        Entity target = final_map.at(serialized.uuid);
+        if (world.has<PrefabInstance>(target)) {
+            apply_overrides(world, target, world.get<PrefabInstance>(target));
+        }
+    }
+
+    sync_world_transform_tree(world, final_map.at(data.root_uuid), true);
+
+    std::unordered_set<Entity> live_entities;
+    for (const auto& [uuid, entity] : final_map) {
+        (void)uuid;
+        live_entities.insert(entity);
+    }
+
+    for (auto it = old_entities.rbegin(); it != old_entities.rend(); ++it) {
+        if (live_entities.contains(*it) || !world.valid(*it)) {
+            continue;
+        }
+        world.destroy(*it);
+    }
+
+    return true;
 }
 
 // ============================================================================

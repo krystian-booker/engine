@@ -93,6 +93,14 @@ public:
     // Deserialize entity (for prefabs/instantiation)
     Entity deserialize_entity(World& world, const std::string& json, Entity parent = NullEntity);
 
+    // Parse one serialized entity or an array of serialized entities from JSON.
+    std::vector<SerializedEntity> parse_entities_json(const std::string& json) const;
+
+    // Apply serialized state onto an existing entity while preserving its runtime identity.
+    void apply_entity(World& world, Entity entity, const SerializedEntity& data,
+                      const EntityResolutionContext* entity_ctx = nullptr,
+                      bool preserve_uuid = true) const;
+
     // Register custom component serializer
     template<typename T>
     void register_component(const std::string& type_name,
@@ -105,6 +113,11 @@ public:
         };
         m_custom_component_emplacers[type_name] = [](World& world, Entity entity) -> void* {
             return &world.emplace_or_replace<T>(entity);
+        };
+        m_custom_component_removers[type_name] = [](World& world, Entity entity) {
+            if (world.has<T>(entity)) {
+                world.remove<T>(entity);
+            }
         };
         // Store type ID for runtime lookup
         m_type_names[typeid(T).hash_code()] = type_name;
@@ -160,9 +173,9 @@ private:
     bool serialize_custom_component(World& world, Entity entity, const std::string& type_name, std::string& out_json) const;
     bool serialize_custom_component(World& world, Entity entity, const std::string& type_name, std::string& out_json,
                                     const EntityResolutionContext* entity_ctx) const;
-    bool deserialize_custom_component(World& world, Entity entity, const std::string& type_name, const std::string& json);
+    bool deserialize_custom_component(World& world, Entity entity, const std::string& type_name, const std::string& json) const;
     bool deserialize_custom_component(World& world, Entity entity, const std::string& type_name, const std::string& json,
-                                      const EntityResolutionContext* entity_ctx);
+                                      const EntityResolutionContext* entity_ctx) const;
 
     // Asset handle serialization helpers
     std::string serialize_asset_handle(const MeshHandle& handle, const char* asset_type) const;
@@ -178,6 +191,7 @@ private:
     std::unordered_map<std::string, ComponentDeserializer> m_component_deserializers;
     std::unordered_map<std::string, std::function<const void*(const World&, Entity)>> m_custom_component_accessors;
     std::unordered_map<std::string, std::function<void*(World&, Entity)>> m_custom_component_emplacers;
+    std::unordered_map<std::string, std::function<void(World&, Entity)>> m_custom_component_removers;
     std::unordered_map<size_t, std::string> m_type_names;  // type_id hash -> name
 
     std::function<AssetReference(uint32_t)> m_asset_resolver;

@@ -115,6 +115,7 @@ struct PreviousTransform {
 struct Hierarchy {
     Entity parent = NullEntity;
     Entity first_child = NullEntity;
+    Entity last_child = NullEntity;
     Entity next_sibling = NullEntity;
     Entity prev_sibling = NullEntity;
     uint32_t depth = 0;  // Used for sorting and update order

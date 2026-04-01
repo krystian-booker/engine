@@ -59,6 +59,8 @@ struct PrefabData {
     std::string json_data;
     uint64_t root_uuid = 0;
     std::vector<uint64_t> entity_uuids;  // All entity UUIDs in this prefab
+    std::vector<SerializedEntity> entities;
+    std::unordered_map<uint64_t, uint64_t> parent_by_uuid;
 
     bool valid() const { return !json_data.empty(); }
 };
@@ -125,7 +127,14 @@ private:
     void apply_overrides(World& world, Entity entity, const PrefabInstance& instance);
 
     // Collect entity hierarchy for saving
-    std::vector<Entity> collect_hierarchy(World& world, Entity root);
+    std::vector<Entity> collect_hierarchy(World& world, Entity root) const;
+
+    void tag_instance_hierarchy(World& world, Entity root, const PrefabData& data,
+                                const std::unordered_map<uint64_t, std::vector<PropertyOverride>>* overrides_by_uuid = nullptr);
+    std::unordered_map<uint64_t, Entity> build_instance_entity_map(World& world, Entity root, const PrefabData& data) const;
+    std::unordered_map<uint64_t, std::vector<PropertyOverride>> capture_override_map(World& world, Entity root, const PrefabData& data) const;
+    bool refresh_instance(World& world, Entity instance_root, const PrefabData& data,
+                          const std::unordered_map<uint64_t, std::vector<PropertyOverride>>& overrides_by_uuid);
 
     SceneSerializer& serializer() { return m_serializer ? *m_serializer : m_default_serializer; }
 

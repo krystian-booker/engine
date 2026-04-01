@@ -1,9 +1,13 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <engine/scene/prefab_instance.hpp>
 #include <engine/scene/scene_serializer.hpp>
 #include <engine/scene/transform.hpp>
 #include <engine/reflect/reflect.hpp>
 #include <nlohmann/json.hpp>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
 
 using namespace engine::scene;
 using Catch::Matchers::WithinAbs;
@@ -51,6 +55,12 @@ void register_test_components() {
     type_registry.register_property<TestCustomEncodedComponent, &TestCustomEncodedComponent::hp>(
         "hp",
         engine::reflect::PropertyMeta());
+}
+
+std::filesystem::path make_temp_prefab_path(const std::string& stem) {
+    const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
+    return std::filesystem::temp_directory_path() /
+        (stem + "_" + std::to_string(nonce) + ".prefab");
 }
 
 } // namespace
@@ -137,6 +147,30 @@ TEST_CASE("SceneSerializer replaces existing world state on scene deserialize", 
     REQUIRE(world.find_by_name("FreshEntity") != NullEntity);
     REQUIRE(world.get_scene_name() == "FreshScene");
     REQUIRE(world.get_scene_metadata().find("stale") == world.get_scene_metadata().end());
+}
+
+TEST_CASE("SceneSerializer preserves the current world when scene JSON is invalid", "[scene][serializer][regression]") {
+    World world;
+    SceneSerializer serializer;
+
+    const Entity existing = world.create("Existing");
+    world.emplace<LocalTransform>(existing, engine::core::Vec3{3.0f, 4.0f, 5.0f});
+    world.set_scene_name("StableScene");
+    world.get_scene_metadata()["mode"] = "safe";
+
+    const std::string invalid_json = R"({
+        "name": "BrokenScene",
+        "entities": [
+            { "uuid": 1, "name": "Oops", "components": [
+        ]
+    })";
+
+    REQUIRE_FALSE(serializer.deserialize(world, invalid_json));
+    REQUIRE(world.valid(existing));
+    REQUIRE(world.find_by_name("Existing") == existing);
+    REQUIRE(world.get_scene_name() == "StableScene");
+    REQUIRE(world.get_scene_metadata().at("mode") == "safe");
+    REQUIRE(world.has<LocalTransform>(existing));
 }
 
 TEST_CASE("SceneSerializer deserializes entity components from scenes", "[scene][serializer]") {
@@ -421,4 +455,111 @@ TEST_CASE("SceneSerializer round-trips escaped asset paths", "[scene][serializer
     REQUIRE(loaded != NullEntity);
     REQUIRE(loaded_world.has<MeshRenderer>(loaded));
     REQUIRE(loaded_world.get<MeshRenderer>(loaded).mesh.id == 77);
+}
+
+TEST_CASE("PrefabManager update_instances preserves entity identity and descendant overrides", "[scene][serializer][prefab][regression]") {
+    register_test_components();
+
+    PrefabManager::instance().clear_cache();
+
+    SceneSerializer serializer;
+    World source_world;
+    const Entity prefab_root = source_world.create("PrefabRoot");
+    const Entity prefab_child = source_world.create("PrefabChild");
+    source_world.emplace<LocalTransform>(prefab_root, engine::core::Vec3{1.0f, 0.0f, 0.0f});
+    source_world.emplace<LocalTransform>(prefab_child, engine::core::Vec3{2.0f, 0.0f, 0.0f});
+    set_parent(source_world, prefab_child, prefab_root, NullEntity);
+    source_world.emplace<TestReferenceComponent>(prefab_root, prefab_child, 7);
+
+    const std::filesystem::path prefab_path = make_temp_prefab_path("prefab_update");
+    {
+        std::ofstream prefab_file(prefab_path);
+        REQUIRE(prefab_file.is_open());
+        prefab_file << serializer.serialize_entity(source_world, prefab_root, true);
+    }
+
+    World world;
+    const Entity instance_root = PrefabManager::instance().instantiate(world, prefab_path.string());
+    REQUIRE(instance_root != NullEntity);
+
+    const auto& children = get_children(world, instance_root);
+    REQUIRE(children.size() == 1);
+    const Entity instance_child = children.front();
+    REQUIRE(world.get<PrefabInstance>(instance_root).prefab_entity_uuid != 0);
+    REQUIRE(world.get<PrefabInstance>(instance_child).prefab_entity_uuid != 0);
+    REQUIRE(world.get<TestReferenceComponent>(instance_root).target == instance_child);
+
+    auto& child_transform = world.get<LocalTransform>(instance_child);
+    child_transform.position = engine::core::Vec3{9.0f, 0.0f, 0.0f};
+    world.get<PrefabInstance>(instance_child).set_override("LocalTransform", "position", "[9.0, 0.0, 0.0]");
+
+    const Entity owner = world.create("Owner");
+    world.emplace<TestReferenceComponent>(owner, instance_child, 99);
+
+    source_world.get<EntityInfo>(prefab_root).name = "PrefabRootUpdated";
+    source_world.get<LocalTransform>(prefab_root).position = engine::core::Vec3{4.0f, 0.0f, 0.0f};
+    source_world.get<LocalTransform>(prefab_child).position = engine::core::Vec3{5.0f, 0.0f, 0.0f};
+    source_world.get<TestReferenceComponent>(prefab_root).weight = 42;
+
+    {
+        std::ofstream prefab_file(prefab_path);
+        REQUIRE(prefab_file.is_open());
+        prefab_file << serializer.serialize_entity(source_world, prefab_root, true);
+    }
+
+    PrefabManager::instance().update_instances(world, prefab_path.string());
+
+    REQUIRE(world.valid(instance_root));
+    REQUIRE(world.valid(instance_child));
+    REQUIRE(world.get<EntityInfo>(instance_root).name == "PrefabRootUpdated");
+    REQUIRE(world.get<TestReferenceComponent>(instance_root).target == instance_child);
+    REQUIRE(world.get<TestReferenceComponent>(instance_root).weight == 42);
+    REQUIRE(world.get<TestReferenceComponent>(owner).target == instance_child);
+    REQUIRE(world.get<LocalTransform>(instance_child).position == engine::core::Vec3{9.0f, 0.0f, 0.0f});
+    REQUIRE(world.get<PrefabInstance>(instance_child).override_count() == 1);
+    REQUIRE(world.get<PrefabInstance>(instance_child).prefab_entity_uuid != 0);
+
+    std::filesystem::remove(prefab_path);
+    PrefabManager::instance().clear_cache();
+}
+
+TEST_CASE("PrefabManager revert_instance restores prefab state without replacing entity handles", "[scene][serializer][prefab][regression]") {
+    PrefabManager::instance().clear_cache();
+
+    SceneSerializer serializer;
+    World source_world;
+    const Entity prefab_root = source_world.create("Root");
+    const Entity prefab_child = source_world.create("Child");
+    source_world.emplace<LocalTransform>(prefab_root, engine::core::Vec3{2.0f, 0.0f, 0.0f});
+    source_world.emplace<LocalTransform>(prefab_child, engine::core::Vec3{3.0f, 0.0f, 0.0f});
+    set_parent(source_world, prefab_child, prefab_root, NullEntity);
+
+    const std::filesystem::path prefab_path = make_temp_prefab_path("prefab_revert");
+    {
+        std::ofstream prefab_file(prefab_path);
+        REQUIRE(prefab_file.is_open());
+        prefab_file << serializer.serialize_entity(source_world, prefab_root, true);
+    }
+
+    World world;
+    const Entity instance_root = PrefabManager::instance().instantiate(world, prefab_path.string());
+    REQUIRE(instance_root != NullEntity);
+
+    const Entity instance_child = get_children(world, instance_root).front();
+    world.get<LocalTransform>(instance_root).position = engine::core::Vec3{11.0f, 0.0f, 0.0f};
+    world.get<PrefabInstance>(instance_root).set_override("LocalTransform", "position", "[11.0, 0.0, 0.0]");
+    world.get<LocalTransform>(instance_child).position = engine::core::Vec3{12.0f, 0.0f, 0.0f};
+    world.get<PrefabInstance>(instance_child).set_override("LocalTransform", "position", "[12.0, 0.0, 0.0]");
+
+    PrefabManager::instance().revert_instance(world, instance_root);
+
+    REQUIRE(world.valid(instance_root));
+    REQUIRE(world.valid(instance_child));
+    REQUIRE(world.get<LocalTransform>(instance_root).position == engine::core::Vec3{2.0f, 0.0f, 0.0f});
+    REQUIRE(world.get<LocalTransform>(instance_child).position == engine::core::Vec3{3.0f, 0.0f, 0.0f});
+    REQUIRE(world.get<PrefabInstance>(instance_root).override_count() == 0);
+    REQUIRE(world.get<PrefabInstance>(instance_child).override_count() == 0);
+
+    std::filesystem::remove(prefab_path);
+    PrefabManager::instance().clear_cache();
 }

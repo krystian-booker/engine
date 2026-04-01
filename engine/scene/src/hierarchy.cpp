@@ -142,6 +142,10 @@ void detach_from_parent(entt::registry& registry, RootList& root_list, Entity ch
             registry.get<Hierarchy>(child_h.next_sibling).prev_sibling = child_h.prev_sibling;
         }
 
+        if (parent_h.last_child == child) {
+            parent_h.last_child = child_h.prev_sibling;
+        }
+
         parent_h.children_dirty = true;
     }
 
@@ -222,26 +226,24 @@ void attach_to_parent(entt::registry& registry, RootList& root_list, Entity chil
         }
 
         before_h.prev_sibling = child;
+        if (parent_h.last_child == NullEntity) {
+            parent_h.last_child = child;
+        }
     } else {
         // Append to end of parent's children
-        Entity last_child = parent_h.first_child;
+        Entity last_child = parent_h.last_child;
         if (last_child == NullEntity) {
             parent_h.first_child = child;
+            parent_h.last_child = child;
             child_h.prev_sibling = NullEntity;
             child_h.next_sibling = NullEntity;
         } else {
-            size_t iterations = 0;
-            while (iterations++ < MAX_HIERARCHY_ITERATIONS) {
-                auto* h = registry.try_get<Hierarchy>(last_child);
-                if (!h || h->next_sibling == NullEntity) break;
-                last_child = h->next_sibling;
-            }
-
             if (auto* last_h = registry.try_get<Hierarchy>(last_child)) {
                 last_h->next_sibling = child;
             }
             child_h.prev_sibling = last_child;
             child_h.next_sibling = NullEntity;
+            parent_h.last_child = child;
         }
     }
 
@@ -358,9 +360,9 @@ const std::vector<Entity>& get_children(World& world, Entity parent) {
         return empty;
     }
 
-    if (h->children_dirty) {
-        auto& cc = children_cache(registry);
-        auto key = static_cast<entt::id_type>(parent);
+    auto& cc = children_cache(registry);
+    auto key = static_cast<entt::id_type>(parent);
+    auto rebuild_cache = [&]() -> const std::vector<Entity>& {
         auto& cached = cc.cache[key];
         cached.clear();
         Entity child = h->first_child;
@@ -372,15 +374,17 @@ const std::vector<Entity>& get_children(World& world, Entity parent) {
         }
         h->children_dirty = false;
         return cached;
+    };
+
+    if (h->children_dirty) {
+        return rebuild_cache();
     }
 
-    auto& cc = children_cache(registry);
-    auto key = static_cast<entt::id_type>(parent);
     auto it = cc.cache.find(key);
     if (it != cc.cache.end()) {
         return it->second;
     }
-    return empty;
+    return rebuild_cache();
 }
 
 void iterate_children(World& world, Entity parent, std::function<void(Entity)> fn) {
